@@ -38,7 +38,7 @@ ColumnTuple::ColumnTuple(const Columns & columns) : columns(columns)
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 }
 
-ColumnPtr ColumnTuple::cloneEmpty() const
+MutableColumnPtr ColumnTuple::cloneEmpty() const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -176,7 +176,7 @@ MutableColumnPtr ColumnTuple::replicate(const Offsets_t & offsets) const
 MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     const size_t tuple_size = columns.size();
-    std::vector<Columns> scattered_tuple_elements(tuple_size);
+    std::vector<MutableColumns> scattered_tuple_elements(tuple_size);
 
     for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
         scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
@@ -187,7 +187,7 @@ MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & se
     {
         Columns new_columns(tuple_size);
         for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
-            new_columns[tuple_element_idx] = scattered_tuple_elements[tuple_element_idx][scattered_idx];
+            new_columns[tuple_element_idx] = std::move(scattered_tuple_elements[tuple_element_idx][scattered_idx]);
         res[scattered_idx] = ColumnTuple::create(new_columns);
     }
 
@@ -264,8 +264,9 @@ void ColumnTuple::gather(ColumnGathererStream & gatherer)
 
 void ColumnTuple::reserve(size_t n)
 {
-    for (auto & column : columns)
-        column->reserve(n);
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumnPtr(i)->reserve(n);
 }
 
 size_t ColumnTuple::byteSize() const

@@ -18,11 +18,11 @@ namespace ErrorCodes
 }
 
 
-ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
+ColumnNullable::ColumnNullable(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
     : nested_column{nested_column_}, null_map{null_map_}
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    if (auto nested_column_materialized = getNestedColumn().convertToFullColumnIfConst())
+    if (ColumnPtr nested_column_materialized = getNestedColumn().convertToFullColumnIfConst())
         nested_column = nested_column_materialized;
 
     if (!getNestedColumn().canBeInsideNullable())
@@ -42,7 +42,7 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 
-ColumnPtr ColumnNullable::cloneResized(size_t new_size) const
+MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
     ColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
     auto new_null_map = ColumnUInt8::create();
@@ -59,7 +59,7 @@ ColumnPtr ColumnNullable::cloneResized(size_t new_size) const
             memset(&new_null_map->getData()[count], 1, new_size - count);
     }
 
-    return ColumnNullable::create(new_nested_col, new_null_map);
+    return ColumnNullable::create(new_nested_col, std::move(new_null_map));
 }
 
 
@@ -437,7 +437,7 @@ ColumnPtr makeNullable(const ColumnPtr & column)
         return column;
 
     if (column->isColumnConst())
-        return ColumnConst::create(makeNullable(static_cast<ColumnConst &>(*column).getDataColumnPtr()), column->size());
+        return ColumnConst::create(makeNullable(static_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
 }

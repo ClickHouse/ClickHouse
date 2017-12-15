@@ -34,7 +34,7 @@ namespace ErrorCodes
 ColumnArray::ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     : data(nested_column), offsets(offsets_column)
 {
-    if (!typeid_cast<ColumnOffsets_t *>(offsets_column.get()))
+    if (!typeid_cast<const ColumnOffsets_t *>(offsets_column.get()))
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
 
     /** NOTE
@@ -43,13 +43,22 @@ ColumnArray::ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offs
       */
 }
 
+ColumnArray::ColumnArray(const ColumnPtr & nested_column)
+    : data(nested_column)
+{
+    if (!data->empty())
+        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::ILLEGAL_COLUMN);
+
+    offsets = ColumnOffsets_t::create();
+}
+
 
 std::string ColumnArray::getName() const { return "Array(" + getData().getName() + ")"; }
 
 
 MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
 {
-    auto res = ColumnArray::create(getData().cloneEmpty(), ColumnOffsets_t::create());
+    auto res = ColumnArray::create(getData().cloneEmpty());
 
     if (to_size == 0)
         return std::move(res);
@@ -141,7 +150,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
 {
     /** Similarly - only for arrays of fixed length values.
       */
-    IColumn * data_ = getData().get();
+    IColumn * data_ = &getData();
     if (!data_->isFixedAndContiguous())
         throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
@@ -312,7 +321,7 @@ MutableColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
     ColumnPtr new_data;
 
-    if (auto full_column = getData().convertToFullColumnIfConst())
+    if (ColumnPtr full_column = getData().convertToFullColumnIfConst())
         new_data = full_column;
     else
         new_data = data;
@@ -361,7 +370,7 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
 
-    data->insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
+    insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
 
     Offsets_t & cur_offsets = getOffsets();
     const Offsets_t & src_offsets = src_concrete.getOffsets();
@@ -404,15 +413,15 @@ template <typename T>
 MutableColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
-        return ColumnArray::create(data, ColumnOffsets_t::create());
+        return ColumnArray::create(data);
 
-    auto res = ColumnArray::create(data->cloneEmpty(), ColumnOffsets_t::create());
+    auto res = ColumnArray::create(data->cloneEmpty());
 
     auto & res_elems = static_cast<ColumnVector<T> &>(res->getData()).getData();
     Offsets_t & res_offsets = res->getOffsets();
 
     filterArraysImpl<T>(static_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
-    return res;
+    return std::move(res);
 }
 
 MutableColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint) const
@@ -422,9 +431,9 @@ MutableColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_s
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (0 == col_size)
-        return ColumnArray::create(data, ColumnOffsets_t::create());
+        return ColumnArray::create(data);
 
-    auto res = ColumnArray::create(data->cloneEmpty(), ColumnOffsets_t::create());
+    auto res = ColumnArray::create(data->cloneEmpty());
 
     const ColumnString & src_string = typeid_cast<const ColumnString &>(*data);
     const ColumnString::Chars_t & src_chars = src_string.getChars();
@@ -480,7 +489,7 @@ MutableColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_s
         }
     }
 
-    return res;
+    return std::move(res);
 }
 
 MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint) const
@@ -490,7 +499,7 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (size == 0)
-        return ColumnArray::create(data, ColumnOffsets_t::create());
+        return ColumnArray::create(data);
 
     Filter nested_filt(getOffsets().back());
     for (size_t i = 0; i < size; ++i)
@@ -501,7 +510,7 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    auto res = ColumnArray::create(data, ColumnOffsets_t::create());
+    auto res = ColumnArray::create(data);
 
     ssize_t nested_result_size_hint = 0;
     if (result_size_hint < 0)
@@ -525,36 +534,36 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
         }
     }
 
-    return res;
+    return std::move(res);
 }
 
 MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
-        return ColumnArray::create(data, ColumnOffsets_t::create());
+        return ColumnArray::create(data);
 
     const ColumnNullable & nullable_elems = static_cast<const ColumnNullable &>(*data);
 
     auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
     auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
-    auto & filtered_array_of_nested = static_cast<ColumnArray &>(*filtered_array_of_nested_owner);
+    auto & filtered_array_of_nested = static_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
     auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
 
     auto res_null_map = ColumnUInt8::create();
-    auto res = ColumnArray::create(
+
+    filterArraysImplOnlyData(nullable_elems.getNullMapData(), getOffsets(), res_null_map->getData(), filt, result_size_hint);
+
+    return ColumnArray::create(
         ColumnNullable::create(
             filtered_array_of_nested.getDataPtr(),
             res_null_map),
         filtered_offsets);
-
-    filterArraysImplOnlyData(nullable_elems.getNullMapData(), getOffsets(), res_null_map->getData(), filt, result_size_hint);
-    return res;
 }
 
 MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
-        return ColumnArray::create(data, ColumnOffsets_t::create());
+        return ColumnArray::create(data);
 
     const ColumnTuple & tuple = static_cast<const ColumnTuple &>(*data);
 
@@ -571,11 +580,11 @@ MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_si
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_columns[i] = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return ColumnArray::create(
         ColumnTuple::create(tuple_columns),
-        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
+        static_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
 
 
@@ -592,11 +601,11 @@ MutableColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) co
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (limit == 0)
-        return ColumnArray::create(data, ColumnOffsets_t::create());
+        return ColumnArray::create(data);
 
     Permutation nested_perm(getOffsets().back());
 
-    auto res = ColumnArray::create(data->cloneEmpty(), ColumnOffsets_t::create());
+    auto res = ColumnArray::create(data->cloneEmpty());
 
     Offsets_t & res_offsets = res->getOffsets();
     res_offsets.resize(limit);
@@ -613,7 +622,7 @@ MutableColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) co
     if (current_offset != 0)
         res->data = data->permute(nested_perm, current_offset);
 
-    return res;
+    return std::move(res);
 }
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
@@ -886,11 +895,11 @@ MutableColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_columns[i] = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return ColumnArray::create(
         ColumnTuple::create(tuple_columns),
-        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
+        static_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
 
 

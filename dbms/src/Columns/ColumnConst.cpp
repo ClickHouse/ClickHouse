@@ -10,7 +10,7 @@
 namespace DB
 {
 
-ColumnConst::ColumnConst(ColumnPtr data_, size_t s)
+ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s)
     : data(data_), s(s)
 {
     /// Squash Const of Const.

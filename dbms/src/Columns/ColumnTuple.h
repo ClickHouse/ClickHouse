@@ -62,6 +62,8 @@ public:
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
 
+    size_t tupleSize() const { return columns.size(); }
+
     const Columns & getColumns() const { return columns; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }

@@ -105,7 +105,7 @@ const char * ColumnVector<T>::getFamilyName() const
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
-    auto res = create();
+    auto res = this->create();
 
     if (size > 0)
     {
@@ -119,7 +119,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
             memset(&new_col.data[count], static_cast<int>(value_type()), size - count);
     }
 
-    return res;
+    return std::move(res);
 }
 
 template <typename T>
@@ -152,7 +152,7 @@ MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t r
     if (size != filt.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    auto res = create();
+    auto res = this->create();
     Container_t & res_data = res->getData();
 
     if (result_size_hint)
@@ -206,7 +206,7 @@ MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t r
         ++data_pos;
     }
 
-    return res;
+    return std::move(res);
 }
 
 template <typename T>
@@ -222,12 +222,12 @@ MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, siz
     if (perm.size() < limit)
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    auto res = create(limit);
+    auto res = this->create(limit);
     typename Self::Container_t & res_data = res->getData();
     for (size_t i = 0; i < limit; ++i)
         res_data[i] = data[perm[i]];
 
-    return res;
+    return std::move(res);
 }
 
 template <typename T>
@@ -238,9 +238,9 @@ MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) 
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (0 == size)
-        return create();
+        return this->create();
 
-    auto res = create();
+    auto res = this->create();
     typename Self::Container_t & res_data = res->getData();
     res_data.reserve(offsets.back());
 
@@ -254,7 +254,7 @@ MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) 
             res_data.push_back(data[i]);
     }
 
-    return res;
+    return std::move(res);
 }
 
 template <typename T>
