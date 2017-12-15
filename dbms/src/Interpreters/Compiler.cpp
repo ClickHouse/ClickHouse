@@ -223,8 +223,8 @@ void Compiler::compile(
             " " INTERNAL_COMPILER_FLAGS
     #if INTERNAL_COMPILER_CUSTOM_ROOT
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
