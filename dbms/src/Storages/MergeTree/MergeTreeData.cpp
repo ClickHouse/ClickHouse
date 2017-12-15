@@ -1955,18 +1955,20 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        ValuesRowInputStream input_stream(buf, context, /* interpret_expressions = */true);
-        Block block;
+        Block header;
         for (size_t i = 0; i < fields_count; ++i)
-            block.insert(ColumnWithTypeAndName(partition_expr_column_types[i], partition_expr_columns[i]));
+            header.insert(ColumnWithTypeAndName(partition_expr_column_types[i], partition_expr_columns[i]));
 
-        if (!input_stream.read(block))
+        ValuesRowInputStream input_stream(buf, header, context, /* interpret_expressions = */true);
+        MutableColumns columns;
+
+        if (!input_stream.read(columns))
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
-            block.getByPosition(i).column->get(0, partition_row[i]);
+            columns[i]->get(0, partition_row[i]);
     }
 
     MergeTreePartition partition(std::move(partition_row));

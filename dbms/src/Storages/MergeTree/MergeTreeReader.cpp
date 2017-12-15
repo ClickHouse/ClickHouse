@@ -86,51 +86,55 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
         {
             /// The column is already present in the block so we will append the values to the end.
             bool append = res.has(it.name);
+            if (!append)
+                res.insert(ColumnWithTypeAndName(it.type->createColumn(), it.type, it.name));
 
-            ColumnWithTypeAndName column;
-            column.name = it.name;
-            column.type = it.type;
-            if (append)
-                column.column = res.getByName(column.name).column;
+            MutableColumnPtr column = res.getByName(it.name).column->mutate();
 
             bool read_offsets = true;
 
             /// For nested data structures collect pointers to offset columns.
-            if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column.type.get()))
+            if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(it.type.get()))
             {
-                String name = DataTypeNested::extractNestedTableName(column.name);
+                String name = DataTypeNested::extractNestedTableName(it.name);
 
-                if (offset_columns.count(name) == 0)
-                    offset_columns[name] = append ? nullptr : std::make_shared<ColumnArray::ColumnOffsets_t>();
+                auto it_inserted = offset_columns.emplace(name, nullptr);
+
+                if (!it_inserted.second)
+                {
+                    /// offsets have already been read on the previous iteration
+                    read_offsets = false;
+                }
                 else
-                    read_offsets = false; /// offsets have already been read on the previous iteration
-
-                if (!append)
-                    column.column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+                {
+                    if (!append)
+                    {
+                        offset_columns[name] = ColumnArray::ColumnOffsets_t::create();
+                        column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+                    }
+                }
             }
-            else if (!append)
-                column.column = column.type->createColumn();
 
             try
             {
-                size_t column_size_before_reading = column.column->size();
+                size_t column_size_before_reading = column->size();
 
-                readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, read_offsets);
+                readData(it.name, *it.type, *column, from_mark, continue_reading, max_rows_to_read, read_offsets);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
-                if (column.column->size())
-                    read_rows = std::max(read_rows, column.column->size() - column_size_before_reading);
+                if (column->size())
+                    read_rows = std::max(read_rows, column->size() - column_size_before_reading);
             }
             catch (Exception & e)
             {
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + column.name + ")");
+                e.addMessage("(while reading column " + it.name + ")");
                 throw;
             }
 
-            if (!append && column.column->size())
-                res.insert(std::move(column));
+            if (column->size())
+                res.getByName(it.name).column = std::move(column);
         }
 
         /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
@@ -475,7 +479,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                     ColumnPtr offsets_column = offset_columns[offsets_name];
                     DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column_to_add.type).getNestedType();
                     size_t nested_rows = offsets_column->empty() ? 0
-                        : typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
+                        : typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
                     ColumnPtr nested_column = nested_type->createColumnConst(
                         nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
