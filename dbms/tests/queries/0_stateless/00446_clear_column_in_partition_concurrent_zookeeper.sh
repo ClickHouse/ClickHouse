@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
-ch="clickhouse-client --stacktrace -q"
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
+ch="$CLICKHOUSE_CLIENT --stacktrace -q"
 
 $ch "DROP TABLE IF EXISTS test.clear_column1"
 $ch "DROP TABLE IF EXISTS test.clear_column2"

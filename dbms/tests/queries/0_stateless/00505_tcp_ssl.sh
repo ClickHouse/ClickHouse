@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Not default server config needed
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
+
+# Not default server config needed
 
 tcp_ssl_port=`${CLICKHOUSE_EXTRACT_CONFIG} -k tcp_ssl_port 2>/dev/null`
 if [ -z ${tcp_ssl_port} ]; then
@@ -12,5 +12,5 @@ if [ -z ${tcp_ssl_port} ]; then
 else
     # Auto port detect
     ${CLICKHOUSE_CLIENT} --ssl -q "SELECT 1";
-    ${CLICKHOUSE_CLIENT} --ssl --port=9440 -q "SELECT 2";
+    ${CLICKHOUSE_CLIENT} --ssl --port=${CLICKHOUSE_PORT_TCP_SSL} -q "SELECT 2";
 fi
