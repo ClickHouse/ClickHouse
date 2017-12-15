@@ -63,7 +63,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
             auto column = attribute.type->createColumn();
             column->insertDefault();
 
-            block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.name});
+            block.insert(ColumnWithTypeAndName{std::move(column), attribute.type, attribute.name});
         }
     }
 
@@ -77,7 +77,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
         auto column = attribute.type->createColumn();
         column->insert(attribute.null_value);
 
-        block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.name});
+        block.insert(ColumnWithTypeAndName{std::move(column), attribute.type, attribute.name});
     }
 
     return block;

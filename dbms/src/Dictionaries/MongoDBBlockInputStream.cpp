@@ -141,14 +141,11 @@ Block MongoDBBlockInputStream::readImpl()
     if (all_read)
         return {};
 
-    Block block = description.sample_block.cloneEmpty();
-
-    /// cache pointers returned by the calls to getByPosition
-    std::vector<IColumn *> columns(block.columns());
+    MutableColumns columns(description.sample_block.columns());
     const size_t size = columns.size();
 
     for (const auto i : ext::range(0, size))
-        columns[i] = block.getByPosition(i).column.get();
+        columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
     while (num_rows < max_block_size)
@@ -181,7 +178,7 @@ Block MongoDBBlockInputStream::readImpl()
     if (num_rows == 0)
         return {};
 
-    return block;
+    return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
 }
