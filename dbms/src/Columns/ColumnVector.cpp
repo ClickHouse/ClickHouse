@@ -70,7 +70,7 @@ struct ColumnVector<T>::greater
 };
 
 template <typename T>
-void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t s = data.size();
     res.resize(s);

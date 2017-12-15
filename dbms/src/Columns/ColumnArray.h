@@ -29,7 +29,7 @@ private:
     /** Create an empty column of arrays with the type of values as in the column `nested_column` */
     ColumnArray(const ColumnPtr & nested_column);
 
-    ColumnArray(const ColumnArray & src) = default;
+    ColumnArray(const ColumnArray &) = default;
 
 public:
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */

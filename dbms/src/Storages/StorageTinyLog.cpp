@@ -195,30 +195,28 @@ Block TinyLogBlockInputStream::readImpl()
     {
         const auto & name = column_names[i];
 
-        ColumnWithTypeAndName column;
-        column.name = name;
-        column.type = column_types[i];
+        MutableColumnPtr column;
 
         bool read_offsets = true;
 
         /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column.type.get()))
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
         {
-            String nested_name = DataTypeNested::extractNestedTableName(column.name);
+            String nested_name = DataTypeNested::extractNestedTableName(name);
 
             if (offset_columns.count(nested_name) == 0)
-                offset_columns[nested_name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
+                offset_columns[nested_name] = ColumnArray::ColumnOffsets_t::create());
             else
                 read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
 
-            column.column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
+            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
         }
         else
-            column.column = column.type->createColumn();
+            column = column_types[i]->createColumn();
 
         try
         {
-            readData(name, *column.type, *column.column, block_size, read_offsets);
+            readData(name, *column_types[i], *column, block_size, read_offsets);
         }
         catch (Exception & e)
         {
@@ -226,8 +224,8 @@ Block TinyLogBlockInputStream::readImpl()
             throw;
         }
 
-        if (column.column->size())
-            res.insert(std::move(column));
+        if (column->size())
+            res.insert(ColumnWithTypeAndName(std::move(column), column_types[i], name));
     }
 
     if (!res || streams.begin()->second->compressed.eof())
