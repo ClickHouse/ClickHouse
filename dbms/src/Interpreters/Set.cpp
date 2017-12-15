@@ -118,7 +118,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
         if (empty())
             data_types.emplace_back(block.safeGetByPosition(i).type);
 
-        if (auto converted = key_columns.back()->convertToFullColumnIfConst())
+        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
         {
             materialized_columns.emplace_back(converted);
             key_columns.back() = materialized_columns.back().get();
@@ -372,7 +372,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
                     + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
                     " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-            if (auto converted = key_columns.back()->convertToFullColumnIfConst())
+            if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
             {
                 materialized_columns.emplace_back(converted);
                 key_columns.back() = materialized_columns.back().get();

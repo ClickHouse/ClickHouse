@@ -443,7 +443,7 @@ bool Join::insertFromBlock(const Block & block)
     {
         key_columns[i] = block.getByName(key_names_right[i]).column.get();
 
-        if (auto converted = key_columns[i]->convertToFullColumnIfConst())
+        if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
             materialized_columns.emplace_back(converted);
             key_columns[i] = materialized_columns.back().get();
@@ -488,7 +488,7 @@ bool Join::insertFromBlock(const Block & block)
     for (size_t i = 0; i < size; ++i)
     {
         ColumnPtr col = stored_block->safeGetByPosition(i).column;
-        if (auto converted = col->convertToFullColumnIfConst())
+        if (ColumnPtr converted = col->convertToFullColumnIfConst())
             stored_block->safeGetByPosition(i).column = converted;
     }
 
@@ -693,7 +693,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     {
         key_columns[i] = block.getByName(key_names_left[i]).column.get();
 
-        if (auto converted = key_columns[i]->convertToFullColumnIfConst())
+        if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
             materialized_columns.emplace_back(converted);
             key_columns[i] = materialized_columns.back().get();
@@ -717,7 +717,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         {
             auto & col = block.getByPosition(i).column;
 
-            if (auto converted = col->convertToFullColumnIfConst())
+            if (ColumnPtr converted = col->convertToFullColumnIfConst())
                 col = converted;
 
             /// If use_nulls, convert left columns (except keys) to Nullable.

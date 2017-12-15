@@ -656,7 +656,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const auto & src = block.getByPosition(arguments[0]).column;
-        if (auto converted = src->convertToFullColumnIfConst())
+        if (ColumnPtr converted = src->convertToFullColumnIfConst())
             block.getByPosition(result).column = converted;
         else
             block.getByPosition(result).column = src;
@@ -804,7 +804,7 @@ public:
             *  convert all to non-constant columns,
             *  because many places in code expect all non-constant columns in non-constant tuple.
             */
-            if (auto converted = tuple_columns[i]->convertToFullColumnIfConst())
+            if (ColumnPtr converted = tuple_columns[i]->convertToFullColumnIfConst())
                 tuple_columns[i] = converted;
         }
         block.getByPosition(result).column = ColumnTuple::create(tuple_columns);

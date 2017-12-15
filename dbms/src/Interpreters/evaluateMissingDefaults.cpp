@@ -52,7 +52,7 @@ void evaluateMissingDefaults(Block & block,
     /// move evaluated columns to the original block, materializing them at the same time
     for (auto & column_name_type : copy_block.getColumns())
     {
-        if (auto converted = column_name_type.column->convertToFullColumnIfConst())
+        if (ColumnPtr converted = column_name_type.column->convertToFullColumnIfConst())
             column_name_type.column = converted;
 
         block.insert(std::move(column_name_type));

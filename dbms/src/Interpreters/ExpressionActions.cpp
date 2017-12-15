@@ -355,7 +355,7 @@ void ExpressionAction::execute(Block & block) const
                 throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 
             ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
-            if (auto converted = any_array_ptr->convertToFullColumnIfConst())
+            if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
                 any_array_ptr = converted;
 
             const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
@@ -377,7 +377,7 @@ void ExpressionAction::execute(Block & block) const
                 }
 
                 any_array_ptr = non_empty_array_columns.begin()->second;
-                if (auto converted = any_array_ptr->convertToFullColumnIfConst())
+                if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
                     any_array_ptr = converted;
 
                 any_array = &typeid_cast<const ColumnArray &>(*any_array_ptr);
@@ -395,7 +395,7 @@ void ExpressionAction::execute(Block & block) const
 
                     ColumnPtr array_ptr = array_join_is_left ? non_empty_array_columns[current.name] : current.column;
 
-                    if (auto converted = array_ptr->convertToFullColumnIfConst())
+                    if (ColumnPtr converted = array_ptr->convertToFullColumnIfConst())
                         array_ptr = converted;
 
                     const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
