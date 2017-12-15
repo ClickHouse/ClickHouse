@@ -36,24 +36,29 @@ Block PartLogElement::createBlock()
 
 void PartLogElement::appendToBlock(Block & block) const
 {
+    MutableColumns columns = block.mutateColumns();
+
     size_t i = 0;
 
-    block.getByPosition(i++).column->insert(UInt64(event_type));
-    block.getByPosition(i++).column->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
-    block.getByPosition(i++).column->insert(UInt64(event_time));
+    columns[i++]->insert(UInt64(event_type));
+    columns[i++]->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
+    columns[i++]->insert(UInt64(event_time));
 
-    block.getByPosition(i++).column->insert(UInt64(size_in_bytes));
-    block.getByPosition(i++).column->insert(UInt64(duration_ms));
+    columns[i++]->insert(UInt64(size_in_bytes));
+    columns[i++]->insert(UInt64(duration_ms));
 
-    block.getByPosition(i++).column->insert(database_name);
-    block.getByPosition(i++).column->insert(table_name);
-    block.getByPosition(i++).column->insert(part_name);
+    columns[i++]->insert(database_name);
+    columns[i++]->insert(table_name);
+    columns[i++]->insert(part_name);
 
     Array merged_from_array;
     merged_from_array.reserve(merged_from.size());
     for (const auto & name : merged_from)
         merged_from_array.push_back(name);
-    block.getByPosition(i++).column->insert(merged_from_array);
+
+    columns[i++]->insert(merged_from_array);
+
+    block.setColumns(std::move(columns));
 }
 
 void PartLog::addNewPart(const MergeTreeDataPart & part, double elapsed)
