@@ -24,7 +24,7 @@ private:
     friend class COWPtrHelper<IColumn, ColumnNullable>;
 
     ColumnNullable(const ColumnPtr & nested_column_, const ColumnPtr & null_map_);
-    ColumnNullable(ColumnNullable &) = default;
+    ColumnNullable(const ColumnNullable &) = default;
 
 public:
     const char * getFamilyName() const override { return "Nullable"; }

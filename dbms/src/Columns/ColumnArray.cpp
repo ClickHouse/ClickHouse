@@ -556,7 +556,7 @@ MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result
     return ColumnArray::create(
         ColumnNullable::create(
             filtered_array_of_nested.getDataPtr(),
-            res_null_map),
+            std::move(res_null_map)),
         filtered_offsets);
 }
 
@@ -830,7 +830,7 @@ MutableColumnPtr ColumnArray::replicateConst(const Offsets_t & replicate_offsets
         prev_data_offset = src_offsets[i];
     }
 
-    return ColumnArray::create(getData().cloneResized(current_new_offset), res_column_offsets);
+    return ColumnArray::create(getData().cloneResized(current_new_offset), std::move(res_column_offsets));
 }
 
 
