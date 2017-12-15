@@ -621,35 +621,35 @@ Columns TrieDictionary::getKeyColumns() const
 #else
     throw Exception("TrieDictionary::getKeyColumns is not implemented for 32bit arch", ErrorCodes::NOT_IMPLEMENTED);
 #endif
-    return {ip_column, mask_column};
+    return {std::move(ip_column), std::move(mask_column)};
 }
 
 BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
+    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
     {
         const auto & attr = attributes.front();
         return ColumnsWithTypeAndName({ColumnWithTypeAndName(columns.front(),
             std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
+    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
     {
         auto column = ColumnString::create();
-        auto ip_column = std::static_pointer_cast<ColumnFixedString>(columns.front());
-        auto mask_column = std::static_pointer_cast<ColumnVector<UInt8>>(columns.back());
+        const auto & ip_column = static_cast<const ColumnFixedString &>(*columns.front());
+        const auto & mask_column = static_cast<const ColumnVector<UInt8> &>(*columns.back());
         char buffer[48];
-        for (size_t row : ext::range(0, ip_column->size()))
+        for (size_t row : ext::range(0, ip_column.size()))
         {
-            UInt8 mask = mask_column->getElement(row);
+            UInt8 mask = mask_column.getElement(row);
             char * ptr = buffer;
-            formatIPv6(reinterpret_cast<const unsigned char *>(ip_column->getDataAt(row).data), ptr);
+            formatIPv6(reinterpret_cast<const unsigned char *>(ip_column.getDataAt(row).data), ptr);
             *(ptr - 1) = '/';
             auto size = detail::writeUIntText(mask, ptr);
             column->insertData(buffer, size + (ptr - buffer));
         }
-        return ColumnsWithTypeAndName{ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), attributes.front().name)};
+        return ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeyColumns(), column_names,
         std::move(getKeys), std::move(getView));
