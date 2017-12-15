@@ -371,7 +371,7 @@ private:
     using Data = std::array<T, Op::data_count>;
 
 public:
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         auto mm_scale = Op::prepare(scale);
 
@@ -413,7 +413,7 @@ private:
 
 public:
     template <size_t scale>
-    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
     {
         const T* end_in = in.data() + in.size();
 
@@ -428,7 +428,7 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
         switch (scale)
@@ -493,7 +493,7 @@ struct Dispatcher
         auto col_res = ColumnVector<T>::create();
         block.getByPosition(result).column = col_res;
 
-        typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
+        typename ColumnVector<T>::Container & vec_res = col_res->getData();
         vec_res.resize(col->getData().size());
 
         if (vec_res.empty())

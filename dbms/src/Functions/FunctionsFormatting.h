@@ -94,9 +94,9 @@ private:
             auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
@@ -172,9 +172,9 @@ private:
             auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);

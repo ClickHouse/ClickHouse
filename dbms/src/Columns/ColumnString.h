@@ -26,7 +26,7 @@ private:
     friend class COWPtrHelper<IColumn, ColumnString>;
 
     /// Maps i'th position to offset to i+1'th element. Last offset maps to the end of all chars (is the size of all chars).
-    Offsets_t offsets;
+    Offsets offsets;
 
     /// Bytes of strings, placed contiguously.
     /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
@@ -239,7 +239,7 @@ public:
     /// Sorting with respect of collation.
     void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
-    MutableColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
+    MutableColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
@@ -259,8 +259,8 @@ public:
     Chars_t & getChars() { return chars; }
     const Chars_t & getChars() const { return chars; }
 
-    Offsets_t & getOffsets() { return offsets; }
-    const Offsets_t & getOffsets() const { return offsets; }
+    Offsets & getOffsets() { return offsets; }
+    const Offsets & getOffsets() const { return offsets; }
 };
 
 

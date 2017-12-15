@@ -93,7 +93,7 @@ struct NotImpl
 };
 
 
-using UInt8Container = ColumnUInt8::Container_t;
+using UInt8Container = ColumnUInt8::Container;
 using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
@@ -200,7 +200,7 @@ private:
         auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
-        const typename ColumnVector<T>::Container_t & vec = col->getData();
+        const typename ColumnVector<T>::Container & vec = col->getData();
         size_t n = res.size();
         for (size_t i = 0; i < n; ++i)
         {
@@ -229,7 +229,7 @@ private:
         auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
-        const typename ColumnVector<T>::Container_t & other_vec = col->getData();
+        const typename ColumnVector<T>::Container & other_vec = col->getData();
         size_t n = res.size();
         for (size_t i = 0; i < n; ++i)
         {
@@ -387,7 +387,7 @@ private:
             auto col_res = ColumnUInt8::create();
             block.getByPosition(result).column = col_res;
 
-            typename ColumnUInt8::Container_t & vec_res = col_res->getData();
+            typename ColumnUInt8::Container & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
             UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
 

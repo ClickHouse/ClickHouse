@@ -109,9 +109,9 @@ template <char not_case_lower_bound,
 struct LowerUpperUTF8Impl
 {
     static void vector(const ColumnString::Chars_t & data,
-        const ColumnString::Offsets_t & offsets,
+        const ColumnString::Offsets & offsets,
         ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets);
+        ColumnString::Offsets & res_offsets);
 
     static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data);
 

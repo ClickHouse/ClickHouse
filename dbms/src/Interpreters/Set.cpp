@@ -297,7 +297,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
     auto res = ColumnUInt8::create();
-    ColumnUInt8::Container_t & vec_res = res->getData();
+    ColumnUInt8::Container & vec_res = res->getData();
     vec_res.resize(block.safeGetByPosition(0).column->size());
 
     std::shared_lock lock(rwlock);
@@ -392,7 +392,7 @@ template <typename Method>
 void NO_INLINE Set::executeImpl(
     Method & method,
     const ColumnRawPtrs & key_columns,
-    ColumnUInt8::Container_t & vec_res,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     size_t rows,
     ConstNullMapPtr null_map) const
@@ -408,7 +408,7 @@ template <typename Method, bool has_null_map>
 void NO_INLINE Set::executeImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
-    ColumnUInt8::Container_t & vec_res,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     size_t rows,
     ConstNullMapPtr null_map) const
@@ -437,8 +437,8 @@ template <typename Method>
 void NO_INLINE Set::executeArrayImpl(
     Method & method,
     const ColumnRawPtrs & key_columns,
-    const ColumnArray::Offsets_t & offsets,
-    ColumnUInt8::Container_t & vec_res,
+    const ColumnArray::Offsets & offsets,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     size_t rows) const
 {
@@ -468,7 +468,7 @@ void NO_INLINE Set::executeArrayImpl(
 
 void Set::executeOrdinary(
     const ColumnRawPtrs & key_columns,
-    ColumnUInt8::Container_t & vec_res,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     ConstNullMapPtr null_map) const
 {
@@ -487,10 +487,10 @@ void Set::executeOrdinary(
     }
 }
 
-void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
+void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container & vec_res, bool negative) const
 {
     size_t rows = key_column->size();
-    const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
+    const ColumnArray::Offsets & offsets = key_column->getOffsets();
     const IColumn & nested_column = key_column->getData();
 
     switch (data.type)

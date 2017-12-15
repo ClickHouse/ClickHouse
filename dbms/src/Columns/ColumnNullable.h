@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using NullMap = ColumnUInt8::Container_t;
+using NullMap = ColumnUInt8::Container;
 using ConstNullMapPtr = const NullMap *;
 
 /// Class that specifies nullable columns. A nullable column represents
@@ -57,7 +57,7 @@ public:
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    MutableColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
+    MutableColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 

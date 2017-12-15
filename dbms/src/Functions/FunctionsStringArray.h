@@ -352,14 +352,14 @@ public:
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnPtr col_res_holder = col_res;
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
-        ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
+        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
         ColumnString::Chars_t & res_strings_chars = res_strings.getChars();
-        ColumnString::Offsets_t & res_strings_offsets = res_strings.getOffsets();
+        ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
         if (col_str)
         {
             const ColumnString::Chars_t & src_chars = col_str->getChars();
-            const ColumnString::Offsets_t & src_offsets = col_str->getOffsets();
+            const ColumnString::Offsets & src_offsets = col_str->getOffsets();
 
             res_offsets.reserve(src_offsets.size());
             res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
@@ -369,9 +369,9 @@ public:
             Pos token_end = nullptr;
 
             size_t size = src_offsets.size();
-            ColumnString::Offset_t current_src_offset = 0;
-            ColumnArray::Offset_t current_dst_offset = 0;
-            ColumnString::Offset_t current_dst_strings_offset = 0;
+            ColumnString::Offset current_src_offset = 0;
+            ColumnArray::Offset current_dst_offset = 0;
+            ColumnString::Offset current_dst_strings_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
@@ -429,11 +429,11 @@ class FunctionArrayStringConcat : public IFunction
 private:
     void executeInternal(
         const ColumnString::Chars_t & src_chars,
-        const ColumnString::Offsets_t & src_string_offsets,
-        const ColumnArray::Offsets_t & src_array_offsets,
+        const ColumnString::Offsets & src_string_offsets,
+        const ColumnArray::Offsets & src_array_offsets,
         const char * delimiter, const size_t delimiter_size,
         ColumnString::Chars_t & dst_chars,
-        ColumnString::Offsets_t & dst_string_offsets)
+        ColumnString::Offsets & dst_string_offsets)
     {
         size_t size = src_array_offsets.size();
 
@@ -450,10 +450,10 @@ private:
         /// There will be as many strings as there were arrays.
         dst_string_offsets.resize(src_array_offsets.size());
 
-        ColumnArray::Offset_t current_src_array_offset = 0;
-        ColumnString::Offset_t current_src_string_offset = 0;
+        ColumnArray::Offset current_src_array_offset = 0;
+        ColumnString::Offset current_src_string_offset = 0;
 
-        ColumnString::Offset_t current_dst_string_offset = 0;
+        ColumnString::Offset current_dst_string_offset = 0;
 
         /// Loop through the array of strings.
         for (size_t i = 0; i < size; ++i)

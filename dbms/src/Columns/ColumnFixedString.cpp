@@ -258,7 +258,7 @@ MutableColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t lim
     return std::move(res);
 }
 
-MutableColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
+MutableColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 {
     size_t col_size = size();
     if (col_size != offsets.size())
@@ -272,7 +272,7 @@ MutableColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
     Chars_t & res_chars = res->chars;
     res_chars.resize(n * offsets.back());
 
-    Offset_t curr_offset = 0;
+    Offset curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
         for (size_t next_offset = offsets[i]; curr_offset < next_offset; ++curr_offset)
             memcpySmallAllowReadWriteOverflow15(&res->chars[curr_offset * n], &chars[i * n], n);

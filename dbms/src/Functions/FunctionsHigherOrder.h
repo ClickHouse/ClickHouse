@@ -84,16 +84,16 @@ struct ArrayFilterImpl
             else
                 return ColumnArray::create(
                     array.getDataPtr()->cloneEmpty(),
-                    std::make_shared<ColumnArray::ColumnOffsets_t>(array.size(), 0));
+                    std::make_shared<ColumnArray::ColumnOffsets>(array.size(), 0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
         ColumnPtr filtered = array.getData().filter(filter, -1);
 
-        const IColumn::Offsets_t & in_offsets = array.getOffsets();
-        auto column_offsets = std::make_shared<ColumnArray::ColumnOffsets_t>(in_offsets.size());
+        const IColumn::Offsets & in_offsets = array.getOffsets();
+        auto column_offsets = std::make_shared<ColumnArray::ColumnOffsets>(in_offsets.size());
         ColumnPtr column_offsets_ptr = column_offsets;
-        IColumn::Offsets_t & out_offsets = column_offsets->getData();
+        IColumn::Offsets & out_offsets = column_offsets->getData();
 
         size_t in_pos = 0;
         size_t out_pos = 0;
@@ -135,9 +135,9 @@ struct ArrayCountImpl
 
             if (column_filter_const->getValue<UInt8>())
             {
-                const IColumn::Offsets_t & offsets = array.getOffsets();
+                const IColumn::Offsets & offsets = array.getOffsets();
                 auto out_column = ColumnUInt32::create(offsets.size());
-                ColumnUInt32::Container_t & out_counts = out_column->getData();
+                ColumnUInt32::Container & out_counts = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -153,9 +153,9 @@ struct ArrayCountImpl
         }
 
         const IColumn::Filter & filter = column_filter->getData();
-        const IColumn::Offsets_t & offsets = array.getOffsets();
+        const IColumn::Offsets & offsets = array.getOffsets();
         auto out_column = ColumnUInt32::create(offsets.size());
-        ColumnUInt32::Container_t & out_counts = out_column->getData();
+        ColumnUInt32::Container & out_counts = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -197,9 +197,9 @@ struct ArrayExistsImpl
 
             if (column_filter_const->getValue<UInt8>())
             {
-                const IColumn::Offsets_t & offsets = array.getOffsets();
+                const IColumn::Offsets & offsets = array.getOffsets();
                 auto out_column = ColumnUInt8::create(offsets.size());
-                ColumnUInt8::Container_t & out_exists = out_column->getData();
+                ColumnUInt8::Container & out_exists = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -215,9 +215,9 @@ struct ArrayExistsImpl
         }
 
         const IColumn::Filter & filter = column_filter->getData();
-        const IColumn::Offsets_t & offsets = array.getOffsets();
+        const IColumn::Offsets & offsets = array.getOffsets();
         auto out_column = ColumnUInt8::create(offsets.size());
-        ColumnUInt8::Container_t & out_exists = out_column->getData();
+        ColumnUInt8::Container & out_exists = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -265,9 +265,9 @@ struct ArrayAllImpl
                 return DataTypeUInt8().createColumnConst(array.size(), UInt64(1));
             else
             {
-                const IColumn::Offsets_t & offsets = array.getOffsets();
+                const IColumn::Offsets & offsets = array.getOffsets();
                 auto out_column = ColumnUInt8::create(offsets.size());
-                ColumnUInt8::Container_t & out_all = out_column->getData();
+                ColumnUInt8::Container & out_all = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -281,9 +281,9 @@ struct ArrayAllImpl
         }
 
         const IColumn::Filter & filter = column_filter->getData();
-        const IColumn::Offsets_t & offsets = array.getOffsets();
+        const IColumn::Offsets & offsets = array.getOffsets();
         auto out_column = ColumnUInt8::create(offsets.size());
-        ColumnUInt8::Container_t & out_all = out_column->getData();
+        ColumnUInt8::Container & out_all = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -333,7 +333,7 @@ struct ArraySumImpl
     }
 
     template <typename Element, typename Result>
-    static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets_t & offsets, ColumnPtr & res_ptr)
+    static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
         const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
 
@@ -348,7 +348,7 @@ struct ArraySumImpl
 
             auto res_column = ColumnVector<Result>::create(offsets.size());
             res_ptr = res_column;
-            typename ColumnVector<Result>::Container_t & res = res_column->getData();
+            typename ColumnVector<Result>::Container & res = res_column->getData();
 
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
@@ -360,10 +360,10 @@ struct ArraySumImpl
             return true;
         }
 
-        const typename ColumnVector<Element>::Container_t & data = column->getData();
+        const typename ColumnVector<Element>::Container & data = column->getData();
         auto res_column = ColumnVector<Result>::create(offsets.size());
         res_ptr = res_column;
-        typename ColumnVector<Result>::Container_t & res = res_column->getData();
+        typename ColumnVector<Result>::Container & res = res_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -381,7 +381,7 @@ struct ArraySumImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        const IColumn::Offsets_t & offsets = array.getOffsets();
+        const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
         if (executeType< UInt8 , UInt64>(mapped, offsets, res) ||
@@ -445,7 +445,7 @@ struct ArrayFirstImpl
             {
                 ColumnPtr out{array.getData().cloneEmpty()};
                 out->insertDefault();
-                return out->replicate(IColumn::Offsets_t(1, array.size()));
+                return out->replicate(IColumn::Offsets(1, array.size()));
             }
         }
 
@@ -576,7 +576,7 @@ struct ArraySortImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        const ColumnArray::Offsets_t & offsets = array.getOffsets();
+        const ColumnArray::Offsets & offsets = array.getOffsets();
 
         size_t size = offsets.size();
         size_t nested_size = array.getData().size();
@@ -585,7 +585,7 @@ struct ArraySortImpl
         for (size_t i = 0; i < nested_size; ++i)
             permutation[i] = i;
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
@@ -838,7 +838,7 @@ public:
                 {
                     /// The first condition is optimization: do not compare data if the pointers are equal.
                     if (column_array->getOffsetsPtr() != offsets_column
-                        && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets_t &>(*offsets_column).getData())
+                        && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
 

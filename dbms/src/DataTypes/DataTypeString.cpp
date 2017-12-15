@@ -53,7 +53,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) cons
 {
     ColumnString & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars_t & data = column_string.getChars();
-    ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    ColumnString::Offsets & offsets = column_string.getOffsets();
 
     UInt64 size;
     readVarUInt(size, istr);
@@ -81,7 +81,7 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
 {
     const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
     const ColumnString::Chars_t & data = column_string.getChars();
-    const ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    const ColumnString::Offsets & offsets = column_string.getOffsets();
 
     size_t size = column.size();
     if (!size)
@@ -110,7 +110,7 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
 
 
 template <int UNROLL_TIMES>
-static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, ColumnString::Offsets_t & offsets, ReadBuffer & istr, size_t limit)
+static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
     size_t offset = data.size();
     for (size_t i = 0; i < limit; ++i)
@@ -174,7 +174,7 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
 {
     ColumnString & column_string = typeid_cast<ColumnString &>(column);
     ColumnString::Chars_t & data = column_string.getChars();
-    ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    ColumnString::Offsets & offsets = column_string.getOffsets();
 
     double avg_chars_size;
 
@@ -223,7 +223,7 @@ static inline void read(IColumn & column, Reader && reader)
 {
     ColumnString & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars_t & data = column_string.getChars();
-    ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    ColumnString::Offsets & offsets = column_string.getOffsets();
 
     size_t old_chars_size = data.size();
     size_t old_offsets_size = offsets.size();

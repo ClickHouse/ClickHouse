@@ -58,9 +58,9 @@ public:
             auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * (sizeof(T) + 1));
             offsets_to.resize(size);
@@ -145,9 +145,9 @@ public:
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & data_from = col_from->getChars();
-            ColumnString::Offsets_t & offsets_from = col_from->getOffsets();
+            ColumnString::Offsets & offsets_from = col_from->getOffsets();
             size_t size = offsets_from.size();
-            typename ColumnVector<ToFieldType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();
             vec_res.resize(size);
 
             size_t offset = 0;
@@ -167,7 +167,7 @@ public:
             ColumnString::Chars_t & data_from = col_from->getChars();
             size_t step = col_from->getN();
             size_t size = data_from.size() / step;
-            typename ColumnVector<ToFieldType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();
             vec_res.resize(size);
 
             size_t offset = 0;

@@ -200,9 +200,9 @@ public:
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
       * It is necessary in ARRAY JOIN operation.
       */
-    using Offset_t = UInt64;
-    using Offsets_t = PaddedPODArray<Offset_t>;
-    virtual MutablePtr replicate(const Offsets_t & offsets) const = 0;
+    using Offset = UInt64;
+    using Offsets = PaddedPODArray<Offset>;
+    virtual MutablePtr replicate(const Offsets & offsets) const = 0;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
       * Selector must contain values from 0 to num_columns - 1.

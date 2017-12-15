@@ -162,7 +162,7 @@ MutableColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) co
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumnPtr ColumnTuple::replicate(const Offsets_t & offsets) const
+MutableColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);

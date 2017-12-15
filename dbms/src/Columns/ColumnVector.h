@@ -132,13 +132,16 @@ private:
 
 public:
     using value_type = T;
-    using Container_t = PaddedPODArray<value_type>;
+    using Container = PaddedPODArray<value_type>;
 
 private:
     ColumnVector() {}
-    ColumnVector(const size_t n) : data{n} {}
-    ColumnVector(const size_t n, const value_type x) : data{n, x} {}
+    ColumnVector(const size_t n) : data(n) {}
+    ColumnVector(const size_t n, const value_type x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {};
+
+    /// Sugar constructor.
+    ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
     bool isNumeric() const override { return IsNumber<T>; }
@@ -244,7 +247,7 @@ public:
 
     MutableColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
-    MutableColumnPtr replicate(const IColumn::Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
     void getExtremes(Field & min, Field & max) const override;
 
@@ -263,12 +266,12 @@ public:
 
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
-    Container_t & getData()
+    Container & getData()
     {
         return data;
     }
 
-    const Container_t & getData() const
+    const Container & getData() const
     {
         return data;
     }
@@ -284,7 +287,7 @@ public:
     }
 
 protected:
-    Container_t data;
+    Container data;
 };
 
 

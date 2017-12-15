@@ -13,7 +13,7 @@ int main(int, char **)
     using namespace DB;
 
     auto column = ColumnUInt64::create();
-    ColumnUInt64::Container_t & vec = column->getData();
+    ColumnUInt64::Container & vec = column->getData();
     DataTypeUInt64 data_type;
 
     Stopwatch stopwatch;

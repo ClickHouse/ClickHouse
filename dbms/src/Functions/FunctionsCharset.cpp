@@ -84,14 +84,14 @@ private:
     }
 
     void convert(const String & from_charset, const String & to_charset,
-        const ColumnString::Chars_t & from_chars, const ColumnString::Offsets_t & from_offsets,
-        ColumnString::Chars_t & to_chars, ColumnString::Offsets_t & to_offsets)
+        const ColumnString::Chars_t & from_chars, const ColumnString::Offsets & from_offsets,
+        ColumnString::Chars_t & to_chars, ColumnString::Offsets & to_offsets)
     {
         auto converter_from = getConverter(from_charset);
         auto converter_to = getConverter(to_charset);
 
-        ColumnString::Offset_t current_from_offset = 0;
-        ColumnString::Offset_t current_to_offset = 0;
+        ColumnString::Offset current_from_offset = 0;
+        ColumnString::Offset current_to_offset = 0;
 
         size_t size = from_offsets.size();
         to_offsets.resize(size);

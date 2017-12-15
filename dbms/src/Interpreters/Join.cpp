@@ -553,7 +553,7 @@ namespace
     struct Adder<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
+            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
             size_t num_columns_to_skip)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
@@ -561,7 +561,7 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
+            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
                 added_columns[j]->insertDefault();
@@ -572,7 +572,7 @@ namespace
     struct Adder<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
+            size_t i, IColumn::Filter * filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
             size_t num_columns_to_skip)
         {
             (*filter)[i] = 1;
@@ -582,7 +582,7 @@ namespace
         }
 
         static void addNotFound(size_t /*num_columns_to_add*/, MutableColumns & /*added_columns*/,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
+            size_t i, IColumn::Filter * filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
         {
             (*filter)[i] = 0;
         }
@@ -592,7 +592,7 @@ namespace
     struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
             size_t num_columns_to_skip)
         {
             size_t rows_joined = 0;
@@ -609,7 +609,7 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset & current_offset, IColumn::Offsets * offsets)
         {
             if (KIND == ASTTableJoin::Kind::Inner)
             {
@@ -631,7 +631,7 @@ namespace
         const Map & map, size_t rows, const ColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
         size_t num_columns_to_add, size_t num_columns_to_skip, MutableColumns & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
-        IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
+        IColumn::Offset & current_offset, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
     {
         KeyGetter key_getter(key_columns);
 
@@ -665,7 +665,7 @@ namespace
         const Map & map, size_t rows, const ColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
         size_t num_columns_to_add, size_t num_columns_to_skip, MutableColumns & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
-        IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
+        IColumn::Offset & current_offset, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
     {
         if (null_map)
             joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, true>(
@@ -749,11 +749,11 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         filter = std::make_unique<IColumn::Filter>(rows);
 
     /// Used with ALL ... JOIN
-    IColumn::Offset_t current_offset = 0;
-    std::unique_ptr<IColumn::Offsets_t> offsets_to_replicate;
+    IColumn::Offset current_offset = 0;
+    std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
     if (strictness == ASTTableJoin::Strictness::All)
-        offsets_to_replicate = std::make_unique<IColumn::Offsets_t>(rows);
+        offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;

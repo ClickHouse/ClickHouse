@@ -155,7 +155,7 @@ public:
         auto col_to = ColumnVector<ToType>::create();
         block.getByPosition(result).column = col_to;
 
-        typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
+        typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
         size_t size = block.rows();
         vec_to.resize(size);
@@ -201,7 +201,7 @@ public:
         if (!is_initialized)
         {
             is_initialized = true;
-            typename ColumnVector<ToType>::Container_t vec_to(1);
+            typename ColumnVector<ToType>::Container vec_to(1);
             Impl::execute(&vec_to[0], vec_to.size());
             value = vec_to[0];
         }

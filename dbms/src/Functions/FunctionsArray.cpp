@@ -86,12 +86,12 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 
     auto out = ColumnArray::create(elem_type->createColumn());
     IColumn & out_data = out->getData();
-    IColumn::Offsets_t & out_offsets = out->getOffsets();
+    IColumn::Offsets & out_offsets = out->getOffsets();
 
     out_data.reserve(block_size * num_elements);
     out_offsets.resize(block_size);
 
-    IColumn::Offset_t current_offset = 0;
+    IColumn::Offset current_offset = 0;
     for (size_t i = 0; i < block_size; ++i)
     {
         for (size_t j = 0; j < num_elements; ++j)
@@ -163,14 +163,14 @@ struct ArrayElementNumImpl
       */
     template <bool negative>
     static void vectorConst(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
-        const ColumnArray::Offset_t index,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
+        const ColumnArray::Offset index,
         PaddedPODArray<T> & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -198,14 +198,14 @@ struct ArrayElementNumImpl
       */
     template <typename TIndex>
     static void vector(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
         const PaddedPODArray<TIndex> & indices,
         PaddedPODArray<T> & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -244,17 +244,17 @@ struct ArrayElementStringImpl
 {
     template <bool negative>
     static void vectorConst(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
-        const ColumnArray::Offset_t index,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets,
+        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnArray::Offset index,
+        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
         result_data.reserve(data.size());
 
-        ColumnArray::Offset_t current_offset = 0;
-        ColumnArray::Offset_t current_result_offset = 0;
+        ColumnArray::Offset current_offset = 0;
+        ColumnArray::Offset current_result_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -267,11 +267,11 @@ struct ArrayElementStringImpl
                 if (builder)
                     builder.update(j);
 
-                ColumnArray::Offset_t string_pos = current_offset == 0 && adjusted_index == 0
+                ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
                     : string_offsets[current_offset + adjusted_index - 1];
 
-                ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
+                ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
                 result_data.resize(current_result_offset + string_size);
                 memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
@@ -298,17 +298,17 @@ struct ArrayElementStringImpl
       */
     template <typename TIndex>
     static void vector(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const PaddedPODArray<TIndex> & indices,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets,
+        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
         result_data.reserve(data.size());
 
-        ColumnArray::Offset_t current_offset = 0;
-        ColumnArray::Offset_t current_result_offset = 0;
+        ColumnArray::Offset current_offset = 0;
+        ColumnArray::Offset current_result_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -328,11 +328,11 @@ struct ArrayElementStringImpl
                 if (builder)
                     builder.update(j);
 
-                ColumnArray::Offset_t string_pos = current_offset == 0 && adjusted_index == 0
+                ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
                     : string_offsets[current_offset + adjusted_index - 1];
 
-                ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
+                ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
                 result_data.resize(current_result_offset + string_size);
                 memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
@@ -361,14 +361,14 @@ struct ArrayElementGenericImpl
 {
     template <bool negative>
     static void vectorConst(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
-        const ColumnArray::Offset_t index,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
+        const ColumnArray::Offset index,
         IColumn & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -395,14 +395,14 @@ struct ArrayElementGenericImpl
       */
     template <typename TIndex>
     static void vector(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
         const PaddedPODArray<TIndex> & indices,
         IColumn & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -921,13 +921,13 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
 {
     if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
     {
-        const ColumnArray::Offsets_t & offsets = array->getOffsets();
+        const ColumnArray::Offsets & offsets = array->getOffsets();
 
         auto res_nested = ColumnUInt32::create();
         auto res_array = ColumnArray::create(res_nested, array->getOffsetsPtr());
         block.getByPosition(result).column = res_array;
 
-        ColumnUInt32::Container_t & res_values = res_nested->getData();
+        ColumnUInt32::Container & res_values = res_nested->getData();
         res_values.resize(array->getData().size());
         size_t prev_off = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -978,7 +978,7 @@ DataTypePtr FunctionArrayUniq::getReturnTypeImpl(const DataTypes & arguments) co
 void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     Columns array_columns(arguments.size());
-    const ColumnArray::Offsets_t * offsets = nullptr;
+    const ColumnArray::Offsets * offsets = nullptr;
     ColumnRawPtrs data_columns(arguments.size());
     ColumnRawPtrs original_data_columns(arguments.size());
     ColumnRawPtrs null_maps(arguments.size());
@@ -1003,7 +1003,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
         array_columns[i] = array_ptr;
 
-        const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
+        const ColumnArray::Offsets & offsets_i = array->getOffsets();
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
@@ -1029,7 +1029,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
     auto res = ColumnUInt32::create();
     block.getByPosition(result).column = res;
 
-    ColumnUInt32::Container_t & res_values = res->getData();
+    ColumnUInt32::Container & res_values = res->getData();
     res_values.resize(offsets->size());
 
     if (arguments.size() == 1)
@@ -1057,7 +1057,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 }
 
 template <typename T>
-bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1073,8 +1073,8 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     const ColumnVector<T> * nested = checkAndGetColumn<ColumnVector<T>>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
-    const typename ColumnVector<T>::Container_t & values = nested->getData();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
+    const typename ColumnVector<T>::Container & values = nested->getData();
 
     using Set = ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
@@ -1104,7 +1104,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     return true;
 }
 
-bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1120,7 +1120,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
     const ColumnString * nested = checkAndGetColumn<ColumnString>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
 
     using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
@@ -1152,10 +1152,10 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
 
 
 bool FunctionArrayUniq::execute128bit(
-    const ColumnArray::Offsets_t & offsets,
+    const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
     const ColumnRawPtrs & null_maps,
-    ColumnUInt32::Container_t & res_values,
+    ColumnUInt32::Container & res_values,
     bool has_nullable_columns)
 {
     size_t count = columns.size();
@@ -1230,9 +1230,9 @@ bool FunctionArrayUniq::execute128bit(
 }
 
 void FunctionArrayUniq::executeHashed(
-    const ColumnArray::Offsets_t & offsets,
+    const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
-    ColumnUInt32::Container_t & res_values)
+    ColumnUInt32::Container & res_values)
 {
     size_t count = columns.size();
 
@@ -1286,7 +1286,7 @@ DataTypePtr FunctionArrayEnumerateUniq::getReturnTypeImpl(const DataTypes & argu
 void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     Columns array_columns(arguments.size());
-    const ColumnArray::Offsets_t * offsets = nullptr;
+    const ColumnArray::Offsets * offsets = nullptr;
     ColumnRawPtrs data_columns(arguments.size());
     ColumnRawPtrs original_data_columns(arguments.size());
     ColumnRawPtrs null_maps(arguments.size());
@@ -1309,7 +1309,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
             array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         }
         array_columns[i] = array_ptr;
-        const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
+        const ColumnArray::Offsets & offsets_i = array->getOffsets();
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
@@ -1336,7 +1336,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
     auto res_array = ColumnArray::create(res_nested, first_array->getOffsetsPtr());
     block.getByPosition(result).column = res_array;
 
-    ColumnUInt32::Container_t & res_values = res_nested->getData();
+    ColumnUInt32::Container & res_values = res_nested->getData();
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
@@ -1366,7 +1366,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 
 
 template <typename T>
-bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1382,8 +1382,8 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     const ColumnVector<T> * nested = checkAndGetColumn<ColumnVector<T>>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
-    const typename ColumnVector<T>::Container_t & values = nested->getData();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
+    const typename ColumnVector<T>::Container & values = nested->getData();
 
     using ValuesToIndices = ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
@@ -1411,7 +1411,7 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     return true;
 }
 
-bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1427,7 +1427,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
     const ColumnString * nested = checkAndGetColumn<ColumnString>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
 
     size_t prev_off = 0;
     using ValuesToIndices = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
@@ -1456,10 +1456,10 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
 }
 
 bool FunctionArrayEnumerateUniq::execute128bit(
-    const ColumnArray::Offsets_t & offsets,
+    const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
     const ColumnRawPtrs & null_maps,
-    ColumnUInt32::Container_t & res_values,
+    ColumnUInt32::Container & res_values,
     bool has_nullable_columns)
 {
     size_t count = columns.size();
@@ -1519,9 +1519,9 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 }
 
 void FunctionArrayEnumerateUniq::executeHashed(
-    const ColumnArray::Offsets_t & offsets,
+    const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
-    ColumnUInt32::Container_t & res_values)
+    ColumnUInt32::Container & res_values)
 {
     size_t count = columns.size();
 
@@ -1589,8 +1589,8 @@ namespace
 
         template <typename T, bool nullable>
         bool executeNumber(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1606,8 +1606,8 @@ namespace
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
 
-                ColumnArray::Offset_t src_prev_offset = 0;
-                ColumnArray::Offset_t res_prev_offset = 0;
+                ColumnArray::Offset src_prev_offset = 0;
+                ColumnArray::Offset res_prev_offset = 0;
 
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1648,8 +1648,8 @@ namespace
 
         template <bool nullable>
         bool executeFixedString(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1670,8 +1670,8 @@ namespace
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
 
-                ColumnArray::Offset_t src_prev_offset = 0;
-                ColumnArray::Offset_t res_prev_offset = 0;
+                ColumnArray::Offset src_prev_offset = 0;
+                ColumnArray::Offset res_prev_offset = 0;
 
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1715,19 +1715,19 @@ namespace
 
         template <bool nullable>
         bool executeString(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_array_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
             if (const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data))
             {
-                const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
+                const ColumnString::Offsets & src_string_offsets = src_data_concrete->getOffsets();
 
                 auto concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_string_offsets)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-                ColumnString::Offsets_t & res_string_offsets = concrete_res_string_offsets->getOffsets();
+                ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
                 const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
 
@@ -1744,11 +1744,11 @@ namespace
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
 
-                ColumnArray::Offset_t src_array_prev_offset = 0;
-                ColumnArray::Offset_t res_array_prev_offset = 0;
+                ColumnArray::Offset src_array_prev_offset = 0;
+                ColumnArray::Offset res_array_prev_offset = 0;
 
-                ColumnString::Offset_t src_string_prev_offset = 0;
-                ColumnString::Offset_t res_string_prev_offset = 0;
+                ColumnString::Offset src_string_prev_offset = 0;
+                ColumnString::Offset res_string_prev_offset = 0;
 
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1811,8 +1811,8 @@ namespace
 
         template <bool nullable>
         void executeGeneric(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-            IColumn & res_data, ColumnArray::Offsets_t & res_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
+            IColumn & res_data, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1823,8 +1823,8 @@ namespace
             if (nullable)
                 res_null_map->reserve(src_null_map->size());
 
-            ColumnArray::Offset_t src_prev_offset = 0;
-            ColumnArray::Offset_t res_prev_offset = 0;
+            ColumnArray::Offset src_prev_offset = 0;
+            ColumnArray::Offset res_prev_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -1859,8 +1859,8 @@ namespace
 
         template <bool nullable>
         void executeDispatch(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_array_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1896,9 +1896,9 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets_t & src_offsets = array->getOffsets();
+    const ColumnArray::Offsets & src_offsets = array->getOffsets();
     IColumn & res_data = res.getData();
-    ColumnArray::Offsets_t & res_offsets = res.getOffsets();
+    ColumnArray::Offsets & res_offsets = res.getOffsets();
 
     const NullMap * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
@@ -1978,13 +1978,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
         const auto data_col = ColumnVector<T>::create(total_values);
         const auto out = ColumnArray::create(
             data_col,
-            std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
+            std::make_shared<ColumnArray::ColumnOffsets>(in->size()));
         block.getByPosition(result).column = out;
 
         auto & out_data = data_col->getData();
         auto & out_offsets = out->getOffsets();
 
-        IColumn::Offset_t offset{};
+        IColumn::Offset offset{};
         for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
         {
             for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
@@ -2014,13 +2014,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
         const auto data_col = ColumnVector<T>::create(total_values);
         const auto out = ColumnArray::create(
             data_col,
-            std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
+            std::make_shared<ColumnArray::ColumnOffsets>(in->size()));
         block.getByPosition(result).column = out;
 
         auto & out_data = data_col->getData();
         auto & out_offsets = out->getOffsets();
 
-        IColumn::Offset_t offset{};
+        IColumn::Offset offset{};
         for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
         {
             for (size_t elem_idx = 0, elems = in_data; elem_idx < elems; ++elem_idx)
@@ -2088,7 +2088,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
     ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
     IColumn & res_data = res.getData();
     res.getOffsetsPtr() = array->getOffsetsPtr();
 
@@ -2151,7 +2151,7 @@ bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arg
 
 template <typename T>
 bool FunctionArrayReverse::executeNumber(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+    const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
@@ -2159,7 +2159,7 @@ bool FunctionArrayReverse::executeNumber(
     auto do_reverse = [](const auto & src_data, const auto & src_offsets, auto & res_data)
     {
         size_t size = src_offsets.size();
-        ColumnArray::Offset_t src_prev_offset = 0;
+        ColumnArray::Offset src_prev_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -2205,7 +2205,7 @@ bool FunctionArrayReverse::executeNumber(
 }
 
 bool FunctionArrayReverse::executeFixedString(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+    const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
@@ -2218,7 +2218,7 @@ bool FunctionArrayReverse::executeFixedString(
         size_t size = src_offsets.size();
         res_data.resize(src_data.size());
 
-        ColumnArray::Offset_t src_prev_offset = 0;
+        ColumnArray::Offset src_prev_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -2248,7 +2248,7 @@ bool FunctionArrayReverse::executeFixedString(
             auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
             res_null_map.resize(src_null_map.size());
 
-            ColumnArray::Offset_t src_prev_offset = 0;
+            ColumnArray::Offset src_prev_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -2278,15 +2278,15 @@ bool FunctionArrayReverse::executeFixedString(
 }
 
 bool FunctionArrayReverse::executeString(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
+    const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
     IColumn & res_data_col,
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
 {
     if (const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data))
     {
-        const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
-        ColumnString::Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
+        const ColumnString::Offsets & src_string_offsets = src_data_concrete->getOffsets();
+        ColumnString::Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
 
         const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
         ColumnString::Chars_t & res_data = typeid_cast<ColumnString &>(res_data_col).getChars();
@@ -2295,8 +2295,8 @@ bool FunctionArrayReverse::executeString(
         res_string_offsets.resize(src_string_offsets.size());
         res_data.resize(src_data.size());
 
-        ColumnArray::Offset_t src_array_prev_offset = 0;
-        ColumnString::Offset_t res_string_prev_offset = 0;
+        ColumnArray::Offset src_array_prev_offset = 0;
+        ColumnString::Offset res_string_prev_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -2329,7 +2329,7 @@ bool FunctionArrayReverse::executeString(
             res_null_map.resize(src_string_offsets.size());
 
             size_t size = src_string_offsets.size();
-            ColumnArray::Offset_t src_prev_offset = 0;
+            ColumnArray::Offset src_prev_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -2459,7 +2459,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
 
-    const ColumnArray::Offsets_t & offsets = typeid_cast<const ColumnArray &>(!materialized_columns.empty()
+    const ColumnArray::Offsets & offsets = typeid_cast<const ColumnArray &>(!materialized_columns.empty()
         ? *materialized_columns.front().get()
         : *block.getByPosition(arguments[1]).column.get()).getOffsets();
 
@@ -2474,11 +2474,11 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
                         + block.getByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-    ColumnArray::Offset_t current_offset = 0;
+    ColumnArray::Offset current_offset = 0;
     for (size_t i = 0; i < rows; ++i)
     {
         agg_func.create(place);
-        ColumnArray::Offset_t next_offset = offsets[i];
+        ColumnArray::Offset next_offset = offsets[i];
 
         try
         {
@@ -2772,7 +2772,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
         appended_column = const_appended_column->getDataColumnPtr();
     }
 
-    auto offsets = std::make_shared<ColumnArray::ColumnOffsets_t>(appended_column->size());
+    auto offsets = std::make_shared<ColumnArray::ColumnOffsets>(appended_column->size());
     for (size_t i : ext::range(0, offsets->size()))
         offsets->getElement(i) = i + 1;
 

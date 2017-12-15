@@ -56,7 +56,7 @@ void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 void DataTypeArray::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
@@ -73,7 +73,7 @@ void DataTypeArray::serializeBinary(const IColumn & column, size_t row_num, Writ
 void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     ColumnArray & column_array = static_cast<ColumnArray &>(column);
-    ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+    ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t size;
     readVarUInt(size, istr);
@@ -102,7 +102,7 @@ namespace
     void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit)
     {
         const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
-        const ColumnArray::Offsets_t & offset_values = column_array.getOffsets();
+        const ColumnArray::Offsets & offset_values = column_array.getOffsets();
         size_t size = offset_values.size();
 
         if (!size)
@@ -112,10 +112,10 @@ namespace
             ? offset + limit
             : size;
 
-        ColumnArray::Offset_t prev_offset = offset == 0 ? 0 : offset_values[offset - 1];
+        ColumnArray::Offset prev_offset = offset == 0 ? 0 : offset_values[offset - 1];
         for (size_t i = offset; i < end; ++i)
         {
-            ColumnArray::Offset_t current_offset = offset_values[i];
+            ColumnArray::Offset current_offset = offset_values[i];
             writeIntBinary(current_offset - prev_offset, ostr);
             prev_offset = current_offset;
         }
@@ -124,15 +124,15 @@ namespace
     void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, size_t limit)
     {
         ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
-        ColumnArray::Offsets_t & offset_values = column_array.getOffsets();
+        ColumnArray::Offsets & offset_values = column_array.getOffsets();
         size_t initial_size = offset_values.size();
         offset_values.resize(initial_size + limit);
 
         size_t i = initial_size;
-        ColumnArray::Offset_t current_offset = initial_size ? offset_values[initial_size - 1] : 0;
+        ColumnArray::Offset current_offset = initial_size ? offset_values[initial_size - 1] : 0;
         while (i < initial_size + limit && !istr.eof())
         {
-            ColumnArray::Offset_t current_size = 0;
+            ColumnArray::Offset current_size = 0;
             readIntBinary(current_size, istr);
             current_offset += current_size;
             offset_values[i] = current_offset;
@@ -170,12 +170,12 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
         if (position_independent_encoding)
             serializeArraySizesPositionIndependent(column, *stream, offset, limit);
         else
-            DataTypeNumber<ColumnArray::Offset_t>().serializeBinaryBulk(*column_array.getOffsetsPtr(), *stream, offset, limit);
+            DataTypeNumber<ColumnArray::Offset>().serializeBinaryBulk(*column_array.getOffsetsPtr(), *stream, offset, limit);
     }
 
     /// Then serialize contents of arrays.
     path.back() = Substream::ArrayElements;
-    const ColumnArray::Offsets_t & offset_values = column_array.getOffsets();
+    const ColumnArray::Offsets & offset_values = column_array.getOffsets();
 
     if (offset > offset_values.size())
         return;
@@ -216,12 +216,12 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
         if (position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);
         else
-            DataTypeNumber<ColumnArray::Offset_t>().deserializeBinaryBulk(*column_array.getOffsetsPtr(), *stream, limit, 0);
+            DataTypeNumber<ColumnArray::Offset>().deserializeBinaryBulk(*column_array.getOffsetsPtr(), *stream, limit, 0);
     }
 
     path.back() = Substream::ArrayElements;
 
-    ColumnArray::Offsets_t & offset_values = column_array.getOffsets();
+    ColumnArray::Offsets & offset_values = column_array.getOffsets();
     IColumn & nested_column = column_array.getData();
 
     /// Number of values corresponding with `offset_values` must be read.
@@ -242,7 +242,7 @@ template <typename Writer>
 static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested)
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
@@ -264,7 +264,7 @@ template <typename Reader>
 static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested)
 {
     ColumnArray & column_array = static_cast<ColumnArray &>(column);
-    ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+    ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     IColumn & nested_column = column_array.getData();
 
@@ -356,7 +356,7 @@ void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
 void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
@@ -383,7 +383,7 @@ void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr) con
 void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
@@ -421,7 +421,7 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 MutableColumnPtr DataTypeArray::createColumn() const
 {
-    return ColumnArray::create(nested->createColumn(), ColumnArray::ColumnOffsets_t::create());
+    return ColumnArray::create(nested->createColumn(), ColumnArray::ColumnOffsets::create());
 }
 
 
