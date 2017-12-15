@@ -23,8 +23,11 @@ class ColumnArray final : public COWPtrHelper<IColumn, ColumnArray>
 private:
     friend class COWPtrHelper<IColumn, ColumnArray>;
 
-    /** Create an empty column of arrays with the type of values as in the column `nested_column` */
+    /** Create an array column with specified values and offsets. */
     ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offsets_column);
+
+    /** Create an empty column of arrays with the type of values as in the column `nested_column` */
+    ColumnArray(const ColumnPtr & nested_column);
 
     ColumnArray(const ColumnArray & src) = default;
 

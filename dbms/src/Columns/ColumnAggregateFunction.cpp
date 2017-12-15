@@ -75,7 +75,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
     for (auto val : getData())
         function->insertResultInto(val, *res);
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -372,7 +372,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     for (size_t i = 0; i < num_rows; ++i)
         static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
 
-    return std::move(columns);
+    return columns;
 }
 
 void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
