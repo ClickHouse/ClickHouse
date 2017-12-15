@@ -73,14 +73,12 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 /// Construct a block consisting only of possible values of virtual columns
 static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
-    Block res;
-    ColumnWithTypeAndName _part(ColumnString::create(), std::make_shared<DataTypeString>(), "_part");
+    auto column = ColumnString::create();
 
     for (const auto & part : parts)
-        _part.column->insert(part->name);
+        column->insert(part->name);
 
-    res.insert(_part);
-    return res;
+    return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_part")};
 }
 
 

@@ -28,7 +28,6 @@ namespace
 ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
 {
     ColumnPtr result_null_map_column;
-    bool shared_result_map_column = true;
 
     /// If result is already nullable.
     if (src->onlyNull())
@@ -53,21 +52,21 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
         {
             const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
             if (!result_null_map_column)
+            {
                 result_null_map_column = null_map_column;
+            }
             else
             {
-                if (shared_result_map_column)
-                {
-                    result_null_map_column = result_null_map_column->clone();
-                    shared_result_map_column = false;
-                }
+                MutableColumnPtr mutable_result_null_map_column = result_null_map_column->mutate();
 
-                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
                     if (src_null_map[i])
                         result_null_map[i] = 1;
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
             }
         }
     }
