@@ -39,8 +39,8 @@ std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_siz
     using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbers>::Type;
     if (auto column_nullable = typeid_cast<ColumnNullable *>(&col.getData()))
     {
-        ColumnArray column(column_nullable->getNestedColumnPtr(), col.getOffsetsPtr());
-        return Creator::create(column, &column_nullable->getNullMapColumn(), column_size);
+        auto column = ColumnArray::create(column_nullable->getNestedColumnPtr(), col.getOffsetsPtr());
+        return Creator::create(*column, &column_nullable->getNullMapColumn(), column_size);
     }
     return Creator::create(col, nullptr, column_size);
 }

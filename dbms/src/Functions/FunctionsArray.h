@@ -789,7 +789,7 @@ private:
         if (!col_nested)
             return false;
 
-        auto col_res = std::make_shared<ResultColumnType>();
+        auto col_res = ResultColumnType::create();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
@@ -837,7 +837,7 @@ private:
         if (!col_nested)
             return false;
 
-        auto col_res = std::make_shared<ResultColumnType>();
+        auto col_res = ResultColumnType::create();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
