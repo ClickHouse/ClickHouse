@@ -241,8 +241,9 @@ public:
 
     IColumn & getDataColumn() { return *data->assumeMutable(); }
     const IColumn & getDataColumn() const { return *data; }
-    //MutableColumnPtr getDataColumnPtr() { return data; }
+    //MutableColumnPtr getDataColumnMutablePtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
+    //ColumnPtr & getDataColumnPtr() { return data; }
 
     Field getField() const { return getDataColumn()[0]; }
 

@@ -1047,12 +1047,12 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
+void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
-    auto * nullable = typeid_cast<ColumnNullable *>(&offset_column);
-    ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapColumn().getData() : nullptr;
-    IColumn * nested_column = nullable ? nullable->getNestedColumn() : &offset_column;
+    const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
+    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapColumn().getData() : nullptr;
+    const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
     while (!src.isEnd())
     {
@@ -1078,17 +1078,17 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn 
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
+void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
     const bool is_offset_null = offset_column.onlyNull();
-    auto * offset_nullable = typeid_cast<ColumnNullable *>(&offset_column);
-    ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapColumn().getData() : nullptr;
-    IColumn * offset_nested_column = offset_nullable ? offset_nullable->getNestedColumn() : &offset_column;
+    const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
+    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapColumn().getData() : nullptr;
+    const IColumn * offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : &offset_column;
 
     const bool is_length_null = length_column.onlyNull();
-    auto * length_nullable = typeid_cast<ColumnNullable *>(&length_column);
-    ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapColumn().getData() : nullptr;
-    IColumn * length_nested_column = length_nullable ? length_nullable->getNestedColumn() : &length_column;
+    const auto * length_nullable = typeid_cast<const ColumnNullable *>(&length_column);
+    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapColumn().getData() : nullptr;
+    const IColumn * length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : &length_column;
 
     while (!src.isEnd())
     {
@@ -1127,9 +1127,9 @@ void sliceFromRightConstantOffsetUnbounded(IArraySource & src, IArraySink & sink
 
 void sliceFromRightConstantOffsetBounded(IArraySource & src, IArraySink & sink, size_t offset, ssize_t length);
 
-void sliceDynamicOffsetUnbounded(IArraySource & src, IArraySink & sink, IColumn & offset_column);
+void sliceDynamicOffsetUnbounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column);
 
-void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, IColumn & offset_column, IColumn & length_column);
+void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column, const IColumn & length_column);
 
 template <typename SourceA, typename SourceB, typename Sink>
 void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)

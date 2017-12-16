@@ -101,7 +101,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         out_offsets[i] = current_offset;
     }
 
-    block.getByPosition(result).column = out;
+    block.getByPosition(result).column = std::move(out);
 }
 
 
@@ -125,7 +125,7 @@ public:
     {
         auto sink = ColumnUInt8::create(size);
         sink_null_map = sink->getData().data();
-        sink_null_map_holder = sink;
+        sink_null_map_holder = std::move(sink);
     }
 
     void update(size_t from)
@@ -140,12 +140,12 @@ public:
         ++index;
     }
 
-    ColumnPtr getNullMapData() const { return sink_null_map_holder; }
+    ColumnPtr getNullMapData() && { return std::move(sink_null_map_holder); }
 
 private:
     const UInt8 * src_null_map = nullptr;
     UInt8 * sink_null_map = nullptr;
-    ColumnPtr sink_null_map_holder;
+    MutableColumnPtr sink_null_map_holder;
     size_t index = 0;
 };
 
@@ -487,11 +487,11 @@ bool FunctionArrayElement::executeNumber(Block & block, const ColumnNumbers & ar
         return false;
 
     auto col_res = ColumnVector<DataType>::create();
-    block.getByPosition(result).column = col_res;
 
     ArrayElementNumImpl<DataType>::template vector<IndexType>(
         col_nested->getData(), col_array->getOffsets(), indices, col_res->getData(), builder);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -574,7 +574,6 @@ bool FunctionArrayElement::executeGenericConst(Block & block, const ColumnNumber
 
     const auto & col_nested = col_array->getData();
     auto col_res = col_nested.cloneEmpty();
-    block.getByPosition(result).column = col_res;
 
     if (index.getType() == Field::Types::UInt64)
         ArrayElementGenericImpl::vectorConst<false>(
@@ -585,6 +584,7 @@ bool FunctionArrayElement::executeGenericConst(Block & block, const ColumnNumber
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -599,11 +599,11 @@ bool FunctionArrayElement::executeGeneric(Block & block, const ColumnNumbers & a
 
     const auto & col_nested = col_array->getData();
     auto col_res = col_nested.cloneEmpty();
-    block.getByPosition(result).column = col_res;
 
     ArrayElementGenericImpl::vector<IndexType>(
         col_nested, col_array->getOffsets(), indices, *col_res, builder);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -616,10 +616,9 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
     if (!col_array)
         return false;
 
-    block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+    auto res = block.getByPosition(result).type->createColumn();
 
     size_t rows = block.rows();
-    IColumn & result_column = *block.getByPosition(result).column;
     const IColumn & array_elements = col_array->getData();
     size_t array_size = array_elements.size();
 
@@ -629,25 +628,26 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
         if (index > 0 && static_cast<size_t>(index) <= array_size)
         {
             size_t j = index - 1;
-            result_column.insertFrom(array_elements, j);
+            res->insertFrom(array_elements, j);
             if (builder)
                 builder.update(j);
         }
         else if (index < 0 && static_cast<size_t>(-index) <= array_size)
         {
             size_t j = array_size + index;
-            result_column.insertFrom(array_elements, j);
+            res->insertFrom(array_elements, j);
             if (builder)
                 builder.update(j);
         }
         else
         {
-            result_column.insertDefault();
+            res->insertDefault();
             if (builder)
                 builder.update();
         }
     }
 
+    block.getByPosition(result).column = std::move(res);
     return true;
 }
 
@@ -844,7 +844,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         /// Store the result.
         const ColumnWithTypeAndName & source_col = source_block.getByPosition(2);
         ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-        dest_col.column = ColumnNullable::create(source_col.column, builder.getNullMapData());
+        dest_col.column = ColumnNullable::create(source_col.column, std::move(builder).getNullMapData());
     }
 }
 
@@ -925,7 +925,6 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
 
         auto res_nested = ColumnUInt32::create();
         auto res_array = ColumnArray::create(res_nested, array->getOffsetsPtr());
-        block.getByPosition(result).column = res_array;
 
         ColumnUInt32::Container & res_values = res_nested->getData();
         res_values.resize(array->getData().size());
@@ -939,6 +938,8 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
             }
             prev_off = off;
         }
+
+        block.getByPosition(result).column = std::move(res_array);
     }
     else
     {
@@ -1027,7 +1028,6 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
     const ColumnArray * first_array = static_cast<const ColumnArray *>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
     auto res = ColumnUInt32::create();
-    block.getByPosition(result).column = res;
 
     ColumnUInt32::Container & res_values = res->getData();
     res_values.resize(offsets->size());
@@ -1054,6 +1054,8 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
         if (!execute128bit(*offsets, data_columns, null_maps, res_values, has_nullable_columns))
             executeHashed(*offsets, original_data_columns, res_values);
     }
+
+    block.getByPosition(result).column = std::move(res);
 }
 
 template <typename T>
@@ -1333,8 +1335,6 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
     const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
     auto res_nested = ColumnUInt32::create();
-    auto res_array = ColumnArray::create(res_nested, first_array->getOffsetsPtr());
-    block.getByPosition(result).column = res_array;
 
     ColumnUInt32::Container & res_values = res_nested->getData();
     if (!offsets->empty())
@@ -1362,6 +1362,8 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
         if (!execute128bit(*offsets, data_columns, null_maps, res_values, has_nullable_columns))
             executeHashed(*offsets, original_data_columns, res_values);
     }
+
+    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), first_array->getOffsetsPtr());
 }
 
 
@@ -1891,8 +1893,7 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
-    ColumnPtr res_ptr = array->cloneEmpty();
-    block.getByPosition(result).column = res_ptr;
+    MutableColumnPtr res_ptr = array->cloneEmpty();
     ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
@@ -1927,6 +1928,8 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
         FunctionEmptyArrayToSingleImpl::executeDispatch<true>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
     else
         FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
+
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 
@@ -2083,14 +2086,12 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
-    ColumnPtr res_ptr = array->cloneEmpty();
-    block.getByPosition(result).column = res_ptr;
+    MutableColumnPtr res_ptr = array->cloneEmpty();
     ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & offsets = array->getOffsets();
     IColumn & res_data = res.getData();
-    res.getOffsetsPtr() = array->getOffsetsPtr();
 
     const ColumnNullable * nullable_col = nullptr;
     ColumnNullable * nullable_res_col = nullptr;
@@ -2127,6 +2128,9 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
+
+    res_ptr->getOffsetsPtr() = array->getOffsetsPtr();
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2463,8 +2467,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         ? *materialized_columns.front().get()
         : *block.getByPosition(arguments[1]).column.get()).getOffsets();
 
-
-    ColumnPtr result_holder = block.getByPosition(result).type->createColumn();
+    MutableColumnPtr result_holder = block.getByPosition(result).type->createColumn();
     IColumn & res_col = *result_holder;
 
     /// AggregateFunction's states should be inserted into column using specific way
@@ -2502,7 +2505,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
     if (!is_const)
     {
-        block.getByPosition(result).column = result_holder;
+        block.getByPosition(result).column = std::move(result_holder);
     }
     else
     {
@@ -2639,7 +2642,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
 
     if (return_type->onlyNull())
     {
-        result_column = array_column->clone();
+        result_column = array_column;
         return;
     }
 
@@ -2664,7 +2667,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     if (offset_column->onlyNull())
     {
         if (!length_column || length_column->onlyNull())
-            result_column = array_column->clone();
+            result_column = array_column;
         else if (length_column->isColumnConst())
             sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
         else
@@ -2735,7 +2738,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
 
     if (return_type->onlyNull())
     {
-        result_column = array_column->clone();
+        result_column = array_column;
         return;
     }
 
@@ -2776,7 +2779,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     for (size_t i : ext::range(0, offsets->size()))
         offsets->getElement(i) = i + 1;
 
-    ColumnArray appended_array_column(appended_column, offsets);
+    ColumnArray::Ptr appended_array_column = ColumnArray::create(appended_column, offsets);
     sources.push_back(createArraySource(appended_array_column, is_appended_const, size));
 
     auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
@@ -2826,7 +2829,7 @@ void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & argument
 
     if (return_type->onlyNull())
     {
-        result_column = array_column->clone();
+        result_column = array_column;
         return;
     }
 
