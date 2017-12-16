@@ -733,17 +733,6 @@ struct ReplaceRegexpImpl
             res_offsets[i] = res_offset;
         }
     }
-
-    static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
-    {
-        ColumnString src;
-        ColumnString dst;
-        src.insert(data);
-
-        vector(src.getChars(), src.getOffsets(), needle, replacement, dst.getChars(), dst.getOffsets());
-
-        res_data = dst[0].safeGet<String>();
-    }
 };
 
 
