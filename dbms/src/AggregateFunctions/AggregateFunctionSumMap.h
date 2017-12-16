@@ -221,8 +221,8 @@ public:
 
         size_t size = merged_maps.size();
 
-        auto & to_cols = static_cast<ColumnTuple &>(to).getColumns();
-        auto & to_keys_arr = static_cast<ColumnArray &>(*to_cols[0]);
+        auto & to_tuple = static_cast<ColumnTuple &>(to);
+        auto & to_keys_arr = static_cast<ColumnArray &>(to_tuple.getColumn(0));
         auto & to_keys_col = to_keys_arr.getData();
 
         // Advance column offsets
@@ -232,7 +232,7 @@ public:
 
         for (size_t col = 0; col < values_types.size(); ++col)
         {
-            auto & to_values_arr = static_cast<ColumnArray &>(*to_cols[col + 1]);
+            auto & to_values_arr = static_cast<ColumnArray &>(to_tuple.getColumn(col + 1));
             auto & to_values_offsets = to_values_arr.getOffsets();
             to_values_offsets.push_back((to_values_offsets.empty() ? 0 : to_values_offsets.back()) + size);
             to_values_arr.getData().reserve(size);
@@ -247,7 +247,7 @@ public:
             // Write 0..n arrays of values
             for (size_t col = 0; col < values_types.size(); ++col)
             {
-                auto & to_values_col = static_cast<ColumnArray &>(*to_cols[col + 1]).getData();
+                auto & to_values_col = static_cast<ColumnArray &>(to_tuple.getColumn(col + 1)).getData();
                 to_values_col.insert(elem.second[col]);
             }
         }
