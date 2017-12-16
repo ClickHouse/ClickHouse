@@ -648,23 +648,23 @@ private:
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
-            block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
-            block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -678,12 +678,12 @@ private:
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
-            block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
@@ -1306,7 +1306,7 @@ private:
                     out[i] = Impl::apply(val[i], mask[i]);
             }
 
-            block.getByPosition(result).column = out_col;
+            block.getByPosition(result).column = std::move(out_col);
             return true;
         }
         else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
@@ -1330,7 +1330,7 @@ private:
                 for (const auto i : ext::range(0, size))
                     out[i] = Impl::apply(val, mask[i]);
 
-                block.getByPosition(result).column = out_col;
+                block.getByPosition(result).column = std::move(out_col);
             }
 
             return true;

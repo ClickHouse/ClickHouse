@@ -153,13 +153,13 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         auto col_to = ColumnVector<ToType>::create();
-        block.getByPosition(result).column = col_to;
-
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
         size_t size = block.rows();
         vec_to.resize(size);
         Impl::execute(&vec_to[0], vec_to.size());
+
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 

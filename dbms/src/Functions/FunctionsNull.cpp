@@ -216,13 +216,13 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
     FunctionMultiIf{context}.execute(temp_block, multi_if_args, result);
 
-    auto res = std::move(temp_block.getByPosition(result).column);
+    auto res = std::move(temp_block.getByPosition(result).column)->mutate();
 
     /// if last argument is not nullable, result should be also not nullable
     if (!block.getByPosition(multi_if_args.back()).column->isColumnNullable() && res->isColumnNullable())
         res = static_cast<ColumnNullable &>(*res).getNestedColumnPtr();
 
-    block.getByPosition(result).column = res;
+    block.getByPosition(result).column = std::move(res);
 }
 
 /// Implementation of ifNull.

@@ -91,7 +91,6 @@ public:
         }
 
         auto col_res = ColumnVector<ResultType>::create();
-        block.getByPosition(result).column = col_res;
 
         typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
         vec_res.resize(column_haystack->size());
@@ -115,6 +114,8 @@ public:
                     + " of arguments of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 

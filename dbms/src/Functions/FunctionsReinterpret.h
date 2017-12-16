@@ -56,7 +56,6 @@ public:
         if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnString::create();
-            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -80,6 +79,8 @@ public:
                 offsets_to[i] = pos;
             }
             data_to.resize(pos);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -142,7 +143,6 @@ public:
         if (ColumnString * col_from = typeid_cast<ColumnString *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = ColumnVector<ToFieldType>::create();
-            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & data_from = col_from->getChars();
             ColumnString::Offsets & offsets_from = col_from->getOffsets();
@@ -158,11 +158,12 @@ public:
                 vec_res[i] = value;
                 offset = offsets_from[i];
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = ColumnVector<ToFieldType>::create();
-            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & data_from = col_from->getChars();
             size_t step = col_from->getN();
@@ -179,6 +180,8 @@ public:
                 vec_res[i] = value;
                 offset += step;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
         {

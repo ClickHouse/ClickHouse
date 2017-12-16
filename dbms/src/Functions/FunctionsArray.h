@@ -789,8 +789,7 @@ private:
         if (!col_nested)
             return false;
 
-        const auto col_res = std::make_shared<ResultColumnType>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = std::make_shared<ResultColumnType>();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
@@ -822,6 +821,7 @@ private:
         else
             return false;
 
+        block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
@@ -837,8 +837,7 @@ private:
         if (!col_nested)
             return false;
 
-        const auto col_res = std::make_shared<ResultColumnType>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = std::make_shared<ResultColumnType>();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
@@ -872,6 +871,7 @@ private:
         else
             return false;
 
+        block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
@@ -916,8 +916,7 @@ private:
             }
 
             const auto size = item_arg->size();
-            const auto col_res = std::make_shared<ResultColumnType>(size);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ResultColumnType::create(size);
 
             auto & data = col_res->getData();
 
@@ -945,6 +944,8 @@ private:
                     }
                 }
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
 
         return true;
@@ -960,8 +961,7 @@ private:
         const IColumn & col_nested = col_array->getData();
         const IColumn & item_arg = *block.getByPosition(arguments[1]).column;
 
-        const auto col_res = std::make_shared<ResultColumnType>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = ResultColumnType::create();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
@@ -999,6 +999,7 @@ private:
                     null_map_data, null_map_item);
         }
 
+        block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
