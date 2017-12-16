@@ -43,7 +43,7 @@ BlockInputStreams StorageSystemColumns::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block;
+    Block block_to_filter;
 
     std::map<std::pair<std::string, std::string>, StoragePtr> storages;
 
@@ -51,22 +51,22 @@ BlockInputStreams StorageSystemColumns::read(
         Databases databases = context.getDatabases();
 
         /// Add `database` column.
-        ColumnPtr database_column = ColumnString::create();
+        MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
-            database_column->insert(database.first);
-        block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
+            database_column_mut->insert(database.first);
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
-        if (!block.rows())
+        if (!block_to_filter.rows())
             return BlockInputStreams();
 
-        database_column = block.getByName("database").column;
+        ColumnPtr database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
 
         /// Add `table` column.
-        ColumnPtr table_column = ColumnString::create();
+        MutableColumnPtr table_column_mut = ColumnString::create();
         IColumn::Offsets offsets(rows);
         for (size_t i = 0; i < rows; ++i)
         {
@@ -80,39 +80,31 @@ BlockInputStreams StorageSystemColumns::read(
                 storages.emplace(std::piecewise_construct,
                     std::forward_as_tuple(database_name, table_name),
                     std::forward_as_tuple(iterator->table()));
-                table_column->insert(table_name);
+                table_column_mut->insert(table_name);
                 offsets[i] += 1;
             }
         }
 
-        for (size_t i = 0; i < block.columns(); ++i)
+        for (size_t i = 0; i < block_to_filter.columns(); ++i)
         {
-            ColumnPtr & column = block.safeGetByPosition(i).column;
+            ColumnPtr & column = block_to_filter.safeGetByPosition(i).column;
             column = column->replicate(offsets);
         }
 
-        block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
     }
 
     /// Filter block with `database` and `table` columns.
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
-    if (!block.rows())
+    if (!block_to_filter.rows())
         return BlockInputStreams();
 
-    ColumnPtr filtered_database_column = block.getByName("database").column;
-    ColumnPtr filtered_table_column = block.getByName("table").column;
+    ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
+    ColumnPtr filtered_table_column = block_to_filter.getByName("table").column;
 
     /// We compose the result.
-    ColumnPtr database_column = ColumnString::create();
-    ColumnPtr table_column = ColumnString::create();
-    ColumnPtr name_column = ColumnString::create();
-    ColumnPtr type_column = ColumnString::create();
-    ColumnPtr default_kind_column = ColumnString::create();
-    ColumnPtr default_expression_column = ColumnString::create();
-    ColumnPtr data_compressed_bytes_column = ColumnUInt64::create();
-    ColumnPtr data_uncompressed_bytes_column = ColumnUInt64::create();
-    ColumnPtr marks_bytes_column = ColumnUInt64::create();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     size_t rows = filtered_database_column->size();
     for (size_t i = 0; i < rows; ++i)
@@ -164,22 +156,24 @@ BlockInputStreams StorageSystemColumns::read(
 
         for (const auto & column : columns)
         {
-            database_column->insert(database_name);
-            table_column->insert(table_name);
-            name_column->insert(column.name);
-            type_column->insert(column.type->getName());
+            size_t i = 0;
+
+            res_columns[i++]->insert(database_name);
+            res_columns[i++]->insert(table_name);
+            res_columns[i++]->insert(column.name);
+            res_columns[i++]->insert(column.type->getName());
 
             {
                 const auto it = column_defaults.find(column.name);
                 if (it == std::end(column_defaults))
                 {
-                    default_kind_column->insertDefault();
-                    default_expression_column->insertDefault();
+                    res_columns[i++]->insertDefault();
+                    res_columns[i++]->insertDefault();
                 }
                 else
                 {
-                    default_kind_column->insert(toString(it->second.type));
-                    default_expression_column->insert(queryToString(it->second.expression));
+                    res_columns[i++]->insert(toString(it->second.type));
+                    res_columns[i++]->insert(queryToString(it->second.expression));
                 }
             }
 
@@ -187,33 +181,21 @@ BlockInputStreams StorageSystemColumns::read(
                 const auto it = column_sizes.find(column.name);
                 if (it == std::end(column_sizes))
                 {
-                    data_compressed_bytes_column->insertDefault();
-                    data_uncompressed_bytes_column->insertDefault();
-                    marks_bytes_column->insertDefault();
+                    res_columns[i++]->insertDefault();
+                    res_columns[i++]->insertDefault();
+                    res_columns[i++]->insertDefault();
                 }
                 else
                 {
-                    data_compressed_bytes_column->insert(static_cast<UInt64>(it->second.data_compressed));
-                    data_uncompressed_bytes_column->insert(static_cast<UInt64>(it->second.data_uncompressed));
-                    marks_bytes_column->insert(static_cast<UInt64>(it->second.marks));
+                    res_columns[i++]->insert(static_cast<UInt64>(it->second.data_compressed));
+                    res_columns[i++]->insert(static_cast<UInt64>(it->second.data_uncompressed));
+                    res_columns[i++]->insert(static_cast<UInt64>(it->second.marks));
                 }
             }
         }
     }
 
-    block.clear();
-
-    block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
-    block.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
-    block.insert(ColumnWithTypeAndName(name_column, std::make_shared<DataTypeString>(), "name"));
-    block.insert(ColumnWithTypeAndName(type_column, std::make_shared<DataTypeString>(), "type"));
-    block.insert(ColumnWithTypeAndName(default_kind_column, std::make_shared<DataTypeString>(), "default_kind"));
-    block.insert(ColumnWithTypeAndName(default_expression_column, std::make_shared<DataTypeString>(), "default_expression"));
-    block.insert(ColumnWithTypeAndName(data_compressed_bytes_column, std::make_shared<DataTypeUInt64>(), "data_compressed_bytes"));
-    block.insert(ColumnWithTypeAndName(data_uncompressed_bytes_column, std::make_shared<DataTypeUInt64>(), "data_uncompressed_bytes"));
-    block.insert(ColumnWithTypeAndName(marks_bytes_column, std::make_shared<DataTypeUInt64>(), "marks_bytes"));
-
-    return BlockInputStreams{ 1, std::make_shared<OneBlockInputStream>(block) };
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

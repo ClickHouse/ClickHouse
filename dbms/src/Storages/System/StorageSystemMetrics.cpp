@@ -33,29 +33,17 @@ BlockInputStreams StorageSystemMetrics::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block;
-
-    ColumnWithTypeAndName col_metric;
-    col_metric.name = "metric";
-    col_metric.type = std::make_shared<DataTypeString>();
-    col_metric.column = ColumnString::create();
-    block.insert(col_metric);
-
-    ColumnWithTypeAndName col_value;
-    col_value.name = "value";
-    col_value.type = std::make_shared<DataTypeInt64>();
-    col_value.column = ColumnInt64::create();
-    block.insert(col_value);
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
         Int64 value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
-        col_metric.column->insert(String(CurrentMetrics::getDescription(CurrentMetrics::Metric(i))));
-        col_value.column->insert(value);
+        res_columns[0]->insert(String(CurrentMetrics::getDescription(CurrentMetrics::Metric(i))));
+        res_columns[1]->insert(value);
     }
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 

@@ -51,71 +51,41 @@ BlockInputStreams StorageSystemDictionaries::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ColumnWithTypeAndName col_name{ColumnString::create(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName col_origin{ColumnString::create(), std::make_shared<DataTypeString>(), "origin"};
-    ColumnWithTypeAndName col_type{ColumnString::create(), std::make_shared<DataTypeString>(), "type"};
-    ColumnWithTypeAndName col_key{ColumnString::create(), std::make_shared<DataTypeString>(), "key"};
-    ColumnWithTypeAndName col_attribute_names{
-        ColumnArray::create(ColumnString::create()),
-        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-        "attribute.names"
-    };
-    ColumnWithTypeAndName col_attribute_types{
-        ColumnArray::create(ColumnString::create()),
-        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-        "attribute.types"
-    };
-    ColumnWithTypeAndName col_has_hierarchy{ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "has_hierarchy"};
-    ColumnWithTypeAndName col_bytes_allocated{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "bytes_allocated"};
-    ColumnWithTypeAndName col_query_count{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "query_count"};
-    ColumnWithTypeAndName col_hit_rate{ColumnFloat64::create(), std::make_shared<DataTypeFloat64>(), "hit_rate"};
-    ColumnWithTypeAndName col_element_count{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "element_count"};
-    ColumnWithTypeAndName col_load_factor{ColumnFloat64::create(), std::make_shared<DataTypeFloat64>(), "load_factor"};
-    ColumnWithTypeAndName col_creation_time{ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "creation_time"};
-    ColumnWithTypeAndName col_last_exception{ColumnString::create(), std::make_shared<DataTypeString>(), "last_exception"};
-    ColumnWithTypeAndName col_source{ColumnString::create(), std::make_shared<DataTypeString>(), "source"};
-
     const auto & external_dictionaries = context.getExternalDictionaries();
     auto objects_map = external_dictionaries.getObjectsMap();
     const auto & dictionaries = objects_map.get();
 
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+
     for (const auto & dict_info : dictionaries)
     {
-        col_name.column->insert(dict_info.first);
-        col_origin.column->insert(dict_info.second.origin);
+        size_t i = 0;
+
+        res_columns[i++]->insert(dict_info.first);
+        res_columns[i++]->insert(dict_info.second.origin);
 
         if (dict_info.second.loadable)
         {
             const auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(dict_info.second.loadable);
 
-            col_type.column->insert(dict_ptr->getTypeName());
+            res_columns[i++]->insert(dict_ptr->getTypeName());
 
             const auto & dict_struct = dict_ptr->getStructure();
-            col_key.column->insert(dict_struct.getKeyDescription());
-
-            col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.name; }));
-            col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.type->getName(); }));
-            col_bytes_allocated.column->insert(static_cast<UInt64>(dict_ptr->getBytesAllocated()));
-            col_query_count.column->insert(static_cast<UInt64>(dict_ptr->getQueryCount()));
-            col_hit_rate.column->insert(dict_ptr->getHitRate());
-            col_element_count.column->insert(static_cast<UInt64>(dict_ptr->getElementCount()));
-            col_load_factor.column->insert(dict_ptr->getLoadFactor());
-            col_creation_time.column->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime())));
-            col_source.column->insert(dict_ptr->getSource()->toString());
+            res_columns[i++]->insert(dict_struct.getKeyDescription());
+            res_columns[i++]->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.name; }));
+            res_columns[i++]->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.type->getName(); }));
+            res_columns[i++]->insert(static_cast<UInt64>(dict_ptr->getBytesAllocated()));
+            res_columns[i++]->insert(static_cast<UInt64>(dict_ptr->getQueryCount()));
+            res_columns[i++]->insert(dict_ptr->getHitRate());
+            res_columns[i++]->insert(static_cast<UInt64>(dict_ptr->getElementCount()));
+            res_columns[i++]->insert(dict_ptr->getLoadFactor());
+            res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime())));
+            res_columns[i++]->insert(dict_ptr->getSource()->toString());
         }
         else
         {
-            col_type.column->insertDefault();
-            col_key.column->insertDefault();
-            col_attribute_names.column->insertDefault();
-            col_attribute_types.column->insertDefault();
-            col_bytes_allocated.column->insertDefault();
-            col_query_count.column->insertDefault();
-            col_hit_rate.column->insertDefault();
-            col_element_count.column->insertDefault();
-            col_load_factor.column->insertDefault();
-            col_creation_time.column->insertDefault();
-            col_source.column->insertDefault();
+            while (i < 13)
+                res_columns[i++]->insertDefault();
         }
 
         if (dict_info.second.exception)
@@ -126,31 +96,14 @@ BlockInputStreams StorageSystemDictionaries::read(
             }
             catch (...)
             {
-                col_last_exception.column->insert(getCurrentExceptionMessage(false));
+                res_columns[i++]->insert(getCurrentExceptionMessage(false));
             }
         }
         else
-            col_last_exception.column->insertDefault();
+            res_columns[i++]->insertDefault();
     }
 
-    Block block{
-        col_name,
-        col_origin,
-        col_type,
-        col_key,
-        col_attribute_names,
-        col_attribute_types,
-        col_bytes_allocated,
-        col_query_count,
-        col_hit_rate,
-        col_element_count,
-        col_load_factor,
-        col_creation_time,
-        col_last_exception,
-        col_source
-    };
-
-    return BlockInputStreams{1, std::make_shared<OneBlockInputStream>(block)};
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

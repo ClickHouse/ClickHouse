@@ -32,22 +32,16 @@ BlockInputStreams StorageSystemDatabases::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block;
-
-    ColumnWithTypeAndName col_name{ColumnString::create(), std::make_shared<DataTypeString>(), "name"};
-    block.insert(col_name);
-
-    ColumnWithTypeAndName col_engine{ColumnString::create(), std::make_shared<DataTypeString>(), "engine"};
-    block.insert(col_engine);
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     auto databases = context.getDatabases();
     for (const auto & database : databases)
     {
-        col_name.column->insert(database.first);
-        col_engine.column->insert(database.second->getEngineName());
+        res_columns[0]->insert(database.first);
+        res_columns[1]->insert(database.second->getEngineName());
     }
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 
