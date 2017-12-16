@@ -184,7 +184,6 @@ public:
         const ColumnWithTypeAndName & arg_from = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & arg_charset_from = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
-        ColumnWithTypeAndName & res = block.getByPosition(result);
 
         const ColumnConst * col_charset_from = checkAndGetColumnConstStringOrFixedString(arg_charset_from.column.get());
         const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
@@ -200,7 +199,7 @@ public:
         {
             auto col_to = ColumnString::create();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
-            res.column = col_to;
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",
