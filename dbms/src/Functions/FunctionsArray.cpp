@@ -458,7 +458,6 @@ bool FunctionArrayElement::executeNumberConst(Block & block, const ColumnNumbers
         return false;
 
     auto col_res = ColumnVector<DataType>::create();
-    block.getByPosition(result).column = col_res;
 
     if (index.getType() == Field::Types::UInt64)
         ArrayElementNumImpl<DataType>::template vectorConst<false>(
@@ -469,6 +468,7 @@ bool FunctionArrayElement::executeNumberConst(Block & block, const ColumnNumbers
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -924,7 +924,6 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
         const ColumnArray::Offsets & offsets = array->getOffsets();
 
         auto res_nested = ColumnUInt32::create();
-        auto res_array = ColumnArray::create(res_nested, array->getOffsetsPtr());
 
         ColumnUInt32::Container & res_values = res_nested->getData();
         res_values.resize(array->getData().size());
@@ -939,7 +938,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
             prev_off = off;
         }
 
-        block.getByPosition(result).column = std::move(res_array);
+        block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
     }
     else
     {
@@ -1978,14 +1977,11 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
                     " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-        const auto data_col = ColumnVector<T>::create(total_values);
-        const auto out = ColumnArray::create(
-            data_col,
-            std::make_shared<ColumnArray::ColumnOffsets>(in->size()));
-        block.getByPosition(result).column = out;
+        auto data_col = ColumnVector<T>::create(total_values);
+        auto offsets_col = ColumnArray::ColumnOffsets::create(in->size());
 
         auto & out_data = data_col->getData();
-        auto & out_offsets = out->getOffsets();
+        auto & out_offsets = offsets_col->getData();
 
         IColumn::Offset offset{};
         for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
@@ -1997,42 +1993,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
             out_offsets[row_idx] = offset;
         }
 
-        return true;
-    }
-    else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(arg))
-    {
-        T in_data = in->template getValue<T>();
-        if ((in_data != 0) && (in->size() > (std::numeric_limits<size_t>::max() / in_data)))
-            throw Exception{
-                "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
-
-        const size_t total_values = in->size() * in_data;
-        if (total_values > max_elements)
-            throw Exception{
-                "A call to function " + getName() + " would produce " + toString(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + toString(max_elements),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
-
-        const auto data_col = ColumnVector<T>::create(total_values);
-        const auto out = ColumnArray::create(
-            data_col,
-            std::make_shared<ColumnArray::ColumnOffsets>(in->size()));
-        block.getByPosition(result).column = out;
-
-        auto & out_data = data_col->getData();
-        auto & out_offsets = out->getOffsets();
-
-        IColumn::Offset offset{};
-        for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
-        {
-            for (size_t elem_idx = 0, elems = in_data; elem_idx < elems; ++elem_idx)
-                out_data[offset + elem_idx] = elem_idx;
-
-            offset += in_data;
-            out_offsets[row_idx] = offset;
-        }
-
+        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
     else
@@ -2086,8 +2047,9 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
-    MutableColumnPtr res_ptr = array->cloneEmpty();
+    auto res_ptr = array->cloneEmpty();
     ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+    res.getOffsetsPtr() = array->getOffsetsPtr();
 
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & offsets = array->getOffsets();
@@ -2129,7 +2091,6 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
             + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
-    res_ptr->getOffsetsPtr() = array->getOffsetsPtr();
     block.getByPosition(result).column = std::move(res_ptr);
 }
 
@@ -2540,15 +2501,15 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
 
 void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_column = block.getByPosition(result).column;
     const DataTypePtr & return_type = block.getByPosition(result).type;
-    result_column = return_type->createColumn();
 
     if (return_type->onlyNull())
     {
-        result_column = return_type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
         return;
     }
+
+    auto result_column = return_type->createColumn();
 
     size_t rows = block.rows();
     size_t num_args = arguments.size();
@@ -2572,20 +2533,22 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
     {
         bool is_const = false;
 
-        if (auto argument_column_const = typeid_cast<ColumnConst *>(argument_column.get()))
+        if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
         {
             is_const = true;
             argument_column = argument_column_const->getDataColumnPtr();
         }
 
-        if (auto argument_column_array = typeid_cast<ColumnArray *>(argument_column.get()))
+        if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
             sources.emplace_back(createArraySource(*argument_column_array, is_const, rows));
         else
             throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
     }
 
-    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column.get()), rows);
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
     concat(sources, *sink);
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 
@@ -2631,33 +2594,32 @@ DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) c
 
 void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_colum_with_name_and_type = block.getByPosition(result);
-    auto & result_column = result_colum_with_name_and_type.column;
-    auto & return_type = result_colum_with_name_and_type.type;
-    result_column = return_type->createColumn();
-
-    auto array_column = block.getByPosition(arguments[0]).column;
-    auto offset_column = block.getByPosition(arguments[1]).column;
-    auto length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
+    const auto & return_type = block.getByPosition(result).type;
 
     if (return_type->onlyNull())
     {
-        result_column = array_column;
+        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
         return;
     }
+
+    auto result_column = return_type->createColumn();
+
+    auto & array_column = block.getByPosition(arguments[0]).column;
+    const auto & offset_column = block.getByPosition(arguments[1]).column;
+    const auto & length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
 
     std::unique_ptr<IArraySource> source;
 
     size_t size = array_column->size();
     bool is_const = false;
 
-    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
+    if (auto const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
     {
         is_const = true;
         array_column = const_array_column->getDataColumnPtr();
     }
 
-    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
+    if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
         source = createArraySource(*argument_column_array, is_const, size);
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
@@ -2667,7 +2629,10 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     if (offset_column->onlyNull())
     {
         if (!length_column || length_column->onlyNull())
-            result_column = array_column;
+        {
+            block.getByPosition(result).column = array_column;
+            return;
+        }
         else if (length_column->isColumnConst())
             sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
         else
@@ -2705,6 +2670,8 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
         else
             sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
     }
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 
@@ -2715,7 +2682,7 @@ DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) co
     if (arguments[0]->onlyNull())
         return arguments[0];
 
-    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
                         + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2729,20 +2696,18 @@ DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) co
 
 void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_colum_with_name_and_type = block.getByPosition(result);
-    auto & result_column = result_colum_with_name_and_type.column;
-    auto & return_type = result_colum_with_name_and_type.type;
-
-    auto array_column = block.getByPosition(arguments[0]).column;
-    auto appended_column = block.getByPosition(arguments[1]).column;
+    const auto & return_type = block.getByPosition(result).type;
 
     if (return_type->onlyNull())
     {
-        result_column = array_column;
+        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
         return;
     }
 
-    result_column = return_type->createColumn();
+    auto result_column = return_type->createColumn();
+
+    auto & array_column = block.getByPosition(arguments[0]).column;
+    auto & appended_column = block.getByPosition(arguments[1]).column;
 
     if (!block.getByPosition(arguments[0]).type->equals(*return_type))
         array_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
@@ -2756,37 +2721,39 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     size_t size = array_column->size();
     bool is_const = false;
 
-    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
+    if (auto const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
     {
         is_const = true;
         array_column = const_array_column->getDataColumnPtr();
     }
 
-    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
+    if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
         sources.push_back(createArraySource(*argument_column_array, is_const, size));
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
 
     bool is_appended_const = false;
-    if (auto const_appended_column = typeid_cast<ColumnConst *>(appended_column.get()))
+    if (auto const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
     {
         is_appended_const = true;
         appended_column = const_appended_column->getDataColumnPtr();
     }
 
-    auto offsets = std::make_shared<ColumnArray::ColumnOffsets>(appended_column->size());
+    auto offsets = ColumnArray::ColumnOffsets::create(appended_column->size());
     for (size_t i : ext::range(0, offsets->size()))
         offsets->getElement(i) = i + 1;
 
-    ColumnArray::Ptr appended_array_column = ColumnArray::create(appended_column, offsets);
-    sources.push_back(createArraySource(appended_array_column, is_appended_const, size));
+    ColumnArray::Ptr appended_array_column = ColumnArray::create(appended_column, std::move(offsets));
+    sources.push_back(createArraySource(*appended_array_column, is_appended_const, size));
 
     auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
     if (push_front)
         sources[0].swap(sources[1]);
     concat(sources, *sink);
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 /// Implementation of FunctionArrayPushFront.
@@ -2810,7 +2777,7 @@ DataTypePtr FunctionArrayPop::getReturnTypeImpl(const DataTypes & arguments) con
     if (arguments[0]->onlyNull())
         return arguments[0];
 
-    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
                         + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2820,32 +2787,24 @@ DataTypePtr FunctionArrayPop::getReturnTypeImpl(const DataTypes & arguments) con
 
 void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_colum_with_name_and_type = block.getByPosition(result);
-    auto & result_column = result_colum_with_name_and_type.column;
-    auto & return_type = result_colum_with_name_and_type.type;
-    result_column = return_type->createColumn();
-
-    auto array_column = block.getByPosition(arguments[0]).column;
+    const auto & return_type = block.getByPosition(result).type;
 
     if (return_type->onlyNull())
     {
-        result_column = array_column;
+        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
         return;
     }
+
+    auto result_column = return_type->createColumn();
+
+    const auto & array_column = block.getByPosition(arguments[0]).column;
 
     std::unique_ptr<IArraySource> source;
 
     size_t size = array_column->size();
-    bool is_const = false;
 
-    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
-    {
-        is_const = true;
-        array_column = const_array_column->getDataColumnPtr();
-    }
-
-    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
-        source = createArraySource(*argument_column_array, is_const, size);
+    if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
+        source = createArraySource(*argument_column_array, false, size);
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
@@ -2855,6 +2814,8 @@ void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & argument
         sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
     else
         sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 /// Implementation of FunctionArrayPopFront.
