@@ -555,8 +555,8 @@ struct DateTimeTransformImpl
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
             auto col_to = ColumnVector<ToType>::create();
-            block.getByPosition(result).column = col_to;
             Op::vector(sources->getData(), col_to->getData(), time_zone);
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -1110,7 +1110,6 @@ public:
         if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto res = ColumnUInt32::create();
-            ColumnPtr res_holder = res;
             ColumnUInt32::Container & res_vec = res->getData();
             const ColumnUInt32::Container & vec = times->getData();
 
@@ -1120,7 +1119,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 res_vec[i] = vec[i] / TIME_SLOT_SIZE * TIME_SLOT_SIZE;
 
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1244,23 +1243,22 @@ public:
         auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
 
         auto res = ColumnArray::create(ColumnUInt32::create());
-        ColumnPtr res_holder = res;
         ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
         if (starts && durations)
         {
             TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (starts && const_durations)
         {
             TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && durations)
         {
             TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && const_durations)
         {

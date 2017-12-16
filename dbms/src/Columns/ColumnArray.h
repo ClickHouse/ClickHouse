@@ -83,7 +83,7 @@ public:
 
     //MutableColumnPtr getDataMutablePtr() { return data->assumeMutable(); }
     const ColumnPtr & getDataPtr() const { return data; }
-    //ColumnPtr & getDataPtr() { return data; }
+    ColumnPtr & getDataPtr() { return data; }
 
     //MutableColumnPtr getOffsetsMutablePtr() { return offsets->assumeMutable(); }
     const ColumnPtr & getOffsetsPtr() const { return offsets; }
