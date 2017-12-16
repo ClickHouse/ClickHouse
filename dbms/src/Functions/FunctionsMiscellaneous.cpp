@@ -455,7 +455,7 @@ public:
         for (size_t i = 0; i < size; ++i)
             data[i] = i;
 
-        block.getByPosition(result).column = column;
+        block.getByPosition(result).column = std::move(column);
     }
 };
 
@@ -547,7 +547,7 @@ public:
         for (size_t i = 0; i < rows_in_block; ++i)
             data[i] = current_row_number + i;
 
-        block.getByPosition(result).column = column;
+        block.getByPosition(result).column = std::move(column);
     }
 };
 
@@ -1152,7 +1152,6 @@ public:
         const auto & src = *block.getByPosition(arguments[0]).column;
 
         auto res_column = ColumnString::create();
-        block.getByPosition(result).column = res_column;
 
         if (executeNumber<UInt8>(src, *res_column, min, max, max_width) || executeNumber<UInt16>(src, *res_column, min, max, max_width)
             || executeNumber<UInt32>(src, *res_column, min, max, max_width)
@@ -1164,6 +1163,7 @@ public:
             || executeNumber<Float32>(src, *res_column, min, max, max_width)
             || executeNumber<Float64>(src, *res_column, min, max, max_width))
         {
+            block.getByPosition(result).column = std::move(res_column);
         }
         else
             throw Exception(
@@ -1283,8 +1283,7 @@ public:
         {
             const auto size = in->size();
 
-            const auto out = ColumnUInt8::create(size);
-            block.getByPosition(result).column = out;
+            auto out = ColumnUInt8::create(size);
 
             const auto & in_data = in->getData();
             auto & out_data = out->getData();
@@ -1292,6 +1291,7 @@ public:
             for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
+            block.getByPosition(result).column = std::move(out);
             return true;
         }
 
@@ -1534,8 +1534,7 @@ public:
 
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
-        ColumnPtr result_column_ptr = agg_func.getReturnType()->createColumn();
-        block.getByPosition(result).column = result_column_ptr;
+        auto result_column_ptr = agg_func.getReturnType()->createColumn();
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 
@@ -1546,6 +1545,8 @@ public:
             agg_func.merge(place.get(), state_to_add, arena.get());
             agg_func.insertResultInto(place.get(), result_column);
         }
+
+        block.getByPosition(result).column = std::move(result_column_ptr);
     }
 };
 
@@ -1782,7 +1783,6 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 
     auto res_col = ColumnUInt64::create(size);
     auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
-    block.getByPosition(result).column = res_col;
 
     /// For simplicity reasons, function is implemented by serializing into temporary buffer.
 
@@ -1796,6 +1796,8 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 
         res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());
     }
+
+    block.getByPosition(result).column = std::move(res_col);
 }
 
 

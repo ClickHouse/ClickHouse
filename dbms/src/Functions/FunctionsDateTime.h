@@ -851,7 +851,6 @@ struct DateTimeAddIntervalImpl
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
             auto col_to = ColumnVector<ToType>::create();
-            block.getByPosition(result).column = col_to;
 
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
@@ -859,12 +858,14 @@ struct DateTimeAddIntervalImpl
                 Op::vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
             else
                 Op::vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (const auto * sources = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get()))
         {
             auto col_to = ColumnVector<ToType>::create();
-            block.getByPosition(result).column = col_to;
             Op::constant_vector(sources->template getValue<FromType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {

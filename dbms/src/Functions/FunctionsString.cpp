@@ -542,11 +542,12 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
-            block.getByPosition(result).column = col_res;
 
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
             Impl::vector(col->getChars(), col->getOffsets(), vec_res);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -561,21 +562,23 @@ public:
             else
             {
                 auto col_res = ColumnVector<ResultType>::create();
-                block.getByPosition(result).column = col_res;
 
                 typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
                 vec_res.resize(col->size());
                 Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
+
+                block.getByPosition(result).column = std::move(col_res);
             }
         }
         else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
-            block.getByPosition(result).column = col_res;
 
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
             Impl::array(col->getOffsets(), vec_res);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(
@@ -743,7 +746,7 @@ private:
             return;
         }
 
-        block.getByPosition(result).column = c_res;
+        block.getByPosition(result).column = std::move(c_res);
     }
 
     void executeNAry(Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -756,7 +759,7 @@ private:
 
         auto c_res = ColumnString::create();
         concat(sources, StringSink(*c_res, block.rows()));
-        block.getByPosition(result).column = c_res;
+        block.getByPosition(result).column = std::move(c_res);
     }
 };
 
@@ -1029,7 +1032,6 @@ private:
         if (const auto col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
 
             const auto & src_data = col->getChars();
             const auto & src_offsets = col->getOffsets();
@@ -1062,6 +1064,7 @@ private:
             }
 
             dst_data.resize_assume_reserved(dst_offset);
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception{

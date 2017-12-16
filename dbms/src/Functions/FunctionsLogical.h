@@ -293,8 +293,7 @@ public:
         {
             if (!in.empty())
                 const_val = Impl<UInt8>::apply(const_val, 0);
-            auto col_res = DataTypeUInt8().createColumnConst(rows, toField(const_val));
-            block.getByPosition(result).column = col_res;
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(rows, toField(const_val));
             return;
         }
 

@@ -92,7 +92,6 @@ private:
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnString::create();
-            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -110,6 +109,8 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -170,7 +171,6 @@ private:
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnString::create();
-            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -188,13 +188,12 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
-        }
-        else
-        {
-            return false;
+
+            block.getByPosition(result).column = std::move(col_to);
+            return true;
         }
 
-        return true;
+        return false;
     }
 };
 

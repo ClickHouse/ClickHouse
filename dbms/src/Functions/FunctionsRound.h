@@ -491,13 +491,15 @@ struct Dispatcher
         }
 
         auto col_res = ColumnVector<T>::create();
-        block.getByPosition(result).column = col_res;
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
         vec_res.resize(col->getData().size());
 
         if (vec_res.empty())
+        {
+            block.getByPosition(result).column = std::move(col_res);
             return;
+        }
 
         if (scale_arg == 0)
         {
@@ -514,6 +516,8 @@ struct Dispatcher
             scale = pow(10, -scale_arg);
             FunctionRoundingImpl<T, rounding_mode, ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
         }
+
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 

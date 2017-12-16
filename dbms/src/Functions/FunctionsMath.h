@@ -92,7 +92,6 @@ private:
         if (const auto col = checkAndGetColumn<ColumnVector<FieldType>>(arg))
         {
             const auto dst = ColumnVector<Float64>::create();
-            block.getByPosition(result).column = dst;
 
             const auto & src_data = col->getData();
             const auto src_size = src_data.size();
@@ -117,6 +116,7 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
+            block.getByPosition(result).column = std::move(dst);
             return true;
         }
 
@@ -222,7 +222,6 @@ private:
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = ColumnVector<Float64>::create();
-            block.getByPosition(result).column = dst;
 
             LeftType left_src_data[Impl::rows_per_iteration];
             std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
@@ -249,6 +248,7 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
+            block.getByPosition(result).column = std::move(dst);
             return true;
         }
 
@@ -262,7 +262,6 @@ private:
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = ColumnVector<Float64>::create();
-            block.getByPosition(result).column = dst;
 
             const auto & left_src_data = left_arg->getData();
             const auto & right_src_data = right_arg_typed->getData();
@@ -291,12 +290,12 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
+            block.getByPosition(result).column = std::move(dst);
             return true;
         }
         else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = ColumnVector<Float64>::create();
-            block.getByPosition(result).column = dst;
 
             const auto & left_src_data = left_arg->getData();
             RightType right_src_data[Impl::rows_per_iteration];
@@ -323,6 +322,7 @@ private:
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
 
+            block.getByPosition(result).column = std::move(dst);
             return true;
         }
 

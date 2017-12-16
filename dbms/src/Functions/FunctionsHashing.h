@@ -206,7 +206,6 @@ public:
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnUInt64::create();
-            block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
@@ -218,6 +217,8 @@ public:
                 vec_to[i] = Impl::apply(
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -257,7 +258,6 @@ public:
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
-            block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
@@ -270,6 +270,8 @@ public:
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
                     &chars_to[i * Impl::length]);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -295,7 +297,6 @@ private:
         if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnVector<ToType>::create();
-            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
             typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
@@ -304,6 +305,8 @@ private:
             vec_to.resize(size);
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -587,7 +590,6 @@ public:
     {
         size_t rows = block.rows();
         auto col_to = ColumnUInt64::create(rows);
-        block.getByPosition(result).column = col_to;
 
         ColumnUInt64::Container & vec_to = col_to->getData();
 
@@ -620,6 +622,8 @@ public:
 
         if (all_constants && block.rows() > 0)
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(1, (*block.getByPosition(result).column)[0]);
+        else
+            block.getByPosition(result).column = std::move(col_to);
     }
 };
 
@@ -759,7 +763,6 @@ private:
         {
             const auto size = col_from->size();
             const auto col_to = ColumnUInt64::create(size);
-            block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -769,6 +772,8 @@ private:
                 out[i] = URLHashImpl::apply(
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception{
@@ -792,7 +797,6 @@ private:
         {
             const auto size = col_from->size();
             const auto col_to = ColumnUInt64::create(size);
-            block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -802,6 +806,8 @@ private:
                 out[i] = URLHierarchyHashImpl::apply(level,
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception{
