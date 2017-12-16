@@ -104,7 +104,6 @@ public:
             const auto & vec_in = col_in->getChars();
 
             auto col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
@@ -121,6 +120,8 @@ public:
             }
 
             vec_res.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -212,7 +213,6 @@ public:
             const auto & vec_in = col_in->getChars();
 
             auto col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
@@ -231,6 +231,8 @@ public:
             }
 
             vec_res.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -418,8 +420,7 @@ public:
 
         if (const auto col_in = checkAndGetColumn<ColumnString>(column.get()))
         {
-            const auto col_res = ColumnFixedString::create(ipv6_bytes_length);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(ipv6_bytes_length);
 
             auto & vec_res = col_res->getChars();
             vec_res.resize(col_in->size() * ipv6_bytes_length);
@@ -435,11 +436,13 @@ public:
                 ipv6_scan(reinterpret_cast<const char * >(&vec_src[src_offset]), &vec_res[out_offset]);
                 src_offset = offsets_src[i];
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -615,7 +618,6 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnUInt32::create();
-            block.getByPosition(result).column = col_res;
 
             ColumnUInt32::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
@@ -629,11 +631,13 @@ public:
                 vec_res[i] = parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]));
                 prev_offset = offsets_src[i];
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -667,8 +671,7 @@ public:
 
         if (const auto col_in = typeid_cast<const ColumnUInt32 *>(column.get()))
         {
-            const auto col_res = ColumnFixedString::create(ipv6_bytes_length);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(ipv6_bytes_length);
 
             auto & vec_res = col_res->getChars();
             vec_res.resize(col_in->size() * ipv6_bytes_length);
@@ -677,11 +680,13 @@ public:
 
             for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += ipv6_bytes_length, ++i)
                 mapIPv4ToIPv6(vec_in[i], &vec_res[out_offset]);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
@@ -854,7 +859,6 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnUInt64::create();
-            block.getByPosition(result).column = col_res;
 
             ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
@@ -875,6 +879,8 @@ public:
 
                 prev_offset = current_offset;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -931,7 +937,6 @@ public:
             const auto & vec_in = col_in->getChars();
 
             auto col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
@@ -950,11 +955,13 @@ public:
                 ++dst_offset;
                 offsets_res[i] = dst_offset;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -1026,7 +1033,6 @@ public:
             const size_t size = offsets_in.size();
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
-            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
@@ -1048,6 +1054,8 @@ public:
                 dst_offset += uuid_bytes_length;
                 src_offset += string_size;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const auto col_in = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -1062,7 +1070,6 @@ public:
             const auto & vec_in = col_in->getChars();
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
-            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
@@ -1076,6 +1083,8 @@ public:
                 src_offset += uuid_text_length;
                 dst_offset += uuid_bytes_length;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1104,10 +1113,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        auto col_to = ColumnVector<UInt128>::create();
-        block.safeGetByPosition(result).column = col_to;
-
-        typename ColumnVector<UInt128>::Container & vec_to = col_to->getData();
+        auto col_res = ColumnVector<UInt128>::create();
+        typename ColumnVector<UInt128>::Container & vec_to = col_res->getData();
 
         size_t size = block.rows();
         vec_to.resize(size);
@@ -1120,6 +1127,8 @@ public:
             uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
             uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
+
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -1184,7 +1193,6 @@ public:
         if (col_vec)
         {
             auto col_str = ColumnString::create();
-            col_res = col_str;
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
@@ -1211,6 +1219,7 @@ public:
 
             out_vec.resize(pos);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1238,7 +1247,6 @@ public:
         if (col_str_in)
         {
             auto col_str = ColumnString::create();
-            col_res = col_str;
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
@@ -1267,6 +1275,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1282,9 +1291,6 @@ public:
         if (col_fstr_in)
         {
             auto col_str = ColumnString::create();
-
-            col_res = col_str;
-
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
@@ -1315,6 +1321,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1466,11 +1473,10 @@ public:
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
         {
             auto col_values = ColumnVector<T>::create();
-            auto col_array = ColumnArray::create(col_values);
-            out_column = col_array;
+            auto col_offsets = ColumnArray::ColumnOffsets::create();
 
-            ColumnArray::Offsets & res_offsets = col_array->getOffsets();
             typename ColumnVector<T>::Container & res_values = col_values->getData();
+            ColumnArray::Offsets & res_offsets = col_offsets->getData();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
@@ -1490,6 +1496,7 @@ public:
                 res_offsets[row] = res_values.size();
             }
 
+            out_column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
             return true;
         }
         else
@@ -1550,7 +1557,6 @@ public:
         if (col_str_in)
         {
             auto col_str = ColumnString::create();
-            col_res = col_str;
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
@@ -1582,6 +1588,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1597,8 +1604,6 @@ public:
         if (col_fstr_in)
         {
             auto col_str = ColumnString::create();
-            col_res = col_str;
-
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
@@ -1629,6 +1634,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
