@@ -147,49 +147,7 @@ BlockInputStreams StorageSystemGraphite::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block;
-
-    ColumnWithTypeAndName col_conf_name;
-    col_conf_name.name = "config_name";
-    col_conf_name.type = std::make_shared<DataTypeString>();
-    col_conf_name.column = ColumnString::create();
-    block.insert(col_conf_name);
-
-    ColumnWithTypeAndName col_regexp;
-    col_regexp.name = "regexp";
-    col_regexp.type = std::make_shared<DataTypeString>();
-    col_regexp.column = ColumnString::create();
-    block.insert(col_regexp);
-
-    ColumnWithTypeAndName col_function;
-    col_function.name = "function";
-    col_function.type = std::make_shared<DataTypeString>();
-    col_function.column = ColumnString::create();
-    block.insert(col_function);
-
-    ColumnWithTypeAndName col_age;
-    col_age.name = "age";
-    col_age.type = std::make_shared<DataTypeUInt64>();
-    col_age.column = ColumnUInt64::create();
-    block.insert(col_age);
-
-    ColumnWithTypeAndName col_precision;
-    col_precision.name = "precision";
-    col_precision.type = std::make_shared<DataTypeUInt64>();
-    col_precision.column = ColumnUInt64::create();
-    block.insert(col_precision);
-
-    ColumnWithTypeAndName col_priority;
-    col_priority.name = "priority";
-    col_priority.type = std::make_shared<DataTypeUInt16>();
-    col_priority.column = ColumnUInt16::create();
-    block.insert(col_priority);
-
-    ColumnWithTypeAndName col_is_default;
-    col_is_default.name = "is_default";
-    col_is_default.type = std::make_shared<DataTypeUInt8>();
-    col_is_default.column = ColumnUInt8::create();
-    block.insert(col_is_default);
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     const auto & config = context.getConfigRef();
 
@@ -201,18 +159,18 @@ BlockInputStreams StorageSystemGraphite::read(
         {
             for (const auto & ret : pattern.retentions)
             {
-                col_conf_name.column->insert(Field(section));
-                col_regexp.column->insert(Field(pattern.regexp));
-                col_function.column->insert(Field(pattern.function));
-                col_age.column->insert(nearestFieldType(ret.age));
-                col_precision.column->insert(nearestFieldType(ret.precision));
-                col_priority.column->insert(nearestFieldType(pattern.priority));
-                col_is_default.column->insert(nearestFieldType(pattern.is_default));
+                res_columns[0]->insert(Field(section));
+                res_columns[1]->insert(Field(pattern.regexp));
+                res_columns[2]->insert(Field(pattern.function));
+                res_columns[3]->insert(nearestFieldType(ret.age));
+                res_columns[4]->insert(nearestFieldType(ret.precision));
+                res_columns[5]->insert(nearestFieldType(pattern.priority));
+                res_columns[6]->insert(nearestFieldType(pattern.is_default));
             }
         }
     }
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }
