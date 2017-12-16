@@ -1290,7 +1290,7 @@ private:
             const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
-            const auto out_col = ColumnVector<UInt8>::create(size);
+            auto out_col = ColumnVector<UInt8>::create(size);
             auto & out = out_col->getData();
 
             if (is_const)
@@ -1323,7 +1323,7 @@ private:
             else
             {
                 const auto mask = createMask<T>(size, block, arguments);
-                const auto out_col = ColumnVector<UInt8>::create(size);
+                auto out_col = ColumnVector<UInt8>::create(size);
 
                 auto & out = out_col->getData();
 
