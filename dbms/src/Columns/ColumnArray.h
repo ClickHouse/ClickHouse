@@ -68,8 +68,8 @@ public:
     IColumn & getData() { return *data->assumeMutable(); }
     const IColumn & getData() const { return *data; }
 
-    //MutableColumnPtr getDataPtr() { return data->assumeMutable(); }
-    const ColumnPtr & getDataPtr() const { return data; }
+    IColumn & getOffsetsColumn() { return *offsets->assumeMutable(); }
+    const IColumn & getOffsetsColumn() const { return *offsets; }
 
     Offsets & ALWAYS_INLINE getOffsets()
     {
@@ -81,8 +81,13 @@ public:
         return static_cast<const ColumnOffsets &>(*offsets).getData();
     }
 
-    MutableColumnPtr getOffsetsPtr() { return offsets->assumeMutable(); }
+    //MutableColumnPtr getDataMutablePtr() { return data->assumeMutable(); }
+    const ColumnPtr & getDataPtr() const { return data; }
+    //ColumnPtr & getDataPtr() { return data; }
+
+    //MutableColumnPtr getOffsetsMutablePtr() { return offsets->assumeMutable(); }
     const ColumnPtr & getOffsetsPtr() const { return offsets; }
+    ColumnPtr & getOffsetsPtr() { return offsets; }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {

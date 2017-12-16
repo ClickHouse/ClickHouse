@@ -266,7 +266,7 @@ void ColumnTuple::reserve(size_t n)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        getColumnPtr(i)->reserve(n);
+        getColumn(i).reserve(n);
 }
 
 size_t ColumnTuple::byteSize() const

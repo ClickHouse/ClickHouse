@@ -216,7 +216,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
         if (position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);
         else
-            DataTypeNumber<ColumnArray::Offset>().deserializeBinaryBulk(*column_array.getOffsetsPtr(), *stream, limit, 0);
+            DataTypeNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
     }
 
     path.back() = Substream::ArrayElements;
