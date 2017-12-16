@@ -91,7 +91,7 @@ private:
     {
         if (const auto col = checkAndGetColumn<ColumnVector<FieldType>>(arg))
         {
-            const auto dst = ColumnVector<Float64>::create();
+            auto dst = ColumnVector<Float64>::create();
 
             const auto & src_data = col->getData();
             const auto src_size = src_data.size();
@@ -221,7 +221,7 @@ private:
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
-            const auto dst = ColumnVector<Float64>::create();
+            auto dst = ColumnVector<Float64>::create();
 
             LeftType left_src_data[Impl::rows_per_iteration];
             std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
@@ -261,7 +261,7 @@ private:
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
-            const auto dst = ColumnVector<Float64>::create();
+            auto dst = ColumnVector<Float64>::create();
 
             const auto & left_src_data = left_arg->getData();
             const auto & right_src_data = right_arg_typed->getData();
@@ -295,7 +295,7 @@ private:
         }
         else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
-            const auto dst = ColumnVector<Float64>::create();
+            auto dst = ColumnVector<Float64>::create();
 
             const auto & left_src_data = left_arg->getData();
             RightType right_src_data[Impl::rows_per_iteration];

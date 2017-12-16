@@ -145,7 +145,7 @@ struct ArrayCountImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
             else
                 return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
@@ -168,7 +168,7 @@ struct ArrayCountImpl
             out_counts[i] = count;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -207,7 +207,7 @@ struct ArrayExistsImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
             else
                 return DataTypeUInt8().createColumnConst(array.size(), UInt64(0));
@@ -234,7 +234,7 @@ struct ArrayExistsImpl
             out_exists[i] = exists;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -275,7 +275,7 @@ struct ArrayAllImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
         }
 
@@ -300,7 +300,7 @@ struct ArrayAllImpl
             out_all[i] = all;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -346,7 +346,6 @@ struct ArraySumImpl
             const Element x = column_const->template getValue<Element>();
 
             auto res_column = ColumnVector<Result>::create(offsets.size());
-            res_ptr = res_column;
             typename ColumnVector<Result>::Container & res = res_column->getData();
 
             size_t pos = 0;
@@ -356,12 +355,12 @@ struct ArraySumImpl
                 pos = offsets[i];
             }
 
+            res_ptr = std::move(res_column);
             return true;
         }
 
         const typename ColumnVector<Element>::Container & data = column->getData();
         auto res_column = ColumnVector<Result>::create(offsets.size());
-        res_ptr = res_column;
         typename ColumnVector<Result>::Container & res = res_column->getData();
 
         size_t pos = 0;
@@ -375,6 +374,7 @@ struct ArraySumImpl
             res[i] = s;
         }
 
+        res_ptr = std::move(res_column);
         return true;
     }
 
@@ -425,7 +425,7 @@ struct ArrayFirstImpl
             {
                 const auto & offsets = array.getOffsets();
                 const auto & data = array.getData();
-                ColumnPtr out{data.cloneEmpty()};
+                auto out = data.cloneEmpty();
 
                 size_t pos{};
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -438,11 +438,11 @@ struct ArrayFirstImpl
                     pos = offsets[i];
                 }
 
-                return out;
+                return std::move(out);
             }
             else
             {
-                ColumnPtr out{array.getData().cloneEmpty()};
+                auto out = array.getData().cloneEmpty();
                 out->insertDefault();
                 return out->replicate(IColumn::Offsets(1, array.size()));
             }
@@ -451,7 +451,7 @@ struct ArrayFirstImpl
         const auto & filter = column_filter->getData();
         const auto & offsets = array.getOffsets();
         const auto & data = array.getData();
-        ColumnPtr out{data.cloneEmpty()};
+        auto out = data.cloneEmpty();
 
         size_t pos{};
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -472,7 +472,7 @@ struct ArrayFirstImpl
                 out->insertDefault();
         }
 
-        return out;
+        return std::move(out);
     }
 };
 
@@ -511,7 +511,7 @@ struct ArrayFirstIndexImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
             else
                 return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
@@ -539,7 +539,7 @@ struct ArrayFirstIndexImpl
             out_index[i] = index;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -798,7 +798,7 @@ public:
                 throw Exception("First argument for function " + getName() + " must be an expression.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            ColumnExpression * column_expression = typeid_cast<ColumnExpression *>(column_with_type_and_name.column.get());
+            const ColumnExpression * column_expression = typeid_cast<const ColumnExpression *>(column_with_type_and_name.column.get());
 
             ColumnPtr offsets_column;
 
@@ -870,7 +870,7 @@ public:
                 ColumnWithTypeAndName replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
 
                 replicated_column.name = name;
-                replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
+                replicated_column.column = typeid_cast<const ColumnArray &>(*replicated_column.column).getDataPtr();
                 replicated_column.type = typeid_cast<const DataTypeArray &>(*replicated_column.type).getNestedType(),
                 temp_block.insert(std::move(replicated_column));
 

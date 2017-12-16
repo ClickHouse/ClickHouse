@@ -593,7 +593,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IColumn * col = block.getByPosition(arguments[0]).column.get();
+        const IColumn * col = block.getByPosition(arguments[0]).column.get();
         double seconds;
         size_t size = col->size();
 
@@ -1667,22 +1667,25 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         auto & src = block.getByPosition(arguments.at(0));
-        auto & res = block.getByPosition(result);
+        const auto & res_type = block.getByPosition(result).type;
 
         /// When column is constant, its difference is zero.
         if (src.column->isColumnConst())
         {
-            res.column = res.type->createColumnConst(block.rows(), res.type->getDefault());
+            block.getByPosition(result).column = res_type->createColumnConst(block.rows(), res_type->getDefault());
             return;
         }
 
-        res.column = res.type->createColumn();
+        auto res_column = res_type->createColumn();
 
-        dispatchForSourceType(*src.type, [&](auto field_type_tag) {
+        dispatchForSourceType(*src.type, [&](auto field_type_tag)
+        {
             using SrcFieldType = decltype(field_type_tag);
             process(static_cast<const ColumnVector<SrcFieldType> &>(*src.column).getData(),
-                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res.column).getData());
+                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData());
         });
+
+        block.getByPosition(result).column = std::move(res_column);
     }
 };
 
@@ -1723,8 +1726,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        ColumnAggregateFunction * column_with_states
-            = typeid_cast<ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
+        const ColumnAggregateFunction * column_with_states
+            = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
         if (!column_with_states)
             throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "

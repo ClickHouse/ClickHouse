@@ -135,7 +135,7 @@ private:
         }
         else
         {
-            const auto dst = ColumnVector<Float64>::create();
+            auto dst = ColumnVector<Float64>::create();
             auto & dst_data = dst->getData();
             dst_data.resize(size);
             Float64 vals[instrs.size()];
@@ -273,7 +273,7 @@ private:
                 const auto col_vec_x = static_cast<const ColumnVector<Float64> *> (col_x);
                 const auto col_vec_y = static_cast<const ColumnVector<Float64> *> (col_y);
 
-                const auto dst = ColumnVector<UInt8>::create();
+                auto dst = ColumnVector<UInt8>::create();
                 auto & dst_data = dst->getData();
                 dst_data.resize(size);
 
