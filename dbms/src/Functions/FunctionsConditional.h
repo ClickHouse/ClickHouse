@@ -33,18 +33,6 @@ namespace DB
 template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
-private:
-    static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
-    {
-        auto col_res = ColumnVector<ResultType>::create();
-        block.getByPosition(result).column = col_res;
-
-        typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-        vec_res.resize(size);
-
-        return vec_res;
-    }
-public:
     static void vector_vector(
         const PaddedPODArray<UInt8> & cond,
         const PaddedPODArray<A> & a, const PaddedPODArray<B> & b,
@@ -52,9 +40,12 @@ public:
         size_t result)
     {
         size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
+        auto col_res = ColumnVector<ResultType>::create();
+        typename ColumnVector<ResultType>::Container & res = col_res->getData();
+        res.resize(size);
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+        block.getByPosition(result).column = std::move(col_res);
     }
 
     static void vector_constant(
@@ -64,9 +55,12 @@ public:
         size_t result)
     {
         size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
+        auto col_res = ColumnVector<ResultType>::create();
+        typename ColumnVector<ResultType>::Container & res = col_res->getData();
+        res.resize(size);
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+        block.getByPosition(result).column = std::move(col_res);
     }
 
     static void constant_vector(
@@ -76,9 +70,12 @@ public:
         size_t result)
     {
         size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
+        auto col_res = ColumnVector<ResultType>::create();
+        typename ColumnVector<ResultType>::Container & res = col_res->getData();
+        res.resize(size);
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+        block.getByPosition(result).column = std::move(col_res);
     }
 
     static void constant_constant(
@@ -88,9 +85,12 @@ public:
         size_t result)
     {
         size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
+        auto col_res = ColumnVector<ResultType>::create();
+        typename ColumnVector<ResultType>::Container & res = col_res->getData();
+        res.resize(size);
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -194,13 +194,15 @@ private:
                 if (!col_right_vec)
                     return false;
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+                auto res = block.getByPosition(result).type->createColumn();
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
                     cond_col->getData());
+
+                block.getByPosition(result).column = std::move(res);
             }
             else
             {
@@ -208,13 +210,15 @@ private:
                 if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
                     return false;
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+                auto res = block.getByPosition(result).type->createColumn();
 
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
                     cond_col->getData());
+
+                block.getByPosition(result).column = std::move(res);
             }
 
             return true;
@@ -250,13 +254,15 @@ private:
                 if (!col_right_vec)
                     return false;
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+                auto res = block.getByPosition(result).type->createColumn();
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
                     cond_col->getData());
+
+                block.getByPosition(result).column = std::move(res);
             }
             else
             {
@@ -264,13 +270,15 @@ private:
                 if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
                     return false;
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+                auto res = block.getByPosition(result).type->createColumn();
 
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
                     cond_col->getData());
+
+                block.getByPosition(result).column = std::move(res);
             }
 
             return true;
@@ -402,7 +410,6 @@ private:
             /// The result is FixedString.
 
             auto col_res_untyped = block.getByPosition(result).type->createColumn();
-            block.getByPosition(result).column = col_res_untyped;
             ColumnFixedString * col_res = static_cast<ColumnFixedString *>(col_res_untyped.get());
             auto sink = FixedStringSink(*col_res, rows);
 
@@ -415,6 +422,7 @@ private:
             else if (col_then_const_fixed && col_else_const_fixed)
                 conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
 
+            block.getByPosition(result).column = std::move(col_res_untyped);
             return true;
         }
 
@@ -477,8 +485,8 @@ private:
         if ((col_arr_then || col_arr_then_const)
             && (col_arr_else || col_arr_else_const))
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
-            auto col_res = static_cast<ColumnArray *>(block.getByPosition(result).column.get());
+            auto res = block.getByPosition(result).type->createColumn();
+            auto col_res = static_cast<ColumnArray *>(res.get());
 
             if (col_arr_then && col_arr_else)
                 conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
@@ -491,6 +499,7 @@ private:
             else
                 return false;
 
+            block.getByPosition(result).column = std::move(res);
             return true;
         }
 
@@ -577,37 +586,37 @@ private:
 
             executeImpl(temporary_block, {0, 1, 2}, 3);
 
-            ColumnPtr & result_column = block.getByPosition(result).column;
-            result_column = temporary_block.getByPosition(3).column;
-
+            MutableColumnPtr result_column = temporary_block.getByPosition(3).column->mutate();
             if (ColumnNullable * result_nullable = typeid_cast<ColumnNullable *>(result_column.get()))
             {
                 result_nullable->applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
+                block.getByPosition(result).column = std::move(result_nullable);
+                return true;
             }
             else if (result_column->onlyNull())
             {
-                result_column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+                return true;
             }
             else
             {
-                result_column = ColumnNullable::create(
-                    materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
+                block.getByPosition(result).column = ColumnNullable::create(
+                    materializeColumnIfConst(std::move(result_column)), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
+                return true;
             }
-
-            return true;
         }
 
         return false;
     }
 
-    static const ColumnPtr materializeColumnIfConst(const ColumnPtr & column)
+    static ColumnPtr materializeColumnIfConst(const ColumnPtr & column)
     {
         if (ColumnPtr res = column->convertToFullColumnIfConst())
             return res;
         return column;
     }
 
-    static const ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
+    static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
         if (column->isColumnNullable())
             return column;
@@ -616,7 +625,7 @@ private:
             materializeColumnIfConst(column), ColumnUInt8::create(column->size(), 0));
     }
 
-    static const ColumnPtr getNestedColumn(const ColumnPtr & column)
+    static ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
         if (column->isColumnNullable())
             return static_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
@@ -733,19 +742,20 @@ private:
                 {
                     auto result_column = arg_else.column->clone();
                     static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
-                    block.getByPosition(result).column = result_column;
+                    block.getByPosition(result).column = std::move(result_column);
                 }
                 else
                 {
                     block.getByPosition(result).column = ColumnNullable::create(
-                        materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
+                        materializeColumnIfConst(arg_else.column), arg_cond.column);
                 }
             }
             else if (cond_const_col)
             {
-                block.getByPosition(result).column = cond_const_col->getValue<UInt8>()
-                    ? block.getByPosition(result).type->createColumn()->cloneResized(block.rows())
-                    : makeNullableColumnIfNot(arg_else.column);
+                if (cond_const_col->getValue<UInt8>())
+                    block.getByPosition(result).column = block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
+                else
+                    block.getByPosition(result).column = makeNullableColumnIfNot(arg_else.column);
             }
             else
                 throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
@@ -773,19 +783,20 @@ private:
                 {
                     auto result_column = arg_then.column->clone();
                     static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
-                    block.getByPosition(result).column = result_column;
+                    block.getByPosition(result).column = std::move(result_column);
                 }
                 else
                 {
                     block.getByPosition(result).column = ColumnNullable::create(
-                        materializeColumnIfConst(arg_then.column), negated_null_map);
+                        materializeColumnIfConst(arg_then.column), std::move(negated_null_map));
                 }
             }
             else if (cond_const_col)
             {
-                block.getByPosition(result).column = cond_const_col->getValue<UInt8>()
-                    ? makeNullableColumnIfNot(arg_then.column)
-                    : block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
+                if (cond_const_col->getValue<UInt8>())
+                    block.getByPosition(result).column = makeNullableColumnIfNot(arg_then.column);
+                else
+                    block.getByPosition(result).column = block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
             }
             else
                 throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()

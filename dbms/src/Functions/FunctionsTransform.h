@@ -183,7 +183,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.getByPosition(result).column = column_result;
+        block.getByPosition(result).column = std::move(column_result);
     }
 
 private:
