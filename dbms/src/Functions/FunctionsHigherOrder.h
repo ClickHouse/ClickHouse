@@ -84,15 +84,14 @@ struct ArrayFilterImpl
             else
                 return ColumnArray::create(
                     array.getDataPtr()->cloneEmpty(),
-                    std::make_shared<ColumnArray::ColumnOffsets>(array.size(), 0));
+                    ColumnArray::ColumnOffsets::create(array.size(), 0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
         ColumnPtr filtered = array.getData().filter(filter, -1);
 
         const IColumn::Offsets & in_offsets = array.getOffsets();
-        auto column_offsets = std::make_shared<ColumnArray::ColumnOffsets>(in_offsets.size());
-        ColumnPtr column_offsets_ptr = column_offsets;
+        auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
         IColumn::Offsets & out_offsets = column_offsets->getData();
 
         size_t in_pos = 0;
@@ -107,7 +106,7 @@ struct ArrayFilterImpl
             out_offsets[i] = out_pos;
         }
 
-        return ColumnArray::create(filtered, column_offsets_ptr);
+        return ColumnArray::create(filtered, std::move(column_offsets));
     }
 };
 

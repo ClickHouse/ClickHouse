@@ -469,11 +469,10 @@ public:
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_values = ColumnVector<T>::create();
-            auto col_array = ColumnArray::create(col_values);
-            block.getByPosition(result).column = col_array;
+            auto col_offsets = ColumnArray::ColumnOffsets::create();
 
-            ColumnArray::Offsets & res_offsets = col_array->getOffsets();
-            typename ColumnVector<T>::Container & res_values = col_values->getData();
+            auto & res_offsets = col_offsets->getData();
+            auto & res_values = col_values->getData();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
@@ -490,11 +489,13 @@ public:
                 }
                 res_offsets[i] = res_values.size();
             }
+
+            block.getByPosition(result).column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of first argument of function " + name,
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of first argument of function " + name,
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

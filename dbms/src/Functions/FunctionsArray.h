@@ -1303,8 +1303,8 @@ private:
         using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
         block.getByPosition(result).column = ColumnArray::create(
-            std::make_shared<UnderlyingColumnType>(),
-            std::make_shared<ColumnArray::ColumnOffsets>(block.rows(), 0));
+            UnderlyingColumnType::create(),
+            ColumnArray::ColumnOffsets::create(block.rows(), 0));
     }
 };
 

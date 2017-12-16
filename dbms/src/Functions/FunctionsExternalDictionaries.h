@@ -329,9 +329,8 @@ private:
         else if (const auto id_col = checkAndGetColumnConst<ColumnVector<UInt64>>(id_col_untyped))
         {
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
-            auto out = std::make_unique<ColumnString>();
+            auto out = ColumnString::create();
             dict->getString(attr_name, ids, out.get());
-
             block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
@@ -471,7 +470,7 @@ private:
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
             const PaddedPODArray<UInt16> dates(1, date_col->getValue<UInt16>());
 
-            auto out = std::make_unique<ColumnString>();
+            auto out = ColumnString::create();
             dictionary->getString(attr_name, ids, dates, out.get());
             block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
@@ -637,7 +636,7 @@ private:
         {
             /// const ids, const defaults
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
-            auto out = std::make_unique<ColumnString>();
+            auto out = ColumnString::create();
             String def = default_col->getValue<String>();
             dictionary->getString(attr_name, ids, def, out.get());
             block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
@@ -1476,20 +1475,18 @@ private:
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
         {
             const auto & in = id_col->getData();
-            const auto backend = ColumnUInt64::create();
-            const auto array = ColumnArray::create(backend);
-            block.getByPosition(result).column = array;
-
-            get_hierarchies(in, backend->getData(), array->getOffsets());
+            auto backend = ColumnUInt64::create();
+            auto offsets = ColumnArray::ColumnOffsets::create();
+            get_hierarchies(in, backend->getData(), offsets->getData());
+            block.getByPosition(result).column = ColumnArray::create(std::move(backend), std::move(offsets));
         }
         else if (const auto id_col = checkAndGetColumnConst<ColumnVector<UInt64>>(id_col_untyped))
         {
             const PaddedPODArray<UInt64> in(1, id_col->getValue<UInt64>());
-            const auto backend = ColumnUInt64::create();
-            const auto array = ColumnArray::create(backend);
-
-            get_hierarchies(in, backend->getData(), array->getOffsets());
-
+            auto backend = ColumnUInt64::create();
+            auto offsets = ColumnArray::ColumnOffsets::create();
+            get_hierarchies(in, backend->getData(), offsets->getData());
+            auto array = ColumnArray::create(std::move(backend), std::move(offsets));
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(id_col->size(), (*array)[0].get<Array>());
         }
         else
