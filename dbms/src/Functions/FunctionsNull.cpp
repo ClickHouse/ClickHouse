@@ -216,7 +216,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
     FunctionMultiIf{context}.execute(temp_block, multi_if_args, result);
 
-    auto res = std::move(temp_block.getByPosition(result).column)->mutate();
+    ColumnPtr res = std::move(temp_block.getByPosition(result).column);
 
     /// if last argument is not nullable, result should be also not nullable
     if (!block.getByPosition(multi_if_args.back()).column->isColumnNullable() && res->isColumnNullable())

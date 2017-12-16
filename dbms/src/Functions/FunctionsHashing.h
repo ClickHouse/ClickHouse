@@ -557,8 +557,8 @@ private:
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
             {
-                ColumnConst tmp(tuple_columns[i], column->size());
-                executeForArgument(tuple_types[i].get(), &tmp, vec_to, is_first);
+                auto tmp = ColumnConst::create(tuple_columns[i], column->size());
+                executeForArgument(tuple_types[i].get(), tmp.get(), vec_to, is_first);
             }
         }
         else
@@ -762,7 +762,7 @@ private:
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
-            const auto col_to = ColumnUInt64::create(size);
+            auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -796,7 +796,7 @@ private:
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
-            const auto col_to = ColumnUInt64::create(size);
+            auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
