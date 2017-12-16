@@ -33,29 +33,35 @@ try
     {
         Block block;
 
-        ColumnWithTypeAndName column1;
-        column1.name = "a";
-        column1.type = table->getDataTypeByName("a");
-        column1.column = column1.type->createColumn();
-        ColumnUInt64::Container & vec1 = typeid_cast<ColumnUInt64&>(*column1.column).getData();
+        {
+            ColumnWithTypeAndName column;
+            column.name = "a";
+            column.type = table->getDataTypeByName("a");
+            auto col = column.type->createColumn();
+            ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
-        vec1.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
-            vec1[i] = i;
+            vec.resize(rows);
+            for (size_t i = 0; i < rows; ++i)
+                vec[i] = i;
 
-        block.insert(column1);
+            column.column = std::move(col);
+            block.insert(column);
+        }
 
-        ColumnWithTypeAndName column2;
-        column2.name = "b";
-        column2.type = table->getDataTypeByName("b");
-        column2.column = column2.type->createColumn();
-        ColumnUInt8::Container & vec2 = typeid_cast<ColumnUInt8&>(*column2.column).getData();
+        {
+            ColumnWithTypeAndName column;
+            column.name = "b";
+            column.type = table->getDataTypeByName("b");
+            auto col = column.type->createColumn();
+            ColumnUInt8::Container & vec = typeid_cast<ColumnUInt8 &>(*col).getData();
 
-        vec2.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
-            vec2[i] = i * 2;
+            vec.resize(rows);
+            for (size_t i = 0; i < rows; ++i)
+                vec[i] = i * 2;
 
-        block.insert(column2);
+            column.column = std::move(col);
+            block.insert(column);
+        }
 
         BlockOutputStreamPtr out = table->write({}, {});
         out->write(block);
