@@ -23,9 +23,6 @@ target_link_libraries (filter_stream_hitlog dbms)
 add_executable (sorting_stream sorting_stream.cpp ${SRCS})
 target_link_libraries (sorting_stream dbms)
 
-add_executable (aggregating_stream aggregating_stream.cpp ${SRCS})
-target_link_libraries (aggregating_stream dbms clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
-
 add_executable (union_stream union_stream.cpp ${SRCS})
 target_link_libraries (union_stream dbms clickhouse_storages_system)
 
