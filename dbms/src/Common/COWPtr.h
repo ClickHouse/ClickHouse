@@ -152,7 +152,7 @@ public:
   * class IColumn : public COWPtr<IColumn>
   * {
   *     friend class COWPtr<IColumn>;
-  *     virtual IColumn * clone() const = 0;
+  *     virtual MutablePtr clone() const = 0;
   *     virtual ~IColumn() {}
   * };
   *
@@ -186,7 +186,7 @@ public:
     template <typename T>
     static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
 
-    Base * clone() const override { return new Derived(*derived()); }
+    typename Base::MutablePtr clone() const override { return new Derived(*derived()); }
 };
 
 

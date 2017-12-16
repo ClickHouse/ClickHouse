@@ -692,19 +692,19 @@ private:
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
 
-        auto c_res = ColumnUInt8::create();
-        block.getByPosition(result).column = c_res;
-        ColumnUInt8::Container & vec_res = c_res->getData();
-        vec_res.resize(c0->size());
-
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
             StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(c0_const->size(), toField(res));
+            return true;
         }
         else
         {
+            auto c_res = ColumnUInt8::create();
+            ColumnUInt8::Container & vec_res = c_res->getData();
+            vec_res.resize(c0->size());
+
             if (c0_string && c1_string)
                 StringImpl::string_vector_string_vector(
                     c0_string->getChars(), c0_string->getOffsets(),
@@ -750,9 +750,10 @@ private:
                     + c0->getName() + " and " + c1->getName()
                     + " of arguments of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
-        }
 
-        return true;
+            block.getByPosition(result).column = std::move(c_res);
+            return true;
+        }
     }
 
     void executeDateOrDateTimeOrEnumWithConstString(
@@ -984,11 +985,6 @@ private:
         bool c0_const = c0->isColumnConst();
         bool c1_const = c1->isColumnConst();
 
-        auto c_res = ColumnUInt8::create();
-        block.getByPosition(result).column = c_res;
-        ColumnUInt8::Container & vec_res = c_res->getData();
-        vec_res.resize(c0->size());
-
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
@@ -997,12 +993,18 @@ private:
         }
         else
         {
+            auto c_res = ColumnUInt8::create();
+            ColumnUInt8::Container & vec_res = c_res->getData();
+            vec_res.resize(c0->size());
+
             if (c0_const)
                 GenericComparisonImpl<Op<int, int>>::constant_vector(*c0, *c1, vec_res);
             else if (c1_const)
                 GenericComparisonImpl<Op<int, int>>::vector_constant(*c0, *c1, vec_res);
             else
                 GenericComparisonImpl<Op<int, int>>::vector_vector(*c0, *c1, vec_res);
+
+            block.getByPosition(result).column = std::move(c_res);
         }
     }
 

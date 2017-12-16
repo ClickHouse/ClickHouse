@@ -6,7 +6,7 @@ class IColumn : public COWPtr<IColumn>
 {
 private:
     friend class COWPtr<IColumn>;
-    virtual IColumn * clone() const = 0;
+    virtual MutablePtr clone() const = 0;
 
 public:
     virtual ~IColumn() {}
@@ -44,19 +44,19 @@ public:
 int main(int, char **)
 {
     ColumnPtr x = ConcreteColumn::create(1);
-    ColumnPtr y = x->test();
+    ColumnPtr y = x;//x->test();
 
     std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
     std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mutable_y = y->mutate();
-        mutable_y->set(2);
+        MutableColumnPtr mut = y->mutate();
+        mut->set(2);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mutable_y->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mutable_y.get() << "\n";
-        y = std::move(mutable_y);
+        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
+        y = std::move(mut);
     }
 
     std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
@@ -70,12 +70,12 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mutable_y = y->mutate();
-        mutable_y->set(3);
+        MutableColumnPtr mut = y->mutate();
+        mut->set(3);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mutable_y->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mutable_y.get() << "\n";
-        y = std::move(mutable_y);
+        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
+        y = std::move(mut);
     }
 
     std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";

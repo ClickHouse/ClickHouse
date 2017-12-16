@@ -124,7 +124,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
     }
 
     size_t rows = block.rows();
-    ColumnPtr res = return_type->createColumn();
+    MutableColumnPtr res = return_type->createColumn();
 
     for (size_t i = 0; i < rows; ++i)
     {
