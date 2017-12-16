@@ -45,8 +45,8 @@ private:
     {
       enum Type { POP, PUSH, READ };
       Type type;
-      capnp::StructSchema::Field field;
-      size_t column;
+      capnp::StructSchema::Field field = {};
+      size_t column = 0;
     };
 
     // Wrapper for classes that could throw in destructor
