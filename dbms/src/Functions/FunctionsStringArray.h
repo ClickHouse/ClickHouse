@@ -350,7 +350,6 @@ public:
                 checkAndGetColumnConstStringOrFixedString(block.getByPosition(array_argument_position).column.get());
 
         auto col_res = ColumnArray::create(ColumnString::create());
-        ColumnPtr col_res_holder = col_res;
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
         ColumnArray::Offsets & res_offsets = col_res->getOffsets();
         ColumnString::Chars_t & res_strings_chars = res_strings.getChars();
@@ -398,7 +397,7 @@ public:
                 res_offsets.push_back(current_dst_offset);
             }
 
-            block.getByPosition(result).column = col_res_holder;
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (col_const_str)
         {
