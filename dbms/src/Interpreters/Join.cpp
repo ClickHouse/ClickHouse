@@ -803,6 +803,8 @@ void Join::joinBlockImplCross(Block & block) const
     size_t num_existing_columns = block.columns();
     size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 
+    size_t rows_left = block.rows();
+
     ColumnRawPtrs src_left_columns(num_existing_columns);
     MutableColumns dst_columns(num_existing_columns + num_columns_to_add);
 
@@ -816,9 +818,8 @@ void Join::joinBlockImplCross(Block & block) const
     {
         const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
         dst_columns[num_existing_columns + i] = src_column.column->cloneEmpty();
+        block.insert(src_column);
     }
-
-    size_t rows_left = block.rows();
 
     /// NOTE It would be better to use `reserve`, as well as `replicate` methods to duplicate the values of the left block.
 
