@@ -43,7 +43,7 @@ void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & nul
             }
         }
 
-        null_map = &static_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+        null_map = null_map_holder ? &static_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
     }
 }
 
