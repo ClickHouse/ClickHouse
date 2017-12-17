@@ -33,7 +33,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::NameAndTypePair & wha
 
 std::ostream & operator<<(std::ostream & stream, const DB::IDataType & what)
 {
-    stream << "IDataType(name = " << what.getName() << ", default = " << what.getDefault();
+    stream << "IDataType(name = " << what.getName() << ", default = " << what.getDefault() << ")";
     return stream;
 }
 
@@ -67,17 +67,34 @@ std::ostream & operator<<(std::ostream & stream, const DB::Block & what)
     return stream;
 }
 
+
+#include <Common/COWPtr.h>
+
+template <typename T>
+std::ostream & printCOWPtr(std::ostream & stream, const typename COWPtr<T>::Ptr & what)
+{
+    stream << "COWPtr::Ptr(" << what.get();
+    if (what)
+        stream << ", use_count = " << what->use_count();
+    stream << ") {";
+    if (what)
+        stream << *what;
+    else
+        stream << "nullptr";
+    stream << "}";
+    return stream;
+}
+
+
 std::ostream & operator<<(std::ostream & stream, const DB::ColumnWithTypeAndName & what)
 {
-    stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << what.type << ", column = " << what.column << ")";
-    return stream;
+    stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << what.type << ", column = ";
+    return printCOWPtr<DB::IColumn>(stream, what.column) << ")";
 }
 
 std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what)
 {
-    stream << "IColumn(name = " << what.getName()
-           // TODO: maybe many flags here
-           << ")";
+    stream << "IColumn(" << what.dumpStructure() << ")";
     return stream;
 }
 
@@ -116,7 +133,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::IAST & what)
 std::ostream & operator<<(std::ostream & stream, const DB::ExpressionAnalyzer & what)
 {
     stream << "ExpressionAnalyzer{"
-           << "hasAggregation="<<what.hasAggregation()
+           << "hasAggregation=" << what.hasAggregation()
            << ", RequiredColumns=" << what.getRequiredColumns()
            << ", SubqueriesForSet=" << what.getSubqueriesForSets()
            << ", ExternalTables=" << what.getExternalTables()
