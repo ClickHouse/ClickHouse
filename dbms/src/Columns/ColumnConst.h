@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -11,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -147,22 +145,10 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    MutableColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
-    {
-        if (s != filt.size())
-            throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        return ColumnConst::create(data, countBytesInFilter(filt));
-    }
-
-    MutableColumnPtr replicate(const Offsets & offsets) const override
-    {
-        if (s != offsets.size())
-            throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        size_t replicated_size = 0 == s ? 0 : offsets.back();
-        return ColumnConst::create(data, replicated_size);
-    }
+    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    MutableColumnPtr replicate(const Offsets & offsets) const override;
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     size_t byteSize() const override
     {
@@ -174,46 +160,12 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override
-    {
-        if (limit == 0)
-            limit = s;
-        else
-            limit = std::min(s, limit);
-
-        if (perm.size() < limit)
-            throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        return ColumnConst::create(data, limit);
-    }
-
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
     {
         return data->compareAt(0, 0, *static_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
-    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
-    {
-        res.resize(s);
-        for (size_t i = 0; i < s; ++i)
-            res[i] = i;
-    }
-
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
-    {
-        if (size() != selector.size())
-            throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        std::vector<size_t> counts(num_columns);
-        for (auto idx : selector)
-            ++counts[idx];
-
-        MutableColumns res(num_columns);
-        for (size_t i = 0; i < num_columns; ++i)
-            res[i] = cloneResized(counts[i]);
-
-        return res;
-    }
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override
     {
