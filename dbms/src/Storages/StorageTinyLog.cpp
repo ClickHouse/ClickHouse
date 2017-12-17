@@ -179,13 +179,8 @@ Block TinyLogBlockInputStream::readImpl()
 
     /// If the files are not open, then open them.
     if (streams.empty())
-    {
         for (size_t i = 0, size = column_names.size(); i < size; ++i)
-        {
-            const auto & name = column_names[i];
-            column_types[i] = storage.getDataTypeByName(name);
-        }
-    }
+            column_types[i] = storage.getDataTypeByName(column_names[i]);
 
     /// Pointers to offset columns, shared for columns from nested data structures
     using OffsetColumns = std::map<std::string, ColumnPtr>;

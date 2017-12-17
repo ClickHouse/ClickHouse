@@ -191,13 +191,8 @@ Block LogBlockInputStream::readImpl()
 
     /// If the files are not open, then open them.
     if (streams.empty())
-    {
         for (size_t i = 0, size = column_names.size(); i < size; ++i)
-        {
-            const auto & name = column_names[i];
-            column_types[i] = storage.getDataTypeByName(name);
-        }
-    }
+            column_types[i] = storage.getDataTypeByName(column_names[i]);
 
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
@@ -217,14 +212,14 @@ Block LogBlockInputStream::readImpl()
         /// For nested structures, remember pointers to columns with offsets
         if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
         {
-            String name = DataTypeNested::extractNestedTableName(name);
+            String nested_name = DataTypeNested::extractNestedTableName(name);
 
-            if (offset_columns.count(name) == 0)
-                offset_columns[name] = ColumnArray::ColumnOffsets::create();
+            if (offset_columns.count(nested_name) == 0)
+                offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
             else
                 read_offsets = false; /// on previous iterations the offsets were already read by `readData`
 
-            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
         }
         else
             column = column_types[i]->createColumn();
