@@ -228,8 +228,9 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
         ++total_merged_rows;
         if (limit && total_merged_rows == limit)
         {
+            auto res = blocks[0].cloneWithColumns(std::move(merged_columns));
             blocks.clear();
-            return blocks[0].cloneWithColumns(std::move(merged_columns));
+            return res;
         }
 
         ++merged_rows;

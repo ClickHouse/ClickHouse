@@ -261,7 +261,7 @@ static void convertColumnToNullable(ColumnWithTypeAndName & column)
 
 void Join::setSampleBlock(const Block & block)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock lock(rwlock);
 
     if (!empty())
         return;
@@ -427,7 +427,7 @@ namespace
 
 bool Join::insertFromBlock(const Block & block)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock lock(rwlock);
 
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
@@ -870,7 +870,7 @@ void Join::joinBlock(Block & block) const
 {
 //    std::cerr << "joinBlock: " << block.dumpStructure() << "\n";
 
-    std::shared_lock<std::shared_mutex> lock(rwlock);
+    std::shared_lock lock(rwlock);
 
     checkTypesOfKeys(block, sample_block_with_keys);
 
@@ -913,7 +913,7 @@ void Join::joinTotals(Block & block) const
     {
         /// We will join empty `totals` - from one row with the default values.
 
-        for (size_t i = 0; i < totals_without_keys.columns(); ++i)
+        for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
         {
             const auto & col = sample_block_with_columns_to_add.getByPosition(i);
             block.insert({
