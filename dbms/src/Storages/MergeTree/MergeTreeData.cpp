@@ -1960,7 +1960,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
             header.insert(ColumnWithTypeAndName(partition_expr_column_types[i], partition_expr_columns[i]));
 
         ValuesRowInputStream input_stream(buf, header, context, /* interpret_expressions = */true);
-        MutableColumns columns;
+        MutableColumns columns = header.cloneEmptyColumns();
 
         if (!input_stream.read(columns))
             throw Exception(

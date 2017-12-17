@@ -99,19 +99,17 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
                 auto it_inserted = offset_columns.emplace(name, nullptr);
 
+                /// offsets have already been read on the previous iteration and we don't need to read it again
                 if (!it_inserted.second)
-                {
-                    /// offsets have already been read on the previous iteration
                     read_offsets = false;
-                }
-                else
-                {
-                    if (!append)
-                    {
-                        offset_columns[name] = ColumnArray::ColumnOffsets::create();
-                        column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[name]);
-                    }
-                }
+
+                /// need to create new offsets
+                if (it_inserted.second && !append)
+                    it_inserted.first->second = ColumnArray::ColumnOffsets::create();
+
+                /// share offsets in all elements of nested structure
+                if (!append)
+                    column = ColumnArray::create(type_arr->getNestedType()->createColumn(), it_inserted.first->second);
             }
 
             try
