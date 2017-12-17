@@ -370,7 +370,7 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
 
-    insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
+    getData().insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
 
     Offsets & cur_offsets = getOffsets();
     const Offsets & src_offsets = src_concrete.getOffsets();

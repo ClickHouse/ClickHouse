@@ -1219,7 +1219,17 @@ Block Aggregator::prepareBlockAndFill(
         res.getByPosition(i).column = std::move(key_columns[i]);
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
-        res.getByPosition(i + params.keys_size).column = std::move(final ? final_aggregate_columns[i] : aggregate_columns[i]);
+    {
+        if (final)
+        {
+            res.getByPosition(i + params.keys_size).type = aggregate_functions[i]->getReturnType();
+            res.getByPosition(i + params.keys_size).column = std::move(final_aggregate_columns[i]);
+        }
+        else
+        {
+            res.getByPosition(i + params.keys_size).column = std::move(aggregate_columns[i]);
+        }
+    }
 
     /// Change the size of the columns-constants in the block.
     size_t columns = sample.columns();
