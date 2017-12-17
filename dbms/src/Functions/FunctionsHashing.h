@@ -580,6 +580,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -608,22 +609,7 @@ public:
             executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
         }
 
-        /// If all arguments are constants, we should return constant result.
-
-        bool all_constants = true;
-        for (size_t arg_idx : arguments)
-        {
-            if (!block.getByPosition(arg_idx).column->isColumnConst())
-            {
-                all_constants = false;
-                break;
-            }
-        }
-
-        if (all_constants && block.rows() > 0)
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(1, (*block.getByPosition(result).column)[0]);
-        else
-            block.getByPosition(result).column = std::move(col_to);
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 
