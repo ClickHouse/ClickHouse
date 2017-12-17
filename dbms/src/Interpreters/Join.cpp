@@ -1075,14 +1075,13 @@ private:
         for (size_t i = 0; i < num_columns_left; ++i)
         {
             const auto & src_col = result_sample_block.safeGetByPosition(column_indices_left[i]);
-            columns_left[i] = src_col.column->cloneEmpty();
+            columns_left[i] = src_col.type->createColumn();
         }
 
         for (size_t i = 0; i < num_columns_right; ++i)
         {
             const auto & src_col = result_sample_block.safeGetByPosition(column_indices_keys_and_right[i]);
-            columns_keys_and_right[i] = src_col.column->cloneEmpty();
-            columns_keys_and_right[i]->reserve(src_col.column->size());
+            columns_keys_and_right[i] = src_col.type->createColumn();
         }
 
         size_t rows_added = 0;
