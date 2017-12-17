@@ -76,7 +76,6 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
     size_t read_rows = 0;
     try
     {
-
         /// Pointers to offset columns that are common to the nested data structure columns.
         /// If append is true, then the value will be equal to nullptr and will be used only to
         /// check that the offsets column has been already read.
@@ -135,6 +134,8 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
             if (column->size())
                 res.getByName(it.name).column = std::move(column);
+            else
+                res.erase(it.name);
         }
 
         /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,

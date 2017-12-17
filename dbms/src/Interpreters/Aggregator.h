@@ -111,7 +111,7 @@ struct AggregationMethodOneNumber
         const FieldType * vec;
 
         /** Called at the start of each block processing.
-          * Sets the variables needed for the other methods called in internal loops.
+          * Sets the variables needed for the other methods called in inner loops.
           */
         void init(ColumnRawPtrs & key_columns)
         {

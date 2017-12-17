@@ -33,7 +33,7 @@ struct SetMethodOneNumber
         const FieldType * vec;
 
         /** Called at the start of each block processing.
-          * Sets the variables required for the other methods called in internal loops.
+          * Sets the variables required for the other methods called in inner loops.
           */
         void init(const ColumnRawPtrs & key_columns)
         {

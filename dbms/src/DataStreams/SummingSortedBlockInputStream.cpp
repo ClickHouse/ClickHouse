@@ -289,7 +289,23 @@ Block SummingSortedBlockInputStream::readImpl()
     }
 
     merge(merged_columns, queue);
-    return header.cloneWithColumns(std::move(merged_columns));
+    Block res = header.cloneWithColumns(std::move(merged_columns));
+
+    /// Place aggregation results into block.
+    for (auto & desc : columns_to_aggregate)
+    {
+        if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        {
+            /// Unpack tuple into block.
+            size_t tuple_size = desc.column_numbers.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+                res.getByPosition(desc.column_numbers[i]).column = static_cast<const ColumnTuple &>(*desc.merged_column).getColumnPtr(i);
+        }
+        else
+            res.getByPosition(desc.column_numbers[0]).column = std::move(desc.merged_column);
+    }
+
+    return res;
 }
 
 
