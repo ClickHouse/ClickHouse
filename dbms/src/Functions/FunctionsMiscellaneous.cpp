@@ -1672,7 +1672,7 @@ public:
         /// When column is constant, its difference is zero.
         if (src.column->isColumnConst())
         {
-            block.getByPosition(result).column = res_type->createColumnConst(block.rows(), res_type->getDefault());
+            block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(block.rows());
             return;
         }
 

@@ -918,7 +918,7 @@ void Join::joinTotals(Block & block) const
         {
             const auto & col = sample_block_with_columns_to_add.getByPosition(i);
             block.insert({
-                col.type->createColumnConst(1, col.type->getDefault())->convertToFullColumnIfConst(),
+                col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
                 col.type,
                 col.name});
         }

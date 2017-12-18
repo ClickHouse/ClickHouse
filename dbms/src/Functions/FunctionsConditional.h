@@ -570,7 +570,7 @@ private:
 
         if (cond_is_null)
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
             return true;
         }
 
@@ -595,7 +595,7 @@ private:
             }
             else if (result_column->onlyNull())
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
                 return true;
             }
             else
@@ -656,14 +656,14 @@ private:
                 {
                     then_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumnPtr()
-                        : DataTypeUInt8().createColumnConst(block.rows(), UInt64(0)),
+                        : DataTypeUInt8().createColumnConstWithDefaultValue(block.rows()),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumnPtr()
-                        : DataTypeUInt8().createColumnConst(block.rows(), UInt64(0)),
+                        : DataTypeUInt8().createColumnConstWithDefaultValue(block.rows()),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
@@ -726,7 +726,7 @@ private:
 
         if (then_is_null && else_is_null)
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
             return true;
         }
 

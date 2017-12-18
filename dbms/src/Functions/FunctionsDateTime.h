@@ -983,7 +983,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt32().createColumnConst(
             block.rows(),
-            static_cast<UInt64>(time(0)));
+            static_cast<UInt64>(time(nullptr)));
     }
 };
 
@@ -1010,7 +1010,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
-            UInt64(DateLUT::instance().toDayNum(time(0))));
+            UInt64(DateLUT::instance().toDayNum(time(nullptr))));
     }
 };
 
@@ -1037,7 +1037,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
-            UInt64(DateLUT::instance().toDayNum(time(0)) - 1));
+            UInt64(DateLUT::instance().toDayNum(time(nullptr)) - 1));
     }
 };
 

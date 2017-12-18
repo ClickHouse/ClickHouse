@@ -480,8 +480,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                     size_t nested_rows = offsets_column->empty() ? 0
                         : typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
-                    ColumnPtr nested_column = nested_type->createColumnConst(
-                        nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
+                    ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
 
                     column_to_add.column = ColumnArray::create(nested_column, offsets_column);
                 }
@@ -489,8 +488,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = column_to_add.type->createColumnConst(
-                        rows, column_to_add.type->getDefault())->convertToFullColumnIfConst();
+                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));

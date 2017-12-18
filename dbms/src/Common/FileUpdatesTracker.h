@@ -15,7 +15,7 @@ private:
 public:
     FileUpdatesTracker(const std::string & path_)
         : path(path_)
-        , known_time(0)
+        , known_time(nullptr)
     {}
 
     bool isModified() const

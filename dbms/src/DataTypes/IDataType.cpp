@@ -46,6 +46,12 @@ ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 }
 
 
+ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
+{
+    return createColumnConst(size, getDefault());
+}
+
+
 void IDataType::serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const
 {
     throw Exception("Data type " + getName() + " must be serialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);

@@ -1081,7 +1081,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             else
             {
                 const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
-                new_index[i] = type.createColumnConst(part->marks_count, type.getDefault())->convertToFullColumnIfConst();
+                new_index[i] = type.createColumnConstWithDefaultValue(part->marks_count)->convertToFullColumnIfConst();
             }
         }
 

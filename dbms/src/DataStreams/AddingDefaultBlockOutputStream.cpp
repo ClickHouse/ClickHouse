@@ -61,7 +61,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
                 DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
                 UInt64 nested_rows = rows ? get<UInt64>((*offsets_column)[rows - 1]) : 0;
 
-                ColumnPtr nested_column = nested_type->createColumnConst(nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
+                ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
                 column_to_add.column = ColumnArray::create(nested_column, offsets_column);
             }
             else
@@ -69,7 +69,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
                 /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
                 *  it can be full (or the interpreter may decide that it is constant everywhere).
                 */
-                column_to_add.column = column_to_add.type->createColumnConst(rows, column_to_add.type->getDefault())->convertToFullColumnIfConst();
+                column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
             }
 
             res.insert(std::move(column_to_add));

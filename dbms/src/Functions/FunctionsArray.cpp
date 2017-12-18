@@ -2505,7 +2505,7 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
 
     if (return_type->onlyNull())
     {
-        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
 
@@ -2598,7 +2598,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
 
     if (return_type->onlyNull())
     {
-        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
 
@@ -2700,7 +2700,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
 
     if (return_type->onlyNull())
     {
-        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
 
@@ -2791,7 +2791,7 @@ void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & argument
 
     if (return_type->onlyNull())
     {
-        block.getByPosition(result).column = return_type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
 
