@@ -225,15 +225,16 @@ void Compiler::compile(
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT
             /// To get correct order merge this results carefully:
-            /// echo | clang -E -Wp,-v -
-            /// echo | g++ -E -Wp,-v -
+            /// echo | clang -x c++ -E -Wp,-v -
+            /// echo | g++ -x c++ -E -Wp,-v -
 
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/backward"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include"
-            //" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*"
-            // " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*"
-            //" -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include-fixed"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include"
