@@ -187,17 +187,7 @@ struct MergeTreeDataPart
     }
 
     /// Throws an exception if state of the part is not in affordable_states
-    void assertState(const std::initializer_list<State> & affordable_states) const
-    {
-        if (!checkState(affordable_states))
-        {
-            String states_str;
-            for (auto state : affordable_states)
-                states_str += stateToString(state) + " ";
-
-            throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str);
-        }
-    }
+    void assertState(const std::initializer_list<State> & affordable_states) const;
 
     /// In comparison with lambdas, it is move assignable and could has several overloaded operator()
     struct StatesFilter
@@ -280,7 +270,7 @@ struct MergeTreeDataPart
     ~MergeTreeDataPart();
 
     /// Calculate the total size of the entire directory with all the files
-    static size_t calcTotalSize(const String & from);
+    static size_t calculateTotalSize(const String & from);
 
     void remove() const;
 
@@ -323,5 +313,8 @@ private:
 
     void checkConsistency(bool require_part_metadata);
 };
+
+
+using MergeTreeDataPartState = MergeTreeDataPart::State;
 
 }

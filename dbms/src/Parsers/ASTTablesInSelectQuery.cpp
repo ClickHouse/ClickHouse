@@ -118,7 +118,7 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
 }
 
 
-void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "");
 

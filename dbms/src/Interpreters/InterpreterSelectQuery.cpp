@@ -124,7 +124,7 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
     {
         if (table_column_names.empty())
         {
-            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getColumnsList();
+            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getNamesAndTypesList();
         }
     }
     else
@@ -315,7 +315,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
     DataTypes res;
-    const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getColumnsList();
+    const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getNamesAndTypesList();
     for (auto & column : columns)
         res.push_back(column.type);
 
@@ -508,7 +508,7 @@ void InterpreterSelectQuery::executeSingleQuery()
             before_order_and_select = chain.getLastActions();
             chain.addStep();
 
-            query_analyzer->appendProjectResult(chain, !second_stage);
+            query_analyzer->appendProjectResult(chain);
             final_projection = chain.getLastActions();
 
             chain.finalize();

@@ -31,10 +31,14 @@ namespace
 }
 
 
-ExternalModels::ExternalModels(Context & context, bool throw_on_error)
+ExternalModels::ExternalModels(
+    std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+    Context & context,
+    bool throw_on_error)
         : ExternalLoader(context.getConfigRef(),
                          externalModelsUpdateSettings,
                          getExternalModelsConfigSettings(),
+                         std::move(config_repository),
                          &Logger::get("ExternalModels"),
                          "external model"),
           context(context)

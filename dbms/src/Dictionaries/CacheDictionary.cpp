@@ -12,7 +12,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/CacheDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
 #include <ext/size.h>
@@ -93,7 +92,7 @@ void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<K
 
 /// Allow to use single value in same way as array.
 static inline CacheDictionary::Key getAt(const PaddedPODArray<CacheDictionary::Key> & arr, const size_t idx) { return arr[idx]; }
-static inline CacheDictionary::Key getAt(const CacheDictionary::Key & value, const size_t idx) { return value; }
+static inline CacheDictionary::Key getAt(const CacheDictionary::Key & value, const size_t) { return value; }
 
 
 template <typename AncestorType>
@@ -459,7 +458,7 @@ void CacheDictionary::createAttributes()
 
 CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}};
 
     switch (type)
     {
@@ -628,7 +627,7 @@ void CacheDictionary::getItemsNumberImpl(
         for (const auto row : outdated_ids[id])
             out[row] = static_cast<OutputType>(attribute_value);
     },
-    [&] (const auto id, const auto cell_idx)
+    [&] (const auto id, const auto)
     {
         for (const auto row : outdated_ids[id])
             out[row] = get_default(row);
@@ -750,7 +749,7 @@ void CacheDictionary::getItemsString(
             map[id] = String{attribute_value};
             total_length += (attribute_value.size + 1) * outdated_ids[id].size();
         },
-        [&] (const auto id, const auto cell_idx)
+        [&] (const auto id, const auto)
         {
             for (const auto row : outdated_ids[id])
                 total_length += get_default(row).size + 1;

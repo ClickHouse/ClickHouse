@@ -84,7 +84,7 @@ public:
       *
       * sample_block should contain data types of arguments and values of constants, if relevant.
       */
-    virtual bool isInjective(const Block & sample_block) { return false; }
+    virtual bool isInjective(const Block & /*sample_block*/) { return false; }
 
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
@@ -98,7 +98,7 @@ public:
     /// Overloading for those who do not need prerequisites and values of constant arguments. Not called from outside.
     DataTypePtr getReturnType(const DataTypes & arguments) const;
 
-    virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const
+    virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
     {
         throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -117,7 +117,7 @@ public:
     virtual void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments,
         DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites)
+        std::vector<ExpressionAction> & /*out_prerequisites*/)
     {
         DataTypes types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -130,7 +130,7 @@ public:
     /// This function will replace it with DataTypeExpression containing actual types.
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
-    virtual void getLambdaArgumentTypesImpl(DataTypes & arguments) const
+    virtual void getLambdaArgumentTypesImpl(DataTypes & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -143,12 +143,12 @@ public:
     /// `prerequisites` go in the same order as `out_prerequisites` obtained from getReturnTypeAndPrerequisites.
     void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result);
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+    virtual void executeImpl(Block & /*block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/)
     {
         throw Exception("executeImpl is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result)
+    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & /*prerequisites*/, size_t result)
     {
         executeImpl(block, arguments, result);
     }
@@ -194,7 +194,7 @@ public:
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
       * NULL can be passed as one of the arguments. This means that the corresponding range is unlimited on the left or on the right.
       */
-    virtual Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
+    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
     }

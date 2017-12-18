@@ -39,7 +39,7 @@ static bool isInjectiveFunction(
         const TypeAndConstantInference::ExpressionInfo & child_info = all_info.at(child_name);
 
         block_with_constants.insert(ColumnWithTypeAndName(
-            child_info.is_constant_expression ? child_info.data_type->createConstColumn(1, child_info.value) : nullptr,
+            child_info.is_constant_expression ? child_info.data_type->createColumnConst(1, child_info.value) : nullptr,
             child_info.data_type,
             child_name));
     }

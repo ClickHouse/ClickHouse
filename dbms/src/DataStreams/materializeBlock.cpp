@@ -1,6 +1,4 @@
 #include <DataStreams/materializeBlock.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -17,19 +15,8 @@ Block materializeBlock(const Block & block)
     {
         auto & element = res.getByPosition(i);
         auto & src = element.column;
-        ColumnPtr converted = src->convertToFullColumnIfConst();
-        if (converted)
-        {
+        if (ColumnPtr converted = src->convertToFullColumnIfConst())
             src = converted;
-
-            auto & type = element.type;
-            if (type->isNull())
-            {
-                /// A ColumnNull that is converted to a full column
-                /// has the type DataTypeNullable(DataTypeUInt8).
-                type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-            }
-        }
     }
 
     return res;

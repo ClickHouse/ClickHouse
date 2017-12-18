@@ -1,7 +1,6 @@
 <a name="data_types"></a>
 
-Типы данных
-===========
+# Типы данных
 
 ```eval_rst
 .. toctree::

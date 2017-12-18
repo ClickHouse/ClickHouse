@@ -58,11 +58,7 @@ private:
             size_t aio_threshold, size_t max_read_buffer_size,
             const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
-        static std::unique_ptr<Stream> createEmptyPtr();
-
         void seekToMark(size_t index);
-
-        bool isEmpty() const { return is_empty; }
 
         ReadBuffer * data_buffer;
 
@@ -85,8 +81,6 @@ private:
 
         std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
-
-        bool is_empty = false;
     };
 
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
@@ -111,14 +105,13 @@ private:
     size_t aio_threshold;
     size_t max_read_buffer_size;
 
-    void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-        size_t level = 0);
+    void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(
         const String & name, const IDataType & type, IColumn & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-        size_t level = 0, bool read_offsets = true);
+        bool read_offsets = true);
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark

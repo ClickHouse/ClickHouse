@@ -30,7 +30,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const DataTypes & arguments
         throw Exception("Function " + getName() + " expects at least 2 arguments",
                         ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
 
-    if (!checkDataType<DataTypeString>(arguments[0].get()))
+    if (!arguments[0]->isString())
         throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                         + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -46,7 +46,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
 
     auto model = models.getModel(name_col->getValue<String>());
 
-    ConstColumnPlainPtrs columns;
+    ColumnRawPtrs columns;
     columns.reserve(arguments.size());
     for (auto i : ext::range(1, arguments.size()))
         columns.push_back(block.getByPosition(arguments[i]).column.get());

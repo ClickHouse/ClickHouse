@@ -1,5 +1,4 @@
-How to build ClickHouse on Linux
-================================
+# How to build ClickHouse on Linux
 
 Build should work on Linux Ubuntu 12.04, 14.04 or newer.
 With appropriate changes, build should work on any other Linux distribution.
@@ -12,8 +11,7 @@ To test for SSE 4.2, do
 grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-Install Git and CMake
----------------------
+## Install Git and CMake
 
 ```bash
 sudo apt-get install git cmake3
@@ -21,15 +19,13 @@ sudo apt-get install git cmake3
 
 Or just cmake on newer systems.
 
-Detect number of threads
-------------------------
+## Detect number of threads
 
 ```bash
 export THREADS=$(grep -c ^processor /proc/cpuinfo)
 ```
 
-Install GCC 7
--------------
+## Install GCC 7
 
 There are several ways to do it.
 
@@ -46,23 +42,20 @@ sudo apt-get install gcc-7 g++-7
 
 Look at [https://github.com/yandex/ClickHouse/blob/master/utils/prepare-environment/install-gcc.sh]
 
-Use GCC 7 for builds
---------------------
+## Use GCC 7 for builds
 
 ```bash
 export CC=gcc-7
 export CXX=g++-7
 ```
 
-Install required libraries from packages
-----------------------------------------
+## Install required libraries from packages
 
 ```bash
 sudo apt-get install libicu-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
 ```
 
-Checkout ClickHouse sources
----------------------------
+## Checkout ClickHouse sources
 
 To get latest stable version:
 
@@ -76,8 +69,7 @@ cd ClickHouse
 For development, switch to the `master` branch.
 For latest release candidate, switch to the `testing` branch.
 
-Build ClickHouse
-----------------
+## Build ClickHouse
 
 There are two variants of build.
 
@@ -91,7 +83,7 @@ sudo apt-get install devscripts dupload fakeroot debhelper
 
 Install recent version of clang.
 
-Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. Recommended version is 5.0. It is optional.
+Clang is embedded into ClickHouse package and used at runtime. Minimum version is 5.0. It is optional.
 
 To install clang, look at `utils/prepare-environment/install-clang.sh`
 

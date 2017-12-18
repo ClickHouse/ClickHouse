@@ -5,6 +5,9 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
+/// Used in the `reserve` method, when the number of rows is known, but sizes of elements are not.
+#define APPROX_STRING_SIZE 64
+
 
 namespace DB
 {
@@ -16,12 +19,12 @@ namespace ErrorCodes
 }
 
 
-ColumnPtr ColumnString::cloneResized(size_t to_size) const
+MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
 {
-    auto res = std::make_shared<ColumnString>();
+    auto res = ColumnString::create();
 
     if (to_size == 0)
-        return res;
+        return std::move(res);
 
     size_t from_size = size();
 
@@ -36,7 +39,7 @@ ColumnPtr ColumnString::cloneResized(size_t to_size) const
     {
         /// Copy column and append empty strings for extra elements.
 
-        Offset_t offset = 0;
+        Offset offset = 0;
         if (from_size > 0)
         {
             res->offsets.assign(offsets.begin(), offsets.end());
@@ -56,7 +59,7 @@ ColumnPtr ColumnString::cloneResized(size_t to_size) const
         }
     }
 
-    return res;
+    return std::move(res);
 }
 
 
@@ -94,22 +97,22 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
 }
 
 
-ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
+MutableColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (offsets.size() == 0)
-        return std::make_shared<ColumnString>();
+        return ColumnString::create();
 
-    auto res = std::make_shared<ColumnString>();
+    auto res = ColumnString::create();
 
     Chars_t & res_chars = res->chars;
-    Offsets_t & res_offsets = res->offsets;
+    Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
-    return res;
+    return std::move(res);
 }
 
 
-ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
+MutableColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = offsets.size();
 
@@ -122,12 +125,12 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (limit == 0)
-        return std::make_shared<ColumnString>();
+        return ColumnString::create();
 
-    std::shared_ptr<ColumnString> res = std::make_shared<ColumnString>();
+    auto res = ColumnString::create();
 
     Chars_t & res_chars = res->chars;
-    Offsets_t & res_offsets = res->offsets;
+    Offsets & res_offsets = res->offsets;
 
     if (limit == size)
         res_chars.resize(chars.size());
@@ -141,7 +144,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 
     res_offsets.resize(limit);
 
-    Offset_t current_new_offset = 0;
+    Offset current_new_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
     {
@@ -155,7 +158,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
         res_offsets[i] = current_new_offset;
     }
 
-    return res;
+    return std::move(res);
 }
 
 
@@ -178,7 +181,7 @@ struct ColumnString::less
     }
 };
 
-void ColumnString::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);
@@ -205,25 +208,25 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int nan_direction_
 }
 
 
-ColumnPtr ColumnString::replicate(const Offsets_t & replicate_offsets) const
+MutableColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnString> res = std::make_shared<ColumnString>();
+    auto res = ColumnString::create();
 
     if (0 == col_size)
-        return res;
+        return std::move(res);
 
     Chars_t & res_chars = res->chars;
-    Offsets_t & res_offsets = res->offsets;
+    Offsets & res_offsets = res->offsets;
     res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
     res_offsets.reserve(replicate_offsets.back());
 
-    Offset_t prev_replicate_offset = 0;
-    Offset_t prev_string_offset = 0;
-    Offset_t current_new_offset = 0;
+    Offset prev_replicate_offset = 0;
+    Offset prev_string_offset = 0;
+    Offset current_new_offset = 0;
 
     for (size_t i = 0; i < col_size; ++i)
     {
@@ -244,7 +247,7 @@ ColumnPtr ColumnString::replicate(const Offsets_t & replicate_offsets) const
         prev_string_offset = offsets[i];
     }
 
-    return res;
+    return std::move(res);
 }
 
 
@@ -257,7 +260,7 @@ void ColumnString::gather(ColumnGathererStream & gatherer)
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve(n);
-    chars.reserve(n * DBMS_APPROX_STRING_SIZE);
+    chars.reserve(n * APPROX_STRING_SIZE);
 }
 
 

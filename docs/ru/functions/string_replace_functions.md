@@ -1,14 +1,13 @@
-Функции поиска и замены в строках
-=================================
+# Функции поиска и замены в строках
 
-### replaceOne(haystack, pattern, replacement)
+## replaceOne(haystack, pattern, replacement)
 Замена первого вхождения, если такое есть, подстроки pattern в haystack на подстроку replacement.
 Здесь и далее, pattern и replacement должны быть константами.
 
-### replaceAll(haystack, pattern, replacement)
+## replaceAll(haystack, pattern, replacement)
 Замена всех вхождений подстроки pattern в haystack на подстроку replacement.
 
-### replaceRegexpOne(haystack, pattern, replacement)
+## replaceRegexpOne(haystack, pattern, replacement)
 Замена по регулярному выражению pattern. Регулярное выражение re2.
 Заменяется только первое вхождение, если есть.
 В качестве replacement может быть указан шаблон для замен. Этот шаблон может включать в себя подстановки `\0-\9`.
@@ -49,7 +48,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### replaceRegexpAll(haystack, pattern, replacement)
+## replaceRegexpAll(haystack, pattern, replacement)
 То же самое, но делается замена всех вхождений. Пример:
 
 ```sql

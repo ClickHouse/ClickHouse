@@ -22,7 +22,7 @@
 
 /// Parses query from stdin and print data types of expressions; and for constant expressions, print its values.
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;

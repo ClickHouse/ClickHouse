@@ -50,13 +50,13 @@ void QuotaForInterval::initFromConfig(const String & config_elem, time_t duratio
 void QuotaForInterval::checkExceeded(time_t current_time, const String & quota_name, const String & user_name)
 {
     updateTime(current_time);
-    check(max.queries, used.queries, current_time, quota_name, user_name, "Queries");
-    check(max.errors, used.errors, current_time, quota_name, user_name, "Errors");
-    check(max.result_rows, used.result_rows, current_time, quota_name, user_name, "Total result rows");
-    check(max.result_bytes, used.result_bytes, current_time, quota_name, user_name, "Total result bytes");
-    check(max.read_rows, used.read_rows, current_time, quota_name, user_name, "Total rows read");
-    check(max.read_bytes, used.read_bytes, current_time, quota_name, user_name, "Total bytes read");
-    check(max.execution_time_usec / 1000000, used.execution_time_usec / 1000000, current_time, quota_name, user_name, "Total execution time");
+    check(max.queries, used.queries, quota_name, user_name, "Queries");
+    check(max.errors, used.errors, quota_name, user_name, "Errors");
+    check(max.result_rows, used.result_rows, quota_name, user_name, "Total result rows");
+    check(max.result_bytes, used.result_bytes, quota_name, user_name, "Total result bytes");
+    check(max.read_rows, used.read_rows, quota_name, user_name, "Total rows read");
+    check(max.read_bytes, used.read_bytes, quota_name, user_name, "Total bytes read");
+    check(max.execution_time_usec / 1000000, used.execution_time_usec / 1000000, quota_name, user_name, "Total execution time");
 }
 
 String QuotaForInterval::toString() const
@@ -131,7 +131,7 @@ void QuotaForInterval::updateTime(time_t current_time)
 }
 
 void QuotaForInterval::check(
-    size_t max_amount, size_t used_amount, time_t current_time,
+    size_t max_amount, size_t used_amount,
     const String & quota_name, const String & user_name, const char * resource_name)
 {
     if (max_amount && used_amount > max_amount)

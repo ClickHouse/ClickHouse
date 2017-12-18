@@ -410,24 +410,14 @@ struct AbsImpl
 {
     using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
 
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, void>::type * = nullptr)
+    static inline ResultType apply(A a)
     {
-        return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
-    }
-
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type * = nullptr)
-    {
-        return static_cast<ResultType>(a);
-    }
-
-    template <typename T = A>
-    static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
-    {
-        return static_cast<ResultType>(std::abs(a));
+        if constexpr (std::is_integral<A>::value && std::is_signed<A>::value)
+            return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+        else if constexpr (std::is_integral<A>::value && std::is_unsigned<A>::value)
+            return static_cast<ResultType>(a);
+        else if constexpr (std::is_floating_point<A>::value)
+            return static_cast<ResultType>(std::abs(a));
     }
 };
 
@@ -493,15 +483,6 @@ template <> struct IsIntegral<DataTypeInt8> { static constexpr auto value = true
 template <> struct IsIntegral<DataTypeInt16> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeInt32> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeInt64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsFloating { static constexpr auto value = false; };
-template <> struct IsFloating<DataTypeFloat32> { static constexpr auto value = true; };
-template <> struct IsFloating<DataTypeFloat64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsNumeric
-{
-    static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
-};
 
 template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
 template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
@@ -582,21 +563,17 @@ public:
 private:
     const Context & context;
 
-    /// Overload for InvalidType
-    template <typename ResultDataType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+    template <typename ResultDataType>
     bool checkRightTypeImpl(DataTypePtr & type_res) const
     {
-        return false;
-    }
-
-    /// Overload for well-defined operations
-    template <typename ResultDataType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool checkRightTypeImpl(DataTypePtr & type_res) const
-    {
-        type_res = std::make_shared<ResultDataType>();
-        return true;
+        /// Overload for InvalidType
+        if constexpr (std::is_same<ResultDataType, InvalidType>::value)
+            return false;
+        else
+        {
+            type_res = std::make_shared<ResultDataType>();
+            return true;
+        }
     }
 
     template <typename LeftDataType, typename RightDataType>
@@ -646,27 +623,22 @@ private:
     }
 
     /// Overload for InvalidType
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
+    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType>
+    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments,
+        [[maybe_unused]] const size_t result, [[maybe_unused]] const ColumnType * col_left)
     {
-        throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+        if constexpr (std::is_same<ResultDataType, InvalidType>::value)
+            throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        else
+        {
+            using T0 = typename LeftDataType::FieldType;
+            using T1 = typename RightDataType::FieldType;
+            using ResultType = typename ResultDataType::FieldType;
 
-    /// Overload for well-defined operations
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
-    {
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
-
-        return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+            return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+        }
     }
 
     /// ColumnVector overload
@@ -675,24 +647,24 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -705,20 +677,20 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createColumnConst(col_left->size(), toField(res));
 
             return true;
         }
@@ -868,7 +840,7 @@ public:
             || checkLeftType<DataTypeInt64>(arguments, type_res)
             || checkLeftType<DataTypeFloat32>(arguments, type_res)
             || checkLeftType<DataTypeFloat64>(arguments, type_res)))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type_res;
@@ -923,7 +895,7 @@ class FunctionUnaryArithmetic : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryArithmetic>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
 private:
     template <typename T0>
@@ -944,13 +916,13 @@ private:
         {
             using ResultType = typename Op<T0>::ResultType;
 
-            std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
-            typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
             UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -1010,7 +982,7 @@ public:
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
     }
@@ -1070,7 +1042,7 @@ using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
 template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { true, false };
     }
@@ -1094,7 +1066,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return {};
     }
@@ -1269,14 +1241,7 @@ public:
 
         const auto first_arg = arguments.front().get();
 
-        if (!checkDataType<DataTypeUInt8>(first_arg)
-            && !checkDataType<DataTypeUInt16>(first_arg)
-            && !checkDataType<DataTypeUInt32>(first_arg)
-            && !checkDataType<DataTypeUInt64>(first_arg)
-            && !checkDataType<DataTypeInt8>(first_arg)
-            && !checkDataType<DataTypeInt16>(first_arg)
-            && !checkDataType<DataTypeInt32>(first_arg)
-            && !checkDataType<DataTypeInt64>(first_arg))
+        if (!first_arg->isInteger())
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1286,10 +1251,7 @@ public:
         {
             const auto pos_arg = arguments[i].get();
 
-            if (!checkDataType<DataTypeUInt8>(pos_arg)
-                && !checkDataType<DataTypeUInt16>(pos_arg)
-                && !checkDataType<DataTypeUInt32>(pos_arg)
-                && !checkDataType<DataTypeUInt64>(pos_arg))
+            if (!pos_arg->isUnsignedInteger())
                 throw Exception{
                     "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1325,10 +1287,10 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
-            const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+            auto out_col = ColumnVector<UInt8>::create(size);
             auto & out = out_col->getData();
 
             if (is_const)
@@ -1344,31 +1306,31 @@ private:
                     out[i] = Impl::apply(val[i], mask[i]);
             }
 
-            block.getByPosition(result).column = out_col;
+            block.getByPosition(result).column = std::move(out_col);
             return true;
         }
         else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto val = value_col->template getValue<T>();
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
             }
             else
             {
                 const auto mask = createMask<T>(size, block, arguments);
-                const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+                auto out_col = ColumnVector<UInt8>::create(size);
 
                 auto & out = out_col->getData();
 
                 for (const auto i : ext::range(0, size))
                     out[i] = Impl::apply(val, mask[i]);
 
-                block.getByPosition(result).column = out_col;
+                block.getByPosition(result).column = std::move(out_col);
             }
 
             return true;
@@ -1378,7 +1340,7 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMask(const size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    ValueType createConstMask(const Block & block, const ColumnNumbers & arguments, bool & is_const)
     {
         is_const = true;
         ValueType mask = 0;

@@ -13,16 +13,18 @@ namespace DB
 class ISecurityManager
 {
 public:
+    using UserPtr = std::shared_ptr<const User>;
+
     virtual void loadFromConfig(Poco::Util::AbstractConfiguration & config) = 0;
 
     /// Find user and make authorize checks
-    virtual const User & authorizeAndGetUser(
+    virtual UserPtr authorizeAndGetUser(
         const String & user_name,
         const String & password,
         const Poco::Net::IPAddress & address) const = 0;
 
     /// Just find user
-    virtual const User & getUser(const String & user_name) const = 0;
+    virtual UserPtr getUser(const String & user_name) const = 0;
 
     /// Check if the user has access to the database.
     virtual bool hasAccessToDatabase(const String & user_name, const String & database_name) const = 0;

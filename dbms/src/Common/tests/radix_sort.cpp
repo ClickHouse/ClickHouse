@@ -31,12 +31,18 @@ void NO_INLINE sort3(Key * data, size_t size)
 
 int main(int argc, char ** argv)
 {
+    if (argc < 3)
+    {
+        std::cerr << "Usage: program n method\n";
+        return 1;
+    }
+
     size_t n = DB::parse<size_t>(argv[1]);
     size_t method = DB::parse<size_t>(argv[2]);
 
     std::vector<Key> data(n);
 
-//    srand(time(0));
+//    srand(time(nullptr));
 
     {
         Stopwatch watch;

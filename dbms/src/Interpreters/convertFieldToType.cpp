@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -11,7 +12,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTraits.h>
 
 #include <Core/AccurateComparison.h>
 #include <Common/FieldVisitors.h>
@@ -105,18 +105,18 @@ UInt128 stringToUUID(const String & s)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 {
-    if (type.isNumeric())
+    if (type.isValueRepresentedByNumber())
     {
-        if (typeid_cast<const DataTypeUInt8 *>(&type))        return convertNumericType<UInt8>(src, type);
-        if (typeid_cast<const DataTypeUInt16 *>(&type))        return convertNumericType<UInt16>(src, type);
-        if (typeid_cast<const DataTypeUInt32 *>(&type))        return convertNumericType<UInt32>(src, type);
-        if (typeid_cast<const DataTypeUInt64 *>(&type))        return convertNumericType<UInt64>(src, type);
-        if (typeid_cast<const DataTypeInt8 *>(&type))        return convertNumericType<Int8>(src, type);
-        if (typeid_cast<const DataTypeInt16 *>(&type))        return convertNumericType<Int16>(src, type);
-        if (typeid_cast<const DataTypeInt32 *>(&type))        return convertNumericType<Int32>(src, type);
-        if (typeid_cast<const DataTypeInt64 *>(&type))        return convertNumericType<Int64>(src, type);
-        if (typeid_cast<const DataTypeFloat32 *>(&type))    return convertNumericType<Float32>(src, type);
-        if (typeid_cast<const DataTypeFloat64 *>(&type))    return convertNumericType<Float64>(src, type);
+        if (typeid_cast<const DataTypeUInt8 *>(&type)) return convertNumericType<UInt8>(src, type);
+        if (typeid_cast<const DataTypeUInt16 *>(&type)) return convertNumericType<UInt16>(src, type);
+        if (typeid_cast<const DataTypeUInt32 *>(&type)) return convertNumericType<UInt32>(src, type);
+        if (typeid_cast<const DataTypeUInt64 *>(&type)) return convertNumericType<UInt64>(src, type);
+        if (typeid_cast<const DataTypeInt8 *>(&type))  return convertNumericType<Int8>(src, type);
+        if (typeid_cast<const DataTypeInt16 *>(&type)) return convertNumericType<Int16>(src, type);
+        if (typeid_cast<const DataTypeInt32 *>(&type)) return convertNumericType<Int32>(src, type);
+        if (typeid_cast<const DataTypeInt64 *>(&type)) return convertNumericType<Int64>(src, type);
+        if (typeid_cast<const DataTypeFloat32 *>(&type)) return convertNumericType<Float32>(src, type);
+        if (typeid_cast<const DataTypeFloat64 *>(&type)) return convertNumericType<Float64>(src, type);
 
         const bool is_date = typeid_cast<const DataTypeDate *>(&type);
         bool is_datetime = false;
@@ -155,41 +155,50 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
                 return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
             }
         }
-
-        throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-            + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
+    }
+    else if (type.isStringOrFixedString())
+    {
+        if (src.getType() == Field::Types::String)
+            return src;
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {
-        if (src.getType() != Field::Types::Array)
-            throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-                + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
+        if (src.getType() == Field::Types::Array)
+        {
+            const DataTypePtr nested_type = removeNullable(type_array->getNestedType());
 
-        const IDataType & nested_type = *DataTypeTraits::removeNullable(type_array->getNestedType());
+            const Array & src_arr = src.get<Array>();
+            size_t src_arr_size = src_arr.size();
 
-        const Array & src_arr = src.get<Array>();
-        size_t src_arr_size = src_arr.size();
+            Array res(src_arr_size);
+            for (size_t i = 0; i < src_arr_size; ++i)
+                res[i] = convertFieldToType(src_arr[i], *nested_type);
 
-        Array res(src_arr_size);
-        for (size_t i = 0; i < src_arr_size; ++i)
-            res[i] = convertFieldToType(src_arr[i], nested_type);
-
-        return res;
+            return res;
+        }
     }
-    else
+    else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
     {
-        if (src.getType() == Field::Types::UInt64
-            || src.getType() == Field::Types::Int64
-            || src.getType() == Field::Types::Float64
-            || src.getType() == Field::Types::Array
-            || (src.getType() == Field::Types::String
-                && !typeid_cast<const DataTypeString *>(&type)
-                && !typeid_cast<const DataTypeFixedString *>(&type)))
-            throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-                + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
+        if (src.getType() == Field::Types::Tuple)
+        {
+            const TupleBackend & src_tuple = src.get<Tuple>();
+            size_t src_tuple_size = src_tuple.size();
+            size_t dst_tuple_size = type_tuple->getElements().size();
+
+            if (dst_tuple_size != src_tuple_size)
+                throw Exception("Bad size of tuple in IN or VALUES section. Expected size: "
+                    + toString(dst_tuple_size) + ", actual size: " + toString(src_tuple_size), ErrorCodes::TYPE_MISMATCH);
+
+            TupleBackend res(dst_tuple_size);
+            for (size_t i = 0; i < dst_tuple_size; ++i)
+                res[i] = convertFieldToType(src_tuple[i], *type_tuple->getElements()[i]);
+
+            return res;
+        }
     }
 
-    return src;
+    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+        + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 }
 
 }

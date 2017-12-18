@@ -53,7 +53,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) cons
 {
     ColumnString & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars_t & data = column_string.getChars();
-    ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    ColumnString::Offsets & offsets = column_string.getOffsets();
 
     UInt64 size;
     readVarUInt(size, istr);
@@ -81,7 +81,7 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
 {
     const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
     const ColumnString::Chars_t & data = column_string.getChars();
-    const ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    const ColumnString::Offsets & offsets = column_string.getOffsets();
 
     size_t size = column.size();
     if (!size)
@@ -110,7 +110,7 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
 
 
 template <int UNROLL_TIMES>
-static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, ColumnString::Offsets_t & offsets, ReadBuffer & istr, size_t limit)
+static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
     size_t offset = data.size();
     for (size_t i = 0; i < limit; ++i)
@@ -174,7 +174,7 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
 {
     ColumnString & column_string = typeid_cast<ColumnString &>(column);
     ColumnString::Chars_t & data = column_string.getChars();
-    ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    ColumnString::Offsets & offsets = column_string.getOffsets();
 
     double avg_chars_size;
 
@@ -219,11 +219,11 @@ void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num
 
 
 template <typename Reader>
-static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
+static inline void read(IColumn & column, Reader && reader)
 {
     ColumnString & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars_t & data = column_string.getChars();
-    ColumnString::Offsets_t & offsets = column_string.getOffsets();
+    ColumnString::Offsets & offsets = column_string.getOffsets();
 
     size_t old_chars_size = data.size();
     size_t old_offsets_size = offsets.size();
@@ -245,7 +245,7 @@ static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
 
 void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
 }
 
 
@@ -257,7 +257,7 @@ void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num,
 
 void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 
@@ -269,7 +269,7 @@ void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, W
 
 void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
 }
 
 
@@ -285,15 +285,15 @@ void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, Wr
 }
 
 
-void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
 }
 
 
-ColumnPtr DataTypeString::createColumn() const
+MutableColumnPtr DataTypeString::createColumn() const
 {
-    return std::make_shared<ColumnString>();
+    return ColumnString::create();
 }
 
 
