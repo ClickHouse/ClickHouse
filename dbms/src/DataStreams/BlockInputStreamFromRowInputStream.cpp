@@ -1,8 +1,6 @@
 #include <Common/Exception.h>
 #include <DataStreams/BlockInputStreamFromRowInputStream.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -45,8 +43,6 @@ static bool isParseError(int code)
 
 Block BlockInputStreamFromRowInputStream::readImpl()
 {
-    DUMP(sample);
-
     size_t num_columns = sample.columns();
     MutableColumns columns = sample.cloneEmptyColumns();
 

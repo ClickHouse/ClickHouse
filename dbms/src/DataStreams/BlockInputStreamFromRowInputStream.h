@@ -43,7 +43,7 @@ protected:
 
 private:
     RowInputStreamPtr row_input;
-    const Block & sample;
+    Block sample;
     size_t max_block_size;
 
     UInt64 allow_errors_num;

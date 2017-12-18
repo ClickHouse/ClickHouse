@@ -62,7 +62,7 @@ private:
     using SchemaParser = DestructorCatcher<capnp::SchemaParser>;
 
     ReadBuffer & istr;
-    const Block & header;
+    Block header;
     std::shared_ptr<SchemaParser> parser;
     capnp::StructSchema root;
     std::vector<Action> actions;

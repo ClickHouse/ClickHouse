@@ -29,7 +29,7 @@ public:
 
 private:
     ReadBuffer & istr;
-    const Block & header;
+    Block header;
     const char delimiter;
     bool with_names;
     bool with_types;

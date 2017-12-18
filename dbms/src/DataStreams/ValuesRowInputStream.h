@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <DataStreams/IRowInputStream.h>
 
 
 namespace DB
 {
 
-class Block;
 class Context;
 class ReadBuffer;
 
@@ -26,7 +26,7 @@ public:
 
 private:
     ReadBuffer & istr;
-    const Block & header;
+    Block header;
     const Context & context;
     bool interpret_expressions;
 };

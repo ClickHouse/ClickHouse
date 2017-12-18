@@ -21,7 +21,7 @@ public:
 
 private:
     ReadBuffer & istr;
-    const Block & header;
+    Block header;
 };
 
 }

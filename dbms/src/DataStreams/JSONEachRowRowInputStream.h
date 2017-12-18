@@ -26,7 +26,7 @@ public:
 
 private:
     ReadBuffer & istr;
-    const Block & header;
+    Block header;
     bool skip_unknown;
 
     /// Buffer for the read from the stream field name. Used when you have to copy it.
