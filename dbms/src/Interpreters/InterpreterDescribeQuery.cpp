@@ -49,7 +49,6 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
-
     return block;
 }
 
@@ -65,7 +64,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
 
     if (table_expression->subquery)
-        columns = InterpreterSelectQuery::getSampleBlock(table_expression->subquery->children[0], context).getColumnsList();
+        columns = InterpreterSelectQuery::getSampleBlock(table_expression->subquery->children[0], context).getNamesAndTypesList();
     else
     {
         if (table_expression->table_function)
@@ -107,31 +106,28 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         column_defaults = table->column_defaults;
     }
 
-    ColumnWithTypeAndName name_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName type_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "type" };
-    ColumnWithTypeAndName default_type_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "default_type" };
-    ColumnWithTypeAndName default_expression_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "default_expression" };;
+    Block sample_block = getSampleBlock();
+    MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     for (const auto & column : columns)
     {
-        name_column.column->insert(column.name);
-        type_column.column->insert(column.type->getName());
+        res_columns[0]->insert(column.name);
+        res_columns[1]->insert(column.type->getName());
 
         const auto it = column_defaults.find(column.name);
         if (it == std::end(column_defaults))
         {
-            default_type_column.column->insertDefault();
-            default_expression_column.column->insertDefault();
+            res_columns[2]->insertDefault();
+            res_columns[3]->insertDefault();
         }
         else
         {
-            default_type_column.column->insert(toString(it->second.type));
-            default_expression_column.column->insert(queryToString(it->second.expression));
+            res_columns[2]->insert(toString(it->second.type));
+            res_columns[3]->insert(queryToString(it->second.expression));
         }
     }
 
-    return std::make_shared<OneBlockInputStream>(
-        Block{name_column, type_column, default_type_column, default_expression_column});
+    return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }
 
 }

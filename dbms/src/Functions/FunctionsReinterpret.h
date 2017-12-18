@@ -55,12 +55,11 @@ public:
     {
         if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * (sizeof(T) + 1));
             offsets_to.resize(size);
@@ -80,6 +79,8 @@ public:
                 offsets_to[i] = pos;
             }
             data_to.resize(pos);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -139,15 +140,14 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (ColumnString * col_from = typeid_cast<ColumnString *>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ToFieldType>::create();
 
-            ColumnString::Chars_t & data_from = col_from->getChars();
-            ColumnString::Offsets_t & offsets_from = col_from->getOffsets();
+            const ColumnString::Chars_t & data_from = col_from->getChars();
+            const ColumnString::Offsets & offsets_from = col_from->getOffsets();
             size_t size = offsets_from.size();
-            typename ColumnVector<ToFieldType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();
             vec_res.resize(size);
 
             size_t offset = 0;
@@ -158,16 +158,17 @@ public:
                 vec_res[i] = value;
                 offset = offsets_from[i];
             }
-        }
-        else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
-        {
-            auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
-            block.getByPosition(result).column = col_res;
 
-            ColumnString::Chars_t & data_from = col_from->getChars();
+            block.getByPosition(result).column = std::move(col_res);
+        }
+        else if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
+        {
+            auto col_res = ColumnVector<ToFieldType>::create();
+
+            const ColumnString::Chars_t & data_from = col_from->getChars();
             size_t step = col_from->getN();
             size_t size = data_from.size() / step;
-            typename ColumnVector<ToFieldType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();
             vec_res.resize(size);
 
             size_t offset = 0;
@@ -179,12 +180,14 @@ public:
                 vec_res[i] = value;
                 offset += step;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
         {
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 };

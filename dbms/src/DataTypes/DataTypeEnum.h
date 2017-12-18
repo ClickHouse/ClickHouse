@@ -90,8 +90,6 @@ public:
     Field castToName(const Field & value_or_name) const override;
     Field castToValue(const Field & value_or_name) const override;
 
-    DataTypePtr clone() const override;
-
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -110,7 +108,7 @@ public:
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
 
-    ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
+    MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;

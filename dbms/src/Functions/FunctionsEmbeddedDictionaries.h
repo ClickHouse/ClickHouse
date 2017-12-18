@@ -240,16 +240,17 @@ public:
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<T>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<T>::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
-            typename ColumnVector<T>::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
+            typename ColumnVector<T>::Container & vec_to = col_to->getData();
             size_t size = vec_from.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -338,45 +339,48 @@ public:
 
         if (col_vec1 && col_vec2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt8::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
-            const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
+            const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], vec_from2[i], dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (col_vec1 && col_const2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt8::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
+            const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
             const T const_from2 = col_const2->template getValue<T>();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], const_from2, dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (col_const1 && col_vec2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt8::create();
 
             const T const_from1 = col_const1->template getValue<T>();
-            const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from2.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(const_from1, vec_from2[i], dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (col_const1 && col_const2)
         {
@@ -464,14 +468,13 @@ public:
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_values = std::make_shared<ColumnVector<T>>();
-            auto col_array = std::make_shared<ColumnArray>(col_values);
-            block.getByPosition(result).column = col_array;
+            auto col_values = ColumnVector<T>::create();
+            auto col_offsets = ColumnArray::ColumnOffsets::create();
 
-            ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
-            typename ColumnVector<T>::Container_t & res_values = col_values->getData();
+            auto & res_offsets = col_offsets->getData();
+            auto & res_values = col_values->getData();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             res_offsets.resize(size);
             res_values.reserve(size * 4);
@@ -486,11 +489,13 @@ public:
                 }
                 res_offsets[i] = res_values.size();
             }
+
+            block.getByPosition(result).column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of first argument of function " + name,
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of first argument of function " + name,
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -734,16 +739,17 @@ public:
 
         if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const ColumnUInt32::Container_t & region_ids = col_from->getData();
+            const ColumnUInt32::Container & region_ids = col_from->getData();
 
             for (size_t i = 0; i < region_ids.size(); ++i)
             {
                 const StringRef & name_ref = dict.getRegionName(region_ids[i], language);
                 col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()

@@ -540,7 +540,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         size_t size = levels.size();
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
@@ -550,7 +550,7 @@ public:
 
         if (returns_float)
         {
-            typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
+            typename ColumnFloat32::Container & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
             size_t old_size = data_to.size();
             data_to.resize(data_to.size() + size);
 
@@ -559,7 +559,7 @@ public:
         }
         else
         {
-            typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
             size_t old_size = data_to.size();
             data_to.resize(data_to.size() + size);
 
@@ -627,7 +627,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         size_t size = levels.size();
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
@@ -637,7 +637,7 @@ public:
 
         if (returns_float)
         {
-            typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
+            typename ColumnFloat32::Container & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
             size_t old_size = data_to.size();
             data_to.resize(data_to.size() + size);
 
@@ -646,7 +646,7 @@ public:
         }
         else
         {
-            typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
             size_t old_size = data_to.size();
             data_to.resize(data_to.size() + size);
 

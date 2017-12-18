@@ -152,7 +152,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
-        const IColumn::Offsets_t & offsets = first_array_column.getOffsets();
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
         const IColumn * array_data = &first_array_column.getData();
         size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
         size_t end = offsets[row_num];
@@ -221,7 +221,7 @@ public:
         const AggregateFunctionForEachData & state = data(place);
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 
         const char * nested_state = state.array_of_aggregate_datas;

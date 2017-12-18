@@ -12,9 +12,11 @@ namespace DB
 /** A column of values of "fixed-length string" type.
   * If you insert a smaller string, it will be padded with zero bytes.
   */
-class ColumnFixedString final : public IColumn
+class ColumnFixedString final : public COWPtrHelper<IColumn, ColumnFixedString>
 {
 public:
+    friend class COWPtrHelper<IColumn, ColumnFixedString>;
+
     using Chars_t = PaddedPODArray<UInt8>;
 
 private:
@@ -29,14 +31,16 @@ private:
     template <bool positive>
     struct less;
 
-public:
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
 
+    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {};
+
+public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
     const char * getFamilyName() const override { return "FixedString"; }
 
-    ColumnPtr cloneResized(size_t size) const override;
+    MutableColumnPtr cloneResized(size_t size) const override;
 
     size_t size() const override
     {
@@ -100,13 +104,13 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    MutableColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    ColumnPtr replicate(const Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const Offsets & offsets) const override;
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         return scatterImpl<ColumnFixedString>(num_columns, selector);
     }
