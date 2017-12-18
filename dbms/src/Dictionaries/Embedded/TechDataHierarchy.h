@@ -19,7 +19,7 @@ private:
     UInt8 se_parent[256] {};
 
 public:
-    void reload(const Poco::Util::AbstractConfiguration & config);
+    void reload();
 
     /// Has corresponding section in configuration file.
     static bool isConfigured(const Poco::Util::AbstractConfiguration & config);

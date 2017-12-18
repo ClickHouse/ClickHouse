@@ -43,6 +43,7 @@ AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested)
 AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionCountNotNull(const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionNothing();
 
 
 void AggregateFunctionFactory::registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness)
@@ -69,12 +70,17 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     int recursion_level) const
 {
     bool has_nullable_types = false;
+    bool has_null_types = false;
     for (const auto & arg_type : argument_types)
     {
-        if (arg_type->isNullable() || arg_type->isNull())
+        if (arg_type->isNullable())
         {
             has_nullable_types = true;
-            break;
+            if (arg_type->onlyNull())
+            {
+                has_null_types = true;
+                break;
+            }
         }
     }
 
@@ -85,27 +91,36 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         if (Poco::toLower(name) == "count")
             return createAggregateFunctionCountNotNull(argument_types);
 
-        DataTypes nested_argument_types;
-        nested_argument_types.reserve(argument_types.size());
+        AggregateFunctionPtr nested_function;
 
-        for (const auto & arg_type : argument_types)
+        if (has_null_types)
         {
-            if (arg_type->isNullable())
+            nested_function = createAggregateFunctionNothing();
+        }
+        else
+        {
+            DataTypes nested_argument_types;
+            nested_argument_types.reserve(argument_types.size());
+
+            for (const auto & arg_type : argument_types)
             {
-                const DataTypeNullable & actual_type = static_cast<const DataTypeNullable &>(*arg_type.get());
-                const DataTypePtr & nested_type = actual_type.getNestedType();
-                nested_argument_types.push_back(nested_type);
+                if (arg_type->isNullable())
+                {
+                    const DataTypeNullable & actual_type = static_cast<const DataTypeNullable &>(*arg_type.get());
+                    const DataTypePtr & nested_type = actual_type.getNestedType();
+                    nested_argument_types.push_back(nested_type);
+                }
+                else
+                    nested_argument_types.push_back(arg_type);
             }
-            else
-                nested_argument_types.push_back(arg_type);
+
+            nested_function = getImpl(name, nested_argument_types, parameters, recursion_level);
         }
 
-        AggregateFunctionPtr function = getImpl(name, nested_argument_types, parameters, recursion_level);
-
         if (argument_types.size() == 1)
-            return createAggregateFunctionNullUnary(function);
+            return createAggregateFunctionNullUnary(nested_function);
         else
-            return createAggregateFunctionNullVariadic(function);
+            return createAggregateFunctionNullVariadic(nested_function);
     }
     else
         return getImpl(name, argument_types, parameters, recursion_level);

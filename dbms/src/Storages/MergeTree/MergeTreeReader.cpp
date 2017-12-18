@@ -1,7 +1,5 @@
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
 #include <IO/CachedCompressedReadBuffer.h>
@@ -9,7 +7,6 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <Poco/File.h>
 
@@ -22,12 +19,6 @@ namespace
     using OffsetColumns = std::map<std::string, ColumnPtr>;
 
     constexpr auto DATA_FILE_EXTENSION = ".bin";
-    constexpr auto NULL_MAP_EXTENSION = ".null.bin";
-
-    bool isNullStream(const std::string & extension)
-    {
-        return extension == NULL_MAP_EXTENSION;
-    }
 }
 
 namespace ErrorCodes
@@ -58,7 +49,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
             throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 
         for (const NameAndTypePair & column : columns)
-            addStream(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
+            addStreams(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
     }
     catch (...)
     {
@@ -85,7 +76,6 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
     size_t read_rows = 0;
     try
     {
-
         /// Pointers to offset columns that are common to the nested data structure columns.
         /// If append is true, then the value will be equal to nullptr and will be used only to
         /// check that the offsets column has been already read.
@@ -93,70 +83,58 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
         for (const NameAndTypePair & it : columns)
         {
-            if (streams.end() == streams.find(it.name))
-                continue;
-
             /// The column is already present in the block so we will append the values to the end.
             bool append = res.has(it.name);
+            if (!append)
+                res.insert(ColumnWithTypeAndName(it.type->createColumn(), it.type, it.name));
 
-            ColumnWithTypeAndName column;
-            column.name = it.name;
-            column.type = it.type;
-            if (append)
-                column.column = res.getByName(column.name).column;
+            /// To keep offsets shared. TODO Very dangerous. Get rid of this.
+            MutableColumnPtr column = res.getByName(it.name).column->assumeMutable();
 
             bool read_offsets = true;
 
-            const IDataType * observed_type;
-            bool is_nullable;
-
-            if (column.type->isNullable())
-            {
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
-                observed_type = nullable_type.getNestedType().get();
-                is_nullable = true;
-            }
-            else
-            {
-                observed_type = column.type.get();
-                is_nullable = false;
-            }
-
             /// For nested data structures collect pointers to offset columns.
-            if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
+            if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(it.type.get()))
             {
-                String name = DataTypeNested::extractNestedTableName(column.name);
+                String name = DataTypeNested::extractNestedTableName(it.name);
 
-                if (offset_columns.count(name) == 0)
-                    offset_columns[name] = append ? nullptr : std::make_shared<ColumnArray::ColumnOffsets_t>();
-                else
-                    read_offsets = false; /// offsets have already been read on the previous iteration
+                auto it_inserted = offset_columns.emplace(name, nullptr);
 
+                /// offsets have already been read on the previous iteration and we don't need to read it again
+                if (!it_inserted.second)
+                    read_offsets = false;
+
+                /// need to create new offsets
+                if (it_inserted.second && !append)
+                    it_inserted.first->second = ColumnArray::ColumnOffsets::create();
+
+                /// share offsets in all elements of nested structure
                 if (!append)
-                {
-                    column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
-                    if (is_nullable)
-                        column.column = std::make_shared<ColumnNullable>(column.column, std::make_shared<ColumnUInt8>());
-                }
+                    column = ColumnArray::create(type_arr->getNestedType()->createColumn(), it_inserted.first->second);
             }
-            else if (!append)
-                column.column = column.type->createColumn();
 
             try
             {
-                size_t column_size_before_reading = column.column->size();
-                readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, 0, read_offsets);
-                read_rows = std::max(read_rows, column.column->size() - column_size_before_reading);
+                size_t column_size_before_reading = column->size();
+
+                readData(it.name, *it.type, *column, from_mark, continue_reading, max_rows_to_read, read_offsets);
+
+                /// For elements of Nested, column_size_before_reading may be greater than column size
+                ///  if offsets are not empty and were already read, but elements are empty.
+                if (column->size())
+                    read_rows = std::max(read_rows, column->size() - column_size_before_reading);
             }
             catch (Exception & e)
             {
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + column.name + ")");
+                e.addMessage("(while reading column " + it.name + ")");
                 throw;
             }
 
-            if (!append && column.column->size())
-                res.insert(std::move(column));
+            if (column->size())
+                res.getByName(it.name).column = std::move(column);
+            else
+                res.erase(it.name);
         }
 
         /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
@@ -272,12 +250,6 @@ MergeTreeReader::Stream::Stream(
     }
 }
 
-std::unique_ptr<MergeTreeReader::Stream> MergeTreeReader::Stream::createEmptyPtr()
-{
-    std::unique_ptr<Stream> res(new Stream);
-    res->is_empty = true;
-    return res;
-}
 
 const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
 {
@@ -286,14 +258,10 @@ const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
     return (*marks)[index];
 }
 
+
 void MergeTreeReader::Stream::loadMarks()
 {
-    std::string path;
-
-    if (isNullStream(extension))
-        path = path_prefix + ".null.mrk";
-    else
-        path = path_prefix + ".mrk";
+    std::string path = path_prefix + ".mrk";
 
     auto load = [&]() -> MarkCache::MappedPtr
     {
@@ -304,8 +272,8 @@ void MergeTreeReader::Stream::loadMarks()
         size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
-                    "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
-                    ErrorCodes::CORRUPTED_DATA);
+                "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
+                ErrorCodes::CORRUPTED_DATA);
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count);
 
@@ -365,167 +333,94 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 }
 
 
-void MergeTreeReader::addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-    size_t level)
+void MergeTreeReader::addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    String escaped_column_name = escapeForFileName(name);
-
-    const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type);
-    bool data_file_exists = Poco::File(path + escaped_column_name + DATA_FILE_EXTENSION).exists();
-    bool is_column_of_nested_type = type_arr && level == 0 && DataTypeNested::extractNestedTableName(name) != name;
-
-    /** If data file is missing then we will not try to open it.
-      * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
-      * But we should try to load offset data for array columns of Nested subtable (their data will be filled by default value).
-      */
-    if (!data_file_exists && !is_column_of_nested_type)
-        return;
-
-    if (type.isNullable())
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        /// First create the stream that handles the null map of the given column.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
-        std::string filename = name + NULL_MAP_EXTENSION;
-
-        streams.emplace(filename, std::make_unique<Stream>(
-            path + escaped_column_name, NULL_MAP_EXTENSION, data_part->marks_count,
-            all_mark_ranges, mark_cache, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
-
-        /// Then create the stream that handles the data of the given column.
-        addStream(name, nested_type, all_mark_ranges, profile_callback, clock_type, level);
-    }
-    /// For arrays separate streams for sizes are used.
-    else if (type_arr)
-    {
-        String size_name = DataTypeNested::extractNestedTableName(name)
-            + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-        String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
-            + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-        String size_path = path + escaped_size_name + DATA_FILE_EXTENSION;
-
-        /// We have neither offsets nor data -> skipping, default values will be filled after
-        if (!data_file_exists && !Poco::File(size_path).exists())
+        if (streams.count(stream_name))
             return;
 
-        if (!streams.count(size_name))
-            streams.emplace(size_name, std::make_unique<Stream>(
-                path + escaped_size_name, DATA_FILE_EXTENSION, data_part->marks_count,
-                all_mark_ranges, mark_cache, save_marks_in_cache,
-                uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+        bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
 
-        if (data_file_exists)
-            addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
-        else
-            streams.emplace(name, Stream::createEmptyPtr());
-    }
-    else
-        streams.emplace(name, std::make_unique<Stream>(
-            path + escaped_column_name, DATA_FILE_EXTENSION, data_part->marks_count,
+        /** If data file is missing then we will not try to open it.
+          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
+          */
+        if (!data_file_exists)
+            return;
+
+        streams.emplace(stream_name, std::make_unique<Stream>(
+            path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+    };
+
+    type.enumerateStreams(callback, {});
 }
 
 
 void MergeTreeReader::readData(
     const String & name, const IDataType & type, IColumn & column,
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-    size_t level, bool read_offsets)
+    bool with_offsets)
 {
-    if (type.isNullable())
+    IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        /// First read from the null map.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
+        /// If offsets for arrays have already been read.
+        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
+            return nullptr;
 
-        ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-        IColumn & nested_col = *nullable_col.getNestedColumn();
+        String stream_name = IDataType::getFileNameForStream(name, path);
 
-        std::string filename = name + NULL_MAP_EXTENSION;
+        auto it = streams.find(stream_name);
+        if (it == streams.end())
+            return nullptr;
 
-        Stream & stream = *(streams.at(filename));
+        Stream & stream = *it->second;
+
         if (!continue_reading)
             stream.seekToMark(from_mark);
-        IColumn & col8 = nullable_col.getNullMapConcreteColumn();
-        DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
 
-        /// Then read data.
-        readData(name, nested_type, nested_col, from_mark, continue_reading, max_rows_to_read, level, read_offsets);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /// For arrays the sizes must be deserialized first, then the values.
-        if (read_offsets)
-        {
-            Stream & stream = *streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
-            if (!continue_reading)
-                stream.seekToMark(from_mark);
-            type_arr->deserializeOffsets(
-                column,
-                *stream.data_buffer,
-                max_rows_to_read);
-        }
+        return stream.data_buffer;
+    };
 
-        ColumnArray & array = typeid_cast<ColumnArray &>(column);
-        const size_t required_internal_size = array.getOffsets().size() ? array.getOffsets()[array.getOffsets().size() - 1] : 0;
+    double & avg_value_size_hint = avg_value_size_hints[name];
+    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, avg_value_size_hint, true, {});
+    IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
+}
 
-        readData(
-            name,
-            *type_arr->getNestedType(),
-            array.getData(),
-                 from_mark, continue_reading, required_internal_size - array.getData().size(),
-            level + 1);
 
-        size_t read_internal_size = array.getData().size();
+static bool arrayHasNoElementsRead(const IColumn & column)
+{
+    const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&column);
 
-        /// Fix for erroneously written empty files with array data.
-        /// This can happen after ALTER that adds new columns to nested data structures.
-        if (required_internal_size != read_internal_size)
-        {
-            if (read_internal_size != 0)
-                LOG_ERROR(&Logger::get("MergeTreeReader"),
-                    "Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
+    if (!column_array)
+        return false;
 
-            array.getDataPtr() = type_arr->getNestedType()->createConstColumn(
-                    required_internal_size,
-                    type_arr->getNestedType()->getDefault())->convertToFullColumnIfConst();
+    size_t size = column_array->size();
+    if (!size)
+        return false;
 
-            /// NOTE: we could zero this column so that it won't get added to the block
-            /// and later be recreated with more correct default values (from the table definition).
-        }
-    }
-    else
-    {
-        Stream & stream = *streams[name];
+    size_t data_size = column_array->getData().size();
+    if (data_size)
+        return false;
 
-        /// It means that data column of array column will be empty, and it will be replaced by const data column
-        if (stream.isEmpty())
-            return;
-
-        double & avg_value_size_hint = avg_value_size_hints[name];
-        if (!continue_reading)
-            stream.seekToMark(from_mark);
-        type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
-
-        IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
-    }
+    size_t last_offset = column_array->getOffsets()[size - 1];
+    return last_offset != 0;
 }
 
 
 void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder)
 {
     if (!res)
-        throw Exception("Empty block passed to fillMissingColumnsImpl", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
 
     try
     {
         /// For a missing column of a nested data structure we must create not a column of empty
         /// arrays, but a column of arrays of correct length.
-        /// TODO: If for some nested data structure only missing columns were selected, the arrays in these columns will be empty,
-        /// even if the offsets for this nested structure are present in the current part. This can be fixed.
         /// NOTE: Similar, but slightly different code is present in Block::addDefaults.
 
         /// First, collect offset columns for all arrays in the block.
@@ -534,39 +429,38 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
         {
             const ColumnWithTypeAndName & column = res.safeGetByPosition(i);
 
-            IColumn * observed_column;
-            std::string column_name;
-            if (column.column->isNullable())
+            if (const ColumnArray * array = typeid_cast<const ColumnArray *>(column.column.get()))
             {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.column));
-                observed_column = nullable_col.getNestedColumn().get();
-                column_name = observed_column->getName();
-            }
-            else
-            {
-                observed_column = column.column.get();
-                column_name = column.name;
-            }
-
-            if (const ColumnArray * array = typeid_cast<const ColumnArray *>(observed_column))
-            {
-                String offsets_name = DataTypeNested::extractNestedTableName(column_name);
+                String offsets_name = DataTypeNested::extractNestedTableName(column.name);
                 auto & offsets_column = offset_columns[offsets_name];
 
                 /// If for some reason multiple offsets columns are present for the same nested data structure,
                 /// choose the one that is not empty.
                 if (!offsets_column || offsets_column->empty())
-                    offsets_column = array->getOffsetsColumn();
+                    offsets_column = array->getOffsetsPtr();
             }
         }
 
-        auto should_evaluate_defaults = false;
-        auto should_sort = always_reorder;
+        bool should_evaluate_defaults = false;
+        bool should_sort = always_reorder;
 
+        size_t rows = res.rows();
+
+        /// insert default values only for columns without default expressions
         for (const auto & requested_column : columns)
         {
-            /// insert default values only for columns without default expressions
-            if (!res.has(requested_column.name))
+            bool has_column = res.has(requested_column.name);
+            if (has_column)
+            {
+                const auto & col = *res.getByName(requested_column.name).column;
+                if (arrayHasNoElementsRead(col))
+                {
+                    res.erase(requested_column.name);
+                    has_column = false;
+                }
+            }
+
+            if (!has_column)
             {
                 should_sort = true;
                 if (storage.column_defaults.count(requested_column.name) != 0)
@@ -583,21 +477,19 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                 if (offset_columns.count(offsets_name))
                 {
                     ColumnPtr offsets_column = offset_columns[offsets_name];
-                    DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column_to_add.type).getNestedType();
+                    DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
                     size_t nested_rows = offsets_column->empty() ? 0
-                        : typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
+                        : typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
-                    ColumnPtr nested_column = nested_type->createConstColumn(
-                        nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
+                    ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
 
-                    column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
+                    column_to_add.column = ColumnArray::create(nested_column, offsets_column);
                 }
                 else
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = column_to_add.type->createConstColumn(
-                        res.rows(), column_to_add.type->getDefault())->convertToFullColumnIfConst();
+                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));

@@ -40,11 +40,11 @@ Block DistinctSortedBlockInputStream::readImpl()
         if (!block)
             return Block();
 
-        const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
+        const ColumnRawPtrs column_ptrs(getKeyColumns(block));
         if (column_ptrs.empty())
             return block;
 
-        const ConstColumnPlainPtrs clearing_hint_columns(getClearingColumns(block, column_ptrs));
+        const ColumnRawPtrs clearing_hint_columns(getClearingColumns(block, column_ptrs));
 
         if (data.type == ClearableSetVariants::Type::EMPTY)
             data.init(ClearableSetVariants::chooseMethod(column_ptrs, key_sizes));
@@ -112,8 +112,8 @@ bool DistinctSortedBlockInputStream::checkLimits() const
 template <typename Method>
 bool DistinctSortedBlockInputStream::buildFilter(
     Method & method,
-    const ConstColumnPlainPtrs & columns,
-    const ConstColumnPlainPtrs & clearing_hint_columns,
+    const ColumnRawPtrs & columns,
+    const ColumnRawPtrs & clearing_hint_columns,
     IColumn::Filter & filter,
     size_t rows,
     ClearableSetVariants & variants) const
@@ -147,7 +147,7 @@ bool DistinctSortedBlockInputStream::buildFilter(
 
         if (inserted)
         {
-            method.onNewKey(*it, columns.size(), i, variants.string_pool);
+            method.onNewKey(*it, columns.size(), variants.string_pool);
             has_new_data = true;
         }
 
@@ -158,11 +158,11 @@ bool DistinctSortedBlockInputStream::buildFilter(
     return has_new_data;
 }
 
-ConstColumnPlainPtrs DistinctSortedBlockInputStream::getKeyColumns(const Block & block) const
+ColumnRawPtrs DistinctSortedBlockInputStream::getKeyColumns(const Block & block) const
 {
     size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
 
-    ConstColumnPlainPtrs column_ptrs;
+    ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(columns);
 
     for (size_t i = 0; i < columns; ++i)
@@ -172,16 +172,16 @@ ConstColumnPlainPtrs DistinctSortedBlockInputStream::getKeyColumns(const Block &
             : block.getByName(columns_names[i]).column;
 
         /// Ignore all constant columns.
-        if (!column->isConst())
+        if (!column->isColumnConst())
             column_ptrs.emplace_back(column.get());
     }
 
     return column_ptrs;
 }
 
-ConstColumnPlainPtrs DistinctSortedBlockInputStream::getClearingColumns(const Block & block, const ConstColumnPlainPtrs & key_columns) const
+ColumnRawPtrs DistinctSortedBlockInputStream::getClearingColumns(const Block & block, const ColumnRawPtrs & key_columns) const
 {
-    ConstColumnPlainPtrs clearing_hint_columns;
+    ColumnRawPtrs clearing_hint_columns;
     clearing_hint_columns.reserve(description.size());
     for(const auto & sort_column_description : description)
     {
@@ -195,7 +195,7 @@ ConstColumnPlainPtrs DistinctSortedBlockInputStream::getClearingColumns(const Bl
     return clearing_hint_columns;
 }
 
-bool DistinctSortedBlockInputStream::rowsEqual(const ConstColumnPlainPtrs & lhs, size_t n, const ConstColumnPlainPtrs & rhs, size_t m)
+bool DistinctSortedBlockInputStream::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)
 {
     for (size_t column_index = 0, num_columns = lhs.size(); column_index < num_columns; ++column_index)
     {

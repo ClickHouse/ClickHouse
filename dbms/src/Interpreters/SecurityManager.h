@@ -13,18 +13,18 @@ namespace DB
 class SecurityManager : public ISecurityManager
 {
 private:
-    using Container = std::map<String, User>;
+    using Container = std::map<String, UserPtr>;
     Container users;
 
 public:
     void loadFromConfig(Poco::Util::AbstractConfiguration & config) override;
 
-    const User & authorizeAndGetUser(
+    UserPtr authorizeAndGetUser(
         const String & user_name,
         const String & password,
         const Poco::Net::IPAddress & address) const override;
 
-    const User & getUser(const String & user_name) const override;
+    UserPtr getUser(const String & user_name) const override;
 
     bool hasAccessToDatabase(const String & user_name, const String & database_name) const override;
 };

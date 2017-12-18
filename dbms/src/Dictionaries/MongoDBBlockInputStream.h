@@ -37,11 +37,6 @@ public:
 private:
     Block readImpl() override;
 
-    static void insertDefaultValue(IColumn * column, const IColumn & sample_column)
-    {
-        column->insertFrom(sample_column, 0);
-    }
-
     std::shared_ptr<Poco::MongoDB::Connection> connection;
     std::unique_ptr<Poco::MongoDB::Cursor> cursor;
     const size_t max_block_size;

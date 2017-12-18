@@ -11,6 +11,12 @@ int main(int argc, char ** argv)
 {
     using namespace DB;
 
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program limit < in > out\n";
+        return 1;
+    }
+
     size_t limit = std::stol(argv[1]);
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);

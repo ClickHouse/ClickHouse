@@ -1,6 +1,6 @@
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
 #include <Common/StringUtils.h>
 
@@ -24,36 +24,60 @@ void ReplicatedMergeTreeQueue::initVirtualParts(const MergeTreeData::DataParts &
 }
 
 
-void ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
+bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
     auto queue_path = replica_path + "/queue";
     LOG_DEBUG(log, "Loading queue from " << queue_path);
 
-    std::lock_guard<std::mutex> lock(mutex);
-
-    Strings children = zookeeper->getChildren(queue_path);
-    LOG_DEBUG(log, "Having " << children.size() << " queue entries to load.");
-
-    std::sort(children.begin(), children.end());
-
-    std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
-    futures.reserve(children.size());
-
-    for (const String & child : children)
-        futures.emplace_back(child, zookeeper->asyncGet(queue_path + "/" + child));
-
-    for (auto & future : futures)
+    bool updated = false;
+    bool min_unprocessed_insert_time_changed = false;
     {
-        zkutil::ZooKeeper::ValueAndStat res = future.second.get();
-        LogEntryPtr entry = LogEntry::parse(res.value, res.stat);
+        std::lock_guard<std::mutex> lock(mutex);
 
-        entry->znode_name = future.first;
-        insertUnlocked(entry);
+        std::unordered_set<String> already_loaded_paths;
+        for (const LogEntryPtr & log_entry : queue)
+            already_loaded_paths.insert(log_entry->znode_name);
+
+        Strings children = zookeeper->getChildren(queue_path);
+        auto to_remove_it = std::remove_if(
+            children.begin(), children.end(), [&](const String & path)
+            {
+                return already_loaded_paths.count(path);
+            });
+
+        LOG_DEBUG(log,
+            "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
+            << (children.end() - to_remove_it) << " entries already loaded.");
+        children.erase(to_remove_it, children.end());
+
+        std::sort(children.begin(), children.end());
+
+        std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+        futures.reserve(children.size());
+
+        for (const String & child : children)
+            futures.emplace_back(child, zookeeper->asyncGet(queue_path + "/" + child));
+
+        for (auto & future : futures)
+        {
+            zkutil::ZooKeeper::ValueAndStat res = future.second.get();
+            LogEntryPtr entry = LogEntry::parse(res.value, res.stat);
+            entry->znode_name = future.first;
+
+            time_t prev_min_unprocessed_insert_time = min_unprocessed_insert_time;
+
+            insertUnlocked(entry);
+
+            updated = true;
+            if (min_unprocessed_insert_time != prev_min_unprocessed_insert_time)
+                min_unprocessed_insert_time_changed = true;
+        }
     }
 
-    updateTimesInZooKeeper(zookeeper, true, false);
+    updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, false);
 
     LOG_TRACE(log, "Loaded queue");
+    return updated;
 }
 
 
@@ -233,6 +257,13 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, B
 {
     std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
 
+    bool dirty_entries_loaded = false;
+    if (is_dirty)
+    {
+        dirty_entries_loaded = load(zookeeper);
+        is_dirty = false;
+    }
+
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
@@ -326,7 +357,20 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, B
                 ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
                     replica_path + "/min_unprocessed_insert_time", toString(min_unprocessed_insert_time), -1));
 
-            auto results = zookeeper->multi(ops);
+            try
+            {
+                zookeeper->multi(ops);
+            }
+            catch (const zkutil::KeeperException & ex)
+            {
+                if (ex.isTemporaryError())
+                {
+                    LOG_WARNING(log, "Unknown status of queue update, marking queue dirty (will reload on next iteration).");
+                    is_dirty = true;
+                }
+
+                throw;
+            }
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
@@ -362,7 +406,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, B
             next_update_event->schedule();
     }
 
-    return !log_entries.empty();
+    return dirty_entries_loaded || !log_entries.empty();
 }
 
 

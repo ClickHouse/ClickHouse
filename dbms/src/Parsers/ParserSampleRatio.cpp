@@ -81,7 +81,7 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
   * Example:
   * 123.0 / 456e0
   */
-bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
     auto begin = pos;
 

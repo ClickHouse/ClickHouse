@@ -1,8 +1,6 @@
-Данные о такси в Нью-Йорке
-==========================
+# Данные о такси в Нью-Йорке
 
-Как импортировать сырые данные
-------------------------------
+## Как импортировать сырые данные
 
 См. <https://github.com/toddwschneider/nyc-taxi-data>
 и <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html>
@@ -30,8 +28,7 @@ mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 
 ```text
 time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
-   count
-------------
+##    count
  1298979494
 (1 row)
 
@@ -277,8 +274,7 @@ WHERE (table = 'trips_mergetree') AND active
 
 Между прочим, на MergeTree можно запустить запрос OPTIMIZE. Но это не обязательно, всё будет в порядке и без этого.
 
-Results on single server
-========================
+## Results on single server
 
 Q1:
 
@@ -365,8 +361,7 @@ Q4: 0.072 sec.
 В этом случае, время выполнения запросов определяется в первую очередь сетевыми задержками..
 Мы выполняли запросы с помощью клиента, расположенного в датацентре Яндекса в Мянтсяля (Финляндия), на кластер в России, что добавляет порядка 20 мс задержки.
 
-Резюме
-======
+## Резюме
 
 ```text
 nodes   Q1     Q2     Q3     Q4

@@ -1,23 +1,19 @@
-//#include <string>
 #include <iostream>
 
 #include <IO/RemoteReadBuffer.h>
 #include <IO/RemoteWriteBuffer.h>
 
-// Now just compile test
 
-int main(int argc, char ** argv)
+int main(int, char **)
+try
 {
-    try
-    {
-        DB::RemoteReadBuffer({}, {}, {});
-        DB::RemoteWriteBuffer({}, {}, {});
-    }
-    catch (const DB::Exception & e)
-    {
-        std::cerr << e.what() << ", " << e.displayText() << std::endl;
-        return 1;
-    }
+    DB::RemoteReadBuffer({}, {}, {});
+    DB::RemoteWriteBuffer({}, {}, {});
 
     return 0;
+}
+catch (const DB::Exception & e)
+{
+    std::cerr << e.what() << ", " << e.displayText() << std::endl;
+    return 1;
 }

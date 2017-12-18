@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionQuantileTiming(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionQuantileTiming(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -21,7 +21,7 @@ AggregateFunctionPtr createAggregateFunctionQuantileTiming(const std::string & n
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionQuantilesTiming(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionQuantilesTiming(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -34,7 +34,7 @@ AggregateFunctionPtr createAggregateFunctionQuantilesTiming(const std::string & 
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionQuantileTimingWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionQuantileTimingWeighted(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() != 2)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -48,7 +48,7 @@ AggregateFunctionPtr createAggregateFunctionQuantileTimingWeighted(const std::st
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionQuantilesTimingWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionQuantilesTimingWeighted(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() != 2)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

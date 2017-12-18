@@ -20,7 +20,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
-#include <common/ApplicationServerExt.h>
 #include "StatusFile.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -140,13 +139,13 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 
     /// These arrays prevent "variable tracking size limit exceeded" compiler notice.
     static const char * settings_names[] = {
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) #NAME,
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) #NAME,
     APPLY_FOR_SETTINGS(DECLARE_SETTING)
 #undef DECLARE_SETTING
     nullptr};
 
     static const char * limits_names[] = {
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) #NAME,
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) #NAME,
     APPLY_FOR_LIMITS(DECLARE_SETTING)
 #undef DECLARE_SETTING
     nullptr};
@@ -166,13 +165,13 @@ void LocalServer::applyOptions()
     context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
 
     /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context->getSettingsRef().NAME.changed) \
             context->setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context->getSettingsRef().limits.NAME.changed) \
             context->setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
@@ -203,7 +202,7 @@ void LocalServer::displayHelp()
 }
 
 
-void LocalServer::handleHelp(const std::string & name, const std::string & value)
+void LocalServer::handleHelp(const std::string & /*name*/, const std::string & /*value*/)
 {
     displayHelp();
     stopOptionsProcessing();
@@ -228,7 +227,7 @@ void LocalServer::tryInitPath()
 }
 
 
-int LocalServer::main(const std::vector<std::string> & args)
+int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     Logger * log = &logger();
@@ -475,4 +474,18 @@ void LocalServer::setupUsers()
 
 }
 
-YANDEX_APP_MAIN_FUNC(DB::LocalServer, mainEntryClickHouseLocal);
+int mainEntryClickHouseLocal(int argc, char ** argv)
+{
+    DB::LocalServer app;
+    try
+    {
+        app.init(argc, argv);
+        return app.run();
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+}

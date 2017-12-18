@@ -19,7 +19,7 @@ class WriteBuffer;
 class IColumn;
 class IDataType;
 
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 using AggregateDataPtr = char *;
@@ -60,7 +60,7 @@ public:
       * If no parameters are provided, or the passed parameters are not valid, throw an exception.
       * If there are parameters - it is necessary to call before other calls, otherwise - do not call.
       */
-    virtual void setParameters(const Array & params)
+    virtual void setParameters(const Array & /*params*/)
     {
         throw Exception("Aggregate function " + getName() + " doesn't allow parameters.",
             ErrorCodes::AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS);

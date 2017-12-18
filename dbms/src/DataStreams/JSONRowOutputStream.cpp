@@ -9,14 +9,14 @@ namespace DB
 JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, const FormatSettingsJSON & settings_)
     : dst_ostr(ostr_), write_statistics(write_statistics_), settings(settings_)
 {
-    NamesAndTypesList columns(sample_.getColumnsList());
+    NamesAndTypesList columns(sample_.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
 
-    bool have_non_numeric_columns = false;
+    bool need_validate_utf8 = false;
     for (size_t i = 0; i < sample_.columns(); ++i)
     {
-        if (!sample_.getByPosition(i).type->isNumeric())
-            have_non_numeric_columns = true;
+        if (!sample_.getByPosition(i).type->textCanContainOnlyValidUTF8())
+            need_validate_utf8 = true;
 
         WriteBufferFromOwnString out;
         writeJSONString(fields[i].name, out);
@@ -24,7 +24,7 @@ JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & samp
         fields[i].name = out.str();
     }
 
-    if (have_non_numeric_columns)
+    if (need_validate_utf8)
     {
         validating_ostr = std::make_unique<WriteBufferValidUTF8>(dst_ostr);
         ostr = validating_ostr.get();

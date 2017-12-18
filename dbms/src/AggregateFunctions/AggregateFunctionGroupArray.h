@@ -62,7 +62,7 @@ public:
         return std::make_shared<DataTypeArray>(data_type);
     }
 
-    void setArgument(const DataTypePtr & argument) {}
+    void setArgument(const DataTypePtr & /*argument*/) {}
 
     void setParameters(const Array & params) override
     {
@@ -125,11 +125,11 @@ public:
         size_t size = value.size();
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 
-        typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
     }
 

@@ -17,7 +17,6 @@ namespace DB
 template <typename T>
 IColumn::Selector createBlockSelector(
     const IColumn & column,
-    size_t num_shards,
     const std::vector<UInt64> & slots)
 {
     const auto total_weight = slots.size();
@@ -31,9 +30,9 @@ IColumn::Selector createBlockSelector(
     using UnsignedT = typename std::make_unsigned<T>::type;
 
     /// const columns contain only one value, therefore we do not need to read it at every iteration
-    if (column.isConst())
+    if (column.isColumnConst())
     {
-        const auto data = typeid_cast<const ColumnConst &>(column).getValue<T>();
+        const auto data = static_cast<const ColumnConst &>(column).getValue<T>();
         const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
         selector.assign(num_rows, shard_num);
     }
@@ -55,13 +54,13 @@ IColumn::Selector createBlockSelector(
 
 
 /// Explicit instantiations to avoid code bloat in headers.
-template IColumn::Selector createBlockSelector<UInt8>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
-template IColumn::Selector createBlockSelector<UInt16>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
-template IColumn::Selector createBlockSelector<UInt32>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
-template IColumn::Selector createBlockSelector<UInt64>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
-template IColumn::Selector createBlockSelector<Int8>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
-template IColumn::Selector createBlockSelector<Int16>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
-template IColumn::Selector createBlockSelector<Int32>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
-template IColumn::Selector createBlockSelector<Int64>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<UInt8>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<UInt32>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<UInt64>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int8>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int32>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int64>(const IColumn & column, const std::vector<UInt64> & slots);
 
 }

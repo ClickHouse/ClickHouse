@@ -27,7 +27,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 
         const ColumnWithTypeAndName & col = block.getByPosition(i);
 
-        if (col.type->isNumeric())
+        if (col.type->shouldAlignRightInPrettyFormats())
         {
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
                 writeCString("─", ostr);
@@ -76,8 +76,7 @@ void PrettyCompactBlockOutputStream::writeRow(
     size_t row_num,
     const Block & block,
     const WidthsPerColumn & widths,
-    const Widths & max_widths,
-    const Widths & name_widths)
+    const Widths & max_widths)
 {
     size_t columns = max_widths.size();
 
@@ -112,7 +111,7 @@ void PrettyCompactBlockOutputStream::write(const Block & block)
     writeHeader(block, max_widths, name_widths);
 
     for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
-        writeRow(i, block, widths, max_widths, name_widths);
+        writeRow(i, block, widths, max_widths);
 
     writeBottom(max_widths);
 

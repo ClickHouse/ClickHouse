@@ -59,7 +59,7 @@ void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Ke
 
 /// Allow to use single value in same way as array.
 static inline FlatDictionary::Key getAt(const PaddedPODArray<FlatDictionary::Key> & arr, const size_t idx) { return arr[idx]; }
-static inline FlatDictionary::Key getAt(const FlatDictionary::Key & value, const size_t idx) { return value; }
+static inline FlatDictionary::Key getAt(const FlatDictionary::Key & value, const size_t) { return value; }
 
 template <typename ChildType, typename AncestorType>
 void FlatDictionary::isInImpl(
@@ -151,7 +151,7 @@ void FlatDictionary::getString(const std::string & attribute_name, const PaddedP
     const auto & null_value = std::get<StringRef>(attribute.null_values);
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return null_value; });
 }
 
@@ -194,7 +194,7 @@ void FlatDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t row) { return def->getDataAt(row); });
 }
 
@@ -237,7 +237,7 @@ void FlatDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     FlatDictionary::getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return StringRef{def}; });
 }
 
@@ -381,7 +381,7 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
 
 FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}, {}};
 
     switch (type)
     {
@@ -519,7 +519,7 @@ const FlatDictionary::Attribute & FlatDictionary::getAttribute(const std::string
 
 
 template <typename T>
-void FlatDictionary::has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+void FlatDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
     const auto ids_count = ext::size(ids);
 

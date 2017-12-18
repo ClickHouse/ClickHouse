@@ -77,7 +77,7 @@ private:
         AggregateFunctionPtr function;
         IAggregateFunction::AddFunc add_function = nullptr;
         std::vector<size_t> column_numbers;
-        ColumnPtr merged_column;
+        MutableColumnPtr merged_column;
         std::vector<char> state;
         bool created = false;
 
@@ -138,20 +138,17 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
     /// If force_insertion=true, then the row will be inserted even if it is "zero"
-    void insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion);
+    void insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion);
 
     /// Returns true if merge result is not empty
-    template <typename TSortCursor>
-    bool mergeMap(const MapDescription & map, Row & row, TSortCursor & cursor);
+    bool mergeMap(const MapDescription & map, Row & row, SortCursor & cursor);
 
     // Add the row under the cursor to the `row`.
-    template <typename TSortCursor>
-    void addRow(Row & row, TSortCursor & cursor);
+    void addRow(SortCursor & cursor);
 };
 
 }

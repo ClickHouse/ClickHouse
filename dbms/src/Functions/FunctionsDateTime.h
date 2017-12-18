@@ -85,8 +85,8 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const Co
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
 {
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone) { return 0; }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone) { return 0; }
+    static inline UInt16 execute(UInt32, const DateLUTImpl &) { return 0; }
+    static inline UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
 };
 
 struct ToDateImpl
@@ -97,7 +97,7 @@ struct ToDateImpl
     {
         return UInt16(time_zone.toDayNum(t));
     }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
         return d;
     }
@@ -113,7 +113,7 @@ struct ToStartOfDayImpl
     {
         return time_zone.toDate(t);
     }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toStartOfDay", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -196,7 +196,7 @@ struct ToTimeImpl
         return time_zone.toTime(t) + 86400;
     }
 
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -212,7 +212,7 @@ struct ToStartOfMinuteImpl
     {
         return time_zone.toStartOfMinute(t);
     }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toStartOfMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -228,7 +228,7 @@ struct ToStartOfFiveMinuteImpl
     {
         return time_zone.toStartOfFiveMinute(t);
     }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toStartOfFiveMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -245,7 +245,7 @@ struct ToStartOfHourImpl
         return time_zone.toStartOfHour(t);
     }
 
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -326,7 +326,7 @@ struct ToHourImpl
         return time_zone.toHour(t);
     }
 
-    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -342,7 +342,7 @@ struct ToMinuteImpl
     {
         return time_zone.toMinute(t);
     }
-    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -358,7 +358,7 @@ struct ToSecondImpl
     {
         return time_zone.toSecond(t);
     }
-    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toSecond", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -422,7 +422,7 @@ struct ToRelativeDayNumImpl
     {
         return time_zone.toDayNum(t);
     }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
         return static_cast<DayNum_t>(d);
     }
@@ -439,7 +439,7 @@ struct ToRelativeHourNumImpl
     {
         return time_zone.toRelativeHourNum(t);
     }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toRelativeHourNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -455,7 +455,7 @@ struct ToRelativeMinuteNumImpl
     {
         return time_zone.toRelativeMinuteNum(t);
     }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toRelativeMinuteNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -467,11 +467,11 @@ struct ToRelativeSecondNumImpl
 {
     static constexpr auto name = "toRelativeSecondNum";
 
-    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt32 t, const DateLUTImpl &)
     {
         return t;
     }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throw Exception("Illegal type Date of argument for function toRelativeSecondNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -554,9 +554,9 @@ struct DateTimeTransformImpl
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToType>::create();
             Op::vector(sources->getData(), col_to->getData(), time_zone);
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -573,7 +573,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); };
 
     String getName() const override
     {
@@ -590,8 +590,7 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+            if (!arguments[0].type->isDateOrDateTime())
                 throw Exception{
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -680,7 +679,7 @@ struct AddSecondsImpl
 {
     static constexpr auto name = "addSeconds";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta;
     }
@@ -695,7 +694,7 @@ struct AddMinutesImpl
 {
     static constexpr auto name = "addMinutes";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 60;
     }
@@ -710,7 +709,7 @@ struct AddHoursImpl
 {
     static constexpr auto name = "addHours";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 3600;
     }
@@ -730,7 +729,7 @@ struct AddDaysImpl
         return time_zone.addDays(t, delta);
     }
 
-    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
     {
         return d + delta;
     }
@@ -745,7 +744,7 @@ struct AddWeeksImpl
         return time_zone.addWeeks(t, delta);
     }
 
-    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
     {
         return d + delta * 7;
     }
@@ -851,8 +850,7 @@ struct DateTimeAddIntervalImpl
 
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToType>::create();
 
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
@@ -860,12 +858,14 @@ struct DateTimeAddIntervalImpl
                 Op::vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
             else
                 Op::vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (const auto * sources = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToType>::create();
             Op::constant_vector(sources->template getValue<FromType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -882,7 +882,7 @@ class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); };
 
     String getName() const override
     {
@@ -902,14 +902,13 @@ public:
                 + toString(arguments.size()) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[1].type->behavesAsNumber())
+        if (!arguments[1].type->isNumber())
             throw Exception("Second argument for function " + getName() + " (delta) must be number",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+            if (!arguments[0].type->isDateOrDateTime())
                 throw Exception{
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -966,7 +965,7 @@ class FunctionNow : public IFunction
 {
 public:
     static constexpr auto name = "now";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNow>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNow>(); };
 
     String getName() const override
     {
@@ -975,16 +974,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeDateTime>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt32().createColumnConst(
             block.rows(),
-            static_cast<UInt64>(time(0)));
+            static_cast<UInt64>(time(nullptr)));
     }
 };
 
@@ -993,7 +992,7 @@ class FunctionToday : public IFunction
 {
 public:
     static constexpr auto name = "today";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToday>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToday>(); };
 
     String getName() const override
     {
@@ -1002,16 +1001,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeDate>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt16().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
-            UInt64(DateLUT::instance().toDayNum(time(0))));
+            UInt64(DateLUT::instance().toDayNum(time(nullptr))));
     }
 };
 
@@ -1020,7 +1019,7 @@ class FunctionYesterday : public IFunction
 {
 public:
     static constexpr auto name = "yesterday";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionYesterday>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionYesterday>(); };
 
     String getName() const override
     {
@@ -1029,16 +1028,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeDate>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt16().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
-            UInt64(DateLUT::instance().toDayNum(time(0)) - 1));
+            UInt64(DateLUT::instance().toDayNum(time(nullptr)) - 1));
     }
 };
 
@@ -1048,7 +1047,7 @@ class FunctionToTimeZone : public IFunction
 {
 public:
     static constexpr auto name = "toTimeZone";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToTimeZone>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimeZone>(); };
 
     String getName() const override
     {
@@ -1087,7 +1086,7 @@ class FunctionTimeSlot : public IFunction
 {
 public:
     static constexpr auto name = "timeSlot";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlot>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlot>(); };
 
     String getName() const override
     {
@@ -1111,10 +1110,9 @@ public:
     {
         if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto res = std::make_shared<ColumnUInt32>();
-            ColumnPtr res_holder = res;
-            ColumnUInt32::Container_t & res_vec = res->getData();
-            const ColumnUInt32::Container_t & vec = times->getData();
+            auto res = ColumnUInt32::create();
+            ColumnUInt32::Container & res_vec = res->getData();
+            const ColumnUInt32::Container & vec = times->getData();
 
             size_t size = vec.size();
             res_vec.resize(size);
@@ -1122,7 +1120,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 res_vec[i] = vec[i] / TIME_SLOT_SIZE * TIME_SLOT_SIZE;
 
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1137,14 +1135,14 @@ struct TimeSlotsImpl
 {
     static void vector_vector(
         const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + durations[i]) / TIME_SLOT_SIZE; ++value)
@@ -1159,14 +1157,14 @@ struct TimeSlotsImpl
 
     static void vector_constant(
         const PaddedPODArray<UInt32> & starts, DurationType duration,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + duration) / TIME_SLOT_SIZE; ++value)
@@ -1181,14 +1179,14 @@ struct TimeSlotsImpl
 
     static void constant_vector(
         UInt32 start, const PaddedPODArray<DurationType> & durations,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = durations.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + durations[i]) / TIME_SLOT_SIZE; ++value)
@@ -1215,7 +1213,7 @@ class FunctionTimeSlots : public IFunction
 {
 public:
     static constexpr auto name = "timeSlots";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTimeSlots>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); };
 
     String getName() const override
     {
@@ -1245,30 +1243,29 @@ public:
         auto durations = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
         auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
 
-        auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
-        ColumnPtr res_holder = res;
-        ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
+        auto res = ColumnArray::create(ColumnUInt32::create());
+        ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
         if (starts && durations)
         {
             TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (starts && const_durations)
         {
             TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && durations)
         {
             TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && const_durations)
         {
             Array const_res;
             TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), const_res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), const_res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), const_res);
         }
         else
             throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
