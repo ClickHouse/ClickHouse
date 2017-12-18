@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
 #include <Common/StringUtils.h>
 
@@ -590,7 +591,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 return false;
             }
 
-            auto part = data.getPartIfExists(name);
+            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
                 sum_parts_size_in_bytes += part->size_in_bytes;
         }
