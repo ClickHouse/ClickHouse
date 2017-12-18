@@ -25,22 +25,15 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 }
 
 
-static ColumnWithTypeAndName getFilteredDatabases(const ASTPtr & query, const Context & context)
+static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
-    ColumnWithTypeAndName column;
-    column.name = "database";
-    column.type = std::make_shared<DataTypeString>();
-    column.column = std::make_shared<ColumnString>();
-
+    MutableColumnPtr column = ColumnString::create();
     for (const auto & db : context.getDatabases())
-        column.column->insert(db.first);
+        column->insert(db.first);
 
-    Block block;
-    block.insert(std::move(column));
-
+    Block block { ColumnWithTypeAndName( std::move(column), std::make_shared<DataTypeString>(), "database" ) };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-
-    return block.safeGetByPosition(0);
+    return block.getByPosition(0).column;
 }
 
 
@@ -55,37 +48,13 @@ BlockInputStreams StorageSystemTables::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block;
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
-    ColumnWithTypeAndName col_db;
-    col_db.name = "database";
-    col_db.type = std::make_shared<DataTypeString>();
-    col_db.column = std::make_shared<ColumnString>();
-    block.insert(col_db);
+    ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
 
-    ColumnWithTypeAndName col_name;
-    col_name.name = "name";
-    col_name.type = std::make_shared<DataTypeString>();
-    col_name.column = std::make_shared<ColumnString>();
-    block.insert(col_name);
-
-    ColumnWithTypeAndName col_engine;
-    col_engine.name = "engine";
-    col_engine.type = std::make_shared<DataTypeString>();
-    col_engine.column = std::make_shared<ColumnString>();
-    block.insert(col_engine);
-
-    ColumnWithTypeAndName col_meta_mod_time;
-    col_meta_mod_time.name = "metadata_modification_time";
-    col_meta_mod_time.type = std::make_shared<DataTypeDateTime>();
-    col_meta_mod_time.column = std::make_shared<ColumnUInt32>();
-    block.insert(col_meta_mod_time);
-
-    ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query_info.query, context);
-
-    for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
+    for (size_t row_number = 0; row_number < filtered_databases_column->size(); ++row_number)
     {
-        std::string database_name = filtered_databases_column.column->getDataAt(row_number).toString();
+        std::string database_name = filtered_databases_column->getDataAt(row_number).toString();
         auto database = context.tryGetDatabase(database_name);
 
         if (!database)
@@ -97,14 +66,14 @@ BlockInputStreams StorageSystemTables::read(
         for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
         {
             auto table_name = iterator->name();
-            col_db.column->insert(database_name);
-            col_name.column->insert(table_name);
-            col_engine.column->insert(iterator->table()->getName());
-            col_meta_mod_time.column->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+            res_columns[0]->insert(database_name);
+            res_columns[1]->insert(table_name);
+            res_columns[2]->insert(iterator->table()->getName());
+            res_columns[3]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
         }
     }
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

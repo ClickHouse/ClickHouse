@@ -6,20 +6,20 @@
 namespace DB
 {
 
-BinaryRowInputStream::BinaryRowInputStream(ReadBuffer & istr_)
-    : istr(istr_)
+BinaryRowInputStream::BinaryRowInputStream(ReadBuffer & istr_, const Block & header_)
+    : istr(istr_), header(header_)
 {
 }
 
 
-bool BinaryRowInputStream::read(Block & block)
+bool BinaryRowInputStream::read(MutableColumns & columns)
 {
     if (istr.eof())
         return false;
 
-    size_t columns = block.columns();
-    for (size_t i = 0; i < columns; ++i)
-        block.getByPosition(i).type->deserializeBinary(*block.getByPosition(i).column.get(), istr);
+    size_t num_columns = columns.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        header.getByPosition(i).type->deserializeBinary(*columns[i], istr);
 
     return true;
 }

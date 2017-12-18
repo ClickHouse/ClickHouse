@@ -34,12 +34,12 @@ std::string DataTypeTuple::getName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-    return *static_cast<ColumnTuple &>(column).getColumns()[idx];
+    return static_cast<ColumnTuple &>(column).getColumn(idx);
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-    return *static_cast<const ColumnTuple &>(column).getColumns()[idx];
+    return static_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
 
@@ -273,13 +273,13 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
-ColumnPtr DataTypeTuple::createColumn() const
+MutableColumnPtr DataTypeTuple::createColumn() const
 {
     size_t size = elems.size();
     Columns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
         tuple_columns[i] = elems[i]->createColumn();
-    return std::make_shared<ColumnTuple>(tuple_columns);
+    return ColumnTuple::create(tuple_columns);
 }
 
 Field DataTypeTuple::getDefault() const

@@ -39,7 +39,7 @@ Block DistinctBlockInputStream::readImpl()
         if (!block)
             return Block();
 
-        const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
+        const ColumnRawPtrs column_ptrs(getKeyColumns(block));
         if (column_ptrs.empty())
             return block;
 
@@ -106,7 +106,7 @@ bool DistinctBlockInputStream::checkLimits() const
 template <typename Method>
 void DistinctBlockInputStream::buildFilter(
     Method & method,
-    const ConstColumnPlainPtrs & columns,
+    const ColumnRawPtrs & columns,
     IColumn::Filter & filter,
     size_t rows,
     SetVariants & variants) const
@@ -132,11 +132,11 @@ void DistinctBlockInputStream::buildFilter(
     }
 }
 
-ConstColumnPlainPtrs DistinctBlockInputStream::getKeyColumns(const Block & block) const
+ColumnRawPtrs DistinctBlockInputStream::getKeyColumns(const Block & block) const
 {
     size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
 
-    ConstColumnPlainPtrs column_ptrs;
+    ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(columns);
 
     for (size_t i = 0; i < columns; ++i)

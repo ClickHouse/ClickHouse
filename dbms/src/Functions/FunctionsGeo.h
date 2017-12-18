@@ -135,8 +135,7 @@ private:
         }
         else
         {
-            const auto dst = std::make_shared<ColumnVector<Float64>>();
-            block.getByPosition(result).column = dst;
+            auto dst = ColumnVector<Float64>::create();
             auto & dst_data = dst->getData();
             dst_data.resize(size);
             Float64 vals[instrs.size()];
@@ -153,6 +152,7 @@ private:
                 }
                 dst_data[row] = greatCircleDistance(vals[0], vals[1], vals[2], vals[3]);
             }
+            block.getByPosition(result).column = std::move(dst);
         }
     }
 };
@@ -273,8 +273,7 @@ private:
                 const auto col_vec_x = static_cast<const ColumnVector<Float64> *> (col_x);
                 const auto col_vec_y = static_cast<const ColumnVector<Float64> *> (col_y);
 
-                const auto dst = std::make_shared<ColumnVector<UInt8>>();
-                block.getByPosition(result).column = dst;
+                auto dst = ColumnVector<UInt8>::create();
                 auto & dst_data = dst->getData();
                 dst_data.resize(size);
 
@@ -283,6 +282,8 @@ private:
                 {
                     dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses, ellipses_count, start_index);
                 }
+
+                block.getByPosition(result).column = std::move(dst);
             }
             else if (const_cnt == 2)
             {
