@@ -54,7 +54,8 @@ done
 # Копируем больше заголовочных файлов с интринсиками, так как на серверах, куда будут устанавливаться
 #  заголовочные файлы, будет использоваться опция -march=native.
 
-for i in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
+for i in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep -E '/lib/clang/|/include/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
+    mkdir -p "$DST/$(echo $i | sed -r -e 's/\/[^/]*$/\//')";
     cp "$i" "$DST/$i";
 done
