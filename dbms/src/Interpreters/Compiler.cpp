@@ -231,10 +231,11 @@ void Compiler::compile(
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/backward"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/llvm*/lib/clang/*/include"      /// if compiler is clang
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include"                      /// if something installed manually
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include"          /// if something installed manually
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include"                /// if compiler is clang
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include-fixed"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include"
