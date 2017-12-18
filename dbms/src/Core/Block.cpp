@@ -334,7 +334,7 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
 
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
-        res.insert({ std::move(columns[i]), data[i].type ? data[i].type->clone() : nullptr, data[i].name });
+        res.insert({ std::move(columns[i]), data[i].type, data[i].name });
 
     return res;
 }

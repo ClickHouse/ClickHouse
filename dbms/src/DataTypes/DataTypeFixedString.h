@@ -30,11 +30,6 @@ public:
 
     const char * getFamilyName() const override { return "FixedString"; }
 
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeFixedString>(n);
-    }
-
     size_t getN() const
     {
         return n;

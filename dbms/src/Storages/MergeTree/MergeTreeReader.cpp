@@ -476,7 +476,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                 if (offset_columns.count(offsets_name))
                 {
                     ColumnPtr offsets_column = offset_columns[offsets_name];
-                    DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column_to_add.type).getNestedType();
+                    DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
                     size_t nested_rows = offsets_column->empty() ? 0
                         : typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 

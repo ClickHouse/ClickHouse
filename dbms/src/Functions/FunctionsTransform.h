@@ -75,7 +75,7 @@ public:
                     toString(args_size) + ", should be 3 or 4",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const IDataType * type_x = arguments[0].get();
+        const DataTypePtr & type_x = arguments[0];
 
         if (!type_x->isValueRepresentedByNumber() && !type_x->isString())
             throw Exception{"Unsupported type " + type_x->getName()
@@ -113,7 +113,7 @@ public:
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return type_x->clone();
+            return type_x;
         }
         else
         {
@@ -137,7 +137,7 @@ public:
             }
 
             /// TODO More checks.
-            return type_arr_to_nested->clone();
+            return type_arr_to_nested;
         }
     }
 

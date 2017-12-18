@@ -335,7 +335,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if      (checkDataType<DataTypeUInt8>(from_type)) executeType<UInt8>(block, arguments, result);
         else if (checkDataType<DataTypeUInt16>(from_type)) executeType<UInt16>(block, arguments, result);

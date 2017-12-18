@@ -10,8 +10,6 @@ namespace DB
 template <typename T>
 class DataTypeNumber final : public DataTypeNumberBase<T>
 {
-    DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<T>>(); }
-
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }

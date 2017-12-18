@@ -138,7 +138,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(input_data_type->clone());
+        return std::make_shared<DataTypeArray>(input_data_type);
     }
 
     bool allocatesMemoryInArena() const override
