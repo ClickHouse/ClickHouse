@@ -156,7 +156,6 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
         throw;
     }
 
-    res.checkNumberOfRows();
     return read_rows;
 }
 
