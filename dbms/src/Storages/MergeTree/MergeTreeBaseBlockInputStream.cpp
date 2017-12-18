@@ -424,6 +424,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     task->size_predictor->update(res);
 
                 reader->fillMissingColumns(res, task->ordered_names, true);
+
+                res.checkNumberOfRows();
             }
         }
         while (!task->isFinished() && !res && !isCancelled());
