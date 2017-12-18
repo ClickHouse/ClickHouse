@@ -5,6 +5,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -2125,7 +2126,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     if (auto part = data.getPartIfExists(part_name, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
     {
         LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
-        /// Force premature parts cleanup
+        /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
         cleanup_thread->schedule();
         return false;
     }
@@ -2322,7 +2323,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         String last_part;
         zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
 
-        if (!last_part.empty() && !data.getPartIfExists(last_part))    /// TODO Disable replica for distributed queries.
+        if (!last_part.empty() && !data.getActiveContainingPart(last_part))    /// TODO Disable replica for distributed queries.
             throw Exception("Replica doesn't have part " + last_part + " which was successfully written to quorum of other replicas."
                 " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
 

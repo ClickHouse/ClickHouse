@@ -253,7 +253,8 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
 
     for (auto part_name : failed_parts)
     {
-        auto part = storage.data.getPartIfExists(part_name);
+        auto part = storage.data.getPartIfExists(
+            part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
         if (part)
         {
             LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
