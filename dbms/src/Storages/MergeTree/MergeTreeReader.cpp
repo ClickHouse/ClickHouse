@@ -88,7 +88,8 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             if (!append)
                 res.insert(ColumnWithTypeAndName(it.type->createColumn(), it.type, it.name));
 
-            MutableColumnPtr column = res.getByName(it.name).column->mutate();
+            /// To keep offsets shared. TODO Very dangerous. Get rid of this.
+            MutableColumnPtr column = res.getByName(it.name).column->assumeMutable();
 
             bool read_offsets = true;
 
@@ -155,6 +156,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
         throw;
     }
 
+    res.checkNumberOfRows();
     return read_rows;
 }
 
