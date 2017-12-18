@@ -98,10 +98,10 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
-    const ColumnAggregateFunction::Container_t & vec = real_column.getData();
+    const ColumnAggregateFunction::Container & vec = real_column.getData();
 
-    ColumnAggregateFunction::Container_t::const_iterator it = vec.begin() + offset;
-    ColumnAggregateFunction::Container_t::const_iterator end = limit ? it + limit : vec.end();
+    ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
+    ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
 
     if (end > vec.end())
         end = vec.end();
@@ -110,10 +110,10 @@ void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, Writ
         function->serialize(*it, ostr);
 }
 
-void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
-    ColumnAggregateFunction::Container_t & vec = real_column.getData();
+    ColumnAggregateFunction::Container & vec = real_column.getData();
 
     Arena & arena = real_column.createOrGetArena();
     real_column.set(function);
@@ -243,9 +243,9 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 }
 
 
-ColumnPtr DataTypeAggregateFunction::createColumn() const
+MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    return std::make_shared<ColumnAggregateFunction>(function);
+    return ColumnAggregateFunction::create(function);
 }
 
 

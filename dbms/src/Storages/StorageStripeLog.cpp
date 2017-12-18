@@ -43,7 +43,7 @@ namespace ErrorCodes
 class StripeLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
-    StripeLogBlockInputStream(const NameSet & column_names_, StorageStripeLog & storage_, size_t max_read_buffer_size_,
+    StripeLogBlockInputStream(StorageStripeLog & storage_, size_t max_read_buffer_size_,
         std::shared_ptr<const IndexForNativeFormat> & index_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_)
@@ -200,7 +200,7 @@ StorageStripeLog::StorageStripeLog(
 }
 
 
-void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageStripeLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -215,10 +215,10 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 
 BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
+    const size_t /*max_block_size*/,
     unsigned num_streams)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
@@ -249,7 +249,7 @@ BlockInputStreams StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         res.emplace_back(std::make_shared<StripeLogBlockInputStream>(
-            column_names_set, *this, context.getSettingsRef().max_read_buffer_size, index, begin, end));
+            *this, context.getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -259,7 +259,7 @@ BlockInputStreams StorageStripeLog::read(
 
 
 BlockOutputStreamPtr StorageStripeLog::write(
-    const ASTPtr & query, const Settings & settings)
+    const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<StripeLogBlockOutputStream>(*this);
 }

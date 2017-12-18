@@ -1,5 +1,3 @@
-SET experimental_allow_extended_storage_definition_syntax = 1;
-
 SELECT '*** Without PARTITION BY and ORDER BY ***';
 
 DROP TABLE IF EXISTS test.unsorted;

@@ -131,12 +131,11 @@ private:
             const auto & colLat2 = static_cast<const ColumnConst *>(block.getByPosition(arguments[3]).column.get())->getValue<Float64>();
 
             Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, res);
         }
         else
         {
-            const auto dst = std::make_shared<ColumnVector<Float64>>();
-            block.getByPosition(result).column = dst;
+            auto dst = ColumnVector<Float64>::create();
             auto & dst_data = dst->getData();
             dst_data.resize(size);
             Float64 vals[instrs.size()];
@@ -153,6 +152,7 @@ private:
                 }
                 dst_data[row] = greatCircleDistance(vals[0], vals[1], vals[2], vals[3]);
             }
+            block.getByPosition(result).column = std::move(dst);
         }
     }
 };
@@ -273,8 +273,7 @@ private:
                 const auto col_vec_x = static_cast<const ColumnVector<Float64> *> (col_x);
                 const auto col_vec_y = static_cast<const ColumnVector<Float64> *> (col_y);
 
-                const auto dst = std::make_shared<ColumnVector<UInt8>>();
-                block.getByPosition(result).column = dst;
+                auto dst = ColumnVector<UInt8>::create();
                 auto & dst_data = dst->getData();
                 dst_data.resize(size);
 
@@ -283,6 +282,8 @@ private:
                 {
                     dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses, ellipses_count, start_index);
                 }
+
+                block.getByPosition(result).column = std::move(dst);
             }
             else if (const_cnt == 2)
             {
@@ -290,7 +291,7 @@ private:
                 const auto col_const_y = static_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses, ellipses_count, start_index);
-                block.getByPosition(result).column = DataTypeUInt8().createConstColumn(size, UInt64(res));
+                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, UInt64(res));
             }
             else
             {

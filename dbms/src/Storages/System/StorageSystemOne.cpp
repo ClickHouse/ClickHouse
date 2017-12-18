@@ -18,23 +18,20 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 
 BlockInputStreams StorageSystemOne::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const SelectQueryInfo &,
+    const Context &,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block;
-    ColumnWithTypeAndName col;
-    col.name = "dummy";
-    col.type = std::make_shared<DataTypeUInt8>();
-    col.column = DataTypeUInt8().createConstColumn(1, UInt64(0))->convertToFullColumnIfConst();
-    block.insert(std::move(col));
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
+        Block{ColumnWithTypeAndName(
+            DataTypeUInt8().createColumnConst(1, UInt64(0))->convertToFullColumnIfConst(),
+            std::make_shared<DataTypeUInt8>(),
+            "dummy")}));
 }
 
 

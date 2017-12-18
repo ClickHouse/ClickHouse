@@ -34,7 +34,7 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
 #pragma GCC diagnostic pop
 
     if (rc != Z_OK)
-        throw Exception(std::string("inflateInit2 failed: ") + zError(rc), ErrorCodes::ZLIB_INFLATE_FAILED);
+        throw Exception(std::string("inflateInit2 failed: ") + zError(rc) + "; zlib version: " + ZLIB_VERSION, ErrorCodes::ZLIB_INFLATE_FAILED);
 }
 
 ZlibInflatingReadBuffer::~ZlibInflatingReadBuffer()

@@ -100,7 +100,7 @@ Install prerequisites to build debian packages.
 
 Install recent version of clang.
 
-Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. Recommended version is 5.0. It is optional.
+Clang is embedded into ClickHouse package and used at runtime. Minimum version is 5.0. It is optional.
 
 To install clang, look at ``utils/prepare-environment/install-clang.sh``
 

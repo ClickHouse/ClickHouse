@@ -101,9 +101,9 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
     DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key>& ids,
     const PaddedPODArray<UInt16> & dates, const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
 {
-    auto column_vector = std::make_unique<ColumnVector<AttributeType>>(ids.size());
+    auto column_vector = ColumnVector<AttributeType>::create(ids.size());
     (dictionary.*getter)(attribute.name, ids, dates, column_vector->getData());
-    return ColumnPtr(std::move(column_vector));
+    return std::move(column_vector);
 }
 
 template <typename DictionaryType, typename Key>
@@ -111,22 +111,20 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
     const PaddedPODArray<Key>& ids, const PaddedPODArray<UInt16> & dates,
     const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
 {
-    auto column_string = std::make_unique<ColumnString>();
+    auto column_string = ColumnString::create();
     dictionary.getString(attribute.name, ids, dates, column_string.get());
-    return ColumnPtr(std::move(column_string));
+    return std::move(column_string);
 }
 
 template <typename DictionaryType, typename Key>
 template <typename T>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromPODArray(const PaddedPODArray<T>& array) const
 {
-    auto column_vector = std::make_unique<ColumnVector<T>>();
+    auto column_vector = ColumnVector<T>::create();
     column_vector->getData().reserve(array.size());
     for (T value : array)
-    {
         column_vector->insert(value);
-    }
-    return ColumnPtr(std::move(column_vector));
+    return std::move(column_vector);
 }
 
 

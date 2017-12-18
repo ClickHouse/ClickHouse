@@ -21,7 +21,6 @@ public:
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeTuple>(elems); }
 
     bool canBeInsideNullable() const override { return false; }
 
@@ -43,18 +42,37 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-
-    /** `limit` must be exactly equal to the number of serialized values.
-      * It is because of this (the inability to read a smaller piece of recorded data) that Tuple can not be used to store data in tables.
-      * (Although they can be used to transfer data over a network in Native format.)
+    /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
 
-    ColumnPtr createColumn() const override;
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        OutputStreamGetter getter,
+        size_t offset,
+        size_t limit,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        InputStreamGetter getter,
+        size_t limit,
+        double avg_value_size_hint,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
+
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return !elems.empty(); }
+    bool textCanContainOnlyValidUTF8() const override;
+    bool haveMaximumSizeOfValue() const override;
+    size_t getMaximumSizeOfValueInMemory() const override;
+    size_t getSizeOfValueInMemory() const override;
 
     const DataTypes & getElements() const { return elems; }
 };

@@ -247,9 +247,9 @@ struct Factory3 : IFactory
 };
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
-    srand(time(0));
+    srand(time(nullptr));
 
     std::cerr << "f1: " << f1().data << std::endl;
     std::cerr << "f2: " << f2().data << std::endl;

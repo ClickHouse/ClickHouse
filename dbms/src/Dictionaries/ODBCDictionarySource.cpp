@@ -1,6 +1,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Poco/Data/SessionPool.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/Data/SessionPool.h>
+#pragma GCC diagnostic pop
+
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
@@ -114,7 +119,7 @@ bool ODBCDictionarySource::isModified() const
 std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     Block sample_block;
-    ColumnPtr column(std::make_shared<ColumnString>());
+    ColumnPtr column(ColumnString::create());
     sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
     ODBCBlockInputStream block_input_stream(pool->get(), request, sample_block, 1);
     return readInvalidateQuery(block_input_stream);

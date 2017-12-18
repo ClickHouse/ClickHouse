@@ -48,7 +48,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 };
 
 
-int printHelp(int argc, char ** argv)
+int printHelp(int, char **)
 {
     std::cerr << "Use one of the following commands:" << std::endl;
     for (auto & application : clickhouse_applications)

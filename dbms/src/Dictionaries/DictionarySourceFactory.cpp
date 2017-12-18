@@ -20,7 +20,10 @@
     #include <Dictionaries/MongoDBDictionarySource.h>
 #endif
 #if Poco_DataODBC_FOUND
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
     #include <Poco/Data/ODBC/Connector.h>
+#pragma GCC diagnostic pop
     #include <Dictionaries/ODBCDictionarySource.h>
 #endif
 #if USE_MYSQL
@@ -51,7 +54,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 
     if (dict_struct.id)
         block.insert(ColumnWithTypeAndName{
-            std::make_shared<ColumnUInt64>(1), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
+            ColumnUInt64::create(1), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
 
     if (dict_struct.key)
     {
@@ -60,21 +63,21 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
             auto column = attribute.type->createColumn();
             column->insertDefault();
 
-            block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.name});
+            block.insert(ColumnWithTypeAndName{std::move(column), attribute.type, attribute.name});
         }
     }
 
     if (dict_struct.range_min)
         for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
             block.insert(ColumnWithTypeAndName{
-                std::make_shared<ColumnUInt16>(1), std::make_shared<DataTypeDate>(), attribute->name});
+                ColumnUInt16::create(1), std::make_shared<DataTypeDate>(), attribute->name});
 
     for (const auto & attribute : dict_struct.attributes)
     {
         auto column = attribute.type->createColumn();
         column->insert(attribute.null_value);
 
-        block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.name});
+        block.insert(ColumnWithTypeAndName{std::move(column), attribute.type, attribute.name});
     }
 
     return block;

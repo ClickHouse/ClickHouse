@@ -1,5 +1,4 @@
-Библиотеки от сторонних разработчиков
-=====================================
+# Библиотеки от сторонних разработчиков
 
 Существуют библиотеки для работы с ClickHouse для:
 
@@ -29,6 +28,7 @@
   - [clickhouse (Ruby)](https://github.com/archan937/clickhouse)
 - R
   - [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
+  - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
 - .NET
   - [ClickHouse-Net](https://github.com/killwort/ClickHouse-Net)
 - C++

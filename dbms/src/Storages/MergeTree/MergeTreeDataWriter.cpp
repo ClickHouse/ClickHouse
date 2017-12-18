@@ -23,7 +23,7 @@ namespace
 {
 
 void buildScatterSelector(
-        const ConstColumnPlainPtrs & columns,
+        const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
         IColumn::Selector & selector)
 {
@@ -80,7 +80,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     Block block_copy = block;
     data.partition_expr->execute(block_copy);
 
-    ConstColumnPlainPtrs partition_columns;
+    ColumnRawPtrs partition_columns;
     partition_columns.reserve(data.partition_expr_columns.size());
     for (const String & name : data.partition_expr_columns)
         partition_columns.emplace_back(block_copy.getByName(name).column.get());
@@ -112,7 +112,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        Columns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }
@@ -198,7 +198,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_settings = data.context.chooseCompressionSettings(0, 0);
 
-    NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
+    NamesAndTypesList columns = data.getColumnsList().filter(block.getNames());
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_settings);
 
     out.writePrefix();

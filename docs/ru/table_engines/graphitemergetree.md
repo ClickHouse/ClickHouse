@@ -1,7 +1,6 @@
 <a name="table_engines-graphitemergetree"></a>
 
-GraphiteMergeTree
-=================
+# GraphiteMergeTree
 
 Движок предназначен для rollup (прореживания и агрегирования/усреднения) данных [Graphite](http://graphite.readthedocs.io/en/latest/index.html). Он может быть интересен разработчикам, которые хотят использовать ClickHouse как хранилище данных для Graphite.
 
@@ -17,8 +16,7 @@ Graphite хранит в ClickHouse полные данные, а получат
 
 Движок наследует свойства MergeTree. Настройки прореживания данных задаются параметром [graphite_rollup](../operations/server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера .
 
-Использование движка
---------------------
+## Использование движка
 
 Таблица с данными Graphite должна содержать как минимум следующие поля:
 

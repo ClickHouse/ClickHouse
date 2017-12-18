@@ -66,7 +66,7 @@ void DataTypeUUID::serializeTextCSV(const IColumn & column, size_t row_num, Writ
     writeChar('"', ostr);
 }
 
-void DataTypeUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
 {
     UUID value;
     readCSV(value, istr);

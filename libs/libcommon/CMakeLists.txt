@@ -27,7 +27,6 @@ add_library (common
     src/ThreadPool.cpp
     src/iostream_debug_helpers.cpp
 
-    include/common/ApplicationServerExt.h
     include/common/Types.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
@@ -66,7 +65,7 @@ if (USE_JEMALLOC)
         message (STATUS "Link jemalloc : ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
 elseif (USE_TCMALLOC)
-    if (DEBUG_LIBTCMALLOC)
+    if (DEBUG_TCMALLOC)
         message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
         set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
     else ()
@@ -100,7 +99,7 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARIES}
+    ${RT_LIBRARY}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
 

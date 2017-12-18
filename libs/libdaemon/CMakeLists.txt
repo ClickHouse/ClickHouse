@@ -17,4 +17,4 @@ endif ()
 target_include_directories (daemon PUBLIC include)
 target_include_directories (daemon PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
 
-target_link_libraries (daemon dbms)
+target_link_libraries (daemon clickhouse_common_io ${EXECINFO_LIBRARY})

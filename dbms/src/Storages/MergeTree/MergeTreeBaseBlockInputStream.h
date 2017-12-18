@@ -1,4 +1,5 @@
 #pragma once
+
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -38,7 +39,7 @@ protected:
     virtual bool getNewTask() = 0;
 
     /// We will call progressImpl manually.
-    void progress(const Progress & value) override {}
+    void progress(const Progress &) override {}
 
     Block readFromPart();
 
@@ -49,7 +50,7 @@ protected:
     MergeTreeData & storage;
 
     ExpressionActionsPtr prewhere_actions;
-    String prewhere_column;
+    String prewhere_column_name;
 
     size_t max_block_size_rows;
     size_t preferred_block_size_bytes;

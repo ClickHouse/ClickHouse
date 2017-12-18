@@ -84,8 +84,8 @@ void ExtractProtocol::execute(Pos data, size_t size, Pos & res_data, size_t & re
 }
 
 
-void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-    ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
+    ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
 {
     res_data.resize(data.size());
     size_t size = offsets.size();
@@ -109,8 +109,7 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 }
 
 
-void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t & data, size_t n,
-    ColumnString::Chars_t & res_data)
+void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
 {
     throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
 }

@@ -97,10 +97,7 @@ protected:
             return res;
 
         for (const auto & name : column_names)
-        {
-            auto & col = buffer.data.getByName(name);
-            res.insert(ColumnWithTypeAndName(col.column->clone(), col.type, name));
-        }
+            res.insert(buffer.data.getByName(name));
 
         return res;
     }
@@ -156,6 +153,10 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
+    if (!blocksHaveEqualStructure(from, to))
+        throw Exception("Cannot append block to buffer: block has different structure. "
+            "Block: " + from.dumpStructure() + ", Buffer: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
     from.checkNumberOfRows();
     to.checkNumberOfRows();
 
@@ -171,14 +172,12 @@ static void appendBlock(const Block & from, Block & to)
     {
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
-            const IColumn & col_from = *from.safeGetByPosition(column_no).column.get();
-            IColumn & col_to = *to.safeGetByPosition(column_no).column.get();
+            const IColumn & col_from = *from.getByPosition(column_no).column.get();
+            MutableColumnPtr col_to = to.getByPosition(column_no).column->mutate();
 
-            if (col_from.getName() != col_to.getName())
-                throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
-                    + ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            col_to->insertRangeFrom(col_from, 0, rows);
 
-            col_to.insertRangeFrom(col_from, 0, rows);
+            to.getByPosition(column_no).column = std::move(col_to);
         }
     }
     catch (...)
@@ -191,9 +190,9 @@ static void appendBlock(const Block & from, Block & to)
 
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
-                ColumnPtr & col_to = to.safeGetByPosition(column_no).column;
+                ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = col_to->cut(0, old_rows);
+                    col_to = col_to->mutate()->cut(0, old_rows);
             }
         }
         catch (...)
@@ -325,7 +324,7 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
 }
@@ -365,7 +364,7 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageBuffer::optimize(const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & /*context*/)
 {
     if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);

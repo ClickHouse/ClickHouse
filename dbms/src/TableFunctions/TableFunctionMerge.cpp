@@ -93,7 +93,7 @@ StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Contex
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
-    TableFunctionFactory::instance().registerFunction<TableFunctionMerge>();
+    factory.registerFunction<TableFunctionMerge>();
 }
 
 }

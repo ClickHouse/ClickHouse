@@ -1,5 +1,4 @@
-system.parts
-============
+# system.parts
 
 Содержит информацию о кусках таблиц семейства [MergeTree](../table_engines/mergetree.md#table_engines-mergetree).
 

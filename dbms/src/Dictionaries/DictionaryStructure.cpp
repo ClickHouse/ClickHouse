@@ -1,8 +1,14 @@
 #include <Dictionaries/DictionaryStructure.h>
-#include <Common/StringUtils.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
+#include <Common/StringUtils.h>
+#include <IO/WriteHelpers.h>
 
+#include <ext/range.h>
+#include <numeric>
 #include <unordered_set>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -222,7 +228,7 @@ bool DictionaryStructure::isKeySizeFixed() const
 size_t DictionaryStructure::getKeySize() const
 {
     return std::accumulate(std::begin(*key), std::end(*key), size_t{},
-        [] (const auto running_size, const auto & key_i) {return running_size + key_i.type->getSizeOfField(); });
+        [] (const auto running_size, const auto & key_i) {return running_size + key_i.type->getSizeOfValueInMemory(); });
 }
 
 
@@ -277,15 +283,14 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             try
             {
                 ReadBufferFromString null_value_buffer{null_value_string};
-                ColumnPtr column_with_null_value = type->createColumn();
+                auto column_with_null_value = type->createColumn();
                 type->deserializeTextEscaped(*column_with_null_value, null_value_buffer);
                 null_value = (*column_with_null_value)[0];
             }
-            catch (const std::exception & e)
+            catch (Exception & e)
             {
-                throw Exception{
-                    std::string{"Error parsing null_value: "} + e.what(),
-                    ErrorCodes::BAD_ARGUMENTS};
+                e.addMessage("error parsing null_value");
+                throw;
             }
         }
 

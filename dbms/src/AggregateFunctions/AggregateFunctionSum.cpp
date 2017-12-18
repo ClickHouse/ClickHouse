@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -21,7 +21,7 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionSumWithOverflow(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionSumWithOverflow(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

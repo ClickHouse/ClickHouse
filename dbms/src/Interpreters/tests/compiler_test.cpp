@@ -4,7 +4,7 @@
 #include <Interpreters/Compiler.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using namespace DB;
 

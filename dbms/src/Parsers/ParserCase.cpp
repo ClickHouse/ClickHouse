@@ -99,7 +99,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_args->children = std::move(args);
 
         auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-        function->name = "caseWithoutExpression";
+        function->name = "multiIf";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
 

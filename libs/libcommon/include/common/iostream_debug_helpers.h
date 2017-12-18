@@ -117,7 +117,7 @@ std::ostream & operator<<(std::ostream & stream, const std::list<K> & what)
 #include <ratio>
 
 template <std::intmax_t Num, std::intmax_t Denom>
-std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & what)
+std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> &)
 {
     stream << "ratio<Num=" << Num << ", Denom=" << Denom << ">";
     return stream;
@@ -144,7 +144,7 @@ std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<c
 template <typename T>
 std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what)
 {
-    stream << "shared_ptr("<< what.get() <<", use_count = " << what.use_count() << ") {";
+    stream << "shared_ptr(" << what.get() <<", use_count = " << what.use_count() << ") {";
     if (what)
         stream << *what;
     else
@@ -156,7 +156,7 @@ std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what
 template <typename T>
 std::ostream & operator<<(std::ostream & stream, const std::unique_ptr<T> & what)
 {
-    stream << "unique_ptr("<< what.get() <<") {";
+    stream << "unique_ptr(" << what.get() <<") {";
     if (what)
         stream << *what;
     else

@@ -1,3 +1,6 @@
 #!/usr/bin/env bash
 
-echo -ne '1,Hello\n2,World\n' | curl -sSF 'file=@-' 'http://localhost:8123/?query=SELECT+*+FROM+file&file_format=CSV&file_types=UInt8,String';
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
+echo -ne '1,Hello\n2,World\n' | ${CLICKHOUSE_CURL} -sSF 'file=@-' "${CLICKHOUSE_URL}?query=SELECT+*+FROM+file&file_format=CSV&file_types=UInt8,String";

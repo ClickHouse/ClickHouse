@@ -26,10 +26,14 @@ namespace
 }
 
 
-ExternalDictionaries::ExternalDictionaries(Context & context, bool throw_on_error)
+ExternalDictionaries::ExternalDictionaries(
+    std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+    Context & context,
+    bool throw_on_error)
         : ExternalLoader(context.getConfigRef(),
                          externalDictionariesUpdateSettings,
                          getExternalDictionariesConfigSettings(),
+                         std::move(config_repository),
                          &Logger::get("ExternalDictionaries"),
                          "external dictionary"),
           context(context)

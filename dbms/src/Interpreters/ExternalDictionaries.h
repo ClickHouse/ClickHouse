@@ -18,7 +18,10 @@ public:
     using DictPtr = std::shared_ptr<IDictionaryBase>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalDictionaries(Context & context, bool throw_on_error);
+    ExternalDictionaries(
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+        Context & context,
+        bool throw_on_error);
 
     /// Forcibly reloads specified dictionary.
     void reloadDictionary(const std::string & name) { reload(name); }
