@@ -42,7 +42,7 @@ int main(int argc, char ** argv)
 
     std::vector<Key> data(n);
 
-//    srand(time(0));
+//    srand(time(nullptr));
 
     {
         Stopwatch watch;

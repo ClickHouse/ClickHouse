@@ -179,7 +179,7 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
 std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     Block sample_block;
-    ColumnPtr column(std::make_shared<ColumnString>());
+    ColumnPtr column(ColumnString::create());
     sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
     MySQLBlockInputStream block_input_stream(pool.Get(), request, sample_block, 1);
     return readInvalidateQuery(block_input_stream);

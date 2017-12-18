@@ -1,9 +1,7 @@
 #pragma once
 
-#include <memory>
-#include <boost/noncopyable.hpp>
-
 #include <Core/Field.h>
+#include <Common/COWPtr.h>
 #include <Common/PODArray.h>
 #include <Common/Exception.h>
 #include <common/StringRef.h>
@@ -22,20 +20,19 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-class IColumn;
-
-using ColumnPtr = std::shared_ptr<IColumn>;
-using Columns = std::vector<ColumnPtr>;
-using ColumnPlainPtrs = std::vector<IColumn *>;
-using ConstColumnPlainPtrs = std::vector<const IColumn *>;
-
 class Arena;
 class ColumnGathererStream;
 
 /// Declares interface to store columns in memory.
-class IColumn : private boost::noncopyable
+class IColumn : public COWPtr<IColumn>
 {
+private:
+    friend class COWPtr<IColumn>;
+
 public:
+    /// Creates the same column with the same data.
+    virtual MutablePtr clone() const = 0;
+
     /// Name of a Column. It is used in info messages.
     virtual std::string getName() const { return getFamilyName(); };
 
@@ -45,18 +42,15 @@ public:
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
       */
-    virtual ColumnPtr convertToFullColumnIfConst() const { return {}; }
-
-    /// Creates the same column with the same data.
-    virtual ColumnPtr clone() const { return cut(0, size()); }
+    virtual MutablePtr convertToFullColumnIfConst() const { return {}; }
 
     /// Creates empty column with the same type.
-    virtual ColumnPtr cloneEmpty() const { return cloneResized(0); }
+    virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
     /// Creates column with the same type and specified size.
     /// If size is less current size, then data is cut.
     /// If size is greater, than default values are appended.
-    virtual ColumnPtr cloneResized(size_t /*size*/) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
     /// Returns number of values in column.
     virtual size_t size() const = 0;
@@ -107,9 +101,9 @@ public:
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
-    virtual ColumnPtr cut(size_t start, size_t length) const
+    virtual MutablePtr cut(size_t start, size_t length) const
     {
-        ColumnPtr res = cloneEmpty();
+        MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
         return res;
     }
@@ -174,12 +168,12 @@ public:
       *  otherwise (i.e. < 0), makes reserve() using size of source column.
       */
     using Filter = PaddedPODArray<UInt8>;
-    virtual ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
+    virtual MutablePtr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /// Permutes elements using specified permutation. Is used in sortings.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;
-    virtual ColumnPtr permute(const Permutation & perm, size_t limit) const = 0;
+    virtual MutablePtr permute(const Permutation & perm, size_t limit) const = 0;
 
     /** Compares (*this)[n] and rhs[m].
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
@@ -206,9 +200,9 @@ public:
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
       * It is necessary in ARRAY JOIN operation.
       */
-    using Offset_t = UInt64;
-    using Offsets_t = PaddedPODArray<Offset_t>;
-    virtual ColumnPtr replicate(const Offsets_t & offsets) const = 0;
+    using Offset = UInt64;
+    using Offsets = PaddedPODArray<Offset>;
+    virtual MutablePtr replicate(const Offsets & offsets) const = 0;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
       * Selector must contain values from 0 to num_columns - 1.
@@ -216,7 +210,7 @@ public:
       */
     using ColumnIndex = UInt64;
     using Selector = PaddedPODArray<ColumnIndex>;
-    virtual Columns scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+    virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -246,8 +240,17 @@ public:
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
-    using ColumnCallback = std::function<void(ColumnPtr&)>;
+    using ColumnCallback = std::function<void(Ptr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
+
+
+    MutablePtr mutate() const
+    {
+        MutablePtr res = COWPtr<IColumn>::mutate();
+        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = subcolumn->mutate(); });
+        return res;
+    }
+
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
@@ -318,7 +321,7 @@ protected:
     /// Template is to devirtualize calls to insertFrom method.
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
-    Columns scatterImpl(ColumnIndex num_columns, const Selector & selector) const
+    std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const
     {
         size_t num_rows = size();
 
@@ -327,7 +330,7 @@ protected:
                     "Size of selector: " + std::to_string(selector.size()) + " doesn't match size of column: " + std::to_string(num_rows),
                     ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-        Columns columns(num_columns);
+        std::vector<MutablePtr> columns(num_columns);
         for (auto & column : columns)
             column = cloneEmpty();
 
@@ -346,5 +349,12 @@ protected:
     }
 };
 
+using ColumnPtr = IColumn::Ptr;
+using MutableColumnPtr  = IColumn::MutablePtr;
+using Columns = std::vector<ColumnPtr>;
+using MutableColumns = std::vector<MutableColumnPtr>;
+
+using ColumnRawPtrs = std::vector<const IColumn *>;
+//using MutableColumnRawPtrs = std::vector<IColumn *>;
 
 }

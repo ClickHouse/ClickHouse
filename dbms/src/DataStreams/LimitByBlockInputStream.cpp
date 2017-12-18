@@ -20,7 +20,7 @@ Block LimitByBlockInputStream::readImpl()
         if (!block)
             return Block();
 
-        const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
+        const ColumnRawPtrs column_ptrs(getKeyColumns(block));
         const size_t rows = block.rows();
         IColumn::Filter filter(rows);
         size_t inserted_count = 0;
@@ -56,9 +56,9 @@ Block LimitByBlockInputStream::readImpl()
     }
 }
 
-ConstColumnPlainPtrs LimitByBlockInputStream::getKeyColumns(Block & block) const
+ColumnRawPtrs LimitByBlockInputStream::getKeyColumns(Block & block) const
 {
-    ConstColumnPlainPtrs column_ptrs;
+    ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(columns_names.size());
 
     for (const auto & name : columns_names)

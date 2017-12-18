@@ -210,14 +210,14 @@ private:
     /// Both function arguments are ordinary.
     template <typename ScalarOrVector>
     static void vectorCase1(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
         PaddedPODArray<typename IndexConv::ResultType> & result)
     {
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -240,7 +240,7 @@ private:
     /// The 2nd function argument is nullable.
     template <typename ScalarOrVector>
     static void vectorCase2(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_item)
@@ -248,7 +248,7 @@ private:
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -271,7 +271,7 @@ private:
     /// The 1st function argument is a non-constant array of nullable values.
     template <typename ScalarOrVector>
     static void vectorCase3(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_data)
@@ -279,7 +279,7 @@ private:
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -306,7 +306,7 @@ private:
     /// The 2nd function argument is nullable.
     template <typename ScalarOrVector>
     static void vectorCase4(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_data,
@@ -315,7 +315,7 @@ private:
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -347,7 +347,7 @@ private:
 public:
     template <typename ScalarOrVector>
     static void vector(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data,
@@ -371,7 +371,7 @@ struct ArrayIndexNumImpl<T, Null, IndexConv>
 {
     template <typename ScalarOrVector>
     static void vector(
-        const PaddedPODArray<T> &, const ColumnArray::Offsets_t &,
+        const PaddedPODArray<T> &, const ColumnArray::Offsets &,
         const ScalarOrVector &,
         PaddedPODArray<typename IndexConv::ResultType> &,
         const PaddedPODArray<UInt8> *,
@@ -387,7 +387,7 @@ template <typename T, typename IndexConv>
 struct ArrayIndexNumNullImpl
 {
     static void vector(
-        const PaddedPODArray<T> & /*data*/, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & /*data*/, const ColumnArray::Offsets & offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
@@ -399,7 +399,7 @@ struct ArrayIndexNumNullImpl
 
         const auto & null_map_ref = *null_map_data;
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -426,7 +426,7 @@ template <typename IndexConv>
 struct ArrayIndexStringNullImpl
 {
     static void vector_const(
-        const ColumnString::Chars_t & /*data*/, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & /*string_offsets*/,
+        const ColumnString::Chars_t & /*data*/, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & /*string_offsets*/,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
@@ -438,7 +438,7 @@ struct ArrayIndexStringNullImpl
 
         const auto & null_map_ref = *null_map_data;
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             const auto array_size = offsets[i] - current_offset;
@@ -464,7 +464,7 @@ template <typename IndexConv>
 struct ArrayIndexStringImpl
 {
     static void vector_const(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const String & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
@@ -473,7 +473,7 @@ struct ArrayIndexStringImpl
         const auto value_size = value.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             const auto array_size = offsets[i] - current_offset;
@@ -481,11 +481,11 @@ struct ArrayIndexStringImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                ColumnArray::Offset_t string_pos = current_offset == 0 && j == 0
+                ColumnArray::Offset string_pos = current_offset == 0 && j == 0
                     ? 0
                     : string_offsets[current_offset + j - 1];
 
-                ColumnArray::Offset_t string_size = string_offsets[current_offset + j] - string_pos;
+                ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
                 size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
                 if (null_map_data && ((*null_map_data)[k] == 1))
@@ -504,8 +504,8 @@ struct ArrayIndexStringImpl
     }
 
     static void vector_vector(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
-        const ColumnString::Chars_t & item_values, const ColumnString::Offsets_t & item_offsets,
+        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnString::Chars_t & item_values, const ColumnString::Offsets & item_offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data,
         const PaddedPODArray<UInt8> * null_map_item)
@@ -513,7 +513,7 @@ struct ArrayIndexStringImpl
         const auto size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             const auto array_size = offsets[i] - current_offset;
@@ -523,11 +523,11 @@ struct ArrayIndexStringImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                ColumnArray::Offset_t string_pos = current_offset == 0 && j == 0
+                ColumnArray::Offset string_pos = current_offset == 0 && j == 0
                                                    ? 0
                                                    : string_offsets[current_offset + j - 1];
 
-                ColumnArray::Offset_t string_size = string_offsets[current_offset + j] - string_pos;
+                ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
                 bool hit = false;
                 size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
@@ -562,14 +562,14 @@ struct ArrayIndexGenericImpl
 private:
     /// Both function arguments are ordinary.
     static void vectorCase1(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
         const IColumn & value,
         PaddedPODArray<typename IndexConv::ResultType> & result)
     {
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -591,7 +591,7 @@ private:
 
     /// The 2nd function argument is nullable.
     static void vectorCase2(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
         const IColumn & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_item)
@@ -599,7 +599,7 @@ private:
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -622,7 +622,7 @@ private:
 
     /// The 1st function argument is a non-constant array of nullable values.
     static void vectorCase3(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
         const IColumn & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_data)
@@ -630,7 +630,7 @@ private:
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -656,7 +656,7 @@ private:
     /// The 1st function argument is a non-constant array of nullable values.
     /// The 2nd function argument is nullable.
     static void vectorCase4(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
         const IColumn & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_data,
@@ -665,7 +665,7 @@ private:
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -693,7 +693,7 @@ private:
 
 public:
     static void vector(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
         const IColumn & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data,
@@ -717,7 +717,7 @@ template <typename IndexConv>
 struct ArrayIndexGenericNullImpl
 {
     static void vector(
-        const IColumn & /*data*/, const ColumnArray::Offsets_t & offsets,
+        const IColumn & /*data*/, const ColumnArray::Offsets & offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
@@ -729,7 +729,7 @@ struct ArrayIndexGenericNullImpl
 
         const auto & null_map_ref = *null_map_data;
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -789,8 +789,7 @@ private:
         if (!col_nested)
             return false;
 
-        const auto col_res = std::make_shared<ResultColumnType>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = ResultColumnType::create();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
@@ -822,6 +821,7 @@ private:
         else
             return false;
 
+        block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
@@ -837,8 +837,7 @@ private:
         if (!col_nested)
             return false;
 
-        const auto col_res = std::make_shared<ResultColumnType>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = ResultColumnType::create();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
@@ -872,6 +871,7 @@ private:
         else
             return false;
 
+        block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
@@ -916,8 +916,7 @@ private:
             }
 
             const auto size = item_arg->size();
-            const auto col_res = std::make_shared<ResultColumnType>(size);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ResultColumnType::create(size);
 
             auto & data = col_res->getData();
 
@@ -945,6 +944,8 @@ private:
                     }
                 }
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
 
         return true;
@@ -960,8 +961,7 @@ private:
         const IColumn & col_nested = col_array->getData();
         const IColumn & item_arg = *block.getByPosition(arguments[1]).column;
 
-        const auto col_res = std::make_shared<ResultColumnType>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = ResultColumnType::create();
 
         /// Null maps of the 1st and second function arguments,
         /// if it applies.
@@ -989,7 +989,7 @@ private:
         else
         {
             /// If item_arg is tuple and have constants.
-            if (auto materialized_tuple = item_arg.convertToFullColumnIfConst())
+            if (ColumnPtr materialized_tuple = item_arg.convertToFullColumnIfConst())
                 ArrayIndexGenericImpl<IndexConv, false>::vector(
                     col_nested, col_array->getOffsets(), *materialized_tuple, col_res->getData(),
                     null_map_data, null_map_item);
@@ -999,6 +999,7 @@ private:
                     null_map_data, null_map_item);
         }
 
+        block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
@@ -1103,14 +1104,14 @@ public:
             if (is_nullable)
             {
                 const auto & nullable_col = static_cast<const ColumnNullable &>(col_array->getData());
-                const auto & nested_col = nullable_col.getNestedColumn();
+                const auto & nested_col = nullable_col.getNestedColumnPtr();
 
                 auto & data = source_block.getByPosition(0);
-                data.column = std::make_shared<ColumnArray>(nested_col, col_array->getOffsetsColumn());
+                data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
                 data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
                 auto & null_map = source_block.getByPosition(2);
-                null_map.column = nullable_col.getNullMapColumn();
+                null_map.column = nullable_col.getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else
@@ -1125,11 +1126,11 @@ public:
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
 
                 auto & arg = source_block.getByPosition(1);
-                arg.column = nullable_col.getNestedColumn();
+                arg.column = nullable_col.getNestedColumnPtr();
                 arg.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[1]).type).getNestedType();
 
                 auto & null_map = source_block.getByPosition(3);
-                null_map.column = nullable_col.getNullMapColumn();
+                null_map.column = nullable_col.getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else
@@ -1213,21 +1214,21 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    bool executeNumber(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
+    bool executeNumber(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container & res_values);
 
-    bool executeString(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
+    bool executeString(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container & res_values);
 
     bool execute128bit(
-        const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
-        const ConstColumnPlainPtrs & null_maps,
-        ColumnUInt32::Container_t & res_values,
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const ColumnRawPtrs & null_maps,
+        ColumnUInt32::Container & res_values,
         bool has_nullable_columns);
 
     void executeHashed(
-        const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
-        ColumnUInt32::Container_t & res_values);
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        ColumnUInt32::Container & res_values);
 };
 
 
@@ -1252,21 +1253,21 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
+    bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values);
 
-    bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
+    bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values);
 
     bool execute128bit(
-        const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
-        const ConstColumnPlainPtrs & null_maps,
-        ColumnUInt32::Container_t & res_values,
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const ColumnRawPtrs & null_maps,
+        ColumnUInt32::Container & res_values,
         bool has_nullable_columns);
 
     void executeHashed(
-        const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
-        ColumnUInt32::Container_t & res_values);
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        ColumnUInt32::Container & res_values);
 };
 
 
@@ -1301,9 +1302,9 @@ private:
     {
         using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
-        block.getByPosition(result).column = std::make_shared<ColumnArray>(
-            std::make_shared<UnderlyingColumnType>(),
-            std::make_shared<ColumnArray::ColumnOffsets_t>(block.rows(), 0));
+        block.getByPosition(result).column = ColumnArray::create(
+            UnderlyingColumnType::create(),
+            ColumnArray::ColumnOffsets::create(block.rows(), 0));
     }
 };
 
@@ -1368,19 +1369,19 @@ private:
 
     template <typename T>
     bool executeNumber(
-        const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+        const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         const ColumnNullable * nullable_col,
         ColumnNullable * nullable_res_col);
 
     bool executeFixedString(
-        const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+        const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         const ColumnNullable * nullable_col,
         ColumnNullable * nullable_res_col);
 
     bool executeString(
-        const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
+        const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
         IColumn & res_data_col,
         const ColumnNullable * nullable_col,
         ColumnNullable * nullable_res_col);

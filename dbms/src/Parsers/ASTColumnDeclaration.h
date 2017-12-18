@@ -28,8 +28,9 @@ public:
 
         res->children.clear();
 
-        if (type) {
-            res->type = type->clone();
+        if (type)
+        {
+            res->type = type;
             res->children.push_back(res->type);
         }
 

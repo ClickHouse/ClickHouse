@@ -24,11 +24,6 @@ public:
     std::string getName() const override;
     const char * getFamilyName() const override { return "Nested"; }
 
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeNested>(nested);
-    }
-
     bool isParametric() const override { return true; }
 
     const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }
