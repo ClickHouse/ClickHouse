@@ -2706,8 +2706,8 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
 
     auto result_column = return_type->createColumn();
 
-    auto & array_column = block.getByPosition(arguments[0]).column;
-    auto & appended_column = block.getByPosition(arguments[1]).column;
+    auto array_column = block.getByPosition(arguments[0]).column;
+    auto appended_column = block.getByPosition(arguments[1]).column;
 
     if (!block.getByPosition(arguments[0]).type->equals(*return_type))
         array_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
