@@ -305,7 +305,7 @@ MutableColumns Block::cloneEmptyColumns() const
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = data[i].column->cloneEmpty();
+        columns[i] = data[i].column ? data[i].column->cloneEmpty() : data[i].type->createColumn();
     return columns;
 }
 
@@ -315,7 +315,7 @@ MutableColumns Block::mutateColumns() const
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = data[i].column->mutate();
+        columns[i] = data[i].column ? data[i].column->mutate() : data[i].type->createColumn();
     return columns;
 }
 
@@ -351,18 +351,30 @@ Block Block::sortColumns() const
 }
 
 
-ColumnsWithTypeAndName Block::getColumns() const
+const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 {
     return data;
 }
 
 
-NamesAndTypesList Block::getColumnsList() const
+NamesAndTypesList Block::getNamesAndTypesList() const
 {
     NamesAndTypesList res;
 
     for (const auto & elem : data)
         res.push_back(NameAndTypePair(elem.name, elem.type));
+
+    return res;
+}
+
+
+Names Block::getNames() const
+{
+    Names res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.push_back(elem.name);
 
     return res;
 }
@@ -471,10 +483,8 @@ void Block::swap(Block & other) noexcept
 void Block::updateHash(SipHash & hash) const
 {
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
-    {
-        for (auto & col : getColumns())
+        for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
-    }
 }
 
 }

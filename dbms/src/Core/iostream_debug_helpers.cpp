@@ -62,7 +62,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::IFunction & what)
 std::ostream & operator<<(std::ostream & stream, const DB::Block & what)
 {
     stream << "Block("
-           << "size = " << what.getColumns().size()
+           << "size = " << what.columns()
            << "){" << what.dumpStructure() << "}";
     return stream;
 }

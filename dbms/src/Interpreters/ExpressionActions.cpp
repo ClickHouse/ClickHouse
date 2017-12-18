@@ -758,7 +758,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     NameSet unmodified_columns;
 
     {
-        NamesAndTypesList sample_columns = sample_block.getColumnsList();
+        NamesAndTypesList sample_columns = sample_block.getNamesAndTypesList();
         for (NamesAndTypesList::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
             unmodified_columns.insert(it->name);
     }
@@ -965,7 +965,7 @@ std::string ExpressionActions::getID() const
     }
 
     ss << ": {";
-    NamesAndTypesList output_columns = sample_block.getColumnsList();
+    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
     for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
     {
         if (it != output_columns.begin())
@@ -990,7 +990,7 @@ std::string ExpressionActions::dumpActions() const
         ss << actions[i].toString() << '\n';
 
     ss << "\noutput:\n";
-    NamesAndTypesList output_columns = sample_block.getColumnsList();
+    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
     for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
         ss << it->name << " " << it->type->getName() << "\n";
 
@@ -1107,7 +1107,7 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-    ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumns();
+    ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumnsWithTypeAndName();
     steps.push_back(Step(std::make_shared<ExpressionActions>(columns, settings)));
 }
 

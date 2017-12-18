@@ -1251,7 +1251,7 @@ public:
         {
             const auto pos_arg = arguments[i].get();
 
-            if (!pos_arg->canBeUsedAsNonNegativeArrayIndex())
+            if (!pos_arg->isUnsignedInteger())
                 throw Exception{
                     "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

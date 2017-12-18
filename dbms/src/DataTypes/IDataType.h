@@ -276,10 +276,6 @@ public:
       */
     virtual bool canBeUsedInBitOperations() const { return false; };
 
-    /** Unsigned integer.
-      */
-    virtual bool canBeUsedAsNonNegativeArrayIndex() const { return false; };
-
     /** Can be used in boolean context (WHERE, HAVING).
       * UInt8, maybe nullable.
       */
@@ -292,6 +288,7 @@ public:
     /** Integers. Not Nullable. Not Enums. Not Date/DateTime.
       */
     virtual bool isInteger() const { return false; };
+    virtual bool isUnsignedInteger() const { return false; };
 
     virtual bool isDateOrDateTime() const { return false; };
 

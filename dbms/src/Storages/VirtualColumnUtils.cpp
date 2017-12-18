@@ -140,7 +140,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return false;
 
     NameSet columns;
-    for (const auto & it : block.getColumnsList())
+    for (const auto & it : block.getNamesAndTypesList())
         columns.insert(it.name);
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
@@ -154,7 +154,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return false;
 
     /// Let's analyze and calculate the expression.
-    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getColumnsList());
+    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
     actions->execute(block);
 

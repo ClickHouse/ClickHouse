@@ -713,7 +713,7 @@ private:
 
                     if (packet.type == Protocol::Server::Data)
                     {
-                        for (const ColumnWithTypeAndName & column : packet.block.getColumns())
+                        for (const ColumnWithTypeAndName & column : packet.block)
                         {
                             if (column.name == "result" && column.column->size() > 0)
                             {

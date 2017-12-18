@@ -12,6 +12,9 @@
 
 #include <fcntl.h>
 
+#include <Core/iostream_debug_helpers.h>
+
+
 namespace DB
 {
 
@@ -112,6 +115,8 @@ public:
 
             read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
         }
+
+        DUMP(storage.getSampleBlock());
 
         reader = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
