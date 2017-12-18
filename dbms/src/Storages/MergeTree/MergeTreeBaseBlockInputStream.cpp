@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -131,7 +132,23 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             {
                 auto & col = block.getByPosition(i);
                 if (task.column_name_set.count(col.name))
-                    col.column = col.column->cloneEmpty();
+                {
+                    if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(col.column.get()))
+                    {
+                        /// ColumnArray columns in block could have common offset column, which is used while reading.
+                        /// This is in case of nested data structures.
+
+                        /// TODO Very dangerous and unclear. Get rid of this after implemented full-featured Nested data type.
+
+                        /// Have to call resize(0) instead of cloneEmpty to save structure.
+                        /// (To keep offsets possibly shared between different arrays.)
+                        static_cast<ColumnArray &>(*column_array->assumeMutable()).getOffsets().resize(0);
+                        /// It's ok until multidimensional arrays are not stored in MergeTree.
+                        static_cast<ColumnArray &>(*column_array->assumeMutable()).getDataPtr() = column_array->getDataPtr()->cloneEmpty();
+                    }
+                    else
+                        col.column = col.column->cloneEmpty();
+                }
             }
         }
     };
