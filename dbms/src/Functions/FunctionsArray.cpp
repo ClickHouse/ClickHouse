@@ -1943,7 +1943,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
     const DataTypePtr & arg = arguments.front();
 
-    if (!arg->canBeUsedAsNonNegativeArrayIndex())
+    if (!arg->isUnsignedInteger())
         throw Exception{
             "Illegal type " + arg->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

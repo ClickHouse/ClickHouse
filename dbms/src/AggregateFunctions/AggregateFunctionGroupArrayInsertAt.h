@@ -67,7 +67,7 @@ public:
 
     void setArgumentsImpl(const DataTypes & arguments)
     {
-        if (!arguments.at(1)->canBeUsedAsNonNegativeArrayIndex())
+        if (!arguments.at(1)->isUnsignedInteger())
             throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         type = arguments.front();

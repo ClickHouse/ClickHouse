@@ -64,7 +64,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
 
     if (table_expression->subquery)
-        columns = InterpreterSelectQuery::getSampleBlock(table_expression->subquery->children[0], context).getColumnsList();
+        columns = InterpreterSelectQuery::getSampleBlock(table_expression->subquery->children[0], context).getNamesAndTypesList();
     else
     {
         if (table_expression->table_function)
