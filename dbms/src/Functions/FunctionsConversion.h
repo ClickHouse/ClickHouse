@@ -1388,7 +1388,7 @@ private:
 
     WrapperType createNothingWrapper(const IDataType * to_type)
     {
-        ColumnPtr res = to_type->createColumnConst(1, to_type->getDefault());
+        ColumnPtr res = to_type->createColumnConstWithDefaultValue(1);
         return [res] (Block & block, const ColumnNumbers &, const size_t result)
         {
             /// Column of Nothing type is trivially convertible to any other column
@@ -1421,7 +1421,7 @@ private:
             return [](Block & block, const ColumnNumbers &, const size_t result)
             {
                 auto & res = block.getByPosition(result);
-                res.column = res.type->createColumnConst(block.rows(), Null())->convertToFullColumnIfConst();
+                res.column = res.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
             };
         }
 

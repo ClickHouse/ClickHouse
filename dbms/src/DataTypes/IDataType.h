@@ -206,6 +206,7 @@ public:
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
     ColumnPtr createColumnConst(size_t size, const Field & field) const;
+    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.

@@ -204,7 +204,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
     /// If all arguments appeared to be NULL.
     if (multi_if_args.empty())
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
 
@@ -319,7 +319,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
     /// Append a NULL column.
     ColumnWithTypeAndName null_elem;
     null_elem.type = block.getByPosition(result).type;
-    null_elem.column = null_elem.type->createColumnConst(temp_block.rows(), Null());
+    null_elem.column = null_elem.type->createColumnConstWithDefaultValue(temp_block.rows());
     null_elem.name = "NULL";
 
     temp_block.insert(null_elem);

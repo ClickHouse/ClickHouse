@@ -314,7 +314,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
         if (quota != nullptr && limits.mode == LIMITS_TOTAL)
         {
-            quota->checkAndAddReadRowsBytes(time(0), value.rows, value.bytes);
+            quota->checkAndAddReadRowsBytes(time(nullptr), value.rows, value.bytes);
         }
     }
 }
