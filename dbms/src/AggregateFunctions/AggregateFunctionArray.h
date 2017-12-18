@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+}
+
 
 /** Not an aggregate function, but an adapter of aggregate functions,
   *  which any aggregate function `agg(x)` makes an aggregate function of the form `aggArray(x)`.
@@ -96,6 +101,16 @@ public:
 
         size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
         size_t end = offsets[row_num];
+
+        /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
+        for (size_t i = 1; i < num_agruments; ++i)
+        {
+            const ColumnArray & ith_column = static_cast<const ColumnArray &>(*columns[i]);
+            const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
+
+            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
+                throw Exception("Arrays passed to " + getName() + " aggregate function have different sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+        }
 
         for (size_t i = begin; i < end; ++i)
             nested_func->add(place, nested, i, arena);
