@@ -166,6 +166,8 @@ public:
         insert(from_begin, from_end);
     }
 
+    PODArray(std::initializer_list<T> il) : PODArray(std::begin(il), std::end(il)) {}
+
     ~PODArray()
     {
         dealloc();

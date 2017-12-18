@@ -57,7 +57,7 @@ struct IArraySource
     virtual ~IArraySource() {}
 
     virtual size_t getSizeForReserve() const = 0;
-    virtual const typename ColumnArray::Offsets_t & getOffsets() const = 0;
+    virtual const typename ColumnArray::Offsets & getOffsets() const = 0;
     virtual size_t getColumnSize() const = 0;
     virtual bool isConst() const { return false; }
     virtual bool isNullable() const { return false; }
@@ -74,11 +74,11 @@ struct NumericArraySource : public IArraySource
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
-    const typename ColumnVector<T>::Container_t & elements;
-    const typename ColumnArray::Offsets_t & offsets;
+    const typename ColumnVector<T>::Container & elements;
+    const typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
-    ColumnArray::Offset_t prev_offset = 0;
+    ColumnArray::Offset prev_offset = 0;
 
     explicit NumericArraySource(const ColumnArray & arr)
         : elements(typeid_cast<const ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
@@ -101,7 +101,7 @@ struct NumericArraySource : public IArraySource
         return row_num;
     }
 
-    const typename ColumnArray::Offsets_t & getOffsets() const override
+    const typename ColumnArray::Offsets & getOffsets() const override
     {
         return offsets;
     }
@@ -225,10 +225,10 @@ struct StringSource
     using Column = ColumnString;
 
     const typename ColumnString::Chars_t & elements;
-    const typename ColumnString::Offsets_t & offsets;
+    const typename ColumnString::Offsets & offsets;
 
     size_t row_num = 0;
-    ColumnString::Offset_t prev_offset = 0;
+    ColumnString::Offset prev_offset = 0;
 
     explicit StringSource(const ColumnString & col)
         : elements(col.getChars()), offsets(col.getOffsets())
@@ -382,11 +382,11 @@ struct FixedStringSource
 template <typename T>
 struct NumericArraySink : public IArraySink
 {
-    typename ColumnVector<T>::Container_t & elements;
-    typename ColumnArray::Offsets_t & offsets;
+    typename ColumnVector<T>::Container & elements;
+    typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
-    ColumnArray::Offset_t current_offset = 0;
+    ColumnArray::Offset current_offset = 0;
 
     NumericArraySink(ColumnArray & arr, size_t column_size)
         : elements(typeid_cast<ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
@@ -420,10 +420,10 @@ struct NumericArraySink : public IArraySink
 struct StringSink
 {
     typename ColumnString::Chars_t & elements;
-    typename ColumnString::Offsets_t & offsets;
+    typename ColumnString::Offsets & offsets;
 
     size_t row_num = 0;
-    ColumnString::Offset_t current_offset = 0;
+    ColumnString::Offset current_offset = 0;
 
     StringSink(ColumnString & col, size_t column_size)
         : elements(col.getChars()), offsets(col.getOffsets())
@@ -463,7 +463,7 @@ struct FixedStringSink
 
     size_t row_num = 0;
     size_t total_rows;
-    ColumnString::Offset_t current_offset = 0;
+    ColumnString::Offset current_offset = 0;
 
     FixedStringSink(ColumnFixedString & col, size_t column_size)
         : elements(col.getChars()), string_size(col.getN()), total_rows(column_size)
@@ -548,10 +548,10 @@ struct GenericArraySource : public IArraySource
     using Column = ColumnArray;
 
     const IColumn & elements;
-    const typename ColumnArray::Offsets_t & offsets;
+    const typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
-    ColumnArray::Offset_t prev_offset = 0;
+    ColumnArray::Offset prev_offset = 0;
 
     explicit GenericArraySource(const ColumnArray & arr)
         : elements(arr.getData()), offsets(arr.getOffsets())
@@ -574,7 +574,7 @@ struct GenericArraySource : public IArraySource
         return row_num;
     }
 
-    const typename ColumnArray::Offsets_t & getOffsets() const override
+    const typename ColumnArray::Offsets & getOffsets() const override
     {
         return offsets;
     }
@@ -635,10 +635,10 @@ struct GenericArraySource : public IArraySource
 struct GenericArraySink : public IArraySink
 {
     IColumn & elements;
-    ColumnArray::Offsets_t & offsets;
+    ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
-    ColumnArray::Offset_t current_offset = 0;
+    ColumnArray::Offset current_offset = 0;
 
     GenericArraySink(ColumnArray & arr, size_t column_size)
         : elements(arr.getData()), offsets(arr.getOffsets())
@@ -687,7 +687,7 @@ struct NullableArraySource : public ArraySource
     using ArraySource::row_num;
     using ArraySource::offsets;
 
-    const ColumnUInt8::Container_t & null_map;
+    const ColumnUInt8::Container & null_map;
 
     NullableArraySource(const ColumnArray & arr, const ColumnUInt8 & null_map)
             : ArraySource(arr), null_map(null_map.getData())
@@ -750,7 +750,7 @@ struct NullableArraySource : public ArraySource
 template <typename ArraySink>
 struct NullableArraySink : public ArraySink
 {
-    ColumnUInt8::Container_t & null_map;
+    ColumnUInt8::Container & null_map;
 
     NullableArraySink(ColumnArray & arr, ColumnUInt8 & null_map, size_t column_size)
         : ArraySink(arr, column_size), null_map(null_map.getData())
@@ -1047,12 +1047,12 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
+void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IColumn & offset_column)
 {
     const bool is_null = offset_column.onlyNull();
-    auto * nullable = typeid_cast<ColumnNullable *>(&offset_column);
-    ColumnUInt8::Container_t * null_map = nullable ? &nullable->getNullMapConcreteColumn().getData() : nullptr;
-    IColumn * nested_column = nullable ? nullable->getNestedColumn().get() : &offset_column;
+    const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
+    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapColumn().getData() : nullptr;
+    const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
     while (!src.isEnd())
     {
@@ -1078,17 +1078,17 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn 
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
+void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const IColumn & offset_column, const IColumn & length_column)
 {
     const bool is_offset_null = offset_column.onlyNull();
-    auto * offset_nullable = typeid_cast<ColumnNullable *>(&offset_column);
-    ColumnUInt8::Container_t * offset_null_map = offset_nullable ? &offset_nullable->getNullMapConcreteColumn().getData() : nullptr;
-    IColumn * offset_nested_column = offset_nullable ? offset_nullable->getNestedColumn().get() : &offset_column;
+    const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
+    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapColumn().getData() : nullptr;
+    const IColumn * offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : &offset_column;
 
     const bool is_length_null = length_column.onlyNull();
-    auto * length_nullable = typeid_cast<ColumnNullable *>(&length_column);
-    ColumnUInt8::Container_t * length_null_map = length_nullable ? &length_nullable->getNullMapConcreteColumn().getData() : nullptr;
-    IColumn * length_nested_column = length_nullable ? length_nullable->getNestedColumn().get() : &length_column;
+    const auto * length_nullable = typeid_cast<const ColumnNullable *>(&length_column);
+    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapColumn().getData() : nullptr;
+    const IColumn * length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : &length_column;
 
     while (!src.isEnd())
     {
@@ -1127,9 +1127,9 @@ void sliceFromRightConstantOffsetUnbounded(IArraySource & src, IArraySink & sink
 
 void sliceFromRightConstantOffsetBounded(IArraySource & src, IArraySink & sink, size_t offset, ssize_t length);
 
-void sliceDynamicOffsetUnbounded(IArraySource & src, IArraySink & sink, IColumn & offset_column);
+void sliceDynamicOffsetUnbounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column);
 
-void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, IColumn & offset_column, IColumn & length_column);
+void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column, const IColumn & length_column);
 
 template <typename SourceA, typename SourceB, typename Sink>
 void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)

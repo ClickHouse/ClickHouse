@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -11,7 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -19,18 +17,21 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitary amount of same elements.
   */
-class ColumnConst final : public IColumn
+class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
 {
 private:
+    friend class COWPtrHelper<IColumn, ColumnConst>;
+
     ColumnPtr data;
     size_t s;
 
+    ColumnConst(const ColumnPtr & data, size_t s);
+    ColumnConst(const ColumnConst & src) = default;
+
 public:
-    ColumnConst(ColumnPtr data, size_t s);
+    MutableColumnPtr convertToFullColumn() const;
 
-    ColumnPtr convertToFullColumn() const;
-
-    ColumnPtr convertToFullColumnIfConst() const override
+    MutableColumnPtr convertToFullColumnIfConst() const override
     {
         return convertToFullColumn();
     }
@@ -45,9 +46,9 @@ public:
         return "Const";
     }
 
-    ColumnPtr cloneResized(size_t new_size) const override
+    MutableColumnPtr cloneResized(size_t new_size) const override
     {
-        return std::make_shared<ColumnConst>(data, new_size);
+        return ColumnConst::create(data, new_size);
     }
 
     size_t size() const override
@@ -132,8 +133,9 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        auto res = data->deserializeAndInsertFromArena(pos);
-        data->popBack(1);
+        MutableColumnPtr mutable_data = data->assumeMutable();
+        auto res = mutable_data->deserializeAndInsertFromArena(pos);
+        mutable_data->popBack(1);
         ++s;
         return res;
     }
@@ -143,22 +145,10 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
-    {
-        if (s != filt.size())
-            throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        return std::make_shared<ColumnConst>(data, countBytesInFilter(filt));
-    }
-
-    ColumnPtr replicate(const Offsets_t & offsets) const override
-    {
-        if (s != offsets.size())
-            throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        size_t replicated_size = 0 == s ? 0 : offsets.back();
-        return std::make_shared<ColumnConst>(data, replicated_size);
-    }
+    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    MutableColumnPtr replicate(const Offsets & offsets) const override;
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     size_t byteSize() const override
     {
@@ -170,46 +160,12 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override
-    {
-        if (limit == 0)
-            limit = s;
-        else
-            limit = std::min(s, limit);
-
-        if (perm.size() < limit)
-            throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        return std::make_shared<ColumnConst>(data, limit);
-    }
-
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
     {
         return data->compareAt(0, 0, *static_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
-    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
-    {
-        res.resize(s);
-        for (size_t i = 0; i < s; ++i)
-            res[i] = i;
-    }
-
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
-    {
-        if (size() != selector.size())
-            throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        std::vector<size_t> counts(num_columns);
-        for (auto idx : selector)
-            ++counts[idx];
-
-        Columns res(num_columns);
-        for (size_t i = 0; i < num_columns; ++i)
-            res[i] = cloneResized(counts[i]);
-
-        return res;
-    }
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override
     {
@@ -235,10 +191,11 @@ public:
 
     /// Not part of the common interface.
 
-    IColumn & getDataColumn() { return *data; }
+    IColumn & getDataColumn() { return *data->assumeMutable(); }
     const IColumn & getDataColumn() const { return *data; }
-    ColumnPtr & getDataColumnPtr() { return data; }
+    //MutableColumnPtr getDataColumnMutablePtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
+    //ColumnPtr & getDataColumnPtr() { return data; }
 
     Field getField() const { return getDataColumn()[0]; }
 

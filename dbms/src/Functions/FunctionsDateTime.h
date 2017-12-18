@@ -554,9 +554,9 @@ struct DateTimeTransformImpl
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToType>::create();
             Op::vector(sources->getData(), col_to->getData(), time_zone);
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -850,8 +850,7 @@ struct DateTimeAddIntervalImpl
 
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToType>::create();
 
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
@@ -859,12 +858,14 @@ struct DateTimeAddIntervalImpl
                 Op::vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
             else
                 Op::vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (const auto * sources = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToType>::create();
             Op::constant_vector(sources->template getValue<FromType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -982,7 +983,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt32().createColumnConst(
             block.rows(),
-            static_cast<UInt64>(time(0)));
+            static_cast<UInt64>(time(nullptr)));
     }
 };
 
@@ -1009,7 +1010,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
-            UInt64(DateLUT::instance().toDayNum(time(0))));
+            UInt64(DateLUT::instance().toDayNum(time(nullptr))));
     }
 };
 
@@ -1036,7 +1037,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
-            UInt64(DateLUT::instance().toDayNum(time(0)) - 1));
+            UInt64(DateLUT::instance().toDayNum(time(nullptr)) - 1));
     }
 };
 
@@ -1109,10 +1110,9 @@ public:
     {
         if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto res = std::make_shared<ColumnUInt32>();
-            ColumnPtr res_holder = res;
-            ColumnUInt32::Container_t & res_vec = res->getData();
-            const ColumnUInt32::Container_t & vec = times->getData();
+            auto res = ColumnUInt32::create();
+            ColumnUInt32::Container & res_vec = res->getData();
+            const ColumnUInt32::Container & vec = times->getData();
 
             size_t size = vec.size();
             res_vec.resize(size);
@@ -1120,7 +1120,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 res_vec[i] = vec[i] / TIME_SLOT_SIZE * TIME_SLOT_SIZE;
 
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1135,14 +1135,14 @@ struct TimeSlotsImpl
 {
     static void vector_vector(
         const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + durations[i]) / TIME_SLOT_SIZE; ++value)
@@ -1157,14 +1157,14 @@ struct TimeSlotsImpl
 
     static void vector_constant(
         const PaddedPODArray<UInt32> & starts, DurationType duration,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + duration) / TIME_SLOT_SIZE; ++value)
@@ -1179,14 +1179,14 @@ struct TimeSlotsImpl
 
     static void constant_vector(
         UInt32 start, const PaddedPODArray<DurationType> & durations,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = durations.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + durations[i]) / TIME_SLOT_SIZE; ++value)
@@ -1243,24 +1243,23 @@ public:
         auto durations = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
         auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
 
-        auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
-        ColumnPtr res_holder = res;
-        ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
+        auto res = ColumnArray::create(ColumnUInt32::create());
+        ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
         if (starts && durations)
         {
             TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (starts && const_durations)
         {
             TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && durations)
         {
             TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), res_values, res->getOffsets());
-            block.getByPosition(result).column = res_holder;
+            block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && const_durations)
         {

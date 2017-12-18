@@ -371,7 +371,7 @@ private:
     using Data = std::array<T, Op::data_count>;
 
 public:
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         auto mm_scale = Op::prepare(scale);
 
@@ -413,7 +413,7 @@ private:
 
 public:
     template <size_t scale>
-    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
     {
         const T* end_in = in.data() + in.size();
 
@@ -428,7 +428,7 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
         switch (scale)
@@ -490,14 +490,16 @@ struct Dispatcher
             scale_arg = scale_field.get<Int64>();
         }
 
-        auto col_res = std::make_shared<ColumnVector<T>>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = ColumnVector<T>::create();
 
-        typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
+        typename ColumnVector<T>::Container & vec_res = col_res->getData();
         vec_res.resize(col->getData().size());
 
         if (vec_res.empty())
+        {
+            block.getByPosition(result).column = std::move(col_res);
             return;
+        }
 
         if (scale_arg == 0)
         {
@@ -514,6 +516,8 @@ struct Dispatcher
             scale = pow(10, -scale_arg);
             FunctionRoundingImpl<T, rounding_mode, ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
         }
+
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 

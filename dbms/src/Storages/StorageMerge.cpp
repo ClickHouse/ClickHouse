@@ -302,14 +302,12 @@ BlockInputStreams StorageMerge::read(
 /// Construct a block consisting only of possible values of virtual columns
 Block StorageMerge::getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const
 {
-    Block res;
-    ColumnWithTypeAndName _table(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_table");
+    auto column = ColumnString::create();
 
     for (const auto & elem : selected_tables)
-        _table.column->insert(elem.first->getTableName());
+        column->insert(elem.first->getTableName());
 
-    res.insert(_table);
-    return res;
+    return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_table")};
 }
 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const

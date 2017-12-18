@@ -46,7 +46,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
 
     auto model = models.getModel(name_col->getValue<String>());
 
-    ConstColumnPlainPtrs columns;
+    ColumnRawPtrs columns;
     columns.reserve(arguments.size());
     for (auto i : ext::range(1, arguments.size()))
         columns.push_back(block.getByPosition(arguments[i]).column.get());

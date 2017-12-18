@@ -9,9 +9,9 @@
 namespace DB
 {
 
-ColumnPtr DataTypeNothing::createColumn() const
+MutableColumnPtr DataTypeNothing::createColumn() const
 {
-    return std::make_shared<ColumnNothing>(0);
+    return ColumnNothing::create(0);
 }
 
 void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const

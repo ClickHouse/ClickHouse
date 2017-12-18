@@ -92,7 +92,7 @@ public:
             nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
 
         const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
-        const IColumn::Offsets_t & offsets = first_array_column.getOffsets();
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
         size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
         size_t end = offsets[row_num];

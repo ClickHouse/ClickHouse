@@ -11,8 +11,7 @@ ColumnWithTypeAndName ColumnWithTypeAndName::cloneEmpty() const
     ColumnWithTypeAndName res;
 
     res.name = name;
-    if (type)
-        res.type = type->clone();
+    res.type = type;
     if (column)
         res.column = column->cloneEmpty();
 

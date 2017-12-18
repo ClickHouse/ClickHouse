@@ -99,7 +99,7 @@ public:
         handle = std::move(handle_);
     }
 
-    ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const override
+    ColumnPtr evaluate(const ColumnRawPtrs & columns) const override
     {
         if (columns.empty())
             throw Exception("Got empty columns list for CatBoost model.", ErrorCodes::BAD_ARGUMENTS);
@@ -213,14 +213,14 @@ private:
 
     /// Place columns into buffer, returns column which holds placed data. Buffer should contains column->size() values.
     template <typename T>
-    ColumnPtr placeNumericColumns(const ConstColumnPlainPtrs & columns,
+    ColumnPtr placeNumericColumns(const ColumnRawPtrs & columns,
                                   size_t offset, size_t size, const T** buffer) const
     {
         if (size == 0)
             return nullptr;
         size_t column_size = columns[offset]->size();
-        auto data_column = std::make_shared<ColumnVector<T>>(size * column_size);
-        T* data = data_column->getData().data();
+        auto data_column = ColumnVector<T>::create(size * column_size);
+        T * data = data_column->getData().data();
         for (size_t i = 0; i < size; ++i)
         {
             auto column = columns[offset + i];
@@ -235,13 +235,13 @@ private:
             data += size;
         }
 
-        return data_column;
+        return std::move(data_column);
     }
 
     /// Place columns into buffer, returns data which was used for fixed string columns.
     /// Buffer should contains column->size() values, each value contains size strings.
     std::vector<PODArray<char>> placeStringColumns(
-            const ConstColumnPlainPtrs & columns, size_t offset, size_t size, const char ** buffer) const
+            const ColumnRawPtrs & columns, size_t offset, size_t size, const char ** buffer) const
     {
         if (size == 0)
             return {};
@@ -287,7 +287,7 @@ private:
     /// buffer contains column->size() rows and size columns.
     /// For int cat features calc hash inplace.
     /// For string cat features calc hash from column rows.
-    void calcHashes(const ConstColumnPlainPtrs & columns, size_t offset, size_t size, const int ** buffer) const
+    void calcHashes(const ColumnRawPtrs & columns, size_t offset, size_t size, const int ** buffer) const
     {
         if (size == 0)
             return;
@@ -322,13 +322,13 @@ private:
     ///  * CalcModelPredictionFlat if no cat features
     ///  * CalcModelPrediction if all cat features are strings
     ///  * CalcModelPredictionWithHashedCatFeatures if has int cat features.
-    ColumnPtr evalImpl(const ConstColumnPlainPtrs & columns, size_t float_features_count, size_t cat_features_count,
+    ColumnPtr evalImpl(const ColumnRawPtrs & columns, size_t float_features_count, size_t cat_features_count,
                        bool cat_features_are_strings) const
     {
         std::string error_msg = "Error occurred while applying CatBoost model: ";
         size_t column_size = columns.front()->size();
 
-        auto result= std::make_shared<ColumnFloat64>(column_size);
+        auto result = ColumnFloat64::create(column_size);
         auto result_buf = result->getData().data();
 
         /// Prepare float features.
@@ -346,7 +346,7 @@ private:
 
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
             }
-            return result;
+            return std::move(result);
         }
 
         /// Prepare cat features.
@@ -387,7 +387,7 @@ private:
             }
         }
 
-        return result;
+        return std::move(result);
     }
 };
 
@@ -498,7 +498,7 @@ size_t CatBoostModel::getCatFeaturesCount() const
     return cat_features_count;
 }
 
-ColumnPtr CatBoostModel::evaluate(const ConstColumnPlainPtrs & columns) const
+ColumnPtr CatBoostModel::evaluate(const ColumnRawPtrs & columns) const
 {
     if (!model)
         throw Exception("CatBoost model was not loaded.", ErrorCodes::LOGICAL_ERROR);

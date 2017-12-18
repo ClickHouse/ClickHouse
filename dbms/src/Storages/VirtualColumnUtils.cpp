@@ -120,8 +120,10 @@ static void extractFunctions(const ASTPtr & expression, const NameSet & columns,
 /// Construct a conjunction from given functions
 static ASTPtr buildWhereExpression(const ASTs & functions)
 {
-    if (functions.size() == 0) return nullptr;
-    if (functions.size() == 1) return functions[0];
+    if (functions.size() == 0)
+        return nullptr;
+    if (functions.size() == 1)
+        return functions[0];
     ASTPtr new_query = std::make_shared<ASTFunction>();
     ASTFunction & new_function = typeid_cast<ASTFunction & >(*new_query);
     new_function.name = "and";
@@ -138,7 +140,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return false;
 
     NameSet columns;
-    for (const auto & it : block.getColumnsList())
+    for (const auto & it : block.getNamesAndTypesList())
         columns.insert(it.name);
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
@@ -152,14 +154,14 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return false;
 
     /// Let's analyze and calculate the expression.
-    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getColumnsList());
+    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
     actions->execute(block);
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
     ColumnPtr filter_column = block.getByName(filter_column_name).column;
-    if (auto converted = filter_column->convertToFullColumnIfConst())
+    if (ColumnPtr converted = filter_column->convertToFullColumnIfConst())
         filter_column = converted;
     const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
 
