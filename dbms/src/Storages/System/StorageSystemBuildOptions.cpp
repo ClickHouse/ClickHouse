@@ -37,7 +37,7 @@ BlockInputStreams StorageSystemBuildOptions::read(
     for (auto it = auto_config_build; *it; it += 2)
     {
         res_columns[0]->insert(String(it[0]));
-        res_columns[0]->insert(String(it[1]));
+        res_columns[1]->insert(String(it[1]));
     }
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
