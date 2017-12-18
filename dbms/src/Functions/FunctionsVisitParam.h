@@ -167,7 +167,7 @@ struct ExtractParamImpl
     using ResultType = typename ParamExtractor::ResultType;
 
     /// It is assumed that `res` is the correct size and initialized with zeros.
-    static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+    static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
         std::string needle,
         PaddedPODArray<ResultType> & res)
     {
@@ -236,9 +236,9 @@ struct ExtractParamImpl
 template <typename ParamExtractor>
 struct ExtractParamToStringImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
                        std::string needle,
-                       ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+                       ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
     {
         /// Constant 5 is taken from a function that performs a similar task FunctionsStringSearch.h::ExtractImpl
         res_data.reserve(data.size()  / 5);

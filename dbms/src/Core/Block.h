@@ -76,8 +76,9 @@ public:
 
     size_t getPositionByName(const std::string & name) const;
 
-    ColumnsWithTypeAndName getColumns() const;
-    NamesAndTypesList getColumnsList() const;
+    const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
+    NamesAndTypesList getNamesAndTypesList() const;
+    Names getNames() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -105,18 +106,21 @@ public:
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
+    /** Get empty columns with the same types as in block. */
+    MutableColumns cloneEmptyColumns() const;
+
+    /** Get columns from block for mutation. */
+    MutableColumns mutateColumns() const;
+
+    /** Replace columns in a block */
+    void setColumns(MutableColumns && columns);
+    Block cloneWithColumns(MutableColumns && columns) const;
+
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 
     void clear();
     void swap(Block & other) noexcept;
-
-    /** Some column implementations (ColumnArray) may have shared parts between different columns
-      * (common array sizes of elements of nested data structures).
-      * Before doing mutating operations on such columns, you must unshare that parts.
-      * Also unsharing columns, if whole columns are shared_ptrs pointing to same instances.
-      */
-    void unshareColumns();
 
     /** Updates SipHash of the Block, using update method of columns.
       * Returns hash for block, that could be used to differentiate blocks

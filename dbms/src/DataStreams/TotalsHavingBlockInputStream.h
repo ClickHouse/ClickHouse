@@ -42,16 +42,18 @@ private:
     size_t passed_keys = 0;
     size_t total_keys = 0;
 
+    Block header;
+
     /** Here are the values that did not pass max_rows_to_group_by.
       * They are added or not added to the current_totals, depending on the totals_mode.
       */
     Block overflow_aggregates;
 
     /// Here, total values are accumulated. After the work is finished, they will be placed in IProfilingBlockInputStream::totals.
-    Block current_totals;
+    MutableColumns current_totals;
 
     /// If filter == nullptr - add all rows. Otherwise, only the rows that pass the filter (HAVING).
-    void addToTotals(Block & totals, Block & block, const IColumn::Filter * filter);
+    void addToTotals(MutableColumns & totals, const Block & block, const IColumn::Filter * filter);
 };
 
 }

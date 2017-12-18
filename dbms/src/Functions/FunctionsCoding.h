@@ -103,11 +103,10 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
-            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+            ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
@@ -121,6 +120,8 @@ public:
             }
 
             vec_res.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -211,11 +212,10 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
-            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+            ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
@@ -231,6 +231,8 @@ public:
             }
 
             vec_res.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -418,14 +420,13 @@ public:
 
         if (const auto col_in = checkAndGetColumn<ColumnString>(column.get()))
         {
-            const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(ipv6_bytes_length);
 
             auto & vec_res = col_res->getChars();
             vec_res.resize(col_in->size() * ipv6_bytes_length);
 
             const ColumnString::Chars_t & vec_src = col_in->getChars();
-            const ColumnString::Offsets_t & offsets_src = col_in->getOffsets();
+            const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
 
             for (size_t out_offset = 0, i = 0;
@@ -435,11 +436,13 @@ public:
                 ipv6_scan(reinterpret_cast<const char * >(&vec_src[src_offset]), &vec_res[out_offset]);
                 src_offset = offsets_src[i];
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -531,13 +534,12 @@ public:
 
         if (const ColumnUInt32 * col = typeid_cast<const ColumnUInt32 *>(column.get()))
         {
-            const ColumnUInt32::Container_t & vec_in = col->getData();
+            const ColumnUInt32::Container & vec_in = col->getData();
 
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
-            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+            ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
             vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
@@ -551,6 +553,8 @@ public:
             }
 
             vec_res.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -613,14 +617,13 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnUInt32>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnUInt32::create();
 
-            ColumnUInt32::Container_t & vec_res = col_res->getData();
+            ColumnUInt32::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
 
             const ColumnString::Chars_t & vec_src = col->getChars();
-            const ColumnString::Offsets_t & offsets_src = col->getOffsets();
+            const ColumnString::Offsets & offsets_src = col->getOffsets();
             size_t prev_offset = 0;
 
             for (size_t i = 0; i < vec_res.size(); ++i)
@@ -628,11 +631,13 @@ public:
                 vec_res[i] = parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]));
                 prev_offset = offsets_src[i];
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -666,8 +671,7 @@ public:
 
         if (const auto col_in = typeid_cast<const ColumnUInt32 *>(column.get()))
         {
-            const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(ipv6_bytes_length);
 
             auto & vec_res = col_res->getChars();
             vec_res.resize(col_in->size() * ipv6_bytes_length);
@@ -676,11 +680,13 @@ public:
 
             for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += ipv6_bytes_length, ++i)
                 mapIPv4ToIPv6(vec_in[i], &vec_res[out_offset]);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
@@ -742,13 +748,12 @@ public:
 
         if (const ColumnUInt64 * col = typeid_cast<const ColumnUInt64 *>(column.get()))
         {
-            const ColumnUInt64::Container_t & vec_in = col->getData();
+            const ColumnUInt64::Container & vec_in = col->getData();
 
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
-            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+            ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
             vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
             offsets_res.resize(vec_in.size());
@@ -760,6 +765,8 @@ public:
                 current_offset += 18;
                 offsets_res[i] = current_offset;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -851,14 +858,13 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnUInt64>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnUInt64::create();
 
-            ColumnUInt64::Container_t & vec_res = col_res->getData();
+            ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
 
             const ColumnString::Chars_t & vec_src = col->getChars();
-            const ColumnString::Offsets_t & offsets_src = col->getOffsets();
+            const ColumnString::Offsets & offsets_src = col->getOffsets();
             size_t prev_offset = 0;
 
             for (size_t i = 0; i < vec_res.size(); ++i)
@@ -873,6 +879,8 @@ public:
 
                 prev_offset = current_offset;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -928,11 +936,10 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
-            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+            ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (uuid_text_length + 1));
             offsets_res.resize(size);
 
@@ -948,11 +955,13 @@ public:
                 ++dst_offset;
                 offsets_res[i] = dst_offset;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -1023,8 +1032,7 @@ public:
             const auto & offsets_in = col_in->getOffsets();
             const size_t size = offsets_in.size();
 
-            auto col_res = std::make_shared<ColumnFixedString>(uuid_bytes_length);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
@@ -1046,6 +1054,8 @@ public:
                 dst_offset += uuid_bytes_length;
                 src_offset += string_size;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const auto col_in = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -1059,8 +1069,7 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnFixedString>(uuid_bytes_length);
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
@@ -1074,6 +1083,8 @@ public:
                 src_offset += uuid_text_length;
                 dst_offset += uuid_bytes_length;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1102,10 +1113,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        auto col_to = std::make_shared<ColumnVector<UInt128>>();
-        block.safeGetByPosition(result).column = col_to;
-
-        typename ColumnVector<UInt128>::Container_t & vec_to = col_to->getData();
+        auto col_res = ColumnVector<UInt128>::create();
+        typename ColumnVector<UInt128>::Container & vec_to = col_res->getData();
 
         size_t size = block.rows();
         vec_to.resize(size);
@@ -1118,6 +1127,8 @@ public:
             uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
             uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
+
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -1181,12 +1192,11 @@ public:
 
         if (col_vec)
         {
-            auto col_str = std::make_shared<ColumnString>();
-            col_res = col_str;
+            auto col_str = ColumnString::create();
             ColumnString::Chars_t & out_vec = col_str->getChars();
-            ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const typename ColumnVector<T>::Container_t & in_vec = col_vec->getData();
+            const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
@@ -1209,6 +1219,7 @@ public:
 
             out_vec.resize(pos);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1235,13 +1246,12 @@ public:
 
         if (col_str_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
-            col_res = col_str;
+            auto col_str = ColumnString::create();
             ColumnString::Chars_t & out_vec = col_str->getChars();
-            ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
             const ColumnString::Chars_t & in_vec = col_str_in->getChars();
-            const ColumnString::Offsets_t & in_offsets = col_str_in->getOffsets();
+            const ColumnString::Offsets & in_offsets = col_str_in->getOffsets();
 
             size_t size = in_offsets.size();
             out_offsets.resize(size);
@@ -1265,6 +1275,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1279,12 +1290,9 @@ public:
 
         if (col_fstr_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
-
-            col_res = col_str;
-
+            auto col_str = ColumnString::create();
             ColumnString::Chars_t & out_vec = col_str->getChars();
-            ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
             const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
 
@@ -1313,6 +1321,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1392,14 +1401,13 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & out_vec = col_res->getChars();
-            ColumnString::Offsets_t & out_offsets = col_res->getOffsets();
+            ColumnString::Offsets & out_offsets = col_res->getOffsets();
 
             const ColumnString::Chars_t & in_vec = col->getChars();
-            const ColumnString::Offsets_t & in_offsets = col->getOffsets();
+            const ColumnString::Offsets & in_offsets = col->getOffsets();
 
             size_t size = in_offsets.size();
             out_offsets.resize(size);
@@ -1421,6 +1429,8 @@ public:
             }
 
             out_vec.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
         {
@@ -1462,14 +1472,13 @@ public:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
         {
-            auto col_values = std::make_shared<ColumnVector<T>>();
-            auto col_array = std::make_shared<ColumnArray>(col_values);
-            out_column = col_array;
+            auto col_values = ColumnVector<T>::create();
+            auto col_offsets = ColumnArray::ColumnOffsets::create();
 
-            ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
-            typename ColumnVector<T>::Container_t & res_values = col_values->getData();
+            typename ColumnVector<T>::Container & res_values = col_values->getData();
+            ColumnArray::Offsets & res_offsets = col_offsets->getData();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             res_offsets.resize(size);
             res_values.reserve(size * 2);
@@ -1487,6 +1496,7 @@ public:
                 res_offsets[row] = res_values.size();
             }
 
+            out_column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
             return true;
         }
         else
@@ -1546,13 +1556,12 @@ public:
 
         if (col_str_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
-            col_res = col_str;
+            auto col_str = ColumnString::create();
             ColumnString::Chars_t & out_vec = col_str->getChars();
-            ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
             const ColumnString::Chars_t & in_vec = col_str_in->getChars();
-            const ColumnString::Offsets_t & in_offsets = col_str_in->getOffsets();
+            const ColumnString::Offsets & in_offsets = col_str_in->getOffsets();
 
             size_t size = in_offsets.size();
             out_offsets.resize(size);
@@ -1561,7 +1570,7 @@ public:
             char * begin = reinterpret_cast<char *>(&out_vec[0]);
             char * pos = begin;
 
-            ColumnString::Offset_t current_in_offset = 0;
+            ColumnString::Offset current_in_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -1579,6 +1588,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else
@@ -1593,11 +1603,9 @@ public:
 
         if (col_fstr_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
-            col_res = col_str;
-
+            auto col_str = ColumnString::create();
             ColumnString::Chars_t & out_vec = col_str->getChars();
-            ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
             const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
 
@@ -1626,6 +1634,7 @@ public:
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
+            col_res = std::move(col_str);
             return true;
         }
         else

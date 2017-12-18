@@ -46,30 +46,30 @@ BlockInputStreams StorageSystemMerges::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block = getSampleBlock();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     for (const auto & merge : context.getMergeList().get())
     {
         size_t i = 0;
-        block.getByPosition(i++).column->insert(merge.database);
-        block.getByPosition(i++).column->insert(merge.table);
-        block.getByPosition(i++).column->insert(merge.elapsed);
-        block.getByPosition(i++).column->insert(merge.progress);
-        block.getByPosition(i++).column->insert(merge.num_parts);
-        block.getByPosition(i++).column->insert(merge.source_part_names);
-        block.getByPosition(i++).column->insert(merge.result_part_name);
-        block.getByPosition(i++).column->insert(merge.total_size_bytes_compressed);
-        block.getByPosition(i++).column->insert(merge.total_size_marks);
-        block.getByPosition(i++).column->insert(merge.bytes_read_uncompressed);
-        block.getByPosition(i++).column->insert(merge.rows_read);
-        block.getByPosition(i++).column->insert(merge.bytes_written_uncompressed);
-        block.getByPosition(i++).column->insert(merge.rows_written);
-        block.getByPosition(i++).column->insert(merge.columns_written);
-        block.getByPosition(i++).column->insert(merge.memory_usage);
-        block.getByPosition(i++).column->insert(merge.thread_number);
+        res_columns[i++]->insert(merge.database);
+        res_columns[i++]->insert(merge.table);
+        res_columns[i++]->insert(merge.elapsed);
+        res_columns[i++]->insert(merge.progress);
+        res_columns[i++]->insert(merge.num_parts);
+        res_columns[i++]->insert(merge.source_part_names);
+        res_columns[i++]->insert(merge.result_part_name);
+        res_columns[i++]->insert(merge.total_size_bytes_compressed);
+        res_columns[i++]->insert(merge.total_size_marks);
+        res_columns[i++]->insert(merge.bytes_read_uncompressed);
+        res_columns[i++]->insert(merge.rows_read);
+        res_columns[i++]->insert(merge.bytes_written_uncompressed);
+        res_columns[i++]->insert(merge.rows_written);
+        res_columns[i++]->insert(merge.columns_written);
+        res_columns[i++]->insert(merge.memory_usage);
+        res_columns[i++]->insert(merge.thread_number);
     }
 
-    return BlockInputStreams{1, std::make_shared<OneBlockInputStream>(block)};
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

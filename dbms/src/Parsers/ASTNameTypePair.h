@@ -27,7 +27,11 @@ public:
         auto res = std::make_shared<ASTNameTypePair>(*this);
         res->children.clear();
 
-        if (type)     { res->type = type->clone();     res->children.push_back(res->type); }
+        if (type)
+        {
+            res->type = type;
+            res->children.push_back(res->type);
+        }
 
         return res;
     }

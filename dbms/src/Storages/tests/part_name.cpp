@@ -5,7 +5,7 @@
 
 int main(int, char **)
 {
-    DayNum_t today = DateLUT::instance().toDayNum(time(0));
+    DayNum_t today = DateLUT::instance().toDayNum(time(nullptr));
 
     for (DayNum_t date = today; DayNum_t(date + 10) > today; --date)
     {

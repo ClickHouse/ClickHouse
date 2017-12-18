@@ -75,7 +75,7 @@ public:
                     toString(args_size) + ", should be 3 or 4",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const IDataType * type_x = arguments[0].get();
+        const DataTypePtr & type_x = arguments[0];
 
         if (!type_x->isValueRepresentedByNumber() && !type_x->isString())
             throw Exception{"Unsupported type " + type_x->getName()
@@ -113,7 +113,7 @@ public:
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return type_x->clone();
+            return type_x;
         }
         else
         {
@@ -137,7 +137,7 @@ public:
             }
 
             /// TODO More checks.
-            return type_arr_to_nested->clone();
+            return type_arr_to_nested;
         }
     }
 
@@ -183,7 +183,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.getByPosition(result).column = column_result;
+        block.getByPosition(result).column = std::move(column_result);
     }
 
 private:
@@ -559,12 +559,12 @@ private:
 
     template <typename T>
     void executeImplNumToStringWithConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets, StringRef dst_default)
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         const auto & table = *table_num_to_string;
         size_t size = src.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_dst_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
@@ -578,14 +578,14 @@ private:
 
     template <typename T>
     void executeImplNumToStringWithNonConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets,
-        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets_t & dst_default_offsets)
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets,
+        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
     {
         const auto & table = *table_num_to_string;
         size_t size = src.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_dst_offset = 0;
-        ColumnString::Offset_t current_dst_default_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
+        ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
@@ -609,13 +609,13 @@ private:
 
     template <typename U>
     void executeImplStringToNumWithConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
         PaddedPODArray<U> & dst, U dst_default)
     {
         const auto & table = *table_string_to_num;
         size_t size = src_offsets.size();
         dst.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
@@ -630,13 +630,13 @@ private:
 
     template <typename U, typename V>
     void executeImplStringToNumWithNonConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
         PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default)
     {
         const auto & table = *table_string_to_num;
         size_t size = src_offsets.size();
         dst.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
@@ -651,14 +651,14 @@ private:
 
     template <bool with_default>
     void executeImplStringToStringWithOrWithoutConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets, StringRef dst_default)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         const auto & table = *table_string_to_string;
         size_t size = src_offsets.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
-        ColumnString::Offset_t current_dst_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
@@ -675,30 +675,30 @@ private:
     }
 
     void executeImplStringToString(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets)
     {
         executeImplStringToStringWithOrWithoutConstDefault<false>(src_data, src_offsets, dst_data, dst_offsets, {});
     }
 
     void executeImplStringToStringWithConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets, StringRef dst_default)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         executeImplStringToStringWithOrWithoutConstDefault<true>(src_data, src_offsets, dst_data, dst_offsets, dst_default);
     }
 
     void executeImplStringToStringWithNonConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets,
-        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets_t & dst_default_offsets)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets,
+        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
     {
         const auto & table = *table_string_to_string;
         size_t size = src_offsets.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
-        ColumnString::Offset_t current_dst_offset = 0;
-        ColumnString::Offset_t current_dst_default_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
+        ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};

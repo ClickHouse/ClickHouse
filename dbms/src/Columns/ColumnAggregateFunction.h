@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Common/Arena.h>
 
@@ -17,8 +17,7 @@ namespace DB
 {
 
 
-
-/** State column of aggregate functions.
+/** Column of states of aggregate functions.
   * Presented as an array of pointers to the states of aggregate functions (data).
   * The states themselves are stored in one of the pools (arenas).
   *
@@ -42,12 +41,14 @@ namespace DB
   *  specifying which individual values should be destroyed and which ones should not.
   * Clearly, this method would have a substantially non-zero price.
   */
-class ColumnAggregateFunction final : public IColumn, public std::enable_shared_from_this<ColumnAggregateFunction>
+class ColumnAggregateFunction final : public COWPtrHelper<IColumn, ColumnAggregateFunction>
 {
 public:
-    using Container_t = PaddedPODArray<AggregateDataPtr>;
+    using Container = PaddedPODArray<AggregateDataPtr>;
 
 private:
+    friend class COWPtrHelper<IColumn, ColumnAggregateFunction>;
+
     /// Memory pools. Aggregate states are allocated from them.
     Arenas arenas;
 
@@ -56,17 +57,19 @@ private:
 
     /// Source column. Used (holds source from destruction),
     ///  if this column has been constructed from another and uses all or part of its values.
-    std::shared_ptr<const ColumnAggregateFunction> src;
+    ColumnPtr src;
 
     /// Array of pointers to aggregation states, that are placed in arenas.
-    Container_t data;
+    Container data;
 
-public:
+    ColumnAggregateFunction() {}
+
     /// Create a new column that has another column as a source.
-    ColumnAggregateFunction(const ColumnAggregateFunction & other)
-        : std::enable_shared_from_this<ColumnAggregateFunction>(other),
-        arenas(other.arenas), func(other.func), src(other.shared_from_this())
+    MutablePtr createView() const
     {
+        MutablePtr res = create(func, arenas);
+        res->src = getPtr();
+        return res;
     }
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_)
@@ -79,6 +82,12 @@ public:
     {
     }
 
+    ColumnAggregateFunction(const ColumnAggregateFunction & src_)
+        : arenas(src_.arenas), func(src_.func), src(src_.getPtr())
+    {
+    }
+
+public:
     ~ColumnAggregateFunction();
 
     void set(const AggregateFunctionPtr & func_)
@@ -94,7 +103,7 @@ public:
 
     /** Transform column with states of aggregate functions to column with final result values.
       */
-    ColumnPtr convertToValues() const;
+    MutableColumnPtr convertToValues() const;
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
@@ -104,7 +113,7 @@ public:
         return getData().size();
     }
 
-    ColumnPtr cloneEmpty() const override;;
+    MutableColumnPtr cloneEmpty() const override;
 
     Field operator[](size_t n) const override;
 
@@ -143,13 +152,13 @@ public:
 
     void popBack(size_t n) override;
 
-    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+    MutableColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    ColumnPtr replicate(const Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const Offsets & offsets) const override;
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
@@ -161,12 +170,12 @@ public:
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     /** More efficient manipulation methods */
-    Container_t & getData()
+    Container & getData()
     {
         return data;
     }
 
-    const Container_t & getData() const
+    const Container & getData() const
     {
         return data;
     }
