@@ -16,7 +16,6 @@ public:
     DataTypeNullable(const DataTypePtr & nested_data_type_);
     std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
 
     void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
 
@@ -80,7 +79,6 @@ public:
     size_t getSizeOfValueInMemory() const override;
     bool onlyNull() const override;
 
-    DataTypePtr & getNestedType() { return nested_data_type; }
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
 private:

@@ -367,12 +367,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return arguments[0]->clone();
+        return arguments[0];
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType & type = *block.getByPosition(arguments[0]).type;
+        const IDataType & type = *block.getByPosition(arguments[0]).type;
         block.getByPosition(result).column = type.createColumnConst(block.rows(), type.getDefault());
     }
 };
@@ -854,7 +854,7 @@ public:
         if (index > elems.size())
             throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
 
-        out_return_type = elems[index - 1]->clone();
+        out_return_type = elems[index - 1];
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -998,7 +998,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return arguments.front()->clone();
+        return arguments.front();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1041,7 +1041,7 @@ public:
         if (!arr)
             throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return arr->getNestedType()->clone();
+        return arr->getNestedType();
     }
 
     void executeImpl(Block & /*block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) override
@@ -1068,7 +1068,7 @@ DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) co
     if (!array_type)
         throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<DataTypeArray>(arguments[0]->clone());
+    return std::make_shared<DataTypeArray>(arguments[0]);
 }
 
 void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -1508,7 +1508,7 @@ public:
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return type->getReturnType()->clone();
+        return type->getReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1721,7 +1721,7 @@ public:
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return type->getReturnType()->clone();
+        return type->getReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

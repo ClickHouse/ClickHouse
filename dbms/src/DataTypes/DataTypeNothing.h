@@ -17,11 +17,6 @@ public:
 
     const char * getFamilyName() const override { return "Nothing"; }
 
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeNothing>();
-    }
-
     MutableColumnPtr createColumn() const override;
 
     /// These methods read and write zero bytes just to allow to figure out size of column.

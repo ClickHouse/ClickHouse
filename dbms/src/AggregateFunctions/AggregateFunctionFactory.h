@@ -17,7 +17,7 @@ namespace DB
 class Context;
 class IDataType;
 
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 

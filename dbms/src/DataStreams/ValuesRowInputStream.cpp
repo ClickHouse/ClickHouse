@@ -93,7 +93,7 @@ bool ValuesRowInputStream::read(MutableColumns & columns)
                 if (rollback_on_exception)
                     columns[i]->popBack(1);
 
-                IDataType & type = *header.getByPosition(i).type;
+                const IDataType & type = *header.getByPosition(i).type;
 
                 Expected expected;
 

@@ -726,7 +726,7 @@ private:
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
-        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if      (checkDataType<DataTypeUInt8>(from_type)) ConvertImpl<DataTypeUInt8, ToDataType, Name>::execute(block, arguments, result);
         else if (checkDataType<DataTypeUInt16>(from_type)) ConvertImpl<DataTypeUInt16, ToDataType, Name>::execute(block, arguments, result);
@@ -788,7 +788,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if (checkAndGetDataType<DataTypeString>(from_type))
             ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
@@ -1355,7 +1355,7 @@ private:
             const auto first_col = block.getByPosition(arguments.front()).column.get();
 
             auto & col_with_type_and_name = block.getByPosition(result);
-            const auto & result_type = typeid_cast<EnumType &>(*col_with_type_and_name.type);
+            const auto & result_type = typeid_cast<const EnumType &>(*col_with_type_and_name.type);
 
             if (const auto col = typeid_cast<const ColumnStringType *>(first_col))
             {
@@ -1388,11 +1388,11 @@ private:
 
     WrapperType createNothingWrapper(const IDataType * to_type)
     {
-        DataTypePtr to_type_clone = to_type->clone();
-        return [to_type_clone] (Block & block, const ColumnNumbers &, const size_t result)
+        ColumnPtr res = to_type->createColumnConst(1, to_type->getDefault());
+        return [res] (Block & block, const ColumnNumbers &, const size_t result)
         {
             /// Column of Nothing type is trivially convertible to any other column
-            block.getByPosition(result).column = to_type_clone->createColumnConst(block.rows(), to_type_clone->getDefault())->convertToFullColumnIfConst();
+            block.getByPosition(result).column = res->cloneResized(block.rows())->convertToFullColumnIfConst();
         };
     }
 

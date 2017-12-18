@@ -1559,7 +1559,7 @@ DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & argu
         throw Exception("Argument for function " + getName() + " must be array.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return arguments[0]->clone();
+    return arguments[0];
 }
 
 
@@ -1941,14 +1941,14 @@ String FunctionRange::getName() const
 
 DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const auto arg = arguments.front().get();
+    const DataTypePtr & arg = arguments.front();
 
     if (!arg->canBeUsedAsNonNegativeArrayIndex())
         throw Exception{
             "Illegal type " + arg->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-    return std::make_shared<DataTypeArray>(arg->clone());
+    return std::make_shared<DataTypeArray>(arg);
 }
 
 template <typename T>
@@ -2034,7 +2034,7 @@ DataTypePtr FunctionArrayReverse::getReturnTypeImpl(const DataTypes & arguments)
         throw Exception("Argument for function " + getName() + " must be array.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return arguments[0]->clone();
+    return arguments[0];
 }
 
 void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2361,7 +2361,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
             throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
                 + arguments[i].type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        argument_types[i - 1] = arg->getNestedType()->clone();
+        argument_types[i - 1] = arg->getNestedType();
     }
 
     if (!aggregate_function)
@@ -2491,7 +2491,7 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
     if (arguments.empty())
         throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
             + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

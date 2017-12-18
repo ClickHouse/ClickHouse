@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
 {
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
         node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}).getConstActions();

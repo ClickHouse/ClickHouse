@@ -1691,7 +1691,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     else
     {
         DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-        if (DataTypeArray * array_type = typeid_cast<DataTypeArray *>(left_type.get()))
+        if (const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(left_type.get()))
             set_element_types.push_back(array_type->getNestedType());
         else
             set_element_types.push_back(left_type);
@@ -2163,7 +2163,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
                     if (lambda && lambda->name == "lambda")
                     {
-                        DataTypeExpression * lambda_type = typeid_cast<DataTypeExpression *>(argument_types[i].get());
+                        const DataTypeExpression * lambda_type = typeid_cast<const DataTypeExpression *>(argument_types[i].get());
                         ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
                         ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
                         NamesAndTypesList lambda_arguments;

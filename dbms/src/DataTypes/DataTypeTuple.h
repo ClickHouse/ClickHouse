@@ -21,7 +21,6 @@ public:
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeTuple>(elems); }
 
     bool canBeInsideNullable() const override { return false; }
 

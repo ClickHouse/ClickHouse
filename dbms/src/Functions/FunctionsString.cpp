@@ -620,7 +620,7 @@ public:
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return arguments[0]->clone();
+        return arguments[0];
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

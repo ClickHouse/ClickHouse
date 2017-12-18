@@ -18,7 +18,7 @@ class IColumn;
 using ColumnPtr = COWPtr<IColumn>::Ptr;
 using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
 
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 
@@ -26,6 +26,8 @@ using DataTypes = std::vector<DataTypePtr>;
   * Contains methods for serialization/deserialization.
   * Implementations of this interface represent a data type (example: UInt8)
   *  or parapetric family of data types (example: Array(...)).
+  *
+  * DataType is totally immutable object. You can always share them.
   */
 class IDataType
 {
@@ -41,8 +43,6 @@ public:
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
-
-    virtual DataTypePtr clone() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *

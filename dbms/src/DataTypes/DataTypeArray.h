@@ -33,11 +33,6 @@ public:
         return false;
     }
 
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeArray>(nested);
-    }
-
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;

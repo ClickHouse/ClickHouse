@@ -65,7 +65,7 @@ void ColumnGathererStream::init()
         if (i == 0)
         {
             column.name = name;
-            column.type = block.getByName(name).type->clone();
+            column.type = block.getByName(name).type;
             column.column = column.type->createColumn();
         }
 

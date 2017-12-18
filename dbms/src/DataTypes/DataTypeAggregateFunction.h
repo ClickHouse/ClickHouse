@@ -38,8 +38,6 @@ public:
     DataTypePtr getReturnType() const { return function->getReturnType(); };
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
-    DataTypePtr clone() const override { return std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters); }
-
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
