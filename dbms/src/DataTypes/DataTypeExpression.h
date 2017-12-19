@@ -25,11 +25,6 @@ public:
     std::string getName() const override;
     const char * getFamilyName() const override { return "Expression"; }
 
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeExpression>(argument_types, return_type);
-    }
-
     const DataTypes & getArgumentTypes() const
     {
         return argument_types;

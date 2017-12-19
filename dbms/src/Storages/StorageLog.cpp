@@ -191,13 +191,8 @@ Block LogBlockInputStream::readImpl()
 
     /// If the files are not open, then open them.
     if (streams.empty())
-    {
         for (size_t i = 0, size = column_names.size(); i < size; ++i)
-        {
-            const auto & name = column_names[i];
-            column_types[i] = storage.getDataTypeByName(name);
-        }
-    }
+            column_types[i] = storage.getDataTypeByName(column_names[i]);
 
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
@@ -210,30 +205,28 @@ Block LogBlockInputStream::readImpl()
     {
         const auto & name = column_names[i];
 
-        ColumnWithTypeAndName column;
-        column.name = name;
-        column.type = column_types[i];
+        MutableColumnPtr column;
 
         bool read_offsets = true;
 
         /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column.type.get()))
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
         {
-            String name = DataTypeNested::extractNestedTableName(column.name);
+            String nested_name = DataTypeNested::extractNestedTableName(name);
 
-            if (offset_columns.count(name) == 0)
-                offset_columns[name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
+            if (offset_columns.count(nested_name) == 0)
+                offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
             else
                 read_offsets = false; /// on previous iterations the offsets were already read by `readData`
 
-            column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
         }
         else
-            column.column = column.type->createColumn();
+            column = column_types[i]->createColumn();
 
         try
         {
-            readData(name, *column.type, *column.column, max_rows_to_read, read_offsets);
+            readData(name, *column_types[i], *column, max_rows_to_read, read_offsets);
         }
         catch (Exception & e)
         {
@@ -241,8 +234,8 @@ Block LogBlockInputStream::readImpl()
             throw;
         }
 
-        if (column.column->size())
-            res.insert(std::move(column));
+        if (column->size())
+            res.insert(ColumnWithTypeAndName(std::move(column), column_types[i], name));
     }
 
     if (res)

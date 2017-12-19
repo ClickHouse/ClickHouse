@@ -81,10 +81,10 @@ BlockInputStreams StorageSystemParts::read(
         Databases databases = context.getDatabases();
 
         /// Add column 'database'.
-        ColumnPtr database_column = std::make_shared<ColumnString>();
+        MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
-            database_column->insert(database.first);
-        block_to_filter.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
+            database_column_mut->insert(database.first);
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block_to_filter with column 'database'.
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
@@ -93,13 +93,13 @@ BlockInputStreams StorageSystemParts::read(
             return BlockInputStreams();
 
         /// Add columns 'table', 'engine', 'active'
-        database_column = block_to_filter.getByName("database").column;
+        ColumnPtr database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
 
-        IColumn::Offsets_t offsets(rows);
-        ColumnPtr table_column = std::make_shared<ColumnString>();
-        ColumnPtr engine_column = std::make_shared<ColumnString>();
-        ColumnPtr active_column = std::make_shared<ColumnUInt8>();
+        IColumn::Offsets offsets(rows);
+        MutableColumnPtr table_column_mut = ColumnString::create();
+        MutableColumnPtr engine_column_mut = ColumnString::create();
+        MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
         for (size_t i = 0; i < rows; ++i)
         {
@@ -122,9 +122,9 @@ BlockInputStreams StorageSystemParts::read(
                 /// Add all combinations of flag 'active'.
                 for (UInt64 active : {0, 1})
                 {
-                    table_column->insert(table_name);
-                    engine_column->insert(engine_name);
-                    active_column->insert(active);
+                    table_column_mut->insert(table_name);
+                    engine_column_mut->insert(engine_name);
+                    active_column_mut->insert(active);
                 }
 
                 offsets[i] += 2;
@@ -137,9 +137,9 @@ BlockInputStreams StorageSystemParts::read(
             column = column->replicate(offsets);
         }
 
-        block_to_filter.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
-        block_to_filter.insert(ColumnWithTypeAndName(engine_column, std::make_shared<DataTypeString>(), "engine"));
-        block_to_filter.insert(ColumnWithTypeAndName(active_column, std::make_shared<DataTypeUInt8>(), "active"));
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
     }
 
     /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
@@ -155,9 +155,9 @@ BlockInputStreams StorageSystemParts::read(
 
     /// Finally, create the result.
 
-    Block block = getSampleBlock();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
-        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+        res_columns.push_back(ColumnString::create());
 
     for (size_t i = 0; i < filtered_database_column->size();)
     {
@@ -237,11 +237,11 @@ BlockInputStreams StorageSystemParts::read(
             {
                 WriteBufferFromOwnString out;
                 part->partition.serializeTextQuoted(*data, out);
-                block.getByPosition(i++).column->insert(out.str());
+                res_columns[i++]->insert(out.str());
             }
-            block.getByPosition(i++).column->insert(part->name);
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part_state == State::Committed));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->marks_count));
+            res_columns[i++]->insert(part->name);
+            res_columns[i++]->insert(static_cast<UInt64>(part_state == State::Committed));
+            res_columns[i++]->insert(static_cast<UInt64>(part->marks_count));
 
             size_t marks_size = 0;
             for (const NameAndTypePair & it : part->columns)
@@ -251,34 +251,38 @@ BlockInputStreams StorageSystemParts::read(
                 if (checksum != part->checksums.files.end())
                     marks_size += checksum->second.file_size;
             }
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(marks_size));
+            res_columns[i++]->insert(static_cast<UInt64>(marks_size));
 
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->rows_count));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size_in_bytes));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->modification_time));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->remove_time));
+            res_columns[i++]->insert(static_cast<UInt64>(part->rows_count));
+            res_columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
+            res_columns[i++]->insert(static_cast<UInt64>(part->modification_time));
+            res_columns[i++]->insert(static_cast<UInt64>(part->remove_time));
 
             /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part.use_count() - 1));
+            res_columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
 
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getMinDate()));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getMaxDate()));
-            block.getByPosition(i++).column->insert(part->info.min_block);
-            block.getByPosition(i++).column->insert(part->info.max_block);
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->info.level));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
+            res_columns[i++]->insert(static_cast<UInt64>(part->getMinDate()));
+            res_columns[i++]->insert(static_cast<UInt64>(part->getMaxDate()));
+            res_columns[i++]->insert(part->info.min_block);
+            res_columns[i++]->insert(part->info.max_block);
+            res_columns[i++]->insert(static_cast<UInt64>(part->info.level));
+            res_columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
+            res_columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
 
-            block.getByPosition(i++).column->insert(database);
-            block.getByPosition(i++).column->insert(table);
-            block.getByPosition(i++).column->insert(engine);
+            res_columns[i++]->insert(database);
+            res_columns[i++]->insert(table);
+            res_columns[i++]->insert(engine);
 
             if (has_state_column)
-                block.getByPosition(i++).column->insert(part->stateString());
+                res_columns[i++]->insert(part->stateString());
         }
     }
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    Block block = getSampleBlock();
+    if (has_state_column)
+        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
 }
 
 NameAndTypePair StorageSystemParts::getColumn(const String & column_name) const

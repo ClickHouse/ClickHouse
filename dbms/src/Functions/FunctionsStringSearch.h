@@ -90,10 +90,9 @@ public:
             return;
         }
 
-        auto col_res = std::make_shared<ColumnVector<ResultType>>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = ColumnVector<ResultType>::create();
 
-        typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+        typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
         vec_res.resize(column_haystack->size());
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
@@ -115,6 +114,8 @@ public:
                     + " of arguments of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -166,12 +167,13 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
-            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+            ColumnString::Offsets & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(

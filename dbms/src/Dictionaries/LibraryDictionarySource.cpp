@@ -69,15 +69,17 @@ CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, 
 }
 
 
-bool dataToBlock(const void * data, Block & block)
+Block dataToBlock(const Block & sample_block, const void * data)
 {
     if (!data)
-        return true;
+        return sample_block.cloneEmpty();
 
     auto columns_received = static_cast<const ClickHouseLibrary::ColumnsUInt64 *>(data);
-    std::vector<IColumn *> columns(block.columns());
+
+    MutableColumns columns(sample_block.columns());
     for (const auto i : ext::range(0, columns.size()))
-        columns[i] = block.getByPosition(i).column.get();
+        columns[i] = sample_block.getByPosition(i).column->cloneEmpty();
+
     for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
     {
         if (columns.size() != columns_received->data[col_n].size)
@@ -86,11 +88,10 @@ bool dataToBlock(const void * data, Block & block)
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
-        {
             columns[row_n]->insert(static_cast<UInt64>(columns_received->data[col_n].data[row_n]));
-        }
     }
-    return false;
+
+    return sample_block.cloneWithColumns(std::move(columns));
 }
 
 }
@@ -148,8 +149,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v1_loadAll");
     data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns);
-    auto block = description.sample_block.cloneEmpty();
-    dataToBlock(data, block);
+    auto block = dataToBlock(description.sample_block, data);
     library->get<void (*)(void *)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
     return std::make_shared<OneBlockInputStream>(block);
 }
@@ -175,8 +175,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
         "ClickHouseDictionary_v1_loadIds");
     data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &ids_data);
-    auto block = description.sample_block.cloneEmpty();
-    dataToBlock(data, block);
+    auto block = dataToBlock(description.sample_block, data);
     library->get<void (*)(void * data_ptr)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
     return std::make_shared<OneBlockInputStream>(block);
 }
@@ -213,8 +212,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
             "ClickHouseDictionary_v1_loadKeys");
     data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
-    auto block = description.sample_block.cloneEmpty();
-    dataToBlock(data, block);
+    auto block = dataToBlock(description.sample_block, data);
     library->get<void (*)(void * data_ptr)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
     return std::make_shared<OneBlockInputStream>(block);
 }
