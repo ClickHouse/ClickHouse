@@ -586,11 +586,12 @@ private:
 
             executeImpl(temporary_block, {0, 1, 2}, 3);
 
-            MutableColumnPtr result_column = temporary_block.getByPosition(3).column->mutate();
-            if (ColumnNullable * result_nullable = typeid_cast<ColumnNullable *>(result_column.get()))
+            const ColumnPtr & result_column = temporary_block.getByPosition(3).column;
+            if (checkColumn<ColumnNullable>(result_column.get()))
             {
-                result_nullable->applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
-                block.getByPosition(result).column = std::move(result_column);
+                MutableColumnPtr mutable_result_column = result_column->mutate();
+                static_cast<ColumnNullable &>(*mutable_result_column).applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
+                block.getByPosition(result).column = std::move(mutable_result_column);
                 return true;
             }
             else if (result_column->onlyNull())
@@ -601,7 +602,7 @@ private:
             else
             {
                 block.getByPosition(result).column = ColumnNullable::create(
-                    materializeColumnIfConst(std::move(result_column)), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
+                    materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
                 return true;
             }
         }
