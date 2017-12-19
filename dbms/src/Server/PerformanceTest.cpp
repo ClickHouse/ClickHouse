@@ -713,7 +713,7 @@ private:
 
                     if (packet.type == Protocol::Server::Data)
                     {
-                        for (const ColumnWithTypeAndName & column : packet.block.getColumns())
+                        for (const ColumnWithTypeAndName & column : packet.block)
                         {
                             if (column.name == "result" && column.column->size() > 0)
                             {
@@ -838,7 +838,7 @@ private:
             /// and, if found any settings in test's xml configuration
             /// with the same name, sets its value to settings
             std::map<String, String>::iterator it;
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
     it = settings_to_apply.find(#NAME);      \
     if (it != settings_to_apply.end())       \
         settings.set(#NAME, settings_to_apply[#NAME]);
@@ -1218,7 +1218,7 @@ public:
         json_output.set("num_threads", std::thread::hardware_concurrency());
         json_output.set("ram", getMemoryAmount());
         json_output.set("server_version", server_version);
-        json_output.set("time", DateLUT::instance().timeToString(time(0)));
+        json_output.set("time", DateLUT::instance().timeToString(time(nullptr)));
         json_output.set("test_name", test_name);
         json_output.set("main_metric", main_metric);
 

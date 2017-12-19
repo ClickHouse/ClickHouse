@@ -2,6 +2,13 @@
 #include <AggregateFunctions/AggregateFunctionUniq.h>
 #include <AggregateFunctions/Helpers.h>
 
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+
+
 namespace DB
 {
 
@@ -13,7 +20,7 @@ namespace
   */
 
 template <typename Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() == 1)
     {
@@ -53,7 +60,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 }
 
 template <template <typename> class Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() == 1)
     {

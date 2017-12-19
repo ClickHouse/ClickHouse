@@ -14,6 +14,9 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 
+#include <common/readline_use.h>
+#include <common/find_first_symbols.h>
+
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -22,7 +25,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
-#include <common/readline_use.h>
+#include <Common/Throttler.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -113,6 +116,7 @@ private:
     size_t format_max_block_size = 0;    /// Max block size for console output.
     String insert_format;                /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
+    size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
@@ -181,13 +185,13 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
@@ -195,11 +199,11 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & args)
+    int main(const std::vector<std::string> & /*args*/)
     {
         try
         {
-            return mainImpl(args);
+            return mainImpl();
         }
         catch (const Exception & e)
         {
@@ -262,7 +266,7 @@ private:
     }
 
 
-    int mainImpl(const std::vector<std::string> & args)
+    int mainImpl()
     {
         registerFunctions();
         registerAggregateFunctions();
@@ -408,6 +412,12 @@ private:
         UInt64 server_version_minor = 0;
         UInt64 server_revision = 0;
 
+        if (max_client_network_bandwidth)
+        {
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            connection->setThrottler(throttler);
+        }
+
         connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
@@ -520,22 +530,23 @@ private:
 
     void nonInteractive()
     {
-        String line;
+        String text;
+
         if (config().has("query"))
-            line = config().getString("query");
+            text = config().getString("query");
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
             /// The query is read entirely into memory (streaming is disabled).
             ReadBufferFromFileDescriptor in(STDIN_FILENO);
-            readStringUntilEOF(line, in);
+            readStringUntilEOF(text, in);
         }
 
-        process(line);
+        process(text);
     }
 
 
-    bool process(const String & line)
+    bool process(const String & text)
     {
         if (config().has("multiquery"))
         {
@@ -544,8 +555,8 @@ private:
 
             String query;
 
-            const char * begin = line.data();
-            const char * end = begin + line.size();
+            const char * begin = text.data();
+            const char * end = begin + text.size();
 
             while (begin < end)
             {
@@ -557,14 +568,9 @@ private:
                 ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
                 if (insert && insert->data)
-                {
-                    pos = insert->data;
-                    while (*pos && *pos != '\n')
-                        ++pos;
-                    insert->end = pos;
-                }
+                    insert->end = find_first_symbols<'\n'>(insert->data, end);
 
-                query = line.substr(begin - line.data(), pos - begin);
+                query = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
                 while (isWhitespace(*begin) || *begin == ';')
@@ -586,7 +592,7 @@ private:
         }
         else
         {
-            return processSingleQuery(line);
+            return processSingleQuery(text);
         }
     }
 
@@ -949,6 +955,7 @@ private:
             String pager = config().getString("pager", "");
             if (!pager.empty())
             {
+                signal(SIGPIPE, SIG_IGN);
                 pager_cmd = ShellCommand::execute(pager, true);
                 out_buf = &pager_cmd->in;
             }
@@ -1241,8 +1248,8 @@ public:
             }
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+#define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         boost::program_options::options_description main_description("Main options");
@@ -1266,6 +1273,7 @@ public:
             ("progress", "print progress even in non-interactive mode")
             ("version,V", "print version information and exit")
             ("echo", "in batch mode, print query before execution")
+            ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
             APPLY_FOR_LIMITS(DECLARE_LIMIT)
@@ -1331,7 +1339,7 @@ public:
         }
 
         /// Extract settings and limits from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (options.count(#NAME)) \
             context.setSetting(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
@@ -1375,6 +1383,8 @@ public:
             config().setBool("echo", true);
         if (options.count("time"))
             print_time_to_stderr = true;
+        if (options.count("max_client_network_bandwidth"))
+            max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
     }

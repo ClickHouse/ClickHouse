@@ -1,5 +1,4 @@
-CollapsingMergeTree
-===================
+# CollapsingMergeTree
 
 *Движок достаточно специфичен для Яндекс.Метрики.*
 

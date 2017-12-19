@@ -60,7 +60,7 @@ struct WatchContext
     }
 };
 
-void ZooKeeper::processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx)
+void ZooKeeper::processCallback(zhandle_t *, int type, int state, const char * path, void * watcher_ctx)
 {
     WatchContext * context = static_cast<WatchContext *>(watcher_ctx);
     context->process(type, state, path);
@@ -206,7 +206,7 @@ WatchCallback ZooKeeper::callbackForTaskHandle(const TaskHandlePtr & task)
         {
             if (t)
             {
-                t->schedule();
+                t->scheduleAfter(0);
                 t.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
             }
         };

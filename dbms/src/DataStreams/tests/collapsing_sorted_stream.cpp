@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -30,17 +30,13 @@ try
         ColumnWithTypeAndName column1;
         column1.name = "Sign";
         column1.type = std::make_shared<DataTypeInt8>();
-        column1.column = std::make_shared<ColumnInt8>();
-        column1.column->insert(DB::Int64(1));
-        column1.column->insert(DB::Int64(-1));
+        column1.column = ColumnInt8::create({1, -1});
         block1.insert(column1);
 
         ColumnWithTypeAndName column2;
         column2.name = "CounterID";
         column2.type = std::make_shared<DataTypeUInt32>();
-        column2.column = std::make_shared<ColumnUInt32>();
-        column2.column->insert(DB::UInt64(123));
-        column2.column->insert(DB::UInt64(123));
+        column2.column = ColumnUInt32::create({123, 123});
         block1.insert(column2);
     }
 
@@ -50,17 +46,13 @@ try
         ColumnWithTypeAndName column1;
         column1.name = "Sign";
         column1.type = std::make_shared<DataTypeInt8>();
-        column1.column = std::make_shared<ColumnInt8>();
-        column1.column->insert(DB::Int64(1));
-        column1.column->insert(DB::Int64(1));
+        column1.column = ColumnInt8::create({1, 1});
         block2.insert(column1);
 
         ColumnWithTypeAndName column2;
         column2.name = "CounterID";
         column2.type = std::make_shared<DataTypeUInt32>();
-        column2.column = std::make_shared<ColumnUInt32>();
-        column2.column->insert(DB::UInt64(123));
-        column2.column->insert(DB::UInt64(456));
+        column2.column = ColumnUInt32::create({123, 456});
         block2.insert(column2);
     }
 

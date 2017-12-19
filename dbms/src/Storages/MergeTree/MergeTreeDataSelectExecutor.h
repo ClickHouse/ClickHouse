@@ -36,7 +36,7 @@ private:
     Logger * log;
 
     BlockInputStreams spreadMarkRangesAmongStreams(
-        RangesInDataParts parts,
+        RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
         size_t max_block_size,
@@ -47,7 +47,7 @@ private:
         const Settings & settings) const;
 
     BlockInputStreams spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts parts,
+        RangesInDataParts && parts,
         const Names & column_names,
         size_t max_block_size,
         bool use_uncompressed_cache,

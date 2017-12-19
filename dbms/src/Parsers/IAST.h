@@ -59,7 +59,7 @@ public:
     virtual String tryGetAlias() const { return String(); }
 
     /** Set the alias. */
-    virtual void setAlias(const String & to)
+    virtual void setAlias(const String & /*to*/)
     {
         throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
     }
@@ -191,7 +191,7 @@ public:
         formatImpl(settings, state, FormatStateStacked());
     }
 
-    virtual void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
         throw Exception("Unknown element in AST: " + getID()
             + ((range.first && (range.second > range.first))

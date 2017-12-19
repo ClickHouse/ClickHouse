@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Columns/ColumnString.h>
@@ -50,6 +51,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
 }
 
 
@@ -72,16 +74,17 @@ struct ConvertImpl
         if (const ColumnVector<FromFieldType> * col_from
             = checkAndGetColumn<ColumnVector<FromFieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToFieldType>::create();
 
-            const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<FromFieldType>::Container & vec_from = col_from->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = vec_from.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -151,7 +154,7 @@ template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
 template <typename DataType>
 struct FormatImpl
 {
-    static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType * type, const DateLUTImpl * time_zone)
+    static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
     {
         writeText(x, wb);
     }
@@ -160,7 +163,7 @@ struct FormatImpl
 template <>
 struct FormatImpl<DataTypeDate>
 {
-    static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate * type, const DateLUTImpl * time_zone)
+    static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
         writeDateText(DayNum_t(x), wb);
     }
@@ -169,7 +172,7 @@ struct FormatImpl<DataTypeDate>
 template <>
 struct FormatImpl<DataTypeDateTime>
 {
-    static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime * type, const DateLUTImpl * time_zone)
+    static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
     {
         writeDateTimeText(x, wb, *time_zone);
     }
@@ -178,7 +181,7 @@ struct FormatImpl<DataTypeDateTime>
 template <typename FieldType>
 struct FormatImpl<DataTypeEnum<FieldType>>
 {
-    static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl * time_zone)
+    static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
     {
         writeString(type->getNameForValue(x), wb);
     }
@@ -214,12 +217,11 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
 
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<FromFieldType>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
 
             if constexpr (std::is_same<FromDataType, DataTypeDate>::value)
@@ -241,6 +243,8 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
             }
 
             data_to.resize(write_buffer.count());
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -261,52 +265,37 @@ struct ConvertImplGenericToString
 
         size_t size = col_from.size();
 
-        if (!col_from.isConst())
+        auto col_to = ColumnString::create();
+
+        ColumnString::Chars_t & data_to = col_to->getChars();
+        ColumnString::Offsets & offsets_to = col_to->getOffsets();
+
+        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
+        offsets_to.resize(size);
+
+        WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+        for (size_t i = 0; i < size; ++i)
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
-
-            ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
-
-            data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
-            offsets_to.resize(size);
-
-            WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                type.serializeText(col_from, i, write_buffer);
-                writeChar(0, write_buffer);
-                offsets_to[i] = write_buffer.count();
-            }
-
-            data_to.resize(write_buffer.count());
+            type.serializeText(col_from, i, write_buffer);
+            writeChar(0, write_buffer);
+            offsets_to[i] = write_buffer.count();
         }
-        else
-        {
-            String res;
 
-            if (size)
-            {
-                WriteBufferFromString write_buffer(res);
-                type.serializeText(*col_from.cut(0, 1)->convertToFullColumnIfConst(), 0, write_buffer);
-            }
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(size, res);
-        }
+        data_to.resize(write_buffer.count());
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
-template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     readText(x, rb);
 }
 
-template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     DayNum_t tmp(0);
     readDateText(tmp, rb);
@@ -320,7 +309,7 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
     x = tmp;
 }
 
-template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     UUID tmp;
     readText(tmp, rb);
@@ -329,8 +318,7 @@ template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, Rea
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */
-void throwExceptionForIncompletelyParsedValue(
-    ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result);
+void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result);
 
 
 template <typename ToDataType, typename Name>
@@ -348,15 +336,14 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToFieldType>::create();
 
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = col_from->size();
             vec_to.resize(size);
 
             const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets_t & offsets = col_from->getOffsets();
+            const IColumn::Offsets & offsets = col_from->getOffsets();
 
             size_t current_offset = 0;
 
@@ -369,10 +356,12 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
                 if (!read_buffer.eof()
                     && !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
                         && offsets[i] - current_offset - 1 == strlen("YYYY-MM-DD hh:mm:ss")))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
+                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
 
                 current_offset = offsets[i];
             }
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -383,17 +372,12 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
 
 
 template <typename DataType>
-typename std::enable_if<std::is_integral<typename DataType::FieldType>::value, bool>::type
-tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
 {
-    return tryReadIntText(x, rb);
-}
-
-template <typename DataType>
-typename std::enable_if<std::is_floating_point<typename DataType::FieldType>::value, bool>::type
-tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
-{
-    return tryReadFloatText(x, rb);
+    if constexpr (std::is_integral<typename DataType::FieldType>::value)
+        return tryReadIntText(x, rb);
+    else if constexpr (std::is_floating_point<typename DataType::FieldType>::value)
+        return tryReadFloatText(x, rb);
 }
 
 
@@ -408,15 +392,14 @@ struct ConvertOrZeroImpl
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToFieldType>::create();
 
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = col_from->size();
             vec_to.resize(size);
 
             const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets_t & offsets = col_from->getOffsets();
+            const IColumn::Offsets & offsets = col_from->getOffsets();
 
             size_t current_offset = 0;
 
@@ -430,6 +413,8 @@ struct ConvertOrZeroImpl
 
                 current_offset = offsets[i];
             }
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -447,21 +432,20 @@ struct ConvertImplGenericFromString
         const IColumn & col_from = *block.getByPosition(arguments[0]).column;
         size_t size = col_from.size();
 
-        ColumnWithTypeAndName & column_type_name_to = block.getByPosition(result);
-        const IDataType & data_type_to = *column_type_name_to.type;
+        const IDataType & data_type_to = *block.getByPosition(result).type;
 
         if (const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(&col_from))
         {
-            column_type_name_to.column = data_type_to.createColumn();
+            auto res = data_type_to.createColumn();
 
             if (!size)
                 return;
 
-            IColumn & column_to = *column_type_name_to.column;
+            IColumn & column_to = *res;
             column_to.reserve(size);
 
             const ColumnString::Chars_t & chars = col_from_string->getChars();
-            const IColumn::Offsets_t & offsets = col_from_string->getOffsets();
+            const IColumn::Offsets & offsets = col_from_string->getOffsets();
 
             size_t current_offset = 0;
 
@@ -472,10 +456,12 @@ struct ConvertImplGenericFromString
                 data_type_to.deserializeTextEscaped(column_to, read_buffer);
 
                 if (!read_buffer.eof())
-                    throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
+                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
 
                 current_offset = offsets[i];
             }
+
+            block.getByPosition(result).column = std::move(res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -522,12 +508,11 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
             if (std::is_same<ToDataType, DataTypeDateTime>::value)
                 time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
 
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToFieldType>::create();
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
             size_t n = col_from->getN();
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = col_from->size();
             vec_to.resize(size);
 
@@ -543,9 +528,11 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
                         ++read_buffer.position();
 
                     if (read_buffer.position() < end)
-                        throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
+                        throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
                 }
             }
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -565,12 +552,11 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
     {
         if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = col_from->size();
             size_t n = col_from->getN();
             data_to.resize(size * (n + 1)); /// + 1 - zero terminator
@@ -593,6 +579,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
             }
 
             data_to.resize(offset_to);
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -633,7 +620,7 @@ public:
     using Monotonic = MonotonicityImpl;
 
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvert>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvert>(); }
 
     String getName() const override
     {
@@ -649,49 +636,41 @@ public:
         DataTypePtr & out_return_type,
         std::vector<ExpressionAction> &) override
     {
-        out_return_type = getReturnTypeInternal(arguments);
-    }
-
-    template <typename Type = ToDataType>
-    typename std::enable_if<std::is_same<Type, DataTypeInterval>::value, DataTypePtr>::type
-    getReturnTypeInternal(const ColumnsWithTypeAndName & arguments)
-    {
-        return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
-    }
-
-    template <typename Type = ToDataType>
-    typename std::enable_if<!std::is_same<Type, DataTypeInterval>::value, DataTypePtr>::type
-    getReturnTypeInternal(const ColumnsWithTypeAndName & arguments)
-    {
-        /** Optional second argument with time zone is supported:
-          * - for functions toDateTime, toUnixTimestamp, toDate;
-          * - for function toString of DateTime argument.
-          */
-
-        if (arguments.size() == 2)
+        if constexpr (std::is_same<ToDataType, DataTypeInterval>::value)
         {
-            if (!checkAndGetDataType<DataTypeString>(arguments[1].type.get()))
-                throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            if (!(std::is_same<Name, NameToDateTime>::value
-                || std::is_same<Name, NameToDate>::value
-                || std::is_same<Name, NameToUnixTimestamp>::value
-                || (std::is_same<Name, NameToString>::value
-                    && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
-            {
-                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                    + toString(arguments.size()) + ", should be 1.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            }
+            out_return_type = std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
         }
-
-        if (std::is_same<ToDataType, DataTypeDateTime>::value)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1));
         else
-            return std::make_shared<ToDataType>();
-    }
+        {
+            /** Optional second argument with time zone is supported:
+              * - for functions toDateTime, toUnixTimestamp, toDate;
+              * - for function toString of DateTime argument.
+              */
 
+            if (arguments.size() == 2)
+            {
+                if (!checkAndGetDataType<DataTypeString>(arguments[1].type.get()))
+                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+                if (!(std::is_same<Name, NameToDateTime>::value
+                    || std::is_same<Name, NameToDate>::value
+                    || std::is_same<Name, NameToUnixTimestamp>::value
+                    || (std::is_same<Name, NameToString>::value
+                        && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
+                {
+                    throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                        + toString(arguments.size()) + ", should be 1.",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                }
+            }
+
+            if (std::is_same<ToDataType, DataTypeDateTime>::value)
+                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1));
+            else
+                out_return_type = std::make_shared<ToDataType>();
+        }
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -743,7 +722,11 @@ public:
 private:
     void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        if (!arguments.size())
+            throw Exception{"Function " + getName() + " expects at least 1 arguments",
+               ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if      (checkDataType<DataTypeUInt8>(from_type)) ConvertImpl<DataTypeUInt8, ToDataType, Name>::execute(block, arguments, result);
         else if (checkDataType<DataTypeUInt16>(from_type)) ConvertImpl<DataTypeUInt16, ToDataType, Name>::execute(block, arguments, result);
@@ -787,7 +770,7 @@ class FunctionConvertOrZero : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvertOrZero>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertOrZero>(); }
 
     String getName() const override
     {
@@ -796,7 +779,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<ToDataType>();
     }
@@ -805,7 +788,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if (checkAndGetDataType<DataTypeString>(from_type))
             ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
@@ -823,7 +806,7 @@ class FunctionToFixedString : public IFunction
 {
 public:
     static constexpr auto name = "toFixedString";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToFixedString>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToFixedString>(); };
 
     String getName() const override
     {
@@ -835,12 +818,11 @@ public:
 
     void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
         DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites) override
+        std::vector<ExpressionAction> & /*out_prerequisites*/) override
     {
         if (!arguments[1].column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!checkDataType<DataTypeString>(arguments[0].type.get()) &&
-            !checkDataType<DataTypeFixedString>(arguments[0].type.get()))
+        if (!arguments[0].type->isStringOrFixedString())
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
         const size_t n = getSize(arguments[1]);
@@ -863,8 +845,7 @@ public:
 
         if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
-            const auto column_fixed = std::make_shared<ColumnFixedString>(n);
-            ColumnPtr result_ptr = column_fixed;
+            auto column_fixed = ColumnFixedString::create(n);
 
             auto & out_chars = column_fixed->getChars();
             const auto & in_chars = column_string->getChars();
@@ -882,7 +863,7 @@ public:
                 memcpy(&out_chars[i * n], &in_chars[off], len);
             }
 
-            block.getByPosition(result).column = result_ptr;
+            block.getByPosition(result).column = std::move(column_fixed);
         }
         else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -892,8 +873,7 @@ public:
                     "String too long for type FixedString(" + toString(n) + ")",
                     ErrorCodes::TOO_LARGE_STRING_SIZE};
 
-            const auto column_fixed = std::make_shared<ColumnFixedString>(n);
-            block.getByPosition(result).column = column_fixed;
+            auto column_fixed = ColumnFixedString::create(n);
 
             auto & out_chars = column_fixed->getChars();
             const auto & in_chars = column_fixed_string->getChars();
@@ -902,6 +882,8 @@ public:
 
             for (const auto i : ext::range(0, size))
                 memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
+
+            block.getByPosition(result).column = std::move(column_fixed);
         }
         else
             throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -945,7 +927,7 @@ private:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return { true };
     }
@@ -956,15 +938,17 @@ struct ToIntMonotonicity
 {
     static bool has() { return true; }
 
-    template <typename T2 = T>
-    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) < sizeof(UInt64), UInt64> x) { return x >> (sizeof(T) * 8); };
-
-    template <typename T2 = T>
-    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) >= sizeof(UInt64), UInt64> x) { return 0; };
+    static UInt64 divideByRangeOfType(UInt64 x)
+    {
+        if constexpr (sizeof(T) < sizeof(UInt64))
+            return x >> (sizeof(T) * 8);
+        else
+            return 0;
+    }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        size_t size_of_type = type.getSizeOfField();
+        size_t size_of_type = type.getSizeOfValueInMemory();
 
         /// If type is expanding, then function is monotonic.
         if (sizeof(T) > size_of_type)
@@ -1127,14 +1111,14 @@ using FunctionToFloat64OrZero = FunctionConvertOrZero<DataTypeFloat64, NameToFlo
 
 class FunctionCast final : public IFunction
 {
+public:
+    FunctionCast(const Context & context) : context(context) {}
+
+private:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
     const Context & context;
     WrapperType wrapper_function;
     std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
-
-public:
-    FunctionCast(const Context & context) : context(context) {}
-private:
 
     template <typename DataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const)
@@ -1158,8 +1142,7 @@ private:
 
     static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
-        if (!checkDataType<DataTypeString>(from_type.get()) &&
-            !checkDataType<DataTypeFixedString>(from_type.get()))
+        if (!from_type->isStringOrFixedString())
             throw Exception{
                 "CAST AS FixedString is only implemented for types String and FixedString",
                 ErrorCodes::NOT_IMPLEMENTED};
@@ -1181,11 +1164,12 @@ private:
             };
         }
 
-        DataTypePtr from_nested_type, to_nested_type;
+        DataTypePtr from_nested_type;
+        DataTypePtr to_nested_type;
         auto from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
 
         /// get the most nested type
-        while (from_type && to_type)
+        if (from_type && to_type)
         {
             from_nested_type = from_type->getNestedType();
             to_nested_type = to_type->getNestedType();
@@ -1201,40 +1185,27 @@ private:
                 ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
-        const auto nested_function = prepareImpl(from_nested_type, to_nested_type.get());
+        const auto nested_function = prepare(from_nested_type, to_nested_type.get());
 
-        return [nested_function, from_nested_type, to_nested_type] (
+        return [nested_function, from_nested_type, to_nested_type](
             Block & block, const ColumnNumbers & arguments, const size_t result)
         {
-            auto array_arg = block.getByPosition(arguments.front());
+            const auto & array_arg = block.getByPosition(arguments.front());
 
-            if (auto col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
+            if (const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
             {
-                auto res = new ColumnArray(nullptr, col_array->getOffsetsColumn());
-                block.getByPosition(result).column.reset(res);
-
-                /// get the most nested column
-                while (const auto nested_col_array = checkAndGetColumn<ColumnArray>(col_array->getDataPtr().get()))
-                {
-                    /// create new level of array, copy offsets
-                    res->getDataPtr() = std::make_shared<ColumnArray>(nullptr, nested_col_array->getOffsetsColumn());
-
-                    res = static_cast<ColumnArray *>(res->getDataPtr().get());
-                    col_array = nested_col_array;
-                }
-
                 /// create block for converting nested column containing original and result columns
-                Block nested_block{
+                Block nested_block
+                {
                     { col_array->getDataPtr(), from_nested_type, "" },
                     { nullptr, to_nested_type, "" }
                 };
 
-                const auto nested_result = 1;
                 /// convert nested column
-                nested_function(nested_block, {0 }, nested_result);
+                nested_function(nested_block, {0}, 1);
 
                 /// set converted nested column to result
-                res->getDataPtr() = nested_block.getByPosition(nested_result).column;
+                block.getByPosition(result).column = ColumnArray::create(nested_block.getByPosition(1).column, col_array->getOffsetsPtr());
             }
             else
                 throw Exception{
@@ -1274,10 +1245,9 @@ private:
 
         /// Create conversion wrapper for each element in tuple
         for (const auto & idx_type : ext::enumerate(from_type->getElements()))
-            element_wrappers.push_back(prepareImpl(idx_type.second, to_element_types[idx_type.first].get()));
+            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
 
-        auto function_tuple = FunctionTuple::create(context);
-        return [element_wrappers, function_tuple, from_element_types, to_element_types]
+        return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             const auto col = block.getByPosition(arguments.front()).column.get();
@@ -1285,34 +1255,30 @@ private:
             /// copy tuple elements to a separate block
             Block element_block;
 
-            /// @todo retain constness
-            if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
-                element_block = column_tuple->getData();
+            size_t tuple_size = from_element_types.size();
+            const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
+
+            /// create columns for source elements
+            for (size_t i = 0; i < tuple_size; ++i)
+                element_block.insert({ column_tuple.getColumns()[i], from_element_types[i], "" });
 
             /// create columns for converted elements
             for (const auto & to_element_type : to_element_types)
                 element_block.insert({ nullptr, to_element_type, "" });
 
-            /// store position for converted tuple
-            const auto converted_tuple_pos = element_block.columns();
-
             /// insert column for converted tuple
             element_block.insert({ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
-
-            const auto converted_element_offset = from_element_types.size();
 
             /// invoke conversion for each element
             for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
                 idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
-                    converted_element_offset + idx_element_wrapper.first);
+                    tuple_size + idx_element_wrapper.first);
 
-            /// form tuple from converted elements using FunctionTuple
-            function_tuple->execute(element_block,
-                ext::collection_cast<ColumnNumbers>(ext::range(converted_element_offset, 2 * converted_element_offset)),
-                converted_tuple_pos);
+            Columns converted_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                converted_columns[i] = element_block.getByPosition(tuple_size + i).column;
 
-            /// copy FunctionTuple's result from element_block to resulting block
-            block.getByPosition(result).column = element_block.getByPosition(converted_tuple_pos).column;
+            block.getByPosition(result).column = ColumnTuple::create(converted_columns);
         };
     }
 
@@ -1331,7 +1297,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (from_type->behavesAsNumber())
+        else if (from_type->isNumber() || from_type->isEnum())
         {
             auto function = Function::create(context);
 
@@ -1389,8 +1355,7 @@ private:
             const auto first_col = block.getByPosition(arguments.front()).column.get();
 
             auto & col_with_type_and_name = block.getByPosition(result);
-            auto & result_col = col_with_type_and_name.column;
-            const auto & result_type = typeid_cast<EnumType &>(*col_with_type_and_name.type);
+            const auto & result_type = typeid_cast<const EnumType &>(*col_with_type_and_name.type);
 
             if (const auto col = typeid_cast<const ColumnStringType *>(first_col))
             {
@@ -1403,7 +1368,7 @@ private:
                 for (const auto i : ext::range(0, size))
                     out_data[i] = result_type.getValue(col->getDataAt(i));
 
-                result_col = res;
+                col_with_type_and_name.column = std::move(res);
             }
             else
                 throw Exception{
@@ -1421,33 +1386,73 @@ private:
         };
     }
 
-    /// Actions to be taken when performing a conversion.
-    struct Action
+    WrapperType createNothingWrapper(const IDataType * to_type)
     {
-        /// If neither the input type nor the output type is nullable or null,
-        /// we perform the conversion without any pre and/or processing.
-        static constexpr auto NONE = UInt64(0);
-        /// The input has a nullable type. We must extract its nested type
-        /// before performing any conversion.
-        static constexpr auto UNWRAP_NULLABLE_INPUT = UInt64(1) << 0;
-        /// The output has a nullable type. We must wrap the result from the
-        /// conversion into a ColumnNullable.
-        static constexpr auto WRAP_RESULT_INTO_NULLABLE = UInt64(1) << 1;
-        /// The input is the NULL value. Before performing any conversion,
-        /// we will turn it into a single UInt8 zero value.
-        static constexpr auto CONVERT_NULL = UInt64(1) << 2;
+        ColumnPtr res = to_type->createColumnConstWithDefaultValue(1);
+        return [res] (Block & block, const ColumnNumbers &, const size_t result)
+        {
+            /// Column of Nothing type is trivially convertible to any other column
+            block.getByPosition(result).column = res->cloneResized(block.rows())->convertToFullColumnIfConst();
+        };
+    }
+
+    /// Actions to be taken when performing a conversion.
+    struct NullableConversion
+    {
+        bool source_is_nullable = false;
+        bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type, const uint64_t action)
+    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
     {
-        auto wrapper = prepareImpl((action & Action::CONVERT_NULL) ?
-                                        std::make_shared<DataTypeUInt8>() :
-                                        from_type,
-                                    to_type);
+        /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
-        if (action & Action::WRAP_RESULT_INTO_NULLABLE)
+        NullableConversion nullable_conversion;
+        nullable_conversion.source_is_nullable = from_type->isNullable();
+        nullable_conversion.result_is_nullable = to_type->isNullable();
+
+        /// Check that the requested conversion is allowed.
+        if (nullable_conversion.source_is_nullable && !nullable_conversion.result_is_nullable)
+            throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
+                ErrorCodes::CANNOT_CONVERT_TYPE};
+
+        if (from_type->onlyNull())
         {
-            return [wrapper, action] (Block & block, const ColumnNumbers & arguments, const size_t result)
+            return [](Block & block, const ColumnNumbers &, const size_t result)
+            {
+                auto & res = block.getByPosition(result);
+                res.column = res.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
+            };
+        }
+
+        DataTypePtr from_inner_type;
+        const IDataType * to_inner_type;
+
+        /// Create the requested conversion.
+        if (nullable_conversion.result_is_nullable)
+        {
+            if (nullable_conversion.source_is_nullable)
+            {
+                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
+                from_inner_type = nullable_type.getNestedType();
+            }
+            else
+                from_inner_type = from_type;
+
+            const auto & nullable_type = static_cast<const DataTypeNullable &>(*to_type);
+            to_inner_type = nullable_type.getNestedType().get();
+        }
+        else
+        {
+            from_inner_type = from_type;
+            to_inner_type = to_type;
+        }
+
+        auto wrapper = prepareImpl(from_inner_type, to_inner_type);
+
+        if (nullable_conversion.result_is_nullable)
+        {
+            return [wrapper, nullable_conversion] (Block & block, const ColumnNumbers & arguments, const size_t result)
             {
                 /// Create a temporary block on which to perform the operation.
                 auto & res = block.getByPosition(result);
@@ -1456,17 +1461,8 @@ private:
                 const auto & nested_type = nullable_type.getNestedType();
 
                 Block tmp_block;
-                if (action & Action::UNWRAP_NULLABLE_INPUT)
+                if (nullable_conversion.source_is_nullable)
                     tmp_block = createBlockWithNestedColumns(block, arguments);
-                else if (action & Action::CONVERT_NULL)
-                {
-                    /// The input is replaced by a trivial UInt8 column
-                    /// which contains only one row whose value is 0.
-                    tmp_block = block;
-                    auto & elem = tmp_block.getByPosition(arguments[0]);
-                    elem.column = std::make_shared<ColumnUInt8>(block.rows(), 0);
-                    elem.type = std::make_shared<DataTypeUInt8>();
-                }
                 else
                     tmp_block = block;
 
@@ -1479,28 +1475,23 @@ private:
                 /// Wrap the result into a nullable column.
                 ColumnPtr null_map;
 
-                if (action & Action::UNWRAP_NULLABLE_INPUT)
+                if (nullable_conversion.source_is_nullable)
                 {
                     /// This is a conversion from a nullable to a nullable type.
                     /// So we just keep the null map of the input argument.
                     const auto & col = block.getByPosition(arguments[0]).column;
                     const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                    null_map = nullable_col.getNullMapColumn();
-                }
-                else if (action & Action::CONVERT_NULL)
-                {
-                    /// A NULL value has been converted to a nullable type.
-                    null_map = std::make_shared<ColumnUInt8>(block.rows(), 1);
+                    null_map = nullable_col.getNullMapColumnPtr();
                 }
                 else
                 {
                     /// This is a conversion from an ordinary type to a nullable type.
                     /// So we create a trivial null map.
-                    null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
+                    null_map = ColumnUInt8::create(block.rows(), 0);
                 }
 
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
-                res.column = std::make_shared<ColumnNullable>(tmp_res.column, null_map);
+                res.column = ColumnNullable::create(tmp_res.column, null_map);
             };
         }
         else
@@ -1511,6 +1502,8 @@ private:
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
+        else if (checkDataType<DataTypeNothing>(from_type.get()))
+            return createNothingWrapper(to_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return createWrapper(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type))
@@ -1552,8 +1545,7 @@ private:
         ///  but it is disabled because deserializing aggregate functions state might be unsafe.
 
         throw Exception{
-            "Conversion from " + from_type->getName() + " to " + to_type->getName() +
-                " is not supported",
+            "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
             ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
@@ -1591,7 +1583,7 @@ private:
             monotonicity_for_range = monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
             monotonicity_for_range = monotonicityForType(type);
-        else if (from_type->isNumeric())
+        else if (from_type->isEnum())
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 monotonicity_for_range = monotonicityForType(type);
@@ -1613,7 +1605,7 @@ public:
 
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites) override
+        std::vector<ExpressionAction> & /*out_prerequisites*/) override
     {
         const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)
@@ -1622,55 +1614,9 @@ public:
 
         out_return_type = DataTypeFactory::instance().get(type_col->getValue<String>());
 
-        /// Determine whether pre-processing and/or post-processing must take
-        /// place during conversion.
-        uint64_t action = Action::NONE;
-        const auto & from_type = arguments.front().type;
-
-        if (from_type->isNullable())
-            action |= Action::UNWRAP_NULLABLE_INPUT;
-        else if (from_type->isNull() && !out_return_type->isNull())
-            action |= Action::CONVERT_NULL;
-
-        if (out_return_type->isNullable())
-            action |= Action::WRAP_RESULT_INTO_NULLABLE;
-
-        /// Check that the requested conversion is allowed.
-        if (!(action & Action::WRAP_RESULT_INTO_NULLABLE))
-        {
-            if (action & Action::CONVERT_NULL)
-                throw Exception{"Cannot convert NULL into a non-nullable type",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
-            else if (action & Action::UNWRAP_NULLABLE_INPUT)
-                throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
-        }
-
-        DataTypePtr from_inner_type;
-        const IDataType * to_inner_type;
-
-        /// Create the requested conversion.
-        if (action & Action::WRAP_RESULT_INTO_NULLABLE)
-        {
-            if (action & Action::UNWRAP_NULLABLE_INPUT)
-            {
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
-                from_inner_type = nullable_type.getNestedType();
-            }
-            else
-                from_inner_type = from_type;
-
-            const auto & nullable_type = static_cast<const DataTypeNullable &>(*out_return_type);
-            to_inner_type = nullable_type.getNestedType().get();
-        }
-        else
-        {
-            from_inner_type = from_type;
-            to_inner_type = out_return_type.get();
-        }
-
-        wrapper_function = prepare(from_inner_type, to_inner_type, action);
-        prepareMonotonicityInformation(from_inner_type, to_inner_type);
+        const DataTypePtr & from_type = arguments.front().type;
+        wrapper_function = prepare(from_type, out_return_type.get());
+        prepareMonotonicityInformation(from_type, out_return_type.get());
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

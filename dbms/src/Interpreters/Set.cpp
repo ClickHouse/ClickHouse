@@ -10,7 +10,8 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTraits.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -49,7 +50,7 @@ bool Set::checkSetSizeLimits() const
 template <typename Method>
 void NO_INLINE Set::insertFromBlockImpl(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
     ConstNullMapPtr null_map)
@@ -64,7 +65,7 @@ void NO_INLINE Set::insertFromBlockImpl(
 template <typename Method, bool has_null_map>
 void NO_INLINE Set::insertFromBlockImplCase(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
     ConstNullMapPtr null_map)
@@ -87,17 +88,17 @@ void NO_INLINE Set::insertFromBlockImplCase(
         method.data.emplace(key, it, inserted);
 
         if (inserted)
-            method.onNewKey(*it, keys_size, i, variants.string_pool);
+            method.onNewKey(*it, keys_size, variants.string_pool);
     }
 }
 
 
 bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock lock(rwlock);
 
     size_t keys_size = block.columns();
-    ConstColumnPlainPtrs key_columns;
+    ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
 
     if (empty())
@@ -117,7 +118,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
         if (empty())
             data_types.emplace_back(block.safeGetByPosition(i).type);
 
-        if (auto converted = key_columns.back()->convertToFullColumnIfConst())
+        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
         {
             materialized_columns.emplace_back(converted);
             key_columns.back() = materialized_columns.back().get();
@@ -134,19 +135,20 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
       */
     if (keys_size == 1)
     {
-        if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(key_columns.back()))
+        const auto & col = block.getByPosition(0);
+        if (const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(col.type.get()))
         {
+            const ColumnTuple & column = typeid_cast<const ColumnTuple &>(*key_columns[0]);
+
             key_columns.pop_back();
-            const Columns & tuple_elements = tuple->getColumns();
+            const Columns & tuple_elements = column.getColumns();
             for (const auto & elem : tuple_elements)
                 key_columns.push_back(elem.get());
 
             if (empty())
             {
                 data_types.pop_back();
-                const Block & tuple_block = tuple->getData();
-                for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
-                    data_types.push_back(tuple_block.getByPosition(i).type);
+                data_types.insert(data_types.end(), tuple->getElements().begin(), tuple->getElements().end());
             }
         }
     }
@@ -220,58 +222,51 @@ static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const C
 
 void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set)
 {
-    data_types = types;
-
     /// Will form a block with values from the set.
-    Block block;
-    for (size_t i = 0, size = data_types.size(); i < size; ++i)
-    {
-        ColumnWithTypeAndName col;
-        col.type = data_types[i];
-        col.column = data_types[i]->createColumn();
-        col.name = "_" + toString(i);
 
-        block.insert(std::move(col));
-    }
+    size_t size = types.size();
+    MutableColumns columns(types.size());
+    for (size_t i = 0; i < size; ++i)
+        columns[i] = types[i]->createColumn();
 
     Row tuple_values;
     ASTExpressionList & list = typeid_cast<ASTExpressionList &>(*node);
-    for (ASTs::iterator it = list.children.begin(); it != list.children.end(); ++it)
+    for (auto & elem : list.children)
     {
-        if (data_types.size() == 1)
+        if (types.size() == 1)
         {
-            Field value = extractValueFromNode(*it, *data_types[0], context);
+            Field value = extractValueFromNode(elem, *types[0], context);
 
             if (!value.isNull())
-                block.safeGetByPosition(0).column->insert(value);
+                columns[0]->insert(value);
         }
-        else if (ASTFunction * func = typeid_cast<ASTFunction *>(it->get()))
+        else if (ASTFunction * func = typeid_cast<ASTFunction *>(elem.get()))
         {
             if (func->name != "tuple")
                 throw Exception("Incorrect element of set. Must be tuple.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
             size_t tuple_size = func->arguments->children.size();
-            if (tuple_size != data_types.size())
+            if (tuple_size != types.size())
                 throw Exception("Incorrect size of tuple in set.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
 
-            size_t j = 0;
-            for (; j < tuple_size; ++j)
+            size_t i = 0;
+            for (; i < tuple_size; ++i)
             {
-                Field value = extractValueFromNode(func->arguments->children[j], *data_types[j], context);
+                Field value = extractValueFromNode(func->arguments->children[i], *types[i], context);
 
                 /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
                 if (value.isNull())
                     break;
 
-                tuple_values[j] = value;
+                tuple_values[i] = value;
             }
 
-            if (j == tuple_size)
-                for (j = 0; j < tuple_size; ++j)
-                    block.safeGetByPosition(j).column->insert(tuple_values[j]);
+            if (i == tuple_size)
+                for (i = 0; i < tuple_size; ++i)
+                    columns[i]->insert(tuple_values[i]);
         }
         else
             throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -279,6 +274,10 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     if (create_ordered_set)
         ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+
+    Block block;
+    for (size_t i = 0, size = types.size(); i < size; ++i)
+        block.insert(ColumnWithTypeAndName(std::move(columns[i]), types[i], "_" + toString(i)));
 
     insertFromBlock(block, create_ordered_set);
 
@@ -297,11 +296,11 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     if (0 == num_key_columns)
         throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
-    auto res = std::make_shared<ColumnUInt8>();
-    ColumnUInt8::Container_t & vec_res = res->getData();
+    auto res = ColumnUInt8::create();
+    ColumnUInt8::Container & vec_res = res->getData();
     vec_res.resize(block.safeGetByPosition(0).column->size());
 
-    std::shared_lock<std::shared_mutex> lock(rwlock);
+    std::shared_lock lock(rwlock);
 
     /// If the set is empty.
     if (data_types.empty())
@@ -310,7 +309,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
             memset(&vec_res[0], 1, vec_res.size());
         else
             memset(&vec_res[0], 0, vec_res.size());
-        return res;
+        return std::move(res);
     }
 
     const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.safeGetByPosition(0).type.get());
@@ -328,7 +327,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
             throw Exception("Array(Nullable(...)) for left hand side of IN is not supported.", ErrorCodes::NOT_IMPLEMENTED);
 
         if (!array_type->getNestedType()->equals(*data_types[0]))
-            throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() +
+            throw Exception("Types in section IN don't match: " + data_types[0]->getName() +
                 " on the right, " + array_type->getNestedType()->getName() + " on the left.",
                 ErrorCodes::TYPE_MISMATCH);
 
@@ -355,7 +354,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         }
 
         /// Remember the columns we will work with. Also check that the data types are correct.
-        ConstColumnPlainPtrs key_columns;
+        ColumnRawPtrs key_columns;
         key_columns.reserve(num_key_columns);
 
         /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
@@ -365,13 +364,12 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         {
             key_columns.push_back(block.safeGetByPosition(i).column.get());
 
-            if (DataTypeTraits::removeNullable(data_types[i])->getName() !=
-                DataTypeTraits::removeNullable(block.safeGetByPosition(i).type)->getName())
+            if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
                 throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
                     + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
                     " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-            if (auto converted = key_columns.back()->convertToFullColumnIfConst())
+            if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
             {
                 materialized_columns.emplace_back(converted);
                 key_columns.back() = materialized_columns.back().get();
@@ -386,15 +384,15 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         executeOrdinary(key_columns, vec_res, negative, null_map);
     }
 
-    return res;
+    return std::move(res);
 }
 
 
 template <typename Method>
 void NO_INLINE Set::executeImpl(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
-    ColumnUInt8::Container_t & vec_res,
+    const ColumnRawPtrs & key_columns,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     size_t rows,
     ConstNullMapPtr null_map) const
@@ -409,8 +407,8 @@ void NO_INLINE Set::executeImpl(
 template <typename Method, bool has_null_map>
 void NO_INLINE Set::executeImplCase(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
-    ColumnUInt8::Container_t & vec_res,
+    const ColumnRawPtrs & key_columns,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     size_t rows,
     ConstNullMapPtr null_map) const
@@ -438,9 +436,9 @@ void NO_INLINE Set::executeImplCase(
 template <typename Method>
 void NO_INLINE Set::executeArrayImpl(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
-    const ColumnArray::Offsets_t & offsets,
-    ColumnUInt8::Container_t & vec_res,
+    const ColumnRawPtrs & key_columns,
+    const ColumnArray::Offsets & offsets,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     size_t rows) const
 {
@@ -469,8 +467,8 @@ void NO_INLINE Set::executeArrayImpl(
 
 
 void Set::executeOrdinary(
-    const ConstColumnPlainPtrs & key_columns,
-    ColumnUInt8::Container_t & vec_res,
+    const ColumnRawPtrs & key_columns,
+    ColumnUInt8::Container & vec_res,
     bool negative,
     ConstNullMapPtr null_map) const
 {
@@ -489,10 +487,10 @@ void Set::executeOrdinary(
     }
 }
 
-void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
+void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container & vec_res, bool negative) const
 {
     size_t rows = key_column->size();
-    const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
+    const ColumnArray::Offsets & offsets = key_column->getOffsets();
     const IColumn & nested_column = key_column->getData();
 
     switch (data.type)
@@ -501,7 +499,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows); \
+            executeArrayImpl(*data.NAME, ColumnRawPtrs{&nested_column}, offsets, vec_res, negative, rows); \
             break;
     APPLY_FOR_SET_VARIANTS(M)
 #undef M

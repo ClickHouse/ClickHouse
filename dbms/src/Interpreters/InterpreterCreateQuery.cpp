@@ -94,7 +94,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             || storage.partition_by || storage.order_by || storage.sample_by || storage.settings)
         {
             std::stringstream ostr;
-            formatAST(storage, ostr, 0, false, false);
+            formatAST(storage, ostr, false, false);
             throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
         }
 
@@ -125,7 +125,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         std::ostringstream statement_stream;
-        formatAST(create, statement_stream, 0, false);
+        formatAST(create, statement_stream, false);
         statement_stream << '\n';
         String statement = statement_stream.str();
 
@@ -562,7 +562,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 std::make_shared<AddingDefaultBlockOutputStream>(
                     std::make_shared<MaterializingBlockOutputStream>(
                         std::make_shared<PushingToViewsBlockOutputStream>(
-                            create.database, create.table,
+                            create.database, create.table, res,
                             create.is_temporary ? context.getSessionContext() : context,
                             query_ptr)),
                     /// @note shouldn't these two contexts be session contexts in case of temporary table?

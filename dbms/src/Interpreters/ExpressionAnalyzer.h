@@ -111,7 +111,7 @@ public:
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    void appendProjectResult(ExpressionActionsChain & chain, bool only_types) const;
+    void appendProjectResult(ExpressionActionsChain & chain) const;
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If project_result, only the calculated values in the desired order, renamed to aliases, remain in the output block.
@@ -296,7 +296,7 @@ private:
       * Put in required_joined_columns the set of columns available from JOIN and needed.
       */
     void getRequiredColumnsImpl(const ASTPtr & ast,
-        NameSet & required_columns, NameSet & ignored_names,
+        const NameSet & available_columns, NameSet & required_columns, NameSet & ignored_names,
         const NameSet & available_joined_columns, NameSet & required_joined_columns);
 
     /// Get the table from which the query is made

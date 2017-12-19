@@ -2,15 +2,10 @@
 #include <Common/StringUtils.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
-#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/setThreadName.h>
 #include <ext/scope_guard.h>
 #include <Poco/Util/Application.h>
-#include <Poco/Glob.h>
-#include <Poco/File.h>
 #include <cmath>
-#include <Poco/Util/XMLConfiguration.h>
-#include <Common/ConfigProcessor.h>
 
 namespace DB
 {
@@ -19,6 +14,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS;
 }
 
 
@@ -49,9 +45,14 @@ void ExternalLoader::reloadPeriodically()
 ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config,
                                const ExternalLoaderUpdateSettings & update_settings,
                                const ExternalLoaderConfigSettings & config_settings,
+                               std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
                                Logger * log, const std::string & loadable_object_name)
-        : config(config), update_settings(update_settings), config_settings(config_settings),
-          log(log), object_name(loadable_object_name)
+        : config(config)
+        , update_settings(update_settings)
+        , config_settings(config_settings)
+        , config_repository(std::move(config_repository))
+        , log(log)
+        , object_name(loadable_object_name)
 {
 }
 
@@ -80,34 +81,6 @@ ExternalLoader::~ExternalLoader()
     reloading_thread.join();
 }
 
-namespace
-{
-std::set<std::string> getConfigPaths(const Poco::Util::AbstractConfiguration & config,
-                                     const std::string & external_config_paths_setting)
-{
-    std::set<std::string> files;
-    auto patterns = getMultipleValuesFromConfig(config, "", external_config_paths_setting);
-    for (auto & pattern : patterns)
-    {
-        if (pattern.empty())
-            continue;
-
-        if (pattern[0] != '/')
-        {
-            const auto app_config_path = config.getString("config-file", "config.xml");
-            const auto config_dir = Poco::Path{app_config_path}.parent().toString();
-            const auto absolute_path = config_dir + pattern;
-            Poco::Glob::glob(absolute_path, files, 0);
-            if (!files.empty())
-                continue;
-        }
-
-        Poco::Glob::glob(pattern, files, 0);
-    }
-
-    return files;
-}
-}
 
 void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 {
@@ -239,7 +212,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
 void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool force_reload, const std::string & only_dictionary)
 {
-    const auto config_paths = getConfigPaths(config, config_settings.path_setting_name);
+    const auto config_paths = config_repository->list(config, config_settings.path_setting_name);
 
     for (const auto & config_path : config_paths)
     {
@@ -260,9 +233,7 @@ void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool
 void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
                                           const bool force_reload, const std::string & loadable_name)
 {
-    const Poco::File config_file{config_path};
-
-    if (config_path.empty() || !config_file.exists())
+    if (config_path.empty() || !config_repository->exists(config_path))
     {
         LOG_WARNING(log, "config file '" + config_path + "' does not exist");
     }
@@ -275,14 +246,10 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
             modification_time_it = last_modification_times.emplace(config_path, Poco::Timestamp{0}).first;
         auto & config_last_modified = modification_time_it->second;
 
-        const auto last_modified = config_file.getLastModified();
+        const auto last_modified = config_repository->getLastModificationTime(config_path);
         if (force_reload || last_modified > config_last_modified)
         {
-            ConfigProcessor config_processor = ConfigProcessor(config_path);
-            ConfigProcessor::LoadedConfig cfg = config_processor.loadConfig();
-            config_processor.savePreprocessedConfig(cfg);
-            
-            Poco::AutoPtr<Poco::Util::AbstractConfiguration> config = cfg.configuration;
+            auto config = config_repository->load(config_path);
 
             /// Definitions of loadable objects may have changed, recreate all of them
 
@@ -325,8 +292,11 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         object_it = loadable_objects.find(name);
                     }
 
+                    /// Object with the same name was declared in other config file.
                     if (object_it != std::end(loadable_objects) && object_it->second.origin != config_path)
-                        throw std::runtime_error{"Overriding " + object_name + " from file " + object_it->second.origin};
+                        throw Exception(object_name + " '" + name + "' from file " + config_path
+                                        + " already declared in file " + object_it->second.origin,
+                                        ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
                     auto object_ptr = create(name, *config, key);
 
@@ -359,7 +329,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                     /// add new loadable object or update an existing version
                     if (object_it == std::end(loadable_objects))
-                        loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path});
+                        loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path, {}});
                     else
                     {
                         if (object_it->second.loadable)

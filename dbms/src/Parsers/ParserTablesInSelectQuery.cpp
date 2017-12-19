@@ -120,13 +120,13 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 {
     auto res = std::make_shared<ASTTablesInSelectQueryElement>();
 
-    if (ParserArrayJoin().parse(pos, res->array_join, expected))
-    {
-    }
-    else if (is_first)
+    if (is_first)
     {
         if (!ParserTableExpression().parse(pos, res->table_expression, expected))
             return false;
+    }
+    else if (ParserArrayJoin().parse(pos, res->array_join, expected))
+    {
     }
     else
     {

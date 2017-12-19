@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 String SummingSortedBlockInputStream::getID() const
 {
@@ -36,7 +41,7 @@ String SummingSortedBlockInputStream::getID() const
 }
 
 
-void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion)
+void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -62,12 +67,10 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(ColumnPlainPtrs & m
             }
             catch (...)
             {
-                desc.function->destroy(desc.state.data());
-                desc.created = false;
+                desc.destroyState();
                 throw;
             }
-            desc.function->destroy(desc.state.data());
-            desc.created = false;
+            desc.destroyState();
         }
         else
             desc.merged_column->insertDefault();
@@ -113,18 +116,20 @@ Block SummingSortedBlockInputStream::readImpl()
     if (children.size() == 1)
         return children[0]->read();
 
-    Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    Block header;
+    MutableColumns merged_columns;
 
-    init(merged_block, merged_columns);
+    init(header, merged_columns);
+
+    if (has_collation)
+        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
+
     if (merged_columns.empty())
-        return Block();
+        return {};
 
     /// Additional initialization.
     if (current_row.empty())
     {
-        auto & factory = AggregateFunctionFactory::instance();
-
         current_row.resize(num_columns);
         next_key.columns.resize(description.size());
 
@@ -138,7 +143,7 @@ Block SummingSortedBlockInputStream::readImpl()
           */
         for (size_t i = 0; i < num_columns; ++i)
         {
-            ColumnWithTypeAndName & column = merged_block.safeGetByPosition(i);
+            const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
             /// Discover nested Maps and find columns for summation
             if (typeid_cast<const DataTypeArray *>(column.type.get()))
@@ -155,12 +160,7 @@ Block SummingSortedBlockInputStream::readImpl()
             }
             else
             {
-                /// Leave only numeric types. Note that dates and datetime here are not considered such.
-                if (!column.type->isNumeric() ||
-                    column.type->getName() == "Date" ||
-                    column.type->getName() == "DateTime" ||
-                    column.type->getName() == "Nullable(Date)" ||
-                    column.type->getName() == "Nullable(DateTime)")
+                if (!column.type->isSummable())
                 {
                     column_numbers_not_to_aggregate.push_back(i);
                     continue;
@@ -178,12 +178,9 @@ Block SummingSortedBlockInputStream::readImpl()
                        std::find(column_names_to_sum.begin(), column_names_to_sum.end(), column.name))
                 {
                     // Create aggregator to sum this column
-                    auto desc = AggregateDescription{};
+                    AggregateDescription desc;
                     desc.column_numbers = {i};
-                    desc.function = factory.get("sumWithOverflow", {column.type});
-                    desc.function->setArguments({column.type});
-                    desc.add_function = desc.function->getAddressOfAddFunction();
-                    desc.state.resize(desc.function->sizeOfData());
+                    desc.init("sumWithOverflow", {column.type});
                     columns_to_aggregate.emplace_back(std::move(desc));
                 }
                 else
@@ -208,7 +205,7 @@ Block SummingSortedBlockInputStream::readImpl()
             /// no elements of map could be in primary key
             auto column_num_it = map.second.begin();
             for (; column_num_it != map.second.end(); ++column_num_it)
-                if (isInPrimaryKey(description, merged_block.safeGetByPosition(*column_num_it).name, *column_num_it))
+                if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name, *column_num_it))
                     break;
             if (column_num_it != map.second.end())
             {
@@ -218,13 +215,13 @@ Block SummingSortedBlockInputStream::readImpl()
             }
 
             DataTypes argument_types = {};
-            auto desc = AggregateDescription{};
-            auto map_desc = MapDescription{};
+            AggregateDescription desc;
+            MapDescription map_desc;
 
             column_num_it = map.second.begin();
             for (; column_num_it != map.second.end(); ++column_num_it)
             {
-                const ColumnWithTypeAndName & key_col = merged_block.safeGetByPosition(*column_num_it);
+                const ColumnWithTypeAndName & key_col = header.safeGetByPosition(*column_num_it);
                 const String & name = key_col.name;
                 const IDataType & nested_type = *static_cast<const DataTypeArray *>(key_col.type.get())->getNestedType();
 
@@ -233,16 +230,14 @@ Block SummingSortedBlockInputStream::readImpl()
                     || endsWith(name, "Key")
                     || endsWith(name, "Type"))
                 {
-                    if (!nested_type.isNumeric()
-                        || nested_type.getName() == "Float32"
-                        || nested_type.getName() == "Float64")
+                    if (!nested_type.isValueRepresentedByInteger())
                         break;
 
                     map_desc.key_col_nums.push_back(*column_num_it);
                 }
                 else
                 {
-                    if (!nested_type.behavesAsNumber())
+                    if (!nested_type.isSummable())
                         break;
 
                     map_desc.val_col_nums.push_back(*column_num_it);
@@ -263,10 +258,7 @@ Block SummingSortedBlockInputStream::readImpl()
             if (map_desc.key_col_nums.size() == 1)
             {
                 // Create summation for all value columns in the map
-                desc.function = factory.get("sumMap", argument_types);
-                desc.function->setArguments(argument_types);
-                desc.add_function = desc.function->getAddressOfAddFunction();
-                desc.state.resize(desc.function->sizeOfData());
+                desc.init("sumMap", argument_types);
                 columns_to_aggregate.emplace_back(std::move(desc));
             }
             else
@@ -285,35 +277,46 @@ Block SummingSortedBlockInputStream::readImpl()
         // Wrap aggregated columns in a tuple to match function signature
         if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
-            auto tuple = std::make_shared<ColumnTuple>();
-            auto & tuple_columns = tuple->getColumns();
-            for (auto i : desc.column_numbers)
-                tuple_columns.push_back(merged_block.safeGetByPosition(i).column);
+            size_t tuple_size = desc.column_numbers.size();
+            Columns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = header.safeGetByPosition(desc.column_numbers[i]).column;
 
-            desc.merged_column = tuple;
+            desc.merged_column = ColumnTuple::create(tuple_columns);
         }
         else
-            desc.merged_column = merged_block.safeGetByPosition(desc.column_numbers[0]).column;
+            desc.merged_column = header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty();
     }
 
-    if (has_collation)
-        merge(merged_columns, queue_with_collation);
-    else
-        merge(merged_columns, queue);
+    merge(merged_columns, queue);
+    Block res = header.cloneWithColumns(std::move(merged_columns));
 
-    return merged_block;
+    /// Place aggregation results into block.
+    for (auto & desc : columns_to_aggregate)
+    {
+        if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        {
+            /// Unpack tuple into block.
+            size_t tuple_size = desc.column_numbers.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+                res.getByPosition(desc.column_numbers[i]).column = static_cast<const ColumnTuple &>(*desc.merged_column).getColumnPtr(i);
+        }
+        else
+            res.getByPosition(desc.column_numbers[0]).column = std::move(desc.merged_column);
+    }
+
+    return res;
 }
 
 
-template <typename TSortCursor>
-void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
     merged_rows = 0;
 
-    /// Take the rows in needed order and put them in `merged_block` until rows no more than `max_block_size`
+    /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
     while (!queue.empty())
     {
-        TSortCursor current = queue.top();
+        SortCursor current = queue.top();
 
         setPrimaryKeyRef(next_key, current);
 
@@ -345,18 +348,15 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
             /// Reset aggregation states for next row
             for (auto & desc : columns_to_aggregate)
-            {
-                desc.function->create(desc.state.data());
-                desc.created = true;
-            }
+                desc.createState();
 
             // Start aggregations with current row
-            addRow(current_row, current);
+            addRow(current);
             current_row_is_zero = true;
         }
         else
         {
-            addRow(current_row, current);
+            addRow(current);
 
             // Merge maps only for same rows
             for (auto & desc : maps_to_sum)
@@ -384,8 +384,8 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
     finished = true;
 }
 
-template <typename TSortCursor>
-bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
+
+bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, SortCursor & cursor)
 {
     /// Strongly non-optimal.
 
@@ -468,8 +468,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 }
 
 
-template <typename TSortCursor>
-void SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
+void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -485,7 +484,7 @@ void SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
         else
         {
             // Gather all source columns into a vector
-            ConstColumnPlainPtrs columns(desc.column_numbers.size());
+            ColumnRawPtrs columns(desc.column_numbers.size());
             for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                 columns[i] = cursor->all_columns[desc.column_numbers[i]];
 

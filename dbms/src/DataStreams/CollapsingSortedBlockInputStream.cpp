@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -39,14 +40,14 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 }
 
 
-void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream)
+void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_columns, size_t & merged_rows, bool last_in_stream)
 {
     if (count_positive == 0 && count_negative == 0)
         return;
 
     if (count_positive == count_negative && !last_is_positive)
     {
-        /// If all the rows in the input streams collapsed, we still want to give at least one block in the result.
+        /// If all the rows in the input streams was collapsed, we still want to give at least one block in the result.
         if (last_in_stream && merged_rows == 0 && !blocks_written)
         {
             LOG_INFO(log, "All rows collapsed");
@@ -97,25 +98,29 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 
     if (out_row_sources_buf)
         out_row_sources_buf->write(
-                reinterpret_cast<const char *>(current_row_sources.data()),
-                current_row_sources.size() * sizeof(RowSourcePart));
+            reinterpret_cast<const char *>(current_row_sources.data()),
+            current_row_sources.size() * sizeof(RowSourcePart));
 }
 
 
 Block CollapsingSortedBlockInputStream::readImpl()
 {
     if (finished)
-        return Block();
+        return {};
 
     if (children.size() == 1)
         return children[0]->read();
 
-    Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    Block header;
+    MutableColumns merged_columns;
 
-    init(merged_block, merged_columns);
+    init(header, merged_columns);
+
+    if (has_collation)
+        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
+
     if (merged_columns.empty())
-        return Block();
+        return {};
 
     /// Additional initialization.
     if (first_negative.empty())
@@ -124,27 +129,22 @@ Block CollapsingSortedBlockInputStream::readImpl()
         last_negative.columns.resize(num_columns);
         last_positive.columns.resize(num_columns);
 
-        sign_column_number = merged_block.getPositionByName(sign_column);
+        sign_column_number = header.getPositionByName(sign_column);
     }
 
-    if (has_collation)
-        merge(merged_columns, queue_with_collation);
-    else
-        merge(merged_columns, queue);
-
-    return merged_block;
+    merge(merged_columns, queue);
+    return header.cloneWithColumns(std::move(merged_columns));
 }
 
 
-template <typename TSortCursor>
-void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
     size_t merged_rows = 0;
 
-    /// Take rows in correct order and put them into `merged_block` until the rows no more than `max_block_size`
+    /// Take rows in correct order and put them into `merged_columns` until the rows no more than `max_block_size`
     for (; !queue.empty(); ++current_pos)
     {
-        TSortCursor current = queue.top();
+        SortCursor current = queue.top();
 
         if (current_key.empty())
         {

@@ -1,5 +1,4 @@
-Терабайт логов кликов от Criteo
-===============================
+# Терабайт логов кликов от Criteo
 
 Скачайте данные с <http://labs.criteo.com/downloads/download-terabyte-click-logs/>
 

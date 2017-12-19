@@ -5,7 +5,7 @@ namespace DB
 {
 
 void throwExceptionForIncompletelyParsedValue(
-    ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result)
+    ReadBuffer & read_buffer, Block & block, size_t result)
 {
     const IDataType & to_type = *block.getByPosition(result).type;
 
@@ -20,7 +20,7 @@ void throwExceptionForIncompletelyParsedValue(
     else
         message_buf << " at begin of string";
 
-    if (to_type.behavesAsNumber())
+    if (to_type.isNumber())
         message_buf << ". Note: there are to" << to_type.getName() << "OrZero function, which returns zero instead of throwing exception.";
 
     throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);

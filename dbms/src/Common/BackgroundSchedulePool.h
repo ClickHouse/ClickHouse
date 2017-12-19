@@ -90,7 +90,7 @@ private:
     void delayExecutionThreadFunction();
 
     /// Schedule task for execution after specified delay from now.
-    void scheduleDelayedTask(const TaskHandle & task, size_t ms, std::lock_guard<std::recursive_mutex> &);
+    void scheduleDelayedTask(const TaskHandle & task, size_t ms);
 
     /// Remove task, that was scheduled with delay, from schedule.
     void cancelDelayedTask(const TaskHandle & task, std::lock_guard<std::recursive_mutex> &);

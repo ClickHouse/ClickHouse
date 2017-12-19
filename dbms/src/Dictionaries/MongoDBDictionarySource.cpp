@@ -2,10 +2,15 @@
 #if Poco_MongoDB_FOUND
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Database.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Array.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/MongoDB/Connection.h>
+    #include <Poco/MongoDB/Database.h>
+    #include <Poco/MongoDB/Cursor.h>
+    #include <Poco/MongoDB/Array.h>
+#pragma GCC diagnostic pop
+
 #include <Poco/Version.h>
 
 // only after poco
@@ -183,7 +188,7 @@ static std::unique_ptr<Poco::MongoDB::Cursor> createCursor(
     if (!sample_block_to_select.has("_id"))
         cursor->query().returnFieldSelector().add("_id", 0);
 
-    for (const auto & column : sample_block_to_select.getColumns())
+    for (const auto & column : sample_block_to_select)
         cursor->query().returnFieldSelector().add(column.name, 1);
 
     return cursor;

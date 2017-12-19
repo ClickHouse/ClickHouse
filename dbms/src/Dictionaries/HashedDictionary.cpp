@@ -52,7 +52,7 @@ void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<
 
 /// Allow to use single value in same way as array.
 static inline HashedDictionary::Key getAt(const PaddedPODArray<HashedDictionary::Key> & arr, const size_t idx) { return arr[idx]; }
-static inline HashedDictionary::Key getAt(const HashedDictionary::Key & value, const size_t idx) { return value; }
+static inline HashedDictionary::Key getAt(const HashedDictionary::Key & value, const size_t) { return value; }
 
 template <typename ChildType, typename AncestorType>
 void HashedDictionary::isInImpl(
@@ -148,7 +148,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return null_value; });
 }
 
@@ -191,7 +191,7 @@ void HashedDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t row) { return def->getDataAt(row); });
 }
 
@@ -233,7 +233,7 @@ void HashedDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return StringRef{def}; });
 }
 
@@ -356,7 +356,7 @@ void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & 
 
 HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}, {}};
 
     switch (type)
     {

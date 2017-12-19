@@ -1,5 +1,4 @@
-system.tables
-=============
+# system.tables
 
 Таблица содержит столбцы database, name, engine типа String и столбец metadata_modification_time типа DateTime.
 Для каждой таблицы, о которой знает сервер, будет присутствовать соответствующая запись в таблице system.tables.

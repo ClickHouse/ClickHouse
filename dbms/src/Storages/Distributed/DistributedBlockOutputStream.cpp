@@ -291,12 +291,11 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(Block block)
 {
     storage.getShardingKeyExpr()->execute(block);
     const auto & key_column = block.getByName(storage.getShardingKeyColumnName());
-    size_t num_shards = cluster->getShardsInfo().size();
     const auto & slot_to_shard = cluster->getSlotToShard();
 
 #define CREATE_FOR_TYPE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, num_shards, slot_to_shard);
+        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -334,7 +333,7 @@ Blocks DistributedBlockOutputStream::splitBlock(const Block & block)
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        Columns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
             splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
     }

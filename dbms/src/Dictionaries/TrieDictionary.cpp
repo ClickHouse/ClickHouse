@@ -106,7 +106,7 @@ void TrieDictionary::getString(
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return null_value; });
 }
 
@@ -153,7 +153,7 @@ void TrieDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t row) { return def->getDataAt(row); });
 }
 
@@ -200,7 +200,7 @@ void TrieDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return StringRef{def}; });
 }
 
@@ -360,7 +360,7 @@ void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & nu
 
 TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}, {}};
 
     switch (type)
     {
@@ -534,7 +534,7 @@ const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string
 }
 
 template <typename T>
-void TrieDictionary::has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
+void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -604,8 +604,8 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
 
 Columns TrieDictionary::getKeyColumns() const
 {
-    auto ip_column = std::make_shared<ColumnFixedString>(IPV6_BINARY_LENGTH);
-    auto mask_column = std::make_shared<ColumnVector<UInt8>>();
+    auto ip_column = ColumnFixedString::create(IPV6_BINARY_LENGTH);
+    auto mask_column = ColumnVector<UInt8>::create();
 
 #if defined(__SIZEOF_INT128__)
     auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask) {
@@ -621,35 +621,35 @@ Columns TrieDictionary::getKeyColumns() const
 #else
     throw Exception("TrieDictionary::getKeyColumns is not implemented for 32bit arch", ErrorCodes::NOT_IMPLEMENTED);
 #endif
-    return {ip_column, mask_column};
+    return {std::move(ip_column), std::move(mask_column)};
 }
 
 BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
+    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
     {
         const auto & attr = attributes.front();
         return ColumnsWithTypeAndName({ColumnWithTypeAndName(columns.front(),
             std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
+    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
     {
-        auto column = std::make_shared<ColumnString>();
-        auto ip_column = std::static_pointer_cast<ColumnFixedString>(columns.front());
-        auto mask_column = std::static_pointer_cast<ColumnVector<UInt8>>(columns.back());
+        auto column = ColumnString::create();
+        const auto & ip_column = static_cast<const ColumnFixedString &>(*columns.front());
+        const auto & mask_column = static_cast<const ColumnVector<UInt8> &>(*columns.back());
         char buffer[48];
-        for (size_t row : ext::range(0, ip_column->size()))
+        for (size_t row : ext::range(0, ip_column.size()))
         {
-            UInt8 mask = mask_column->getElement(row);
+            UInt8 mask = mask_column.getElement(row);
             char * ptr = buffer;
-            formatIPv6(reinterpret_cast<const unsigned char *>(ip_column->getDataAt(row).data), ptr);
+            formatIPv6(reinterpret_cast<const unsigned char *>(ip_column.getDataAt(row).data), ptr);
             *(ptr - 1) = '/';
             auto size = detail::writeUIntText(mask, ptr);
             column->insertData(buffer, size + (ptr - buffer));
         }
-        return ColumnsWithTypeAndName{ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), attributes.front().name)};
+        return ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeyColumns(), column_names,
         std::move(getKeys), std::move(getView));

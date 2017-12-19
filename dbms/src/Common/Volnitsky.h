@@ -199,7 +199,7 @@ template <bool ASCII> struct VolnitskyImpl<true, ASCII> : VolnitskyBase<Volnitsk
     {
     }
 
-    void putNGram(const UInt8 * const pos, const int offset, const UInt8 * const begin)
+    void putNGram(const UInt8 * const pos, const int offset, const UInt8 * const /*begin*/)
     {
         this->putNGramBase(this->toNGram(pos), offset);
     }
@@ -226,7 +226,7 @@ template <> struct VolnitskyImpl<false, true> : VolnitskyBase<VolnitskyImpl<fals
     {
     }
 
-    void putNGram(const UInt8 * const pos, const int offset, const UInt8 * const begin)
+    void putNGram(const UInt8 * const pos, const int offset, const UInt8 * const /*begin*/)
     {
         putNGramASCIICaseInsensitive(pos, offset);
     }

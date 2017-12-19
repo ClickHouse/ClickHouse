@@ -1,7 +1,5 @@
 #include <cmath>
 
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataStreams/VerticalRowOutputStream.h>
@@ -12,7 +10,7 @@ namespace DB
 {
 
 VerticalRowOutputStream::VerticalRowOutputStream(
-    WriteBuffer & ostr_, const Block & sample_, size_t max_rows_, const Context & context)
+    WriteBuffer & ostr_, const Block & sample_, size_t max_rows_)
     : ostr(ostr_), sample(sample_), max_rows(max_rows_)
 {
     size_t columns = sample.columns();

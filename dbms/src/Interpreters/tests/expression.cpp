@@ -57,7 +57,7 @@ int main(int argc, char ** argv)
         ExpressionAnalyzer analyzer(ast, context, {}, columns);
         ExpressionActionsChain chain;
         analyzer.appendSelect(chain, false);
-        analyzer.appendProjectResult(chain, false);
+        analyzer.appendProjectResult(chain);
         chain.finalize();
         ExpressionActionsPtr expression = chain.getLastActions();
 
@@ -65,40 +65,48 @@ int main(int argc, char ** argv)
 
         Block block;
 
-        ColumnWithTypeAndName column_x;
-        column_x.name = "x";
-        column_x.type = std::make_shared<DataTypeInt16>();
-        auto x = std::make_shared<ColumnInt16>();
-        column_x.column = x;
-        auto & vec_x = x->getData();
+        {
+            ColumnWithTypeAndName column;
+            column.name = "x";
+            column.type = std::make_shared<DataTypeInt16>();
+            auto col = ColumnInt16::create();
+            auto & vec_x = col->getData();
 
-        vec_x.resize(n);
-        for (size_t i = 0; i < n; ++i)
-            vec_x[i] = i;
+            vec_x.resize(n);
+            for (size_t i = 0; i < n; ++i)
+                vec_x[i] = i % 9;
 
-        block.insert(column_x);
+            column.column = std::move(col);
+            block.insert(column);
+        }
 
         const char * strings[] = {"abc", "def", "abcd", "defg", "ac"};
 
-        ColumnWithTypeAndName column_s1;
-        column_s1.name = "s1";
-        column_s1.type = std::make_shared<DataTypeString>();
-        column_s1.column = std::make_shared<ColumnString>();
+        {
+            ColumnWithTypeAndName column;
+            column.name = "s1";
+            column.type = std::make_shared<DataTypeString>();
+            auto col = ColumnString::create();
 
-        for (size_t i = 0; i < n; ++i)
-            column_s1.column->insert(String(strings[i % 5]));
+            for (size_t i = 0; i < n; ++i)
+                col->insert(std::string(strings[i % 5]));
 
-        block.insert(column_s1);
+            column.column = std::move(col);
+            block.insert(column);
+        }
 
-        ColumnWithTypeAndName column_s2;
-        column_s2.name = "s2";
-        column_s2.type = std::make_shared<DataTypeString>();
-        column_s2.column = std::make_shared<ColumnString>();
+        {
+            ColumnWithTypeAndName column;
+            column.name = "s2";
+            column.type = std::make_shared<DataTypeString>();
+            auto col = ColumnString::create();
 
-        for (size_t i = 0; i < n; ++i)
-            column_s2.column->insert(String(strings[i % 3]));
+            for (size_t i = 0; i < n; ++i)
+                col->insert(std::string(strings[i % 3]));
 
-        block.insert(column_s2);
+            column.column = std::move(col);
+            block.insert(column);
+        }
 
         {
             Stopwatch stopwatch;

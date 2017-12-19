@@ -33,7 +33,11 @@ START_HEADERS=$(echo \
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 # The latter options are the same that are added while building packages.
 
-for src_file in $(echo | $CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
+GCC_ROOT=`$CLANG -v 2>&1 | grep "Selected GCC installation"| sed -n -e 's/^.*: //p'`
+
+for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
+    -I $GCC_ROOT/include \
+    -I $GCC_ROOT/include-fixed \
     $(cat "$BUILD_PATH/include_directories.txt") \
     $(echo $START_HEADERS | sed -r -e 's/[^ ]+/-include \0/g') \
     - |
@@ -50,7 +54,14 @@ done
 # Копируем больше заголовочных файлов с интринсиками, так как на серверах, куда будут устанавливаться
 #  заголовочные файлы, будет использоваться опция -march=native.
 
-for i in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
+for src_file in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep -E '/lib/clang/|/include/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
-    cp "$i" "$DST/$i";
+    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$src_file";
+done
+
+# Even more platform-specific headers
+for src_file in $(ls -1 $SOURCE_PATH/contrib/libboost/boost_1_65_0/boost/smart_ptr/detail/*);
+do
+    cp "$src_file" "$DST/$src_file";
 done

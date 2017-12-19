@@ -57,7 +57,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 
@@ -72,6 +72,10 @@ public:
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
+        if (k == 0)
+            throw Exception("Parameter 0 is illegal for aggregate function " + getName(),
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
         threshold = k;
         reserved = TOP_K_LOAD_FACTOR * k;
     }
@@ -84,7 +88,7 @@ public:
         set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).value.merge(this->data(rhs).value);
     }
@@ -104,7 +108,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         const typename State::Set & set = this->data(place).value;
         auto result_vec = set.topK(threshold);
@@ -112,7 +116,7 @@ public:
 
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 
-        typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
         data_to.resize(old_size + size);
 
@@ -178,7 +182,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(input_data_type->clone());
+        return std::make_shared<DataTypeArray>(input_data_type);
     }
 
     bool allocatesMemoryInArena() const override
@@ -221,11 +225,13 @@ public:
             set.resize(reserved);
         }
 
-        StringRef str_serialized = column.getDataAt(row_num);
+        const char * begin = nullptr;
+        StringRef str_serialized = column.serializeValueIntoArena(row_num, *arena, begin);
         set.insert(str_serialized);
+        arena->rollback(str_serialized.size);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).value.merge(this->data(rhs).value);
     }
@@ -233,7 +239,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
 
         auto result_vec = this->data(place).value.topK(threshold);

@@ -44,7 +44,7 @@ namespace
 
 Field getValueFromConstantColumn(const ColumnPtr & column)
 {
-    if (!column->isConst())
+    if (!column->isColumnConst())
         throw Exception("Logical error: expected that column is constant", ErrorCodes::LOGICAL_ERROR);
     if (column->size() != 1)
         throw Exception("Logical error: expected that column with constant has single element", ErrorCodes::LOGICAL_ERROR);
@@ -221,7 +221,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
             String child_name = child->getColumnName();
             const TypeAndConstantInference::ExpressionInfo & child_info = info.at(child_name);
             columns_for_analysis.emplace_back(
-                child_info.is_constant_expression ? child_info.data_type->createConstColumn(1, child_info.value) : nullptr,
+                child_info.is_constant_expression ? child_info.data_type->createColumnConst(1, child_info.value) : nullptr,
                 child_info.data_type,
                 child_name);
 
@@ -249,7 +249,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         function_ptr->execute(block_with_constants, argument_numbers, result_position);
 
         const auto & result_column = block_with_constants.getByPosition(result_position).column;
-        if (result_column->isConst())
+        if (result_column->isColumnConst())
         {
             expression_info.is_constant_expression = true;
             expression_info.value = (*result_column)[0];
@@ -318,7 +318,7 @@ void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndCons
 }
 
 
-void processHigherOrderFunction(const String & column_name,
+void processHigherOrderFunction(
     ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
@@ -459,7 +459,7 @@ void processImpl(
     {
         /// If this is higher-order function, determine types of lambda arguments and infer types of subexpressions inside lambdas.
         if (lambdas.higher_order_functions.end() != std::find(lambdas.higher_order_functions.begin(), lambdas.higher_order_functions.end(), ast))
-            processHigherOrderFunction(column_name, ast, context, aliases, columns, info, lambdas, table_functions);
+            processHigherOrderFunction(ast, context, aliases, columns, info, lambdas, table_functions);
 
         processFunction(column_name, ast, info, context);
     }
@@ -513,7 +513,7 @@ void TypeAndConstantInference::dump(WriteBuffer & out) const
         else
         {
             std::stringstream formatted_ast;
-            formatAST(*it->second.node, formatted_ast, 0, false, true);
+            formatAST(*it->second.node, formatted_ast, false, true);
             writeString(formatted_ast.str(), out);
         }
 

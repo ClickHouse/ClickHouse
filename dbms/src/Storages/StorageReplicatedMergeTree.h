@@ -194,7 +194,7 @@ public:
     }
 
 private:
-    /// Delete old chunks from disk and from ZooKeeper.
+    /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;

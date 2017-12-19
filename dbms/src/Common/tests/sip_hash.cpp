@@ -137,7 +137,7 @@ int test_vectors()
 }
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     size_t n = 100000;
 

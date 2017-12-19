@@ -1,5 +1,3 @@
-SET experimental_allow_extended_storage_definition_syntax = 1;
-
 SET replication_alter_partitions_sync = 2;
 
 SELECT '*** Not partitioned ***';
