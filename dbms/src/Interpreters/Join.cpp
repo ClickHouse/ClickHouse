@@ -630,7 +630,7 @@ namespace
     void NO_INLINE joinBlockImplTypeCase(
         const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
         MutableColumns & added_columns, ConstNullMapPtr null_map, std::unique_ptr<IColumn::Filter> & filter,
-        IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate,
+        IColumn::Offset & current_offset, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate,
         const std::vector<size_t> & right_indexes)
     {
         size_t keys_size = key_columns.size();
@@ -667,7 +667,7 @@ namespace
     void joinBlockImplType(
         const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
         MutableColumns & added_columns, ConstNullMapPtr null_map, std::unique_ptr<IColumn::Filter> & filter,
-        IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate,
+        IColumn::Offset & current_offset, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate,
         const std::vector<size_t> & right_indexes)
     {
         if (null_map)
