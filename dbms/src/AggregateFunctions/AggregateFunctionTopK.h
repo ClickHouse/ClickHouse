@@ -228,6 +228,7 @@ public:
         const char * begin = nullptr;
         StringRef str_serialized = column.serializeValueIntoArena(row_num, *arena, begin);
         set.insert(str_serialized);
+        arena->rollback(str_serialized.size);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
