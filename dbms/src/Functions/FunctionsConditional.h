@@ -587,7 +587,7 @@ private:
             executeImpl(temporary_block, {0, 1, 2}, 3);
 
             const ColumnPtr & result_column = temporary_block.getByPosition(3).column;
-            if (checkColumn<ColumnNullable>(result_column.get()))
+            if (result_column->isColumnNullable())
             {
                 MutableColumnPtr mutable_result_column = result_column->mutate();
                 static_cast<ColumnNullable &>(*mutable_result_column).applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
@@ -741,7 +741,7 @@ private:
             {
                 if (arg_else.column->isColumnNullable())
                 {
-                    auto result_column = arg_else.column->clone();
+                    auto result_column = arg_else.column->mutate();
                     static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -782,7 +782,7 @@ private:
 
                 if (arg_then.column->isColumnNullable())
                 {
-                    auto result_column = arg_then.column->clone();
+                    auto result_column = arg_then.column->mutate();
                     static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
