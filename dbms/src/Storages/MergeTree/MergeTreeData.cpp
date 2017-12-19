@@ -1392,10 +1392,9 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
                 {
                     throw Exception("Cannot add part " + part_name + " covering pre-committed part " + part->name, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
                 }
-                else
+                else if (part->info.contains(part_info))
                 {
-                    if (part->info.contains(part_info))
-                        throw Exception("Cannot add part " + part_name + " covered by pre-committed part " + part->name + ". It is a bug", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Cannot add part " + part_name + " covered by pre-committed part " + part->name, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
                 }
             };
 

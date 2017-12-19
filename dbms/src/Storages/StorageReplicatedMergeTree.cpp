@@ -802,7 +802,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Parts in ZK.
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
-    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    /// There are no PreCommitted parts at startup.
+    auto parts = data.getDataParts({MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
 
     /// Local parts that are not in ZK.
     MergeTreeData::DataParts unexpected_parts;
@@ -1033,13 +1034,17 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         entry.type == LogEntry::MERGE_PARTS)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
-        MergeTreeData::DataPartPtr containing_part = data.getActiveContainingPart(entry.new_part_name);
+        MergeTreeData::DataPartPtr existing_part = data.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
+        if (!existing_part)
+            existing_part = data.getActiveContainingPart(entry.new_part_name);
 
         /// Even if the part is locally, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-        if (containing_part && getZooKeeper()->exists(replica_path + "/parts/" + containing_part->name))
+        if (existing_part && getZooKeeper()->exists(replica_path + "/parts/" + existing_part->name))
         {
             if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
-                LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " - part already exists.");
+            {
+                LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " because part " + existing_part->name + " already exists.");
+            }
             return true;
         }
     }
