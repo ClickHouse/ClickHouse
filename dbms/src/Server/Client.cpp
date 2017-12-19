@@ -982,6 +982,7 @@ private:
             String pager = config().getString("pager", "");
             if (!pager.empty())
             {
+                signal(SIGPIPE, SIG_IGN);
                 pager_cmd = ShellCommand::execute(pager, true);
                 out_buf = &pager_cmd->in;
             }
