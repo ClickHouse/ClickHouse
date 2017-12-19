@@ -212,7 +212,9 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     LOG_WARNING(log, "Checking part " << part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
-    auto part = storage.data.getActiveContainingPart(part_name);
+    auto part = storage.data.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
+    if (!part)
+        part = storage.data.getActiveContainingPart(part_name);
 
     /// We do not have this or a covering part.
     if (!part)
