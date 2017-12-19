@@ -151,8 +151,8 @@ public:
             ColumnNullable & to_concrete = static_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), *to_concrete.getNestedColumn());
-                to_concrete.getNullMap().push_back(0);
+                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
+                to_concrete.getNullMapData().push_back(0);
             }
             else
             {
@@ -205,7 +205,7 @@ public:
         if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
-            const IColumn * nested_column = column->getNestedColumn().get();
+            const IColumn * nested_column = &column->getNestedColumn();
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
     }
@@ -268,7 +268,7 @@ public:
                     /// we don't process this row.
                     return;
                 }
-                nested_columns[i] = nullable_col.getNestedColumn().get();
+                nested_columns[i] = &nullable_col.getNestedColumn();
             }
             else
                 nested_columns[i] = columns[i];

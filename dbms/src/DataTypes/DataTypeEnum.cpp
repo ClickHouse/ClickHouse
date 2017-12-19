@@ -109,13 +109,6 @@ DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.valu
 }
 
 template <typename Type>
-DataTypePtr DataTypeEnum<Type>::clone() const
-{
-    return std::make_shared<DataTypeEnum>(*this);
-}
-
-
-template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);

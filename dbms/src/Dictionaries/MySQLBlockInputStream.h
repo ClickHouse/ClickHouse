@@ -26,11 +26,6 @@ public:
 private:
     Block readImpl() override;
 
-    static void insertDefaultValue(IColumn * const column, const IColumn & sample_column)
-    {
-        column->insertFrom(sample_column, 0);
-    }
-
     mysqlxx::PoolWithFailover::Entry entry;
     mysqlxx::Query query;
     mysqlxx::UseQueryResult result;

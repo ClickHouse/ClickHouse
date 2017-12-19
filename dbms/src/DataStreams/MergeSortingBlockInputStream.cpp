@@ -204,12 +204,10 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
 template <typename TSortCursor>
 Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCursor> & queue)
 {
-    Block merged = blocks[0].cloneEmpty();
     size_t num_columns = blocks[0].columns();
 
-    ColumnPlainPtrs merged_columns;
-    for (size_t i = 0; i < num_columns; ++i)    /// TODO: reserve
-        merged_columns.push_back(merged.safeGetByPosition(i).column.get());
+    MutableColumns merged_columns = blocks[0].cloneEmptyColumns();
+    /// TODO: reserve (in each column)
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
@@ -230,19 +228,20 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
         ++total_merged_rows;
         if (limit && total_merged_rows == limit)
         {
+            auto res = blocks[0].cloneWithColumns(std::move(merged_columns));
             blocks.clear();
-            return merged;
+            return res;
         }
 
         ++merged_rows;
         if (merged_rows == max_merged_block_size)
-            return merged;
+            return blocks[0].cloneWithColumns(std::move(merged_columns));
     }
 
     if (merged_rows == 0)
-        merged.clear();
+        return {};
 
-    return merged;
+    return blocks[0].cloneWithColumns(std::move(merged_columns));
 }
 
 

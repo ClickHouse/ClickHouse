@@ -21,15 +21,8 @@ public:
 protected:
     Block readImpl()
     {
-        Block res;
-
-        ColumnWithTypeAndName column_with_type_and_name;
-
-        column_with_type_and_name.name = "number";
-        column_with_type_and_name.type = std::make_shared<DataTypeUInt64>();
-        auto column = std::make_shared<ColumnUInt64>(block_size);
-        ColumnUInt64::Container_t & vec = column->getData();
-        column_with_type_and_name.column = column;
+        auto column = ColumnUInt64::create(block_size);
+        ColumnUInt64::Container & vec = column->getData();
 
         size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = &vec[0]; /// This also accelerates the code.
@@ -37,10 +30,8 @@ protected:
         while (pos < end)
             *pos++ = curr++;
 
-        res.insert(std::move(column_with_type_and_name));
-
         next += step;
-        return res;
+        return { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeUInt64>(), "number") };
     }
 private:
     size_t block_size;

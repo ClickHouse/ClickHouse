@@ -48,24 +48,29 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    static void insertValue(IColumn * const column, const ValueType type, const Poco::Dynamic::Var & value)
+    static void insertValue(IColumn & column, const ValueType type, const Poco::Dynamic::Var & value)
     {
         switch (type)
         {
-            case ValueType::UInt8: static_cast<ColumnUInt8 *>(column)->insert(value.convert<UInt64>()); break;
-            case ValueType::UInt16: static_cast<ColumnUInt16 *>(column)->insert(value.convert<UInt64>()); break;
-            case ValueType::UInt32: static_cast<ColumnUInt32 *>(column)->insert(value.convert<UInt64>()); break;
-            case ValueType::UInt64: static_cast<ColumnUInt64 *>(column)->insert(value.convert<UInt64>()); break;
-            case ValueType::Int8: static_cast<ColumnInt8 *>(column)->insert(value.convert<Int64>()); break;
-            case ValueType::Int16: static_cast<ColumnInt16 *>(column)->insert(value.convert<Int64>()); break;
-            case ValueType::Int32: static_cast<ColumnInt32 *>(column)->insert(value.convert<Int64>()); break;
-            case ValueType::Int64: static_cast<ColumnInt64 *>(column)->insert(value.convert<Int64>()); break;
-            case ValueType::Float32: static_cast<ColumnFloat32 *>(column)->insert(value.convert<Float64>()); break;
-            case ValueType::Float64: static_cast<ColumnFloat64 *>(column)->insert(value.convert<Float64>()); break;
-            case ValueType::String: static_cast<ColumnString *>(column)->insert(value.convert<String>()); break;
-            case ValueType::Date: static_cast<ColumnUInt16 *>(column)->insert(UInt16{LocalDate{value.convert<String>()}.getDayNum()}); break;
-            case ValueType::DateTime: static_cast<ColumnUInt32 *>(column)->insert(time_t{LocalDateTime{value.convert<String>()}}); break;
+            case ValueType::UInt8: static_cast<ColumnUInt8 &>(column).insert(value.convert<UInt64>()); break;
+            case ValueType::UInt16: static_cast<ColumnUInt16 &>(column).insert(value.convert<UInt64>()); break;
+            case ValueType::UInt32: static_cast<ColumnUInt32 &>(column).insert(value.convert<UInt64>()); break;
+            case ValueType::UInt64: static_cast<ColumnUInt64 &>(column).insert(value.convert<UInt64>()); break;
+            case ValueType::Int8: static_cast<ColumnInt8 &>(column).insert(value.convert<Int64>()); break;
+            case ValueType::Int16: static_cast<ColumnInt16 &>(column).insert(value.convert<Int64>()); break;
+            case ValueType::Int32: static_cast<ColumnInt32 &>(column).insert(value.convert<Int64>()); break;
+            case ValueType::Int64: static_cast<ColumnInt64 &>(column).insert(value.convert<Int64>()); break;
+            case ValueType::Float32: static_cast<ColumnFloat32 &>(column).insert(value.convert<Float64>()); break;
+            case ValueType::Float64: static_cast<ColumnFloat64 &>(column).insert(value.convert<Float64>()); break;
+            case ValueType::String: static_cast<ColumnString &>(column).insert(value.convert<String>()); break;
+            case ValueType::Date: static_cast<ColumnUInt16 &>(column).insert(UInt16{LocalDate{value.convert<String>()}.getDayNum()}); break;
+            case ValueType::DateTime: static_cast<ColumnUInt32 &>(column).insert(time_t{LocalDateTime{value.convert<String>()}}); break;
         }
+    }
+
+    void insertDefaultValue(IColumn & column, const IColumn & sample_column)
+    {
+        column.insertFrom(sample_column, 0);
     }
 }
 
@@ -75,12 +80,9 @@ Block ODBCBlockInputStream::readImpl()
     if (iterator == result.end())
         return {};
 
-    auto block = description.sample_block.cloneEmpty();
-
-    /// cache pointers returned by the calls to getByPosition
-    std::vector<IColumn *> columns(block.columns());
+    MutableColumns columns(description.sample_block.columns());
     for (const auto i : ext::range(0, columns.size()))
-        columns[i] = block.getByPosition(i).column.get();
+        columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
     while (iterator != result.end())
@@ -92,9 +94,9 @@ Block ODBCBlockInputStream::readImpl()
             const Poco::Dynamic::Var & value = row[idx];
 
             if (!value.isEmpty())
-                insertValue(columns[idx], description.types[idx], value);
+                insertValue(*columns[idx], description.types[idx], value);
             else
-                insertDefaultValue(columns[idx], *description.sample_columns[idx]);
+                insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
         }
 
         ++iterator;
@@ -105,7 +107,7 @@ Block ODBCBlockInputStream::readImpl()
 
     }
 
-    return block;
+    return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
 }

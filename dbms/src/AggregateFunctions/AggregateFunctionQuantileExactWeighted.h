@@ -230,7 +230,7 @@ public:
         size_t size = map.size();
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         size_t num_levels = levels.size();
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + num_levels);
@@ -238,7 +238,7 @@ public:
         if (!num_levels)
             return;
 
-        typename ColumnVector<ValueType>::Container_t & data_to = static_cast<ColumnVector<ValueType> &>(arr_to.getData()).getData();
+        typename ColumnVector<ValueType>::Container & data_to = static_cast<ColumnVector<ValueType> &>(arr_to.getData()).getData();
 
         size_t old_size = data_to.size();
         data_to.resize(old_size + num_levels);
