@@ -30,6 +30,9 @@ private:
     friend class COWPtr<IColumn>;
 
     /// Creates the same column with the same data.
+    /// This is internal method to use from COWPtr.
+    /// It performs shallow copy with copy-ctor and not useful from outside.
+    /// If you want to copy column for modification, look at 'mutate' method.
     virtual MutablePtr clone() const = 0;
 
 public:
