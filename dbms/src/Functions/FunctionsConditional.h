@@ -578,7 +578,7 @@ private:
         {
             Block temporary_block
             {
-                { static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumnPtr(), arg_cond.type, arg_cond.name },
+                { static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumnPtr(), removeNullable(arg_cond.type), arg_cond.name },
                 block.getByPosition(arguments[1]),
                 block.getByPosition(arguments[2]),
                 block.getByPosition(result)
@@ -590,7 +590,7 @@ private:
             if (ColumnNullable * result_nullable = typeid_cast<ColumnNullable *>(result_column.get()))
             {
                 result_nullable->applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
-                block.getByPosition(result).column = std::move(result_nullable);
+                block.getByPosition(result).column = std::move(result_column);
                 return true;
             }
             else if (result_column->onlyNull())
