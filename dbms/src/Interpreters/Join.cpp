@@ -554,10 +554,10 @@ namespace
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
             size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
-            size_t num_columns_to_skip)
+            const std::vector<size_t> & right_indexes)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
-                added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
+                added_columns[j]->insertFrom(*it->second.block->getByPosition(right_indexes[j]).column.get(), it->second.row_num);
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
@@ -573,12 +573,12 @@ namespace
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
             size_t i, IColumn::Filter * filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
-            size_t num_columns_to_skip)
+            const std::vector<size_t> & right_indexes)
         {
             (*filter)[i] = 1;
 
             for (size_t j = 0; j < num_columns_to_add; ++j)
-                added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
+                added_columns[j]->insertFrom(*it->second.block->getByPosition(right_indexes[j]).column.get(), it->second.row_num);
         }
 
         static void addNotFound(size_t /*num_columns_to_add*/, MutableColumns & /*added_columns*/,
@@ -593,13 +593,13 @@ namespace
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
             size_t i, IColumn::Filter * /*filter*/, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
-            size_t num_columns_to_skip)
+            const std::vector<size_t> & right_indexes)
         {
             size_t rows_joined = 0;
             for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr; current = current->next)
             {
                 for (size_t j = 0; j < num_columns_to_add; ++j)
-                    added_columns[j]->insertFrom(*current->block->getByPosition(num_columns_to_skip + j).column.get(), current->row_num);
+                    added_columns[j]->insertFrom(*current->block->getByPosition(right_indexes[j]).column.get(), current->row_num);
 
                 ++rows_joined;
             }
@@ -628,11 +628,14 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     void NO_INLINE joinBlockImplTypeCase(
-        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
-        size_t num_columns_to_add, size_t num_columns_to_skip, MutableColumns & added_columns, ConstNullMapPtr null_map,
-        std::unique_ptr<IColumn::Filter> & filter,
-        IColumn::Offset & current_offset, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
+        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
+        MutableColumns & added_columns, ConstNullMapPtr null_map, std::unique_ptr<IColumn::Filter> & filter,
+        IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate,
+        const std::vector<size_t> & right_indexes)
     {
+        size_t keys_size = key_columns.size();
+        size_t num_columns_to_add = right_indexes.size();
+
         KeyGetter key_getter(key_columns);
 
         for (size_t i = 0; i < rows; ++i)
@@ -651,7 +654,7 @@ namespace
                 {
                     it->second.setUsed();
                     Adder<KIND, STRICTNESS, Map>::addFound(
-                        it, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
+                        it, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), right_indexes);
                 }
                 else
                     Adder<KIND, STRICTNESS, Map>::addNotFound(
@@ -662,19 +665,19 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     void joinBlockImplType(
-        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
-        size_t num_columns_to_add, size_t num_columns_to_skip, MutableColumns & added_columns, ConstNullMapPtr null_map,
-        std::unique_ptr<IColumn::Filter> & filter,
-        IColumn::Offset & current_offset, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
+        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
+        MutableColumns & added_columns, ConstNullMapPtr null_map, std::unique_ptr<IColumn::Filter> & filter,
+        IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate,
+        const std::vector<size_t> & right_indexes)
     {
         if (null_map)
             joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, true>(
-                map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
-                added_columns, null_map, filter, current_offset, offsets_to_replicate);
+                map, rows, key_columns, key_sizes, added_columns, null_map, filter,
+                current_offset, offsets_to_replicate, right_indexes);
         else
             joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, false>(
-                map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
-                added_columns, null_map, filter, current_offset, offsets_to_replicate);
+                map, rows, key_columns, key_sizes, added_columns, null_map, filter,
+                current_offset, offsets_to_replicate, right_indexes);
     }
 }
 
@@ -729,15 +732,33 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         }
     }
 
+    /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
+      * For FULL/RIGHT JOIN, the saved blocks contain keys;
+      *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
+      */
+    size_t num_columns_to_skip = 0;
+    if (getFullness(kind))
+        num_columns_to_skip = keys_size;
+
     /// Add new columns to the block.
     size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
-    MutableColumns added_columns(num_columns_to_add);
+    MutableColumns added_columns;
+    added_columns.reserve(num_columns_to_add);
+
+    std::vector<size_t> right_indexes;
+    right_indexes.reserve(num_columns_to_add);
 
     for (size_t i = 0; i < num_columns_to_add; ++i)
     {
-        const ColumnWithTypeAndName & sample_col = sample_block_with_columns_to_add.safeGetByPosition(i);
-        added_columns[i] = sample_col.column->cloneEmpty();
-        added_columns[i]->reserve(sample_col.column->size());
+        const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
+
+        /// Don't insert column if it's in left block.
+        if (!block.has(src_column.name))
+        {
+            added_columns.push_back(src_column.column->cloneEmpty());
+            added_columns.back()->reserve(src_column.column->size());
+            right_indexes.push_back(num_columns_to_skip + i);
+        }
     }
 
     size_t rows = block.rows();
@@ -755,22 +776,13 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     if (strictness == ASTTableJoin::Strictness::All)
         offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
-    /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
-      * For FULL/RIGHT JOIN, the saved blocks contain keys;
-      *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
-      */
-    size_t num_columns_to_skip = 0;
-    if (getFullness(kind))
-        num_columns_to_skip = keys_size;
-
     switch (type)
     {
     #define M(TYPE) \
         case Join::Type::TYPE: \
             joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE>::Type>(\
-                *maps.TYPE, rows, key_columns, keys_size, key_sizes, \
-                num_columns_to_add, num_columns_to_skip, added_columns, null_map, \
-                filter, current_offset, offsets_to_replicate); \
+                *maps.TYPE, rows, key_columns, key_sizes, added_columns, null_map, \
+                filter, current_offset, offsets_to_replicate, right_indexes); \
             break;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M

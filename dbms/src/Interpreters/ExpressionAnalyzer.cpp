@@ -2707,6 +2707,10 @@ void ExpressionAnalyzer::collectUsedColumns()
     NameSet required;
     NameSet ignored;
 
+    NameSet available_columns;
+    for (const auto & column : columns)
+        available_columns.insert(column.name);
+
     if (select_query && select_query->array_join_expression_list())
     {
         ASTs & expressions = select_query->array_join_expression_list()->children;
@@ -2722,7 +2726,7 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 /// Nothing needs to be ignored for expressions in ARRAY JOIN.
                 NameSet empty;
-                getRequiredColumnsImpl(expressions[i], required, empty, empty, empty);
+                getRequiredColumnsImpl(expressions[i], available_columns, required, empty, empty, empty);
             }
 
             ignored.insert(expressions[i]->getAliasOrColumnName());
@@ -2736,7 +2740,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     collectJoinedColumns(available_joined_columns, columns_added_by_join);
 
     NameSet required_joined_columns;
-    getRequiredColumnsImpl(ast, required, ignored, available_joined_columns, required_joined_columns);
+    getRequiredColumnsImpl(ast, available_columns, required, ignored, available_joined_columns, required_joined_columns);
 
     for (NamesAndTypesList::iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
     {
@@ -2858,7 +2862,7 @@ Names ExpressionAnalyzer::getRequiredColumns() const
 
 
 void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
-    NameSet & required_columns, NameSet & ignored_names,
+    const NameSet & available_columns, NameSet & required_columns, NameSet & ignored_names,
     const NameSet & available_joined_columns, NameSet & required_joined_columns)
 {
     /** Find all the identifiers in the query.
@@ -2876,7 +2880,8 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
             && !ignored_names.count(node->name)
             && !ignored_names.count(DataTypeNested::extractNestedTableName(node->name)))
         {
-            if (!available_joined_columns.count(node->name))
+            if (!available_joined_columns.count(node->name)
+                || available_columns.count(node->name)) /// Read column from left table if has.
                 required_columns.insert(node->name);
             else
                 required_joined_columns.insert(node->name);
@@ -2914,7 +2919,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
             }
 
             getRequiredColumnsImpl(node->arguments->children.at(1),
-                required_columns, ignored_names,
+                available_columns, required_columns, ignored_names,
                 available_joined_columns, required_joined_columns);
 
             for (size_t i = 0; i < added_ignored.size(); ++i)
@@ -2937,7 +2942,8 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
           */
         if (!typeid_cast<ASTSelectQuery *>(child.get())
             && !typeid_cast<ASTArrayJoin *>(child.get()))
-            getRequiredColumnsImpl(child, required_columns, ignored_names, available_joined_columns, required_joined_columns);
+            getRequiredColumnsImpl(child, available_columns, required_columns,
+                                   ignored_names, available_joined_columns, required_joined_columns);
     }
 }
 
