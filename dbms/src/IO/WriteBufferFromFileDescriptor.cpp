@@ -51,11 +51,6 @@ void WriteBufferFromFileDescriptor::nextImpl()
 
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
-            if (errno == EPIPE)
-            {
-                break;
-            }
-
             ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteFailed);
             throwFromErrno("Cannot write to file " + getFileName(), ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
         }
