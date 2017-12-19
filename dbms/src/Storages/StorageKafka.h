@@ -55,7 +55,8 @@ public:
 
 private:
     /// Each engine typically has one consumer (able to process 1..N partitions)
-    /// In the future the table engine could have multiple consumers for better throughput
+    /// It is however possible to create multiple consumers per table, as long
+    /// as the total number of consumers is <= number of partitions.
     struct Consumer
     {
         Consumer(struct rd_kafka_conf_s * conf);
