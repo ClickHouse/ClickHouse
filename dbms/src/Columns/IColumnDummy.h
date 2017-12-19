@@ -21,11 +21,13 @@ namespace ErrorCodes
 class IColumnDummy : public IColumn
 {
 public:
+    IColumnDummy() : s(0) {}
     IColumnDummy(size_t s_) : s(s_) {}
 
-    virtual ColumnPtr cloneDummy(size_t s_) const = 0;
+public:
+    virtual MutableColumnPtr cloneDummy(size_t s_) const = 0;
 
-    ColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
+    MutableColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
     size_t size() const override { return s; }
     void insertDefault() override { ++s; }
     void popBack(size_t n) override { s -= n; }
@@ -72,12 +74,12 @@ public:
         s += length;
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
+    MutableColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
         return cloneDummy(countBytesInFilter(filt));
     }
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (s != perm.size())
             throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -92,7 +94,7 @@ public:
             res[i] = i;
     }
 
-    ColumnPtr replicate(const Offsets_t & offsets) const override
+    MutableColumnPtr replicate(const Offsets & offsets) const override
     {
         if (s != offsets.size())
             throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -100,7 +102,7 @@ public:
         return cloneDummy(s == 0 ? 0 : offsets.back());
     }
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         if (s != selector.size())
             throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -109,7 +111,7 @@ public:
         for (auto idx : selector)
             ++counts[idx];
 
-        Columns res(num_columns);
+        MutableColumns res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             res[i] = cloneResized(counts[i]);
 
@@ -135,7 +137,7 @@ public:
         return true;
     }
 
-private:
+protected:
     size_t s;
 };
 

@@ -23,7 +23,7 @@ public:
     virtual ~ICatBoostModel() = default;
     /// Evaluate model. Use first `float_features_count` columns as float features,
     /// the others `cat_features_count` as categorical features.
-    virtual ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const = 0;
+    virtual ColumnPtr evaluate(const ColumnRawPtrs & columns) const = 0;
 
     virtual size_t getFloatFeaturesCount() const = 0;
     virtual size_t getCatFeaturesCount() const = 0;
@@ -33,7 +33,7 @@ public:
 class IModel : public IExternalLoadable
 {
 public:
-    virtual ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const = 0;
+    virtual ColumnPtr evaluate(const ColumnRawPtrs & columns) const = 0;
     virtual std::string getTypeName() const = 0;
 };
 
@@ -43,7 +43,7 @@ public:
     CatBoostModel(std::string name, std::string model_path,
                   std::string lib_path, const ExternalLoadableLifetime & lifetime);
 
-    ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const override;
+    ColumnPtr evaluate(const ColumnRawPtrs & columns) const override;
     std::string getTypeName() const override { return "catboost"; }
 
     size_t getFloatFeaturesCount() const;

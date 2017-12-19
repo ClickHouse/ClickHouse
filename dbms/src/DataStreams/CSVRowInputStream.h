@@ -18,9 +18,9 @@ public:
     /** with_names - in the first line the header with column names
       * with_types - on the next line header with type names
       */
-    CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, const char delimiter_, bool with_names_ = false, bool with_types_ = false);
+    CSVRowInputStream(ReadBuffer & istr_, const Block & header_, const char delimiter_, bool with_names_ = false, bool with_types_ = false);
 
-    bool read(Block & block) override;
+    bool read(MutableColumns & columns) override;
     void readPrefix() override;
     bool allowSyncAfterError() const override { return true; };
     void syncAfterError() override;
@@ -29,7 +29,7 @@ public:
 
 private:
     ReadBuffer & istr;
-    const Block sample;
+    Block header;
     const char delimiter;
     bool with_names;
     bool with_types;
@@ -48,7 +48,7 @@ private:
 
     void updateDiagnosticInfo();
 
-    bool parseRowAndPrintDiagnosticInfo(Block & block,
+    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
 };
 

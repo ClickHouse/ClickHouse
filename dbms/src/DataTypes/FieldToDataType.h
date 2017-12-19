@@ -7,7 +7,7 @@ namespace DB
 {
 
 class IDataType;
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 
 /** For a given value, Field returns the minimum data type that allows this value to be stored.

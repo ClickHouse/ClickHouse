@@ -12,21 +12,24 @@ namespace DB
   * Mixed constant/non-constant columns is prohibited in tuple
   *  for implementation simplicity.
   */
-class ColumnTuple final : public IColumn
+class ColumnTuple final : public COWPtrHelper<IColumn, ColumnTuple>
 {
 private:
+    friend class COWPtrHelper<IColumn, ColumnTuple>;
+
     Columns columns;
 
     template <bool positive>
     struct Less;
 
-public:
     ColumnTuple(const Columns & columns);
+    ColumnTuple(const ColumnTuple &) = default;
 
+public:
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
-    ColumnPtr cloneEmpty() const override;
+    MutableColumnPtr cloneEmpty() const override;
 
     size_t size() const override
     {
@@ -46,10 +49,10 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
-    ColumnPtr replicate(const Offsets_t & offsets) const override;
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    MutableColumnPtr replicate(const Offsets & offsets) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     void getExtremes(Field & min, Field & max) const override;
@@ -59,8 +62,16 @@ public:
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
 
+    size_t tupleSize() const { return columns.size(); }
+
+    const IColumn & getColumn(size_t idx) const { return *columns[idx]; }
+    IColumn & getColumn(size_t idx) { return *columns[idx]->assumeMutable(); }
+
     const Columns & getColumns() const { return columns; }
-    Columns & getColumns() { return columns; }
+
+    const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
+    //ColumnPtr & getColumnPtr(size_t idx) { return columns[idx]; }
+    //MutableColumnPtr getColumnMutablePtr(size_t idx) { return columns[idx]->assumeMutable(); }
 };
 
 

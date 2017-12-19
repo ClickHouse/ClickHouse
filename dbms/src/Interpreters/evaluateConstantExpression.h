@@ -17,7 +17,7 @@ class IDataType;
   * Used in rare cases - for elements of set for IN, for data to INSERT.
   * Quite suboptimal.
   */
-std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context);
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context);
 
 
 /** Evaluate constant expression

@@ -46,8 +46,8 @@ if (LINE_EDITING_LIBS AND READLINE_INCLUDE_DIR)
         #include <readline/readline.h>
         #include <readline/history.h>
         int main() {
-            add_history(nullptr);
-            append_history(1,nullptr);
+            add_history(NULL);
+            append_history(1,NULL);
             return 0;
         }
     " HAVE_READLINE_HISTORY)

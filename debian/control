@@ -36,7 +36,7 @@ Description: debugging symbols for clickhouse-common
 Package: clickhouse-server
 Architecture: any
 Pre-Depends: clickhouse-common (= ${binary:Version})
-Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
 Replaces: clickhouse-server-common
 Provides: clickhouse-server-common
 Conflicts: clickhouse-server-common
