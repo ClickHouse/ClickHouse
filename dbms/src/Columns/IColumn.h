@@ -29,10 +29,10 @@ class IColumn : public COWPtr<IColumn>
 private:
     friend class COWPtr<IColumn>;
 
-public:
     /// Creates the same column with the same data.
     virtual MutablePtr clone() const = 0;
 
+public:
     /// Name of a Column. It is used in info messages.
     virtual std::string getName() const { return getFamilyName(); };
 
