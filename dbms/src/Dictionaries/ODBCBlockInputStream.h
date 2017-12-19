@@ -32,11 +32,6 @@ public:
 private:
     Block readImpl() override;
 
-    static void insertDefaultValue(IColumn * const column, const IColumn & sample_column)
-    {
-        column->insertFrom(sample_column, 0);
-    }
-
     Poco::Data::Session session;
     Poco::Data::Statement statement;
     Poco::Data::RecordSet result;

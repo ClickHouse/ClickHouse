@@ -50,7 +50,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-                const auto & null_map = nullable_col.getNullMap();
+                const auto & null_map = nullable_col.getNullMapData();
                 bool has_nulls = !memoryIsZero(null_map.data(), null_map.size());
 
                 if (has_nulls)
@@ -58,7 +58,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                         ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
                 else
                     res.insert({
-                        nullable_col.getNestedColumn(),
+                        nullable_col.getNestedColumnPtr(),
                         nullable_type.getNestedType(),
                         rename[i].value_or(elem.name)
                     });
@@ -66,13 +66,12 @@ Block NullableAdapterBlockInputStream::readImpl()
             }
             case TO_NULLABLE:
             {
-                auto null_map = std::make_shared<ColumnUInt8>(elem.column->size(), 0);
+                ColumnPtr null_map = ColumnUInt8::create(elem.column->size(), 0);
 
                 res.insert({
-                    std::make_shared<ColumnNullable>(elem.column, null_map),
+                    ColumnNullable::create(elem.column, null_map),
                     std::make_shared<DataTypeNullable>(elem.type),
-                    rename[i].value_or(elem.name)
-                });
+                    rename[i].value_or(elem.name)});
                 break;
             }
             case NONE:

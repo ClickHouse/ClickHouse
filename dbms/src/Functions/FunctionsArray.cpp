@@ -24,6 +24,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+}
+
 
 /// Implementation of FunctionArray.
 
@@ -74,7 +80,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         if (!arg.type->equals(*elem_type))
             preprocessed_column = castColumn(arg, elem_type, context);
 
-        if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
+        if (ColumnPtr materialized_column = preprocessed_column->convertToFullColumnIfConst())
             preprocessed_column = materialized_column;
 
         columns_holder[i] = std::move(preprocessed_column);
@@ -84,14 +90,14 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
     /** Create and fill the result array.
         */
 
-    auto out = std::make_shared<ColumnArray>(elem_type->createColumn());
+    auto out = ColumnArray::create(elem_type->createColumn());
     IColumn & out_data = out->getData();
-    IColumn::Offsets_t & out_offsets = out->getOffsets();
+    IColumn::Offsets & out_offsets = out->getOffsets();
 
     out_data.reserve(block_size * num_elements);
     out_offsets.resize(block_size);
 
-    IColumn::Offset_t current_offset = 0;
+    IColumn::Offset current_offset = 0;
     for (size_t i = 0; i < block_size; ++i)
     {
         for (size_t j = 0; j < num_elements; ++j)
@@ -101,7 +107,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         out_offsets[i] = current_offset;
     }
 
-    block.getByPosition(result).column = out;
+    block.getByPosition(result).column = std::move(out);
 }
 
 
@@ -123,9 +129,9 @@ public:
 
     void initSink(size_t size)
     {
-        auto sink = std::make_shared<ColumnUInt8>(size);
+        auto sink = ColumnUInt8::create(size);
         sink_null_map = sink->getData().data();
-        sink_null_map_holder = sink;
+        sink_null_map_holder = std::move(sink);
     }
 
     void update(size_t from)
@@ -140,12 +146,12 @@ public:
         ++index;
     }
 
-    ColumnPtr getNullMap() const { return sink_null_map_holder; }
+    ColumnPtr getNullMapData() && { return std::move(sink_null_map_holder); }
 
 private:
     const UInt8 * src_null_map = nullptr;
     UInt8 * sink_null_map = nullptr;
-    ColumnPtr sink_null_map_holder;
+    MutableColumnPtr sink_null_map_holder;
     size_t index = 0;
 };
 
@@ -163,14 +169,14 @@ struct ArrayElementNumImpl
       */
     template <bool negative>
     static void vectorConst(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
-        const ColumnArray::Offset_t index,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
+        const ColumnArray::Offset index,
         PaddedPODArray<T> & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -198,14 +204,14 @@ struct ArrayElementNumImpl
       */
     template <typename TIndex>
     static void vector(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & data, const ColumnArray::Offsets & offsets,
         const PaddedPODArray<TIndex> & indices,
         PaddedPODArray<T> & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -244,17 +250,17 @@ struct ArrayElementStringImpl
 {
     template <bool negative>
     static void vectorConst(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
-        const ColumnArray::Offset_t index,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets,
+        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnArray::Offset index,
+        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
         result_data.reserve(data.size());
 
-        ColumnArray::Offset_t current_offset = 0;
-        ColumnArray::Offset_t current_result_offset = 0;
+        ColumnArray::Offset current_offset = 0;
+        ColumnArray::Offset current_result_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -267,11 +273,11 @@ struct ArrayElementStringImpl
                 if (builder)
                     builder.update(j);
 
-                ColumnArray::Offset_t string_pos = current_offset == 0 && adjusted_index == 0
+                ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
                     : string_offsets[current_offset + adjusted_index - 1];
 
-                ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
+                ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
                 result_data.resize(current_result_offset + string_size);
                 memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
@@ -298,17 +304,17 @@ struct ArrayElementStringImpl
       */
     template <typename TIndex>
     static void vector(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const PaddedPODArray<TIndex> & indices,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets_t & result_offsets,
+        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result_offsets.resize(size);
         result_data.reserve(data.size());
 
-        ColumnArray::Offset_t current_offset = 0;
-        ColumnArray::Offset_t current_result_offset = 0;
+        ColumnArray::Offset current_offset = 0;
+        ColumnArray::Offset current_result_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -328,11 +334,11 @@ struct ArrayElementStringImpl
                 if (builder)
                     builder.update(j);
 
-                ColumnArray::Offset_t string_pos = current_offset == 0 && adjusted_index == 0
+                ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
                     : string_offsets[current_offset + adjusted_index - 1];
 
-                ColumnArray::Offset_t string_size = string_offsets[current_offset + adjusted_index] - string_pos;
+                ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
                 result_data.resize(current_result_offset + string_size);
                 memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
@@ -361,14 +367,14 @@ struct ArrayElementGenericImpl
 {
     template <bool negative>
     static void vectorConst(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
-        const ColumnArray::Offset_t index,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
+        const ColumnArray::Offset index,
         IColumn & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -395,14 +401,14 @@ struct ArrayElementGenericImpl
       */
     template <typename TIndex>
     static void vector(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & data, const ColumnArray::Offsets & offsets,
         const PaddedPODArray<TIndex> & indices,
         IColumn & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
         result.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -457,8 +463,7 @@ bool FunctionArrayElement::executeNumberConst(Block & block, const ColumnNumbers
     if (!col_nested)
         return false;
 
-    auto col_res = std::make_shared<ColumnVector<DataType>>();
-    block.getByPosition(result).column = col_res;
+    auto col_res = ColumnVector<DataType>::create();
 
     if (index.getType() == Field::Types::UInt64)
         ArrayElementNumImpl<DataType>::template vectorConst<false>(
@@ -469,6 +474,7 @@ bool FunctionArrayElement::executeNumberConst(Block & block, const ColumnNumbers
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -486,12 +492,12 @@ bool FunctionArrayElement::executeNumber(Block & block, const ColumnNumbers & ar
     if (!col_nested)
         return false;
 
-    auto col_res = std::make_shared<ColumnVector<DataType>>();
-    block.getByPosition(result).column = col_res;
+    auto col_res = ColumnVector<DataType>::create();
 
     ArrayElementNumImpl<DataType>::template vector<IndexType>(
         col_nested->getData(), col_array->getOffsets(), indices, col_res->getData(), builder);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -508,8 +514,7 @@ bool FunctionArrayElement::executeStringConst(Block & block, const ColumnNumbers
     if (!col_nested)
         return false;
 
-    std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-    block.getByPosition(result).column = col_res;
+    auto col_res = ColumnString::create();
 
     if (index.getType() == Field::Types::UInt64)
         ArrayElementStringImpl::vectorConst<false>(
@@ -532,6 +537,7 @@ bool FunctionArrayElement::executeStringConst(Block & block, const ColumnNumbers
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -549,8 +555,7 @@ bool FunctionArrayElement::executeString(Block & block, const ColumnNumbers & ar
     if (!col_nested)
         return false;
 
-    std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-    block.getByPosition(result).column = col_res;
+    auto col_res = ColumnString::create();
 
     ArrayElementStringImpl::vector<IndexType>(
         col_nested->getChars(),
@@ -561,6 +566,7 @@ bool FunctionArrayElement::executeString(Block & block, const ColumnNumbers & ar
         col_res->getOffsets(),
         builder);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -574,7 +580,6 @@ bool FunctionArrayElement::executeGenericConst(Block & block, const ColumnNumber
 
     const auto & col_nested = col_array->getData();
     auto col_res = col_nested.cloneEmpty();
-    block.getByPosition(result).column = col_res;
 
     if (index.getType() == Field::Types::UInt64)
         ArrayElementGenericImpl::vectorConst<false>(
@@ -585,6 +590,7 @@ bool FunctionArrayElement::executeGenericConst(Block & block, const ColumnNumber
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -599,11 +605,11 @@ bool FunctionArrayElement::executeGeneric(Block & block, const ColumnNumbers & a
 
     const auto & col_nested = col_array->getData();
     auto col_res = col_nested.cloneEmpty();
-    block.getByPosition(result).column = col_res;
 
     ArrayElementGenericImpl::vector<IndexType>(
         col_nested, col_array->getOffsets(), indices, *col_res, builder);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -616,10 +622,9 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
     if (!col_array)
         return false;
 
-    block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+    auto res = block.getByPosition(result).type->createColumn();
 
     size_t rows = block.rows();
-    IColumn & result_column = *block.getByPosition(result).column;
     const IColumn & array_elements = col_array->getData();
     size_t array_size = array_elements.size();
 
@@ -629,25 +634,26 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
         if (index > 0 && static_cast<size_t>(index) <= array_size)
         {
             size_t j = index - 1;
-            result_column.insertFrom(array_elements, j);
+            res->insertFrom(array_elements, j);
             if (builder)
                 builder.update(j);
         }
         else if (index < 0 && static_cast<size_t>(-index) <= array_size)
         {
             size_t j = array_size + index;
-            result_column.insertFrom(array_elements, j);
+            res->insertFrom(array_elements, j);
             if (builder)
                 builder.update(j);
         }
         else
         {
-            result_column.insertDefault();
+            res->insertDefault();
             if (builder)
                 builder.update();
         }
     }
 
+    block.getByPosition(result).column = std::move(res);
     return true;
 }
 
@@ -721,7 +727,7 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     for (size_t i = 0; i < tuple_size; ++i)
     {
         ColumnWithTypeAndName array_of_tuple_section;
-        array_of_tuple_section.column = std::make_shared<ColumnArray>(tuple_columns[i], col_array->getOffsetsColumn());
+        array_of_tuple_section.column = ColumnArray::create(tuple_columns[i], col_array->getOffsetsPtr());
         array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_types[i]);
         block_of_temporary_results.insert(array_of_tuple_section);
 
@@ -735,7 +741,7 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
         result_tuple_columns.emplace_back(std::move(block_of_temporary_results.getByPosition(i * 2 + 2).column));
     }
 
-    block.getByPosition(result).column = std::make_shared<ColumnTuple>(result_tuple_columns);
+    block.getByPosition(result).column = ColumnTuple::create(result_tuple_columns);
 
     return true;
 }
@@ -795,13 +801,13 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         if (col_array)
         {
             const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumn();
+            const auto & nested_col = nullable_col.getNestedColumnPtr();
 
             /// Put nested_col inside a ColumnArray.
             source_block =
             {
                 {
-                    std::make_shared<ColumnArray>(nested_col, col_array->getOffsetsColumn()),
+                    ColumnArray::create(nested_col, col_array->getOffsetsPtr()),
                     std::make_shared<DataTypeArray>(input_type),
                     ""
                 },
@@ -813,18 +819,18 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            builder.initSource(nullable_col.getNullMap().data());
+            builder.initSource(nullable_col.getNullMapData().data());
         }
         else
         {
             /// ColumnConst(ColumnArray(ColumnNullable(...)))
             const auto & nullable_col = static_cast<const ColumnNullable &>(col_const_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumn();
+            const auto & nested_col = nullable_col.getNestedColumnPtr();
 
             source_block =
             {
                 {
-                    std::make_shared<ColumnConst>(std::make_shared<ColumnArray>(nested_col, col_const_array->getOffsetsColumn()), block.rows()),
+                    ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsPtr()), block.rows()),
                     std::make_shared<DataTypeArray>(input_type),
                     ""
                 },
@@ -836,7 +842,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            builder.initSource(nullable_col.getNullMap().data());
+            builder.initSource(nullable_col.getNullMapData().data());
         }
 
         perform(source_block, {0, 1}, 2, builder);
@@ -844,7 +850,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         /// Store the result.
         const ColumnWithTypeAndName & source_col = source_block.getByPosition(2);
         ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-        dest_col.column = std::make_shared<ColumnNullable>(source_col.column, builder.getNullMap());
+        dest_col.column = ColumnNullable::create(source_col.column, std::move(builder).getNullMapData());
     }
 }
 
@@ -921,13 +927,11 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
 {
     if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
     {
-        const ColumnArray::Offsets_t & offsets = array->getOffsets();
+        const ColumnArray::Offsets & offsets = array->getOffsets();
 
-        auto res_nested = std::make_shared<ColumnUInt32>();
-        auto res_array = std::make_shared<ColumnArray>(res_nested, array->getOffsetsColumn());
-        block.getByPosition(result).column = res_array;
+        auto res_nested = ColumnUInt32::create();
 
-        ColumnUInt32::Container_t & res_values = res_nested->getData();
+        ColumnUInt32::Container & res_values = res_nested->getData();
         res_values.resize(array->getData().size());
         size_t prev_off = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -939,6 +943,8 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
             }
             prev_off = off;
         }
+
+        block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
     }
     else
     {
@@ -978,10 +984,10 @@ DataTypePtr FunctionArrayUniq::getReturnTypeImpl(const DataTypes & arguments) co
 void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     Columns array_columns(arguments.size());
-    const ColumnArray::Offsets_t * offsets = nullptr;
-    ConstColumnPlainPtrs data_columns(arguments.size());
-    ConstColumnPlainPtrs original_data_columns(arguments.size());
-    ConstColumnPlainPtrs null_maps(arguments.size());
+    const ColumnArray::Offsets * offsets = nullptr;
+    ColumnRawPtrs data_columns(arguments.size());
+    ColumnRawPtrs original_data_columns(arguments.size());
+    ColumnRawPtrs null_maps(arguments.size());
 
     bool has_nullable_columns = false;
 
@@ -1003,7 +1009,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
         array_columns[i] = array_ptr;
 
-        const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
+        const ColumnArray::Offsets & offsets_i = array->getOffsets();
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
@@ -1017,8 +1023,8 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
         {
             has_nullable_columns = true;
             const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
-            data_columns[i] = nullable_col.getNestedColumn().get();
-            null_maps[i] = nullable_col.getNullMapColumn().get();
+            data_columns[i] = &nullable_col.getNestedColumn();
+            null_maps[i] = &nullable_col.getNullMapColumn();
         }
         else
             null_maps[i] = nullptr;
@@ -1026,10 +1032,9 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
     const ColumnArray * first_array = static_cast<const ColumnArray *>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
-    auto res = std::make_shared<ColumnUInt32>();
-    block.getByPosition(result).column = res;
+    auto res = ColumnUInt32::create();
 
-    ColumnUInt32::Container_t & res_values = res->getData();
+    ColumnUInt32::Container & res_values = res->getData();
     res_values.resize(offsets->size());
 
     if (arguments.size() == 1)
@@ -1054,10 +1059,12 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
         if (!execute128bit(*offsets, data_columns, null_maps, res_values, has_nullable_columns))
             executeHashed(*offsets, original_data_columns, res_values);
     }
+
+    block.getByPosition(result).column = std::move(res);
 }
 
 template <typename T>
-bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1065,7 +1072,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1073,8 +1080,8 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     const ColumnVector<T> * nested = checkAndGetColumn<ColumnVector<T>>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
-    const typename ColumnVector<T>::Container_t & values = nested->getData();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
+    const typename ColumnVector<T>::Container & values = nested->getData();
 
     using Set = ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
@@ -1104,7 +1111,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     return true;
 }
 
-bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1112,7 +1119,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1120,7 +1127,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
     const ColumnString * nested = checkAndGetColumn<ColumnString>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
 
     using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
@@ -1152,10 +1159,10 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
 
 
 bool FunctionArrayUniq::execute128bit(
-    const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
-    const ConstColumnPlainPtrs & null_maps,
-    ColumnUInt32::Container_t & res_values,
+    const ColumnArray::Offsets & offsets,
+    const ColumnRawPtrs & columns,
+    const ColumnRawPtrs & null_maps,
+    ColumnUInt32::Container & res_values,
     bool has_nullable_columns)
 {
     size_t count = columns.size();
@@ -1230,9 +1237,9 @@ bool FunctionArrayUniq::execute128bit(
 }
 
 void FunctionArrayUniq::executeHashed(
-    const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
-    ColumnUInt32::Container_t & res_values)
+    const ColumnArray::Offsets & offsets,
+    const ColumnRawPtrs & columns,
+    ColumnUInt32::Container & res_values)
 {
     size_t count = columns.size();
 
@@ -1286,10 +1293,10 @@ DataTypePtr FunctionArrayEnumerateUniq::getReturnTypeImpl(const DataTypes & argu
 void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     Columns array_columns(arguments.size());
-    const ColumnArray::Offsets_t * offsets = nullptr;
-    ConstColumnPlainPtrs data_columns(arguments.size());
-    ConstColumnPlainPtrs original_data_columns(arguments.size());
-    ConstColumnPlainPtrs null_maps(arguments.size());
+    const ColumnArray::Offsets * offsets = nullptr;
+    ColumnRawPtrs data_columns(arguments.size());
+    ColumnRawPtrs original_data_columns(arguments.size());
+    ColumnRawPtrs null_maps(arguments.size());
 
     bool has_nullable_columns = false;
 
@@ -1309,7 +1316,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
             array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         }
         array_columns[i] = array_ptr;
-        const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
+        const ColumnArray::Offsets & offsets_i = array->getOffsets();
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
@@ -1323,8 +1330,8 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
         {
             has_nullable_columns = true;
             const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
-            data_columns[i] = nullable_col.getNestedColumn().get();
-            null_maps[i] = nullable_col.getNullMapColumn().get();
+            data_columns[i] = &nullable_col.getNestedColumn();
+            null_maps[i] = &nullable_col.getNullMapColumn();
         }
         else
             null_maps[i] = nullptr;
@@ -1332,11 +1339,9 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 
     const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
-    auto res_nested = std::make_shared<ColumnUInt32>();
-    auto res_array = std::make_shared<ColumnArray>(res_nested, first_array->getOffsetsColumn());
-    block.getByPosition(result).column = res_array;
+    auto res_nested = ColumnUInt32::create();
 
-    ColumnUInt32::Container_t & res_values = res_nested->getData();
+    ColumnUInt32::Container & res_values = res_nested->getData();
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
@@ -1362,11 +1367,13 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
         if (!execute128bit(*offsets, data_columns, null_maps, res_values, has_nullable_columns))
             executeHashed(*offsets, original_data_columns, res_values);
     }
+
+    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), first_array->getOffsetsPtr());
 }
 
 
 template <typename T>
-bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1374,7 +1381,7 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1382,8 +1389,8 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     const ColumnVector<T> * nested = checkAndGetColumn<ColumnVector<T>>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
-    const typename ColumnVector<T>::Container_t & values = nested->getData();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
+    const typename ColumnVector<T>::Container & values = nested->getData();
 
     using ValuesToIndices = ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
@@ -1411,7 +1418,7 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     return true;
 }
 
-bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values)
+bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1419,7 +1426,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1427,7 +1434,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
     const ColumnString * nested = checkAndGetColumn<ColumnString>(inner_col);
     if (!nested)
         return false;
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
 
     size_t prev_off = 0;
     using ValuesToIndices = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
@@ -1456,10 +1463,10 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
 }
 
 bool FunctionArrayEnumerateUniq::execute128bit(
-    const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
-    const ConstColumnPlainPtrs & null_maps,
-    ColumnUInt32::Container_t & res_values,
+    const ColumnArray::Offsets & offsets,
+    const ColumnRawPtrs & columns,
+    const ColumnRawPtrs & null_maps,
+    ColumnUInt32::Container & res_values,
     bool has_nullable_columns)
 {
     size_t count = columns.size();
@@ -1519,9 +1526,9 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 }
 
 void FunctionArrayEnumerateUniq::executeHashed(
-    const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
-    ColumnUInt32::Container_t & res_values)
+    const ColumnArray::Offsets & offsets,
+    const ColumnRawPtrs & columns,
+    ColumnUInt32::Container & res_values)
 {
     size_t count = columns.size();
 
@@ -1558,7 +1565,7 @@ DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & argu
         throw Exception("Argument for function " + getName() + " must be array.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return arguments[0]->clone();
+    return arguments[0];
 }
 
 
@@ -1589,8 +1596,8 @@ namespace
 
         template <typename T, bool nullable>
         bool executeNumber(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1606,8 +1613,8 @@ namespace
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
 
-                ColumnArray::Offset_t src_prev_offset = 0;
-                ColumnArray::Offset_t res_prev_offset = 0;
+                ColumnArray::Offset src_prev_offset = 0;
+                ColumnArray::Offset res_prev_offset = 0;
 
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1648,8 +1655,8 @@ namespace
 
         template <bool nullable>
         bool executeFixedString(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1670,8 +1677,8 @@ namespace
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
 
-                ColumnArray::Offset_t src_prev_offset = 0;
-                ColumnArray::Offset_t res_prev_offset = 0;
+                ColumnArray::Offset src_prev_offset = 0;
+                ColumnArray::Offset res_prev_offset = 0;
 
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1715,19 +1722,19 @@ namespace
 
         template <bool nullable>
         bool executeString(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_array_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
             if (const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data))
             {
-                const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
+                const ColumnString::Offsets & src_string_offsets = src_data_concrete->getOffsets();
 
                 auto concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_string_offsets)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-                ColumnString::Offsets_t & res_string_offsets = concrete_res_string_offsets->getOffsets();
+                ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
                 const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
 
@@ -1744,11 +1751,11 @@ namespace
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
 
-                ColumnArray::Offset_t src_array_prev_offset = 0;
-                ColumnArray::Offset_t res_array_prev_offset = 0;
+                ColumnArray::Offset src_array_prev_offset = 0;
+                ColumnArray::Offset res_array_prev_offset = 0;
 
-                ColumnString::Offset_t src_string_prev_offset = 0;
-                ColumnString::Offset_t res_string_prev_offset = 0;
+                ColumnString::Offset src_string_prev_offset = 0;
+                ColumnString::Offset res_string_prev_offset = 0;
 
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1811,8 +1818,8 @@ namespace
 
         template <bool nullable>
         void executeGeneric(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
-            IColumn & res_data, ColumnArray::Offsets_t & res_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
+            IColumn & res_data, ColumnArray::Offsets & res_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1823,8 +1830,8 @@ namespace
             if (nullable)
                 res_null_map->reserve(src_null_map->size());
 
-            ColumnArray::Offset_t src_prev_offset = 0;
-            ColumnArray::Offset_t res_prev_offset = 0;
+            ColumnArray::Offset src_prev_offset = 0;
+            ColumnArray::Offset res_prev_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -1859,8 +1866,8 @@ namespace
 
         template <bool nullable>
         void executeDispatch(
-            const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
-            IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets,
+            const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
+            IColumn & res_data_col, ColumnArray::Offsets & res_array_offsets,
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
@@ -1891,14 +1898,13 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
-    ColumnPtr res_ptr = array->cloneEmpty();
-    block.getByPosition(result).column = res_ptr;
+    MutableColumnPtr res_ptr = array->cloneEmpty();
     ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets_t & src_offsets = array->getOffsets();
+    const ColumnArray::Offsets & src_offsets = array->getOffsets();
     IColumn & res_data = res.getData();
-    ColumnArray::Offsets_t & res_offsets = res.getOffsets();
+    ColumnArray::Offsets & res_offsets = res.getOffsets();
 
     const NullMap * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
@@ -1910,12 +1916,12 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     if (nullable)
     {
         auto nullable_col = static_cast<const ColumnNullable *>(&src_data);
-        inner_col = nullable_col->getNestedColumn().get();
-        src_null_map = &nullable_col->getNullMap();
+        inner_col = &nullable_col->getNestedColumn();
+        src_null_map = &nullable_col->getNullMapData();
 
         auto nullable_res_col = static_cast<ColumnNullable *>(&res_data);
-        inner_res_col = nullable_res_col->getNestedColumn().get();
-        res_null_map = &nullable_res_col->getNullMap();
+        inner_res_col = &nullable_res_col->getNestedColumn();
+        res_null_map = &nullable_res_col->getNullMapData();
     }
     else
     {
@@ -1927,6 +1933,8 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
         FunctionEmptyArrayToSingleImpl::executeDispatch<true>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
     else
         FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
+
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 
@@ -1939,14 +1947,14 @@ String FunctionRange::getName() const
 
 DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const auto arg = arguments.front().get();
+    const DataTypePtr & arg = arguments.front();
 
-    if (!arg->canBeUsedAsNonNegativeArrayIndex())
+    if (!arg->isUnsignedInteger())
         throw Exception{
             "Illegal type " + arg->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-    return std::make_shared<DataTypeArray>(arg->clone());
+    return std::make_shared<DataTypeArray>(arg);
 }
 
 template <typename T>
@@ -1975,16 +1983,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
                     " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-        const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
-        const auto out = std::make_shared<ColumnArray>(
-            data_col,
-            std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
-        block.getByPosition(result).column = out;
+        auto data_col = ColumnVector<T>::create(total_values);
+        auto offsets_col = ColumnArray::ColumnOffsets::create(in->size());
 
         auto & out_data = data_col->getData();
-        auto & out_offsets = out->getOffsets();
+        auto & out_offsets = offsets_col->getData();
 
-        IColumn::Offset_t offset{};
+        IColumn::Offset offset{};
         for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
         {
             for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
@@ -1994,42 +1999,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
             out_offsets[row_idx] = offset;
         }
 
-        return true;
-    }
-    else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(arg))
-    {
-        T in_data = in->template getValue<T>();
-        if ((in_data != 0) && (in->size() > (std::numeric_limits<size_t>::max() / in_data)))
-            throw Exception{
-                "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
-
-        const size_t total_values = in->size() * in_data;
-        if (total_values > max_elements)
-            throw Exception{
-                "A call to function " + getName() + " would produce " + toString(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + toString(max_elements),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
-
-        const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
-        const auto out = std::make_shared<ColumnArray>(
-            data_col,
-            std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
-        block.getByPosition(result).column = out;
-
-        auto & out_data = data_col->getData();
-        auto & out_offsets = out->getOffsets();
-
-        IColumn::Offset_t offset{};
-        for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
-        {
-            for (size_t elem_idx = 0, elems = in_data; elem_idx < elems; ++elem_idx)
-                out_data[offset + elem_idx] = elem_idx;
-
-            offset += in_data;
-            out_offsets[row_idx] = offset;
-        }
-
+        block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
         return true;
     }
     else
@@ -2070,7 +2040,7 @@ DataTypePtr FunctionArrayReverse::getReturnTypeImpl(const DataTypes & arguments)
         throw Exception("Argument for function " + getName() + " must be array.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return arguments[0]->clone();
+    return arguments[0];
 }
 
 void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2083,14 +2053,13 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
 
-    ColumnPtr res_ptr = array->cloneEmpty();
-    block.getByPosition(result).column = res_ptr;
+    auto res_ptr = array->cloneEmpty();
     ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+    res.getOffsetsPtr() = array->getOffsetsPtr();
 
     const IColumn & src_data = array->getData();
-    const ColumnArray::Offsets_t & offsets = array->getOffsets();
+    const ColumnArray::Offsets & offsets = array->getOffsets();
     IColumn & res_data = res.getData();
-    res.getOffsetsColumn() = array->getOffsetsColumn();
 
     const ColumnNullable * nullable_col = nullptr;
     ColumnNullable * nullable_res_col = nullptr;
@@ -2101,10 +2070,10 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
     if (src_data.isColumnNullable())
     {
         nullable_col = static_cast<const ColumnNullable *>(&src_data);
-        inner_col = nullable_col->getNestedColumn().get();
+        inner_col = &nullable_col->getNestedColumn();
 
         nullable_res_col = static_cast<ColumnNullable *>(&res_data);
-        inner_res_col = nullable_res_col->getNestedColumn().get();
+        inner_res_col = &nullable_res_col->getNestedColumn();
     }
     else
     {
@@ -2127,6 +2096,8 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
+
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2151,7 +2122,7 @@ bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arg
 
 template <typename T>
 bool FunctionArrayReverse::executeNumber(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+    const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
@@ -2159,7 +2130,7 @@ bool FunctionArrayReverse::executeNumber(
     auto do_reverse = [](const auto & src_data, const auto & src_offsets, auto & res_data)
     {
         size_t size = src_offsets.size();
-        ColumnArray::Offset_t src_prev_offset = 0;
+        ColumnArray::Offset src_prev_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -2192,8 +2163,8 @@ bool FunctionArrayReverse::executeNumber(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
+            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
             res_null_map.resize(src_data.size());
             do_reverse(src_null_map, src_offsets, res_null_map);
         }
@@ -2205,7 +2176,7 @@ bool FunctionArrayReverse::executeNumber(
 }
 
 bool FunctionArrayReverse::executeFixedString(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+    const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
@@ -2218,7 +2189,7 @@ bool FunctionArrayReverse::executeFixedString(
         size_t size = src_offsets.size();
         res_data.resize(src_data.size());
 
-        ColumnArray::Offset_t src_prev_offset = 0;
+        ColumnArray::Offset src_prev_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -2244,11 +2215,11 @@ bool FunctionArrayReverse::executeFixedString(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
+            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
             res_null_map.resize(src_null_map.size());
 
-            ColumnArray::Offset_t src_prev_offset = 0;
+            ColumnArray::Offset src_prev_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -2278,15 +2249,15 @@ bool FunctionArrayReverse::executeFixedString(
 }
 
 bool FunctionArrayReverse::executeString(
-    const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
+    const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
     IColumn & res_data_col,
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
 {
     if (const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data))
     {
-        const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
-        ColumnString::Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
+        const ColumnString::Offsets & src_string_offsets = src_data_concrete->getOffsets();
+        ColumnString::Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
 
         const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
         ColumnString::Chars_t & res_data = typeid_cast<ColumnString &>(res_data_col).getChars();
@@ -2295,8 +2266,8 @@ bool FunctionArrayReverse::executeString(
         res_string_offsets.resize(src_string_offsets.size());
         res_data.resize(src_data.size());
 
-        ColumnArray::Offset_t src_array_prev_offset = 0;
-        ColumnString::Offset_t res_string_prev_offset = 0;
+        ColumnArray::Offset src_array_prev_offset = 0;
+        ColumnString::Offset res_string_prev_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -2324,12 +2295,12 @@ bool FunctionArrayReverse::executeString(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
+            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
             res_null_map.resize(src_string_offsets.size());
 
             size_t size = src_string_offsets.size();
-            ColumnArray::Offset_t src_prev_offset = 0;
+            ColumnArray::Offset src_prev_offset = 0;
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -2396,7 +2367,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
             throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
                 + arguments[i].type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        argument_types[i - 1] = arg->getNestedType()->clone();
+        argument_types[i - 1] = arg->getNestedType();
     }
 
     if (!aggregate_function)
@@ -2445,13 +2416,13 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
         {
-            aggregate_arguments_vec[i] = arr->getDataPtr().get();
+            aggregate_arguments_vec[i] = &arr->getData();
             is_const = false;
         }
         else if (const ColumnConst * arr = checkAndGetColumnConst<ColumnArray>(col))
         {
             materialized_columns.emplace_back(arr->convertToFullColumn());
-            aggregate_arguments_vec[i] = typeid_cast<const ColumnArray &>(*materialized_columns.back().get()).getDataPtr().get();
+            aggregate_arguments_vec[i] = &typeid_cast<const ColumnArray &>(*materialized_columns.back().get()).getData();
         }
         else
             throw Exception("Illegal column " + col->getName() + " as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -2459,12 +2430,11 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
 
-    const ColumnArray::Offsets_t & offsets = typeid_cast<const ColumnArray &>(!materialized_columns.empty()
+    const ColumnArray::Offsets & offsets = typeid_cast<const ColumnArray &>(!materialized_columns.empty()
         ? *materialized_columns.front().get()
         : *block.getByPosition(arguments[1]).column.get()).getOffsets();
 
-
-    ColumnPtr result_holder = block.getByPosition(result).type->createColumn();
+    MutableColumnPtr result_holder = block.getByPosition(result).type->createColumn();
     IColumn & res_col = *result_holder;
 
     /// AggregateFunction's states should be inserted into column using specific way
@@ -2474,11 +2444,11 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
                         + block.getByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-    ColumnArray::Offset_t current_offset = 0;
+    ColumnArray::Offset current_offset = 0;
     for (size_t i = 0; i < rows; ++i)
     {
         agg_func.create(place);
-        ColumnArray::Offset_t next_offset = offsets[i];
+        ColumnArray::Offset next_offset = offsets[i];
 
         try
         {
@@ -2502,7 +2472,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
     if (!is_const)
     {
-        block.getByPosition(result).column = result_holder;
+        block.getByPosition(result).column = std::move(result_holder);
     }
     else
     {
@@ -2527,7 +2497,7 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
     if (arguments.empty())
         throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
             + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2537,15 +2507,15 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
 
 void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_column = block.getByPosition(result).column;
     const DataTypePtr & return_type = block.getByPosition(result).type;
-    result_column = return_type->createColumn();
 
     if (return_type->onlyNull())
     {
-        result_column = return_type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
+
+    auto result_column = return_type->createColumn();
 
     size_t rows = block.rows();
     size_t num_args = arguments.size();
@@ -2569,20 +2539,22 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
     {
         bool is_const = false;
 
-        if (auto argument_column_const = typeid_cast<ColumnConst *>(argument_column.get()))
+        if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
         {
             is_const = true;
             argument_column = argument_column_const->getDataColumnPtr();
         }
 
-        if (auto argument_column_array = typeid_cast<ColumnArray *>(argument_column.get()))
+        if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
             sources.emplace_back(createArraySource(*argument_column_array, is_const, rows));
         else
             throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
     }
 
-    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column.get()), rows);
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
     concat(sources, *sink);
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 
@@ -2628,33 +2600,32 @@ DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) c
 
 void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_colum_with_name_and_type = block.getByPosition(result);
-    auto & result_column = result_colum_with_name_and_type.column;
-    auto & return_type = result_colum_with_name_and_type.type;
-    result_column = return_type->createColumn();
-
-    auto array_column = block.getByPosition(arguments[0]).column;
-    auto offset_column = block.getByPosition(arguments[1]).column;
-    auto length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
+    const auto & return_type = block.getByPosition(result).type;
 
     if (return_type->onlyNull())
     {
-        result_column = array_column->clone();
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
+
+    auto result_column = return_type->createColumn();
+
+    auto & array_column = block.getByPosition(arguments[0]).column;
+    const auto & offset_column = block.getByPosition(arguments[1]).column;
+    const auto & length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
 
     std::unique_ptr<IArraySource> source;
 
     size_t size = array_column->size();
     bool is_const = false;
 
-    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
+    if (auto const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
     {
         is_const = true;
         array_column = const_array_column->getDataColumnPtr();
     }
 
-    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
+    if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
         source = createArraySource(*argument_column_array, is_const, size);
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
@@ -2664,12 +2635,15 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     if (offset_column->onlyNull())
     {
         if (!length_column || length_column->onlyNull())
-            result_column = array_column->clone();
+        {
+            block.getByPosition(result).column = array_column;
+            return;
+        }
         else if (length_column->isColumnConst())
             sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
         else
         {
-            auto const_offset_column = std::make_shared<ColumnConst>(std::make_shared<ColumnInt8>(1, 1), size);
+            auto const_offset_column = ColumnConst::create(ColumnInt8::create(1, 1), size);
             sliceDynamicOffsetBounded(*source, *sink, *const_offset_column, *length_column);
         }
     }
@@ -2702,6 +2676,8 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
         else
             sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
     }
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 
@@ -2712,7 +2688,7 @@ DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) co
     if (arguments[0]->onlyNull())
         return arguments[0];
 
-    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
                         + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2726,20 +2702,18 @@ DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) co
 
 void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_colum_with_name_and_type = block.getByPosition(result);
-    auto & result_column = result_colum_with_name_and_type.column;
-    auto & return_type = result_colum_with_name_and_type.type;
-
-    auto array_column = block.getByPosition(arguments[0]).column;
-    auto appended_column = block.getByPosition(arguments[1]).column;
+    const auto & return_type = block.getByPosition(result).type;
 
     if (return_type->onlyNull())
     {
-        result_column = array_column->clone();
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
 
-    result_column = return_type->createColumn();
+    auto result_column = return_type->createColumn();
+
+    auto array_column = block.getByPosition(arguments[0]).column;
+    auto appended_column = block.getByPosition(arguments[1]).column;
 
     if (!block.getByPosition(arguments[0]).type->equals(*return_type))
         array_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
@@ -2753,37 +2727,39 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     size_t size = array_column->size();
     bool is_const = false;
 
-    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
+    if (auto const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
     {
         is_const = true;
         array_column = const_array_column->getDataColumnPtr();
     }
 
-    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
+    if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
         sources.push_back(createArraySource(*argument_column_array, is_const, size));
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
 
     bool is_appended_const = false;
-    if (auto const_appended_column = typeid_cast<ColumnConst *>(appended_column.get()))
+    if (auto const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
     {
         is_appended_const = true;
         appended_column = const_appended_column->getDataColumnPtr();
     }
 
-    auto offsets = std::make_shared<ColumnArray::ColumnOffsets_t>(appended_column->size());
+    auto offsets = ColumnArray::ColumnOffsets::create(appended_column->size());
     for (size_t i : ext::range(0, offsets->size()))
         offsets->getElement(i) = i + 1;
 
-    ColumnArray appended_array_column(appended_column, offsets);
-    sources.push_back(createArraySource(appended_array_column, is_appended_const, size));
+    ColumnArray::Ptr appended_array_column = ColumnArray::create(appended_column, std::move(offsets));
+    sources.push_back(createArraySource(*appended_array_column, is_appended_const, size));
 
     auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
     if (push_front)
         sources[0].swap(sources[1]);
     concat(sources, *sink);
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 /// Implementation of FunctionArrayPushFront.
@@ -2807,7 +2783,7 @@ DataTypePtr FunctionArrayPop::getReturnTypeImpl(const DataTypes & arguments) con
     if (arguments[0]->onlyNull())
         return arguments[0];
 
-    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
                         + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2817,32 +2793,24 @@ DataTypePtr FunctionArrayPop::getReturnTypeImpl(const DataTypes & arguments) con
 
 void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & result_colum_with_name_and_type = block.getByPosition(result);
-    auto & result_column = result_colum_with_name_and_type.column;
-    auto & return_type = result_colum_with_name_and_type.type;
-    result_column = return_type->createColumn();
-
-    auto array_column = block.getByPosition(arguments[0]).column;
+    const auto & return_type = block.getByPosition(result).type;
 
     if (return_type->onlyNull())
     {
-        result_column = array_column->clone();
+        block.getByPosition(result).column = return_type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
+
+    auto result_column = return_type->createColumn();
+
+    const auto & array_column = block.getByPosition(arguments[0]).column;
 
     std::unique_ptr<IArraySource> source;
 
     size_t size = array_column->size();
-    bool is_const = false;
 
-    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
-    {
-        is_const = true;
-        array_column = const_array_column->getDataColumnPtr();
-    }
-
-    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
-        source = createArraySource(*argument_column_array, is_const, size);
+    if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
+        source = createArraySource(*argument_column_array, false, size);
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
@@ -2852,6 +2820,8 @@ void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & argument
         sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
     else
         sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 /// Implementation of FunctionArrayPopFront.

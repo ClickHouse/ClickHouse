@@ -8,6 +8,6 @@ namespace DB
   * In 'null_map' return a map of positions where at least one column was NULL.
   * null_map_holder could take ownership of null_map, if required.
   */
-void extractNestedColumnsAndNullMap(ConstColumnPlainPtrs & key_columns, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map);
+void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map);
 
 }

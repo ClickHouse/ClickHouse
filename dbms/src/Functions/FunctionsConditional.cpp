@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+}
+
 void registerFunctionsConditional(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIf>();
@@ -119,7 +124,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
     }
 
     size_t rows = block.rows();
-    ColumnPtr res = return_type->createColumn();
+    MutableColumnPtr res = return_type->createColumn();
 
     for (size_t i = 0; i < rows; ++i)
     {
@@ -134,8 +139,8 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             else
             {
                 const ColumnNullable & condition_nullable = static_cast<const ColumnNullable &>(*instruction.condition);
-                const ColumnUInt8 & condition_nested = static_cast<const ColumnUInt8 &>(*condition_nullable.getNestedColumn());
-                const NullMap & condition_null_map = condition_nullable.getNullMap();
+                const ColumnUInt8 & condition_nested = static_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
                 insert = !condition_null_map[i] && condition_nested.getData()[i];
             }
@@ -238,6 +243,10 @@ String FunctionCaseWithExpression::getName() const
 
 DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args) const
 {
+    if (!args.size())
+        throw Exception{"Function " + getName() + " expects at least 1 arguments",
+            ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+
     /// See the comments in executeImpl() to understand why we actually have to
     /// get the return type of a transform function.
 
@@ -265,6 +274,10 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
 
 void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
+    if (!args.size())
+        throw Exception{"Function " + getName() + " expects at least 1 arguments",
+            ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+
     /// In the following code, we turn the construction:
     /// CASE expr WHEN val[0] THEN branch[0] ... WHEN val[N-1] then branch[N-1] ELSE branchN
     /// into the construction transform(expr, src, dest, branchN)

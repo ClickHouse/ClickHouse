@@ -46,7 +46,7 @@ int main(int argc, char ** argv)
                     code = e.code;
                 }
 
-                std::cout << time(0) - time0 << "s: " << zkutil::ZooKeeper::error2string(code) << std::endl;
+                std::cout << time(nullptr) - time0 << "s: " << zkutil::ZooKeeper::error2string(code) << std::endl;
             }
 
             sleep(1);

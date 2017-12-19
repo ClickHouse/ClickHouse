@@ -188,7 +188,7 @@ static std::unique_ptr<Poco::MongoDB::Cursor> createCursor(
     if (!sample_block_to_select.has("_id"))
         cursor->query().returnFieldSelector().add("_id", 0);
 
-    for (const auto & column : sample_block_to_select.getColumns())
+    for (const auto & column : sample_block_to_select)
         cursor->query().returnFieldSelector().add(column.name, 1);
 
     return cursor;

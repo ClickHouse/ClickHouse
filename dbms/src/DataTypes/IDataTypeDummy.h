@@ -36,7 +36,7 @@ public:
     void serializeTextCSV(const IColumn &, size_t, WriteBuffer &) const override            { throwNoSerialization(); }
     void deserializeTextCSV(IColumn &, ReadBuffer &, const char) const override             { throwNoSerialization(); }
 
-    ColumnPtr createColumn() const override
+    MutableColumnPtr createColumn() const override
     {
         throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

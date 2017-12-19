@@ -13,7 +13,7 @@ namespace DB
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
     out << "format version: 4\n"
-        << "create_time: " << LocalDateTime(create_time ? create_time : time(0)) << "\n"
+        << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
 

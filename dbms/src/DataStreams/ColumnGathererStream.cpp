@@ -65,7 +65,7 @@ void ColumnGathererStream::init()
         if (i == 0)
         {
             column.name = name;
-            column.type = block.getByName(name).type->clone();
+            column.type = block.getByName(name).type;
             column.column = column.type->createColumn();
         }
 
@@ -89,8 +89,12 @@ Block ColumnGathererStream::readImpl()
         return Block();
 
     output_block = Block{column.cloneEmpty()};
-    output_block.getByPosition(0).column->gather(*this);
-    return std::move(output_block);
+    MutableColumnPtr output_column = output_block.getByPosition(0).column->mutate();
+    output_column->gather(*this);
+    if (!output_column->empty())
+        output_block.getByPosition(0).column = std::move(output_column);
+
+    return output_block;
 }
 
 

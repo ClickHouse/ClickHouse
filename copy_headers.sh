@@ -54,7 +54,14 @@ done
 # Копируем больше заголовочных файлов с интринсиками, так как на серверах, куда будут устанавливаться
 #  заголовочные файлы, будет использоваться опция -march=native.
 
-for i in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
+for src_file in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep -E '/lib/clang/|/include/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
-    cp "$i" "$DST/$i";
+    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$src_file";
+done
+
+# Even more platform-specific headers
+for src_file in $(ls -1 $SOURCE_PATH/contrib/libboost/boost_1_65_0/boost/smart_ptr/detail/*);
+do
+    cp "$src_file" "$DST/$src_file";
 done

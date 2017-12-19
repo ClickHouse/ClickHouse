@@ -47,7 +47,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
       */
     ColumnPtr full_column;
 
-    if (auto converted = column->convertToFullColumnIfConst())
+    if (ColumnPtr converted = column->convertToFullColumnIfConst())
         full_column = converted;
     else
         full_column = column;

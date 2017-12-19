@@ -58,7 +58,6 @@ struct AggregateFunctionsCreator
     AggregateFunctionsCreator(
         const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions_,
         const Sizes & offsets_of_aggregate_states_,
-        Aggregator::AggregateColumns & aggregate_columns_,
         AggregateDataPtr & aggregate_data_)
         : aggregate_functions(aggregate_functions_),
         offsets_of_aggregate_states(offsets_of_aggregate_states_),
@@ -102,7 +101,7 @@ void NO_INLINE Aggregator::executeSpecialized(
     Method & method,
     Arena * aggregates_pool,
     size_t rows,
-    ConstColumnPlainPtrs & key_columns,
+    ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
     const Sizes & key_sizes,
     StringRefs & keys,
@@ -129,7 +128,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
     typename Method::State & state,
     Arena * aggregates_pool,
     size_t rows,
-    ConstColumnPlainPtrs & key_columns,
+    ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
     const Sizes & key_sizes,
     StringRefs & keys,
@@ -195,7 +194,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 
             AggregateFunctionsList::forEach(AggregateFunctionsCreator(
-                aggregate_functions, offsets_of_aggregate_states, aggregate_columns, place));
+                aggregate_functions, offsets_of_aggregate_states, place));
 
             aggregate_data = place;
         }

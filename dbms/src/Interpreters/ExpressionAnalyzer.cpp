@@ -74,7 +74,6 @@ namespace ErrorCodes
     extern const int EMPTY_NESTED_TABLE;
     extern const int NOT_AN_AGGREGATE;
     extern const int UNEXPECTED_EXPRESSION;
-    extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int DUPLICATE_COLUMN;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int ILLEGAL_AGGREGATION;
@@ -568,7 +567,7 @@ void ExpressionAnalyzer::analyzeAggregation()
     }
     else
     {
-        aggregated_columns = temp_actions->getSampleBlock().getColumnsList();
+        aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
     }
 }
 
@@ -794,7 +793,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
     Block sample = interpreter->getSampleBlock();
-    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getColumnsList());
+    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getNamesAndTypesList());
 
     StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
     external_storage->startup();
@@ -1691,7 +1690,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     else
     {
         DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-        if (DataTypeArray * array_type = typeid_cast<DataTypeArray *>(left_type.get()))
+        if (const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(left_type.get()))
             set_element_types.push_back(array_type->getNestedType());
         else
             set_element_types.push_back(left_type);
@@ -2066,7 +2065,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
             if (node->name == "indexHint")
             {
                 actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
-                    std::make_shared<ColumnConst>(std::make_shared<ColumnUInt8>(1, 1), 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
+                    ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
                 return;
             }
 
@@ -2114,7 +2113,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
                     if (!actions_stack.getSampleBlock().has(column.name))
                     {
-                        column.column = std::make_shared<ColumnSet>(1, set);
+                        column.column = ColumnSet::create(1, set);
 
                         actions_stack.addAction(ExpressionAction::addColumn(column));
                     }
@@ -2163,7 +2162,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
                     if (lambda && lambda->name == "lambda")
                     {
-                        DataTypeExpression * lambda_type = typeid_cast<DataTypeExpression *>(argument_types[i].get());
+                        const DataTypeExpression * lambda_type = typeid_cast<const DataTypeExpression *>(argument_types[i].get());
                         ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
                         ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
                         NamesAndTypesList lambda_arguments;
@@ -2198,7 +2197,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                         argument_names[i] = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
 
                         ColumnWithTypeAndName lambda_column;
-                        lambda_column.column = std::make_shared<ColumnExpression>(1, lambda_actions, lambda_arguments, result_type, result_name);
+                        lambda_column.column = ColumnExpression::create(1, lambda_actions, lambda_arguments, result_type, result_name);
                         lambda_column.type = argument_types[i];
                         lambda_column.name = argument_names[i];
                         actions_stack.addAction(ExpressionAction::addColumn(lambda_column));
