@@ -78,6 +78,14 @@ protected:
     template <typename T>
     class mutable_ptr : public boost::intrusive_ptr<T>
     {
+    private:
+        using Base = boost::intrusive_ptr<T>;
+
+        template <typename> friend class COWPtr;
+        template <typename, typename> friend class COWPtrHelper;
+
+        explicit mutable_ptr(T * ptr) : Base(ptr) {}
+
     public:
         /// Copy: not possible.
         mutable_ptr(const mutable_ptr &) = delete;
@@ -88,12 +96,11 @@ protected:
 
         /// Initializing from temporary of compatible type.
         template <typename U>
-        mutable_ptr(mutable_ptr<U> && other) : boost::intrusive_ptr<T>(std::move(other)) {}
+        mutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {}
 
         mutable_ptr() = default;
 
         mutable_ptr(const std::nullptr_t *) {}
-        explicit mutable_ptr(T * ptr) : boost::intrusive_ptr<T>(ptr) {}
     };
 
 public:
@@ -103,13 +110,21 @@ protected:
     template <typename T>
     class immutable_ptr : public boost::intrusive_ptr<const T>
     {
+    private:
+        using Base = boost::intrusive_ptr<const T>;
+
+        template <typename> friend class COWPtr;
+        template <typename, typename> friend class COWPtrHelper;
+
+        explicit immutable_ptr(const T * ptr) : Base(ptr) {}
+
     public:
         /// Copy from immutable ptr: ok.
         immutable_ptr(const immutable_ptr &) = default;
         immutable_ptr & operator=(const immutable_ptr &) = default;
 
         template <typename U>
-        immutable_ptr(const immutable_ptr<U> & other) : boost::intrusive_ptr<const T>(other) {}
+        immutable_ptr(const immutable_ptr<U> & other) : Base(other) {}
 
         /// Move: ok.
         immutable_ptr(immutable_ptr &&) = default;
@@ -117,11 +132,11 @@ protected:
 
         /// Initializing from temporary of compatible type.
         template <typename U>
-        immutable_ptr(immutable_ptr<U> && other) : boost::intrusive_ptr<const T>(std::move(other)) {}
+        immutable_ptr(immutable_ptr<U> && other) : Base(std::move(other)) {}
 
         /// Move from mutable ptr: ok.
         template <typename U>
-        immutable_ptr(mutable_ptr<U> && other) : boost::intrusive_ptr<const T>(std::move(other)) {}
+        immutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {}
 
         /// Copy from mutable ptr: not possible.
         template <typename U>
@@ -130,7 +145,6 @@ protected:
         immutable_ptr() = default;
 
         immutable_ptr(const std::nullptr_t *) {}
-        explicit immutable_ptr(const T * ptr) : boost::intrusive_ptr<const T>(ptr) {}
     };
 
 public:
