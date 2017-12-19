@@ -197,7 +197,7 @@ public:
         ExternalTableData data = getData(context);
 
         /// Create table
-        NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample_block.getColumnsList());
+        NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample_block.getNamesAndTypesList());
         StoragePtr storage = StorageMemory::create(data.second, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
         storage->startup();
         context.addExternalTable(data.second, storage);

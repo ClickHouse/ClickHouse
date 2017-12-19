@@ -12,14 +12,14 @@ namespace DB
 {
 
 StorageSystemModels::StorageSystemModels(const std::string & name)
-        : name{name},
-          columns{
-                  { "name", std::make_shared<DataTypeString>() },
-                  { "origin", std::make_shared<DataTypeString>() },
-                  { "type", std::make_shared<DataTypeString>() },
-                  { "creation_time", std::make_shared<DataTypeDateTime>() },
-                  { "last_exception", std::make_shared<DataTypeString>() }
-          }
+    : name{name},
+    columns{
+        { "name", std::make_shared<DataTypeString>() },
+        { "origin", std::make_shared<DataTypeString>() },
+        { "type", std::make_shared<DataTypeString>() },
+        { "creation_time", std::make_shared<DataTypeDateTime>() },
+        { "last_exception", std::make_shared<DataTypeString>() }
+    }
 {
 }
 
@@ -35,33 +35,28 @@ BlockInputStreams StorageSystemModels::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName col_origin{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "origin"};
-    ColumnWithTypeAndName col_type{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "type"};
-
-    ColumnWithTypeAndName col_creation_time{std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "creation_time"};
-    ColumnWithTypeAndName col_last_exception{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "last_exception"};
-
     const auto & external_models = context.getExternalModels();
     auto objects_map = external_models.getObjectsMap();
     const auto & models = objects_map.get();
 
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+
     for (const auto & model_info : models)
     {
-        col_name.column->insert(model_info.first);
-        col_origin.column->insert(model_info.second.origin);
+        res_columns[0]->insert(model_info.first);
+        res_columns[1]->insert(model_info.second.origin);
 
         if (model_info.second.loadable)
         {
             const auto model_ptr = std::static_pointer_cast<IModel>(model_info.second.loadable);
 
-            col_type.column->insert(model_ptr->getTypeName());
-            col_creation_time.column->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(model_ptr->getCreationTime())));
+            res_columns[2]->insert(model_ptr->getTypeName());
+            res_columns[3]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(model_ptr->getCreationTime())));
         }
         else
         {
-            col_type.column->insertDefault();
-            col_creation_time.column->insertDefault();
+            res_columns[2]->insertDefault();
+            res_columns[3]->insertDefault();
         }
 
         if (model_info.second.exception)
@@ -72,22 +67,14 @@ BlockInputStreams StorageSystemModels::read(
             }
             catch (...)
             {
-                col_last_exception.column->insert(getCurrentExceptionMessage(false));
+                res_columns[4]->insert(getCurrentExceptionMessage(false));
             }
         }
         else
-            col_last_exception.column->insertDefault();
+            res_columns[4]->insertDefault();
     }
 
-    Block block{
-            col_name,
-            col_origin,
-            col_type,
-            col_creation_time,
-            col_last_exception
-    };
-
-    return BlockInputStreams{1, std::make_shared<OneBlockInputStream>(block)};
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

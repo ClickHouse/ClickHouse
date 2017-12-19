@@ -91,12 +91,11 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
@@ -110,6 +109,8 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -169,12 +170,11 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
@@ -188,13 +188,12 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
-        }
-        else
-        {
-            return false;
+
+            block.getByPosition(result).column = std::move(col_to);
+            return true;
         }
 
-        return true;
+        return false;
     }
 };
 

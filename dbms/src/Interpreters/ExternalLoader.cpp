@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS;
 }
 
 
@@ -291,8 +292,11 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         object_it = loadable_objects.find(name);
                     }
 
+                    /// Object with the same name was declared in other config file.
                     if (object_it != std::end(loadable_objects) && object_it->second.origin != config_path)
-                        throw std::runtime_error{"Overriding " + object_name + " from file " + object_it->second.origin};
+                        throw Exception(object_name + " '" + name + "' from file " + config_path
+                                        + " already declared in file " + object_it->second.origin,
+                                        ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
                     auto object_ptr = create(name, *config, key);
 

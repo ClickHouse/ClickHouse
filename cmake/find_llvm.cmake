@@ -15,10 +15,14 @@ if (USE_EMBEDDED_COMPILER)
     #  llvm_map_components_to_libraries - Maps LLVM used components to required libraries.
     #  Usage: llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES core jit interpreter native ...)
 
-    set(LLVM_VERSION_POSTFIX "-5.0" CACHE INTERNAL "")
+    if (CMAKE_SYSTEM MATCHES "FreeBSD")
+       set(LLVM_VERSION_POSTFIX "50" CACHE INTERNAL "")
+    else()
+       set(LLVM_VERSION_POSTFIX "-5.0" CACHE INTERNAL "")
+    endif()
 
     find_program(LLVM_CONFIG_EXECUTABLE
-        NAMES llvm-config${LLVM_VERSION_POSTFIX} llvm-config
+        NAMES llvm-config${LLVM_VERSION_POSTFIX} llvm-config llvm-config-devel
         PATHS $ENV{LLVM_ROOT}/bin)
 
     mark_as_advanced(LLVM_CONFIG_EXECUTABLE)
@@ -35,7 +39,7 @@ if (USE_EMBEDDED_COMPILER)
             OUTPUT_STRIP_TRAILING_WHITESPACE)
 
         if(LLVM_VERSION VERSION_LESS "5")
-            message(FATAL_ERROR "LLVM 5+ is required.")
+            message(FATAL_ERROR "LLVM 5+ is required. You have ${LLVM_VERSION} (${LLVM_CONFIG_EXECUTABLE})")
         endif()
 
         message(STATUS "LLVM config: ${LLVM_CONFIG_EXECUTABLE}; version: ${LLVM_VERSION}")
@@ -75,7 +79,7 @@ if (USE_EMBEDDED_COMPILER)
 
             string(REPLACE " " ";" _libs_module "${_tmp}")
 
-            message(STATUS "LLVM Libraries for '${ARGN}': ${_libs_module}")
+            #message(STATUS "LLVM Libraries for '${ARGN}': ${_libs_module}")
 
             execute_process(
                 COMMAND ${LLVM_CONFIG_EXECUTABLE} --system-libs ${ARGN}

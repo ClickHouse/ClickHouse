@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
 
@@ -300,6 +299,46 @@ Block Block::cloneEmpty() const
 }
 
 
+MutableColumns Block::cloneEmptyColumns() const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? data[i].column->cloneEmpty() : data[i].type->createColumn();
+    return columns;
+}
+
+
+MutableColumns Block::mutateColumns() const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? data[i].column->mutate() : data[i].type->createColumn();
+    return columns;
+}
+
+
+void Block::setColumns(MutableColumns && columns)
+{
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        data[i].column = std::move(columns[i]);
+}
+
+
+Block Block::cloneWithColumns(MutableColumns && columns) const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ std::move(columns[i]), data[i].type, data[i].name });
+
+    return res;
+}
+
+
 Block Block::sortColumns() const
 {
     Block sorted_block;
@@ -311,18 +350,30 @@ Block Block::sortColumns() const
 }
 
 
-ColumnsWithTypeAndName Block::getColumns() const
+const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 {
     return data;
 }
 
 
-NamesAndTypesList Block::getColumnsList() const
+NamesAndTypesList Block::getNamesAndTypesList() const
 {
     NamesAndTypesList res;
 
     for (const auto & elem : data)
         res.push_back(NameAndTypePair(elem.name, elem.type));
+
+    return res;
+}
+
+
+Names Block::getNames() const
+{
+    Names res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.push_back(elem.name);
 
     return res;
 }
@@ -428,31 +479,11 @@ void Block::swap(Block & other) noexcept
 }
 
 
-void Block::unshareColumns()
-{
-    std::unordered_set<void*> pointers;
-
-    IColumn::ColumnCallback callback = [&](ColumnPtr & subcolumn)
-    {
-        if (!pointers.insert(subcolumn.get()).second)
-            subcolumn = subcolumn->clone();
-        subcolumn->forEachSubcolumn(callback);
-    };
-
-    for (auto & elem : data)
-    {
-        callback(elem.column);
-        elem.column->forEachSubcolumn(callback);
-    }
-}
-
 void Block::updateHash(SipHash & hash) const
 {
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
-    {
-        for (auto & col : getColumns())
+        for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
-    }
 }
 
 }

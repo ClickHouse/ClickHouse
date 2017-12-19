@@ -28,13 +28,12 @@ namespace
 ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
 {
     ColumnPtr result_null_map_column;
-    bool shared_result_map_column = true;
 
     /// If result is already nullable.
     if (src->onlyNull())
         return src;
     else if (src->isColumnNullable())
-        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumn();
+        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
 
     for (const auto & arg : args)
     {
@@ -51,23 +50,23 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
 
         if (elem.column->isColumnNullable())
         {
-            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumn();
+            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
             if (!result_null_map_column)
+            {
                 result_null_map_column = null_map_column;
+            }
             else
             {
-                if (shared_result_map_column)
-                {
-                    result_null_map_column = result_null_map_column->clone();
-                    shared_result_map_column = false;
-                }
+                MutableColumnPtr mutable_result_null_map_column = result_null_map_column->mutate();
 
-                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
                     if (src_null_map[i])
                         result_null_map[i] = 1;
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
             }
         }
     }
@@ -76,9 +75,9 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
         return makeNullable(src);
 
     if (src->isColumnConst())
-        return std::make_shared<ColumnNullable>(src->convertToFullColumnIfConst(), result_null_map_column);
+        return ColumnNullable::create(src->convertToFullColumnIfConst(), result_null_map_column);
     else
-        return std::make_shared<ColumnNullable>(src, result_null_map_column);
+        return ColumnNullable::create(src, result_null_map_column);
 }
 
 
@@ -194,7 +193,7 @@ bool defaultImplementationForConstantArguments(
 
     func.execute(temporary_block, temporary_argument_numbers, arguments_size);
 
-    block.getByPosition(result).column = std::make_shared<ColumnConst>(temporary_block.getByPosition(arguments_size).column, block.rows());
+    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, block.rows());
     return true;
 }
 

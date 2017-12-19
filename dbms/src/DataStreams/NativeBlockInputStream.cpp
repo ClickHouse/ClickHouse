@@ -114,11 +114,13 @@ Block NativeBlockInputStream::readImpl()
         }
 
         /// Data
-        column.column = column.type->createColumn();
+        MutableColumnPtr read_column = column.type->createColumn();
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, *column.column, istr, rows, avg_value_size_hint);
+            readData(*column.type, *read_column, istr, rows, avg_value_size_hint);
+
+        column.column = std::move(read_column);
 
         res.insert(std::move(column));
 

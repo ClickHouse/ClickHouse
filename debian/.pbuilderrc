@@ -27,6 +27,8 @@
 # env EXTRAPACKAGES="liblld-5.0-dev libclang-5.0-dev liblld-5.0" CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1" DIST=artful pdebuild --configfile debian/.pbuilderrc
 # use only clang:
 # env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="liblld-5.0 liblld-5.0-dev libclang-5.0-dev clang-5.0" CMAKE_FLAGS="-DNO_WERROR=1 -DUSE_EMBEDDED_COMPILER=1" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# clang+asan:
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="liblld-5.0 liblld-5.0-dev libclang-5.0-dev clang-5.0" CMAKE_FLAGS="-DNO_WERROR=1 -DUSE_EMBEDDED_COMPILER=1 -DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
 
 # Your packages built here: /var/cache/pbuilder/*-*/result
 
@@ -143,6 +145,7 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 # Floating bug with permissions:
 sudo mkdir -p /var/cache/pbuilder/ccache
 sudo chmod -R a+rwx /var/cache/pbuilder/ccache
+# chown -R 1234:1234 /var/cache/pbuilder/ccache
 
 # echo "DEBOOTSTRAPOPTS = ${DEBOOTSTRAPOPTS[@]}"
 

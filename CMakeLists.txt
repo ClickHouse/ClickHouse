@@ -54,8 +54,9 @@ endif ()
 
 set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
-if (CCACHE_FOUND AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # clang-6.0: warning: argument unused during compilation: '-stdlib=libc++'
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # clang: warning: argument unused during compilation: '-stdlib=libc++'
+    # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
 
@@ -199,6 +200,14 @@ set (CMAKE_C_FLAGS_MSAN                  "${CMAKE_C_FLAGS_MSAN}    ${SAN_FLAGS} 
 set (CMAKE_CXX_FLAGS_TSAN                "${CMAKE_CXX_FLAGS_TSAN}  ${SAN_FLAGS} -fsanitize=thread")
 set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} -fsanitize=thread")
 
+# clang use static linking by default
+if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_EXE_LINKER_FLAGS_ASAN     "${CMAKE_EXE_LINKER_FLAGS_ASAN} -static-libasan")
+    set (CMAKE_EXE_LINKER_FLAGS_UBSAN    "${CMAKE_EXE_LINKER_FLAGS_UBSAN} -static-libubsan")
+    set (CMAKE_EXE_LINKER_FLAGS_MSAN     "${CMAKE_EXE_LINKER_FLAGS_MSAN} -static-libmsan")
+    set (CMAKE_EXE_LINKER_FLAGS_TSAN     "${CMAKE_EXE_LINKER_FLAGS_TSAN} -static-libtsan")
+endif ()
+
 # Using "include-what-you-use" tool.
 option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
 if (USE_INCLUDE_WHAT_YOU_USE)
@@ -258,6 +267,7 @@ include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
 include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
+include (cmake/find_execinfo.cmake)
 include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
 include (cmake/find_re2.cmake)

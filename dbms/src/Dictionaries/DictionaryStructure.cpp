@@ -283,15 +283,14 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             try
             {
                 ReadBufferFromString null_value_buffer{null_value_string};
-                ColumnPtr column_with_null_value = type->createColumn();
+                auto column_with_null_value = type->createColumn();
                 type->deserializeTextEscaped(*column_with_null_value, null_value_buffer);
                 null_value = (*column_with_null_value)[0];
             }
-            catch (const std::exception & e)
+            catch (Exception & e)
             {
-                throw Exception{
-                    std::string{"Error parsing null_value: "} + e.what(),
-                    ErrorCodes::BAD_ARGUMENTS};
+                e.addMessage("error parsing null_value");
+                throw;
             }
         }
 

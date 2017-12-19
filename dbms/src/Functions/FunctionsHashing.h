@@ -205,12 +205,11 @@ public:
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnUInt64>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt64::create();
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
-            const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
-            typename ColumnUInt64::Container_t & vec_to = col_to->getData();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
+            typename ColumnUInt64::Container & vec_to = col_to->getData();
             size_t size = offsets.size();
             vec_to.resize(size);
 
@@ -218,6 +217,8 @@ public:
                 vec_to[i] = Impl::apply(
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -256,11 +257,10 @@ public:
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnFixedString::create(Impl::length);
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
-            const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             auto & chars_to = col_to->getChars();
             const auto size = offsets.size();
             chars_to.resize(size * Impl::length);
@@ -270,6 +270,8 @@ public:
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
                     &chars_to[i * Impl::length]);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -294,16 +296,17 @@ private:
     {
         if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<ToType>::create();
 
-            const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
-            typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
+            typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
             size_t size = vec_from.size();
             vec_to.resize(size);
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -332,7 +335,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if      (checkDataType<DataTypeUInt8>(from_type)) executeType<UInt8>(block, arguments, result);
         else if (checkDataType<DataTypeUInt16>(from_type)) executeType<UInt16>(block, arguments, result);
@@ -376,11 +379,11 @@ public:
 
 private:
     template <typename FromType, bool first>
-    void executeIntType(const IColumn * column, ColumnUInt64::Container_t & vec_to)
+    void executeIntType(const IColumn * column, ColumnUInt64::Container & vec_to)
     {
         if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
-            const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
@@ -412,12 +415,12 @@ private:
     }
 
     template <bool first>
-    void executeString(const IColumn * column, ColumnUInt64::Container_t & vec_to)
+    void executeString(const IColumn * column, ColumnUInt64::Container & vec_to)
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
             const typename ColumnString::Chars_t & data = col_from->getChars();
-            const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
 
             for (size_t i = 0; i < size; ++i)
@@ -469,17 +472,17 @@ private:
     }
 
     template <bool first>
-    void executeArray(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to)
+    void executeArray(const IDataType * type, const IColumn * column, ColumnUInt64::Container & vec_to)
     {
         const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
         if (const ColumnArray * col_from = checkAndGetColumn<ColumnArray>(column))
         {
             const IColumn * nested_column = &col_from->getData();
-            const ColumnArray::Offsets_t & offsets = col_from->getOffsets();
+            const ColumnArray::Offsets & offsets = col_from->getOffsets();
             const size_t nested_size = nested_column->size();
 
-            ColumnUInt64::Container_t vec_temp(nested_size);
+            ColumnUInt64::Container vec_temp(nested_size);
             executeAny<true>(nested_type, nested_column, vec_temp);
 
             const size_t size = offsets.size();
@@ -512,7 +515,7 @@ private:
     }
 
     template <bool first>
-    void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container_t & vec_to)
+    void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container & vec_to)
     {
         if      (checkDataType<DataTypeUInt8>(from_type)) executeIntType<UInt8, first>(icolumn, vec_to);
         else if (checkDataType<DataTypeUInt16>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
@@ -536,7 +539,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to, bool & is_first)
+    void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container & vec_to, bool & is_first)
     {
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
@@ -554,8 +557,8 @@ private:
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
             {
-                ColumnConst tmp(tuple_columns[i], column->size());
-                executeForArgument(tuple_types[i].get(), &tmp, vec_to, is_first);
+                auto tmp = ColumnConst::create(tuple_columns[i], column->size());
+                executeForArgument(tuple_types[i].get(), tmp.get(), vec_to, is_first);
             }
         }
         else
@@ -577,6 +580,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -586,10 +590,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t rows = block.rows();
-        auto col_to = std::make_shared<ColumnUInt64>(rows);
-        block.getByPosition(result).column = col_to;
+        auto col_to = ColumnUInt64::create(rows);
 
-        ColumnUInt64::Container_t & vec_to = col_to->getData();
+        ColumnUInt64::Container & vec_to = col_to->getData();
 
         if (arguments.empty())
         {
@@ -606,20 +609,7 @@ public:
             executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
         }
 
-        /// If all arguments are constants, we should return constant result.
-
-        bool all_constants = true;
-        for (size_t arg_idx : arguments)
-        {
-            if (!block.getByPosition(arg_idx).column->isColumnConst())
-            {
-                all_constants = false;
-                break;
-            }
-        }
-
-        if (all_constants && block.rows() > 0)
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(1, (*block.getByPosition(result).column)[0]);
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 
@@ -758,8 +748,7 @@ private:
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
-            const auto col_to = std::make_shared<ColumnUInt64>(size);
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -769,6 +758,8 @@ private:
                 out[i] = URLHashImpl::apply(
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception{
@@ -791,8 +782,7 @@ private:
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
-            const auto col_to = std::make_shared<ColumnUInt64>(size);
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -802,6 +792,8 @@ private:
                 out[i] = URLHierarchyHashImpl::apply(level,
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception{
