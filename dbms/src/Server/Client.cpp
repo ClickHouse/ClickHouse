@@ -14,6 +14,9 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 
+#include <common/readline_use.h>
+#include <common/find_first_symbols.h>
+
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -22,7 +25,6 @@
 #include <Common/UnicodeBar.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
-#include <common/readline_use.h>
 #include <Common/Throttler.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
@@ -528,22 +530,23 @@ private:
 
     void nonInteractive()
     {
-        String line;
+        String text;
+
         if (config().has("query"))
-            line = config().getString("query");
+            text = config().getString("query");
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
             /// The query is read entirely into memory (streaming is disabled).
             ReadBufferFromFileDescriptor in(STDIN_FILENO);
-            readStringUntilEOF(line, in);
+            readStringUntilEOF(text, in);
         }
 
-        process(line);
+        process(text);
     }
 
 
-    bool process(const String & line)
+    bool process(const String & text)
     {
         const auto ignore_error = config().getBool("ignore-error", false);
         if (config().has("multiquery"))
@@ -553,8 +556,8 @@ private:
 
             String query;
 
-            const char * begin = line.data();
-            const char * end = begin + line.size();
+            const char * begin = text.data();
+            const char * end = begin + text.size();
 
             while (begin < end)
             {
@@ -581,14 +584,9 @@ private:
                 ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
                 if (insert && insert->data)
-                {
-                    pos = insert->data;
-                    while (*pos && *pos != '\n')
-                        ++pos;
-                    insert->end = pos;
-                }
+                    insert->end = find_first_symbols<'\n'>(insert->data, end);
 
-                query = line.substr(begin - line.data(), pos - begin);
+                query = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
                 while (isWhitespace(*begin) || *begin == ';')
@@ -617,7 +615,7 @@ private:
         }
         else
         {
-            return processSingleQuery(line);
+            return processSingleQuery(text);
         }
     }
 
