@@ -11,7 +11,7 @@
 
 
 /** Allow to search for next character from the set of 'symbols...' in a string.
-  * It is similar to 'strpbrk', 'strcspn' (and 'strchr', 'memchr' in the case of one symbol),
+  * It is similar to 'strpbrk', 'strcspn' (and 'strchr', 'memchr' in the case of one symbol and '\0'),
   * but with the following differencies:
   * - works with any memory ranges, including containing zero bytes;
   * - doesn't require terminating zero byte: end of memory range is passed explicitly;
