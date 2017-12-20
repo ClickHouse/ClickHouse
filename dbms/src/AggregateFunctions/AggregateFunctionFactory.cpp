@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -21,6 +22,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -35,14 +37,14 @@ std::string trimRight(const std::string & in, const char * suffix)
 
 }
 
-AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionForEach(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested);
-AggregateFunctionPtr createAggregateFunctionCountNotNull(const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionForEach(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested, const DataTypes & argument_types, const Array & parameters);
+AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionCountNotNull(const String & name, const DataTypes & argument_types, const Array & parameters);
 AggregateFunctionPtr createAggregateFunctionNothing();
 
 
@@ -89,7 +91,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         /// Special case for 'count' function. It could be called with Nullable arguments
         /// - that means - count number of calls, when all arguments are not NULL.
         if (Poco::toLower(name) == "count")
-            return createAggregateFunctionCountNotNull(argument_types);
+            return createAggregateFunctionCountNotNull(name, argument_types, parameters);
 
         AggregateFunctionPtr nested_function;
 
@@ -141,6 +143,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return it->second(name, argument_types, parameters);
     }
 
+    /// Combinators cannot apply for case insensitive (SQL-style) aggregate function names. Only for native names.
     if (recursion_level == 0)
     {
         auto it = case_insensitive_aggregate_functions.find(Poco::toLower(name));
@@ -148,80 +151,82 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return it->second(name, argument_types, parameters);
     }
 
-    if ((recursion_level == 0) && endsWith(name, "State"))
+    /// Combinators of aggregate functions.
+    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    ///  that can have different number and/or types of arguments, different result type and different behaviour.
+
+    if (endsWith(name, "State"))
     {
-        /// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
         AggregateFunctionPtr nested = get(trimRight(name, "State"), argument_types, parameters, recursion_level + 1);
-        return createAggregateFunctionState(nested);
+        return createAggregateFunctionState(nested, argument_types, parameters);
     }
 
-    if ((recursion_level <= 1) && endsWith(name, "Merge"))
+    if (endsWith(name, "Merge"))
     {
-        /// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
         if (argument_types.size() != 1)
             throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        const DataTypeAggregateFunction * function = typeid_cast<const DataTypeAggregateFunction *>(&*argument_types[0]);
+        const DataTypeAggregateFunction * function = typeid_cast<const DataTypeAggregateFunction *>(argument_types[0].get());
         if (!function)
-            throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name
+                + " must be AggregateFunction(...)", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         AggregateFunctionPtr nested = get(trimRight(name, "Merge"), function->getArgumentsDataTypes(), parameters, recursion_level + 1);
 
         if (nested->getName() != function->getFunctionName())
-            throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+            throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name
+                + ", because it corresponds to different aggregate function: " + function->getFunctionName() + " instead of " + nested->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return createAggregateFunctionMerge(nested);
+        return createAggregateFunctionMerge(nested, argument_types);
     }
 
-    if ((recursion_level <= 2) && endsWith(name, "If"))
+    if (endsWith(name, "If"))
     {
         if (argument_types.empty())
-            throw Exception{
-                "Incorrect number of arguments for aggregate function " + name,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception("Incorrect number of arguments for aggregate function " + name,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        /// For aggregate functions of the form `aggIf`, where `agg` is the name of another aggregate function.
+        if (!typeid_cast<const DataTypeUInt8 *>(argument_types.back().get()))
+            throw Exception("Illegal type " + argument_types.back()->getName() + " of last argument for aggregate function " + name,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         DataTypes nested_dt = argument_types;
         nested_dt.pop_back();
+
         AggregateFunctionPtr nested = get(trimRight(name, "If"), nested_dt, parameters, recursion_level + 1);
-        return createAggregateFunctionIf(nested);
+        return createAggregateFunctionIf(nested, argument_types);
     }
 
-    if ((recursion_level <= 3) && endsWith(name, "Array"))
+    if (endsWith(name, "Array"))
     {
-        /// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
-        size_t num_agruments = argument_types.size();
-
         DataTypes nested_arguments;
-        for (size_t i = 0; i < num_agruments; ++i)
+        for (const auto & type : argument_types)
         {
-            if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*argument_types[i]))
+            if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(type.get()))
                 nested_arguments.push_back(array->getNestedType());
             else
-                throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) +
+                throw Exception("Illegal type " + type->getName() + " of argument #" + toString(i + 1) +
                     " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
-        /// + 3, so that no other modifier can go before the `Array`
-        AggregateFunctionPtr nested = get(trimRight(name, "Array"), nested_arguments, parameters, recursion_level + 3);
-        return createAggregateFunctionArray(nested);
+
+        AggregateFunctionPtr nested = get(trimRight(name, "Array"), nested_arguments, parameters, recursion_level + 1);
+        return createAggregateFunctionArray(nested, argument_types);
     }
 
-    if ((recursion_level <= 3) && endsWith(name, "ForEach"))
+    if (endsWith(name, "ForEach"))
     {
-        /// For functions like aggForEach, where 'agg' is the name of another aggregate function
-        if (argument_types.size() != 1)
-            throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         DataTypes nested_arguments;
-        if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*argument_types[0]))
-            nested_arguments.push_back(array->getNestedType());
-        else
-            throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        for (const auto & type : argument_types)
+        {
+            if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(type.get()))
+                nested_arguments.push_back(array->getNestedType());
+            else
+                throw Exception("Illegal type " + type->getName() + " of argument #" + toString(i + 1) +
+                    " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
-        /// + 3, so that no other modifier can stay before ForEach. Note that the modifiers Array and ForEach are mutually exclusive.
-        AggregateFunctionPtr nested = get(trimRight(name, "ForEach"), nested_arguments, parameters, recursion_level + 3);
-        return createAggregateFunctionForEach(nested);
+        AggregateFunctionPtr nested = get(trimRight(name, "ForEach"), nested_arguments, parameters, recursion_level + 1);
+        return createAggregateFunctionForEach(nested, argument_types);
     }
 
     throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
@@ -244,30 +249,16 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
     if (recursion_level == 0 && case_insensitive_aggregate_functions.count(Poco::toLower(name)))
         return true;
 
-    /// For aggregate functions of the form `aggState`, where `agg` is the name of another aggregate function.
-    if ((recursion_level <= 0) && endsWith(name, "State"))
+    if (endsWith(name, "State"))
         return isAggregateFunctionName(trimRight(name, "State"), recursion_level + 1);
-
-    /// For aggregate functions of the form `aggMerge`, where `agg` is the name of another aggregate function.
-    if ((recursion_level <= 1) && endsWith(name, "Merge"))
+    if (endsWith(name, "Merge"))
         return isAggregateFunctionName(trimRight(name, "Merge"), recursion_level + 1);
-
-    /// For aggregate functions of the form `aggIf`, where `agg` is the name of another aggregate function.
-    if ((recursion_level <= 2) && endsWith(name, "If"))
+    if (endsWith(name, "If"))
         return isAggregateFunctionName(trimRight(name, "If"), recursion_level + 1);
-
-    /// For aggregate functions of the form `aggArray`, where `agg` is the name of another aggregate function.
-    if ((recursion_level <= 3) && endsWith(name, "Array"))
-    {
-        /// + 3, so that no other modifier can go before `Array`
-        return isAggregateFunctionName(trimRight(name, "Array"), recursion_level + 3);
-    }
-
-    if ((recursion_level <= 3) && endsWith(name, "ForEach"))
-    {
-        /// + 3, so that no other modifier can go before `ForEach`
-        return isAggregateFunctionName(trimRight(name, "ForEach"), recursion_level + 3);
-    }
+    if (endsWith(name, "Array"))
+        return isAggregateFunctionName(trimRight(name, "Array"), recursion_level + 1);
+    if (endsWith(name, "ForEach"))
+        return isAggregateFunctionName(trimRight(name, "ForEach"), recursion_level + 1);
 
     return false;
 }

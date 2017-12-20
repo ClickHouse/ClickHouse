@@ -19,7 +19,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqCombinedBiasData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
@@ -276,7 +276,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float64>
 template <typename T, typename Data>
 struct OneAdder
 {
-    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num)
+    static void ALWAYS_INLINE add(Data & data, const IColumn & column, size_t row_num)
     {
         if constexpr (std::is_same<Data, AggregateFunctionUniqUniquesHashSetData>::value
             || std::is_same<Data, AggregateFunctionUniqHLL12Data<T>>::value)
@@ -334,7 +334,7 @@ struct OneAdder
 
 /// Calculates the number of different values approximately or exactly.
 template <typename T, typename Data>
-class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data>>
+class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
 public:
     String getName() const override { return Data::getName(); }
@@ -344,13 +344,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void setArgument(const DataTypePtr & /*argument*/)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        detail::OneAdder<T, Data>::addImpl(this->data(place), column, row_num);
+        detail::OneAdder<T, Data>::add(this->data(place), *columns[0], row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -382,7 +378,7 @@ public:
   * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
 template <typename Data, bool argument_is_tuple>
-class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>, argument_is_tuple>
 {
 private:
     static constexpr bool is_exact = std::is_same<Data, AggregateFunctionUniqExactData<String>>::value;
@@ -390,19 +386,20 @@ private:
     size_t num_args = 0;
 
 public:
-    String getName() const override { return Data::getName(); }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
-
-    void setArguments(const DataTypes & arguments) override
+    AggregateFunctionUniqVariadic(const DataTypes & arguments, UInt8 threshold)
+        : threshold(threshold)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
         else
             num_args = arguments.size();
+    }
+
+    String getName() const override { return Data::getName(); }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -429,13 +426,6 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionUniqVariadic &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

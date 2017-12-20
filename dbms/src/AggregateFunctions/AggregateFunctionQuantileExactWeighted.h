@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
 
 #include <Columns/ColumnArray.h>
@@ -43,7 +43,7 @@ struct AggregateFunctionQuantileExactWeightedData
   */
 template <typename ValueType, typename WeightType>
 class AggregateFunctionQuantileExactWeighted final
-    : public IBinaryAggregateFunction<
+    : public IAggregateFunctionDataHelper<
         AggregateFunctionQuantileExactWeightedData<ValueType>,
         AggregateFunctionQuantileExactWeighted<ValueType, WeightType>>
 {
@@ -52,7 +52,7 @@ private:
     DataTypePtr type;
 
 public:
-    AggregateFunctionQuantileExactWeighted(double level_ = 0.5) : level(level_) {}
+    AggregateFunctionQuantileExactWeighted(const DataTypePtr & argument, double level) : level(level), type(argument) {}
 
     String getName() const override { return "quantileExactWeighted"; }
 
@@ -61,24 +61,11 @@ public:
         return type;
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
-    {
-        type = arguments[0];
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place)
-            .map[static_cast<const ColumnVector<ValueType> &>(column_value).getData()[row_num]]
-            += static_cast<const ColumnVector<WeightType> &>(column_weight).getData()[row_num];
+            .map[static_cast<const ColumnVector<ValueType> &>(*columns[0]).getData()[row_num]]
+            += static_cast<const ColumnVector<WeightType> &>(*columns[1]).getData()[row_num];
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -165,7 +152,7 @@ public:
   */
 template <typename ValueType, typename WeightType>
 class AggregateFunctionQuantilesExactWeighted final
-    : public IBinaryAggregateFunction<
+    : public IAggregateFunctionDataHelper<
         AggregateFunctionQuantileExactWeightedData<ValueType>,
         AggregateFunctionQuantilesExactWeighted<ValueType, WeightType>>
 {
@@ -174,6 +161,8 @@ private:
     DataTypePtr type;
 
 public:
+    AggregateFunctionQuantilesExactWeighted(const DataTypePtr & argument, const Array & levels) : levels(levels), type(argument) {}
+
     String getName() const override { return "quantilesExactWeighted"; }
 
     DataTypePtr getReturnType() const override
@@ -181,21 +170,11 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
-    {
-        type = arguments[0];
-    }
-
-    void setParameters(const Array & params) override
-    {
-        levels.set(params);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place)
-            .map[static_cast<const ColumnVector<ValueType> &>(column_value).getData()[row_num]]
-            += static_cast<const ColumnVector<WeightType> &>(column_weight).getData()[row_num];
+            .map[static_cast<const ColumnVector<ValueType> &>(*columns[0]).getData()[row_num]]
+            += static_cast<const ColumnVector<WeightType> &>(*columns[1]).getData()[row_num];
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

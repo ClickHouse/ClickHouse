@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -93,8 +93,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
             rb.read(reinterpret_cast<char *>(&data[0]), count * sizeof(data[0]));
     }
 
-
-    void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
+    void add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
     }
@@ -105,7 +104,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 template <>
 struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64>
 {
-    void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
+    void add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         /// Keep in mind that calculations are approximate.
         StringRef value = column.getDataAt(row_num);
@@ -116,7 +115,7 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
 template <>
 struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UInt64>
 {
-    void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
+    void add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         UInt128 value = static_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
         SipHash hash;
@@ -128,7 +127,7 @@ struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UI
 constexpr UInt8 uniq_upto_max_threshold = 100;
 
 template <typename T>
-class AggregateFunctionUniqUpTo final : public IUnaryAggregateFunction<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>
+class AggregateFunctionUniqUpTo final : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>
 {
 private:
     UInt8 threshold = 5;    /// Default value if the parameter is not specified.
@@ -146,27 +145,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void setArgument(const DataTypePtr & /*argument*/)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        UInt64 threshold_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
-
-        if (threshold_param > uniq_upto_max_threshold)
-            throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(uniq_upto_max_threshold),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        threshold = threshold_param;
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).addImpl(column, row_num, threshold);
+        this->data(place).add(*columns[0], row_num, threshold);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -198,13 +179,23 @@ public:
   * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
 template <bool argument_is_tuple>
-class AggregateFunctionUniqUpToVariadic final : public IAggregateFunctionHelper<AggregateFunctionUniqUpToData<UInt64>>
+class AggregateFunctionUniqUpToVariadic final
+    : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<argument_is_tuple>>
 {
 private:
     size_t num_args = 0;
-    UInt8 threshold = 5;    /// Default value if the parameter is not specified.
+    UInt8 threshold;
 
 public:
+    AggregateFunctionUniqUpToVariadic(const DataTypes & arguments, UInt8 threshold)
+        : threshold(threshold)
+    {
+        if (argument_is_tuple)
+            num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
+        else
+            num_args = arguments.size();
+    }
+
     size_t sizeOfData() const override
     {
         return sizeof(AggregateFunctionUniqUpToData<UInt64>) + sizeof(UInt64) * threshold;
@@ -215,28 +206,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeUInt64>();
-    }
-
-    void setArguments(const DataTypes & arguments) override
-    {
-        if (argument_is_tuple)
-            num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
-        else
-            num_args = arguments.size();
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        UInt64 threshold_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
-
-        if (threshold_param > uniq_upto_max_threshold)
-            throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(uniq_upto_max_threshold),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        threshold = threshold_param;
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -263,15 +232,6 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *arena)
-    {
-        static_cast<const AggregateFunctionUniqUpToVariadic &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

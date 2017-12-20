@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -34,7 +34,7 @@ struct AggregateFunctionQuantileDeterministicData
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantileDeterministic final
-    : public IBinaryAggregateFunction<
+    : public IAggregateFunctionDataHelper<
         AggregateFunctionQuantileDeterministicData<ArgumentFieldType>,
         AggregateFunctionQuantileDeterministic<ArgumentFieldType, returns_float>>
 {
@@ -45,7 +45,13 @@ private:
     DataTypePtr type;
 
 public:
-    AggregateFunctionQuantileDeterministic(double level_ = 0.5) : level(level_) {}
+    AggregateFunctionQuantile(const DataTypePtr & argument, double level_) : level(level_)
+    {
+        if (returns_float)
+            type = std::make_shared<DataTypeFloat64>();
+        else
+            type = argument;
+    }
 
     String getName() const override { return "quantileDeterministic"; }
 
@@ -54,30 +60,11 @@ public:
         return type;
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
-
-        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
-            throw Exception{
-                "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num, Arena *) const
-    {
-        this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
-            determinator.get64(row_num));
+        this->data(place).sample.insert(
+            static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
+            columns[1]->get64(row_num));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -116,7 +103,7 @@ public:
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantilesDeterministic final
-    : public IBinaryAggregateFunction<
+    : public IAggregateFunctionDataHelper<
         AggregateFunctionQuantileDeterministicData<ArgumentFieldType>,
         AggregateFunctionQuantilesDeterministic<ArgumentFieldType, returns_float>>
 {
@@ -128,6 +115,14 @@ private:
     DataTypePtr type;
 
 public:
+    AggregateFunctionQuantiles(const DataTypePtr & argument, const Levels & levels) : levels(levels)
+    {
+        if (returns_float)
+            type = std::make_shared<DataTypeFloat64>();
+        else
+            type = argument;
+    }
+
     String getName() const override { return "quantilesDeterministic"; }
 
     DataTypePtr getReturnType() const override
@@ -135,34 +130,11 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
-
-        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
-            throw Exception{
-                "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.empty())
-            throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        size_t size = params.size();
-        levels.resize(size);
-
-        for (size_t i = 0; i < size; ++i)
-            levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num, Arena *) const
-    {
-        this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
-            determinator.get64(row_num));
+        this->data(place).sample.insert(
+            static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
+            columns[1]->get64(row_num));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

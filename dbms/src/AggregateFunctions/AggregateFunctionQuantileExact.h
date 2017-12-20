@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
 
 #include <Columns/ColumnArray.h>
@@ -39,14 +39,14 @@ struct AggregateFunctionQuantileExactData
   */
 template <typename T>
 class AggregateFunctionQuantileExact final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileExactData<T>, AggregateFunctionQuantileExact<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionQuantileExactData<T>, AggregateFunctionQuantileExact<T>>
 {
 private:
     double level;
     DataTypePtr type;
 
 public:
-    AggregateFunctionQuantileExact(double level_ = 0.5) : level(level_) {}
+    AggregateFunctionQuantileExact(const DataTypePtr & argument, double level) : level(level), type(argument) {}
 
     String getName() const override { return "quantileExact"; }
 
@@ -55,22 +55,9 @@ public:
         return type;
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        type = argument;
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+        this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -128,13 +115,15 @@ public:
   */
 template <typename T>
 class AggregateFunctionQuantilesExact final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileExactData<T>, AggregateFunctionQuantilesExact<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionQuantileExactData<T>, AggregateFunctionQuantilesExact<T>>
 {
 private:
     QuantileLevels<double> levels;
     DataTypePtr type;
 
 public:
+    AggregateFunctionQuantilesExact(const DataTypePtr & argument, const Array & levels) : levels(levels), type(argument) {}
+
     String getName() const override { return "quantilesExact"; }
 
     DataTypePtr getReturnType() const override
@@ -142,19 +131,9 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        type = argument;
-    }
-
-    void setParameters(const Array & params) override
-    {
-        levels.set(params);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+        this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
