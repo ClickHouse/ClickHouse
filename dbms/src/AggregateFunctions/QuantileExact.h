@@ -16,9 +16,9 @@ template <typename Value>
 struct QuantileExact
 {
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
-    static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<T>);
+    static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Value>);
 
-    using Array = PODArray<T, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
+    using Array = PODArray<Value, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
     Array array;
 
     void add(const Value & x)
@@ -27,7 +27,7 @@ struct QuantileExact
     }
 
     template <typename Weight>
-    void add(const Value & x, const Weight & weight)
+    void add(const Value &, const Weight &)
     {
         throw Exception("Method add with weight is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -97,12 +97,12 @@ struct QuantileExact
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    float getFloat(Float64 level) const
+    float getFloat(Float64) const
     {
         throw Exception("Method getFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result) const
+    void getManyFloat(const Float64 *, const size_t *, size_t, float *) const
     {
         throw Exception("Method getManyFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }

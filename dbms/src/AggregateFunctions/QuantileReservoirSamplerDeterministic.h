@@ -16,10 +16,10 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileReservoirSamplerDeterministic
 {
-    using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
+    using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
-    void add(const Value & x)
+    void add(const Value &)
     {
         throw Exception("Method add without determinator is not implemented for ReservoirSamplerDeterministic", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -30,7 +30,7 @@ struct QuantileReservoirSamplerDeterministic
         data.insert(x, determinator);
     }
 
-    void merge(const QuantileReservoirSampler & rhs)
+    void merge(const QuantileReservoirSamplerDeterministic & rhs)
     {
         data.merge(rhs);
     }

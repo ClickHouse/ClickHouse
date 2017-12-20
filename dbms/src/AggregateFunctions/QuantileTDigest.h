@@ -137,7 +137,7 @@ class QuantileTDigest
                 auto l = summary.begin();
                 auto r = std::next(l);
 
-                TotalCount sum = 0;
+                Count sum = 0;
                 while (r != summary.end())
                 {
                     // we use quantile which gives us the smallest error
@@ -234,8 +234,8 @@ public:
         if (summary.size() == 1)
             return summary.front().mean;
 
-        Value x = q * count;
-        TotalCount sum = 0;
+        Value x = level * count;
+        Count sum = 0;
         Value prev_mean = summary.front().mean;
         Value prev_x = 0;
 
@@ -279,7 +279,7 @@ public:
         }
 
         Value x = levels[levels_permutation[0]] * count;
-        TotalCount sum = 0;
+        Count sum = 0;
         Value prev_mean = summary.front().mean;
         Value prev_x = 0;
 
