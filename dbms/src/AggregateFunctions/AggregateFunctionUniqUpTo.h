@@ -124,15 +124,19 @@ struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UI
     }
 };
 
-constexpr UInt8 uniq_upto_max_threshold = 100;
 
 template <typename T>
 class AggregateFunctionUniqUpTo final : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>
 {
 private:
-    UInt8 threshold = 5;    /// Default value if the parameter is not specified.
+    UInt8 threshold;
 
 public:
+    AggregateFunctionUniqUpTo(UInt8 threshold)
+        : threshold(threshold)
+    {
+    }
+
     size_t sizeOfData() const override
     {
         return sizeof(AggregateFunctionUniqUpToData<T>) + sizeof(T) * threshold;
@@ -232,6 +236,8 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

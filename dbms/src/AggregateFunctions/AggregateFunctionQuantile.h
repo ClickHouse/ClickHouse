@@ -25,20 +25,20 @@ namespace ErrorCodes
 
 
 /** Generic aggregate function for calculation of quantiles.
-  * It depends on quantile calculation data structure.
+  * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
   */
-
 
 template <
     /// Type of first argument.
     typename Value,
-    /// If the function accept second argument, the type of this argument
-    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
-    typename SecondArg,
     /// Data structure and implementation of calculation. Look at QuantileExact.h for example.
     typename Data,
-    /// Structure with static member "name", containing the name of aggregate function.
+    /// Structure with static member "name", containing the name of the aggregate function.
     typename Name,
+    /// If true, the function accept second argument
+    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
+    /// Second argument is always obtained through 'getUInt' method.
+    bool have_second_arg,
     /// If true, the function will return float with possibly interpolated results and NaN if there was no values.
     /// Otherwise it will return Value type and default value if there was no values.
     /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
@@ -48,13 +48,14 @@ template <
     bool returns_many
 >
 class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
-    AggregateFunctionQuantile<Value, SecondArg, Data, Name, returns_float, returns_many>>
+    AggregateFunctionQuantile<Value, Data, Name, have_second_arg, returns_float, returns_many>>
 {
 private:
-    static constexpr bool have_second_arg = !std::is_same_v<SecondArg, void>;
-
     QuantileLevels<Float64> levels;
+
+    /// Used when there are single level to get.
     Float64 level = 0.5;
+
     DataTypePtr argument_type;
 
 public:
@@ -87,7 +88,7 @@ public:
         if constexpr (have_second_arg)
             this->data(place).add(
                 static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num],
-                static_cast<const ColumnVector<SecondArg> &>(*columns[1]).getData()[row_num]);
+                columns[1]->getUInt(row_num));
         else
             this->data(place).add(
                 static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num]);
@@ -100,6 +101,7 @@ public:
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
+        /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
@@ -110,6 +112,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
+        /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
         auto & data = this->data(const_cast<AggregateDataPtr>(place));
 
         if constexpr (returns_many)

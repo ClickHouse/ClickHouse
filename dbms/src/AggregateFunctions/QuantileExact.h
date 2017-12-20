@@ -1,7 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
-
 
 namespace DB
 {
@@ -11,7 +9,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** */
+/** Calculates quantile by collecting all values into array
+  *  and applying n-th element (introselect) algorithm for the resulting array.
+  *
+  * It use O(N) memory and it is very inefficient in case of high amount of identical values.
+  * But it is very CPU efficient for not large datasets.
+  */
 template <typename Value>
 struct QuantileExact
 {

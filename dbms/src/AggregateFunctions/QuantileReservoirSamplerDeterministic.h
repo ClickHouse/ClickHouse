@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <AggregateFunctions/ReservoirSamplerDeterministic.h>
 
 
@@ -12,7 +11,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** */
+/** Quantile calculation with "reservoir sample" algorithm.
+  * It collects pseudorandom subset of limited size from a stream of values,
+  *  and approximate quantile from it.
+  * The function accept second argument, named "determinator"
+  *  and a hash function from it is calculated and used as a source for randomness
+  *  to apply random sampling.
+  * The function is deterministic, but care should be taken with choose of "determinator" argument.
+  */
 template <typename Value>
 struct QuantileReservoirSamplerDeterministic
 {
