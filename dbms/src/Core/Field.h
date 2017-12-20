@@ -108,8 +108,7 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs,
-        [[maybe_unused]] typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, void>::type * unused = nullptr)
+    Field(T && rhs, std::integral_constant<int, Field::TypeToEnum<typename std::decay<T>::type>::value> * = nullptr)
     {
         createConcrete(std::forward<T>(rhs));
     }
