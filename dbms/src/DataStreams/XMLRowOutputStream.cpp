@@ -9,15 +9,15 @@ namespace DB
 XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
     : dst_ostr(ostr_), write_statistics(write_statistics_)
 {
-    NamesAndTypesList columns(sample_.getColumnsList());
+    NamesAndTypesList columns(sample_.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
     field_tag_names.resize(sample_.columns());
 
-    bool have_non_numeric_columns = false;
+    bool need_validate_utf8 = false;
     for (size_t i = 0; i < sample_.columns(); ++i)
     {
-        if (!sample_.getByPosition(i).type->isNumeric())
-            have_non_numeric_columns = true;
+        if (!sample_.getByPosition(i).type->textCanContainOnlyValidUTF8())
+            need_validate_utf8 = true;
 
         /// As element names, we will use the column name if it has a valid form, or "field", otherwise.
         /// The condition below is more strict than the XML standard requires.
@@ -43,7 +43,7 @@ XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample
             : "field";
     }
 
-    if (have_non_numeric_columns)
+    if (need_validate_utf8)
     {
         validating_ostr = std::make_unique<WriteBufferValidUTF8>(dst_ostr);
         ostr = validating_ostr.get();

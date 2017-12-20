@@ -24,7 +24,7 @@ static void removeConstantsFromBlock(Block & block)
     size_t i = 0;
     while (i < columns)
     {
-        if (block.getByPosition(i).column->isConst())
+        if (block.getByPosition(i).column->isColumnConst())
         {
             block.erase(i);
             --columns;
@@ -40,9 +40,9 @@ static void removeConstantsFromSortDescription(const Block & sample_block, SortD
         [&](const SortColumnDescription & elem)
         {
             if (!elem.column_name.empty())
-                return sample_block.getByName(elem.column_name).column->isConst();
+                return sample_block.getByName(elem.column_name).column->isColumnConst();
             else
-                return sample_block.safeGetByPosition(elem.column_number).column->isConst();
+                return sample_block.safeGetByPosition(elem.column_number).column->isColumnConst();
         }), description.end());
 }
 
@@ -57,7 +57,7 @@ static void enrichBlockWithConstants(Block & block, const Block & sample_block)
     for (size_t i = 0; i < columns; ++i)
     {
         const auto & col_type_name = sample_block.getByPosition(i);
-        if (col_type_name.column->isConst())
+        if (col_type_name.column->isColumnConst())
             block.insert(i, {col_type_name.column->cloneResized(rows), col_type_name.type, col_type_name.name});
     }
 }
@@ -204,12 +204,10 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
 template <typename TSortCursor>
 Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCursor> & queue)
 {
-    Block merged = blocks[0].cloneEmpty();
     size_t num_columns = blocks[0].columns();
 
-    ColumnPlainPtrs merged_columns;
-    for (size_t i = 0; i < num_columns; ++i)    /// TODO: reserve
-        merged_columns.push_back(merged.safeGetByPosition(i).column.get());
+    MutableColumns merged_columns = blocks[0].cloneEmptyColumns();
+    /// TODO: reserve (in each column)
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
@@ -230,19 +228,20 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
         ++total_merged_rows;
         if (limit && total_merged_rows == limit)
         {
+            auto res = blocks[0].cloneWithColumns(std::move(merged_columns));
             blocks.clear();
-            return merged;
+            return res;
         }
 
         ++merged_rows;
         if (merged_rows == max_merged_block_size)
-            return merged;
+            return blocks[0].cloneWithColumns(std::move(merged_columns));
     }
 
     if (merged_rows == 0)
-        merged.clear();
+        return {};
 
-    return merged;
+    return blocks[0].cloneWithColumns(std::move(merged_columns));
 }
 
 

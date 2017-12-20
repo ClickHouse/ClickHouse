@@ -2,7 +2,6 @@
 
 #include <shared_mutex>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Limits.h>
 #include <Interpreters/SetVariants.h>
@@ -89,12 +88,12 @@ private:
     OverflowMode overflow_mode;
 
     /// If there is an array on the left side of IN. We check that at least one element of the array presents in the set.
-    void executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
+    void executeArray(const ColumnArray * key_column, ColumnUInt8::Container & vec_res, bool negative) const;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
-        const ConstColumnPlainPtrs & key_columns,
-        ColumnUInt8::Container_t & vec_res,
+        const ColumnRawPtrs & key_columns,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         const PaddedPODArray<UInt8> * null_map) const;
 
@@ -118,7 +117,7 @@ private:
     template <typename Method>
     void insertFromBlockImpl(
         Method & method,
-        const ConstColumnPlainPtrs & key_columns,
+        const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map);
@@ -126,7 +125,7 @@ private:
     template <typename Method, bool has_null_map>
     void insertFromBlockImplCase(
         Method & method,
-        const ConstColumnPlainPtrs & key_columns,
+        const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map);
@@ -134,8 +133,8 @@ private:
     template <typename Method>
     void executeImpl(
         Method & method,
-        const ConstColumnPlainPtrs & key_columns,
-        ColumnUInt8::Container_t & vec_res,
+        const ColumnRawPtrs & key_columns,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         size_t rows,
         ConstNullMapPtr null_map) const;
@@ -143,8 +142,8 @@ private:
     template <typename Method, bool has_null_map>
     void executeImplCase(
         Method & method,
-        const ConstColumnPlainPtrs & key_columns,
-        ColumnUInt8::Container_t & vec_res,
+        const ColumnRawPtrs & key_columns,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         size_t rows,
         ConstNullMapPtr null_map) const;
@@ -152,9 +151,9 @@ private:
     template <typename Method>
     void executeArrayImpl(
         Method & method,
-        const ConstColumnPlainPtrs & key_columns,
-        const ColumnArray::Offsets_t & offsets,
-        ColumnUInt8::Container_t & vec_res,
+        const ColumnRawPtrs & key_columns,
+        const ColumnArray::Offsets & offsets,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         size_t rows) const;
 };

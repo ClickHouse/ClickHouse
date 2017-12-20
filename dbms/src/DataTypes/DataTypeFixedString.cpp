@@ -200,9 +200,9 @@ void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 }
 
 
-ColumnPtr DataTypeFixedString::createColumn() const
+MutableColumnPtr DataTypeFixedString::createColumn() const
 {
-    return std::make_shared<ColumnFixedString>(n);
+    return ColumnFixedString::create(n);
 }
 
 

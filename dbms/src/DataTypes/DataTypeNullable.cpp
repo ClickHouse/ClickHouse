@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
@@ -30,6 +31,12 @@ DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
 }
 
 
+bool DataTypeNullable::onlyNull() const
+{
+    return typeid_cast<const DataTypeNothing *>(nested_data_type.get());
+}
+
+
 void DataTypeNullable::enumerateStreams(StreamCallback callback, SubstreamPath path) const
 {
     path.push_back(Substream::NullMap);
@@ -53,11 +60,11 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
     /// First serialize null map.
     path.push_back(Substream::NullMap);
     if (auto stream = getter(path))
-        DataTypeUInt8().serializeBinaryBulk(col.getNullMapConcreteColumn(), *stream, offset, limit);
+        DataTypeUInt8().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
 
     /// Then serialize contents of arrays.
     path.back() = Substream::NullableElements;
-    nested_data_type->serializeBinaryBulkWithMultipleStreams(*col.getNestedColumn(), getter, offset, limit, position_independent_encoding, path);
+    nested_data_type->serializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), getter, offset, limit, position_independent_encoding, path);
 }
 
 
@@ -73,10 +80,10 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
 
     path.push_back(Substream::NullMap);
     if (auto stream = getter(path))
-        DataTypeUInt8().deserializeBinaryBulk(col.getNullMapConcreteColumn(), *stream, limit, 0);
+        DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
 
     path.back() = Substream::NullableElements;
-    nested_data_type->deserializeBinaryBulkWithMultipleStreams(*col.getNestedColumn(), getter, limit, avg_value_size_hint, position_independent_encoding, path);
+    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), getter, limit, avg_value_size_hint, position_independent_encoding, path);
 }
 
 
@@ -87,7 +94,7 @@ void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, W
     bool is_null = col.isNullAt(row_num);
     writeBinary(is_null, ostr);
     if (!is_null)
-        nested_data_type->serializeBinary(*col.getNestedColumn(), row_num, ostr);
+        nested_data_type->serializeBinary(col.getNestedColumn(), row_num, ostr);
 }
 
 
@@ -105,15 +112,15 @@ static void safeDeserialize(
     }
     else
     {
-        deserialize_nested(*col.getNestedColumn());
+        deserialize_nested(col.getNestedColumn());
 
         try
         {
-            col.getNullMap().push_back(0);
+            col.getNullMapData().push_back(0);
         }
         catch (...)
         {
-            col.getNestedColumn()->popBack(1);
+            col.getNestedColumn().popBack(1);
             throw;
         }
     }
@@ -135,7 +142,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
-        nested_data_type->serializeTextEscaped(*col.getNestedColumn(), row_num, ostr);
+        nested_data_type->serializeTextEscaped(col.getNestedColumn(), row_num, ostr);
 }
 
 
@@ -203,7 +210,7 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
     if (col.isNullAt(row_num))
         writeCString("NULL", ostr);
     else
-        nested_data_type->serializeTextQuoted(*col.getNestedColumn(), row_num, ostr);
+        nested_data_type->serializeTextQuoted(col.getNestedColumn(), row_num, ostr);
 }
 
 
@@ -221,7 +228,7 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
-        nested_data_type->serializeTextCSV(*col.getNestedColumn(), row_num, ostr);
+        nested_data_type->serializeTextCSV(col.getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
@@ -238,7 +245,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
     if (col.isNullAt(row_num))
         writeCString("NULL", ostr);
     else
-        nested_data_type->serializeText(*col.getNestedColumn(), row_num, ostr);
+        nested_data_type->serializeText(col.getNestedColumn(), row_num, ostr);
 }
 
 void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
@@ -248,7 +255,7 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
     if (col.isNullAt(row_num))
         writeCString("null", ostr);
     else
-        nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr, settings);
+        nested_data_type->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
@@ -265,13 +272,18 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
-        nested_data_type->serializeTextXML(*col.getNestedColumn(), row_num, ostr);
+        nested_data_type->serializeTextXML(col.getNestedColumn(), row_num, ostr);
 }
 
-ColumnPtr DataTypeNullable::createColumn() const
+MutableColumnPtr DataTypeNullable::createColumn() const
 {
-    ColumnPtr new_col = nested_data_type->createColumn();
-    return std::make_shared<ColumnNullable>(new_col, std::make_shared<ColumnUInt8>());
+    return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
+}
+
+
+size_t DataTypeNullable::getSizeOfValueInMemory() const
+{
+    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -289,6 +301,21 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeNullable(DataTypeFactory & factory)
 {
     factory.registerDataType("Nullable", create);
+}
+
+
+DataTypePtr makeNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return type;
+    return std::make_shared<DataTypeNullable>(type);
+}
+
+DataTypePtr removeNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return static_cast<const DataTypeNullable &>(*type).getNestedType();
+    return type;
 }
 
 }

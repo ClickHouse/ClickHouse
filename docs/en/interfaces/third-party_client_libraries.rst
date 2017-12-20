@@ -30,6 +30,7 @@ There exist third-party client libraries for ClickHouse:
     - `clickhouse (Ruby) <https://github.com/archan937/clickhouse>`_
 * R
     - `clickhouse-r <https://github.com/hannesmuehleisen/clickhouse-r>`_
+    - `RClickhouse <https://github.com/IMSMWU/RClickhouse>`_
 * .NET
     - `ClickHouse-Net <https://github.com/killwort/ClickHouse-Net>`_
 

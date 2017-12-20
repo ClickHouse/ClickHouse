@@ -67,7 +67,7 @@ public:
 
     void setArgumentsImpl(const DataTypes & arguments)
     {
-        if (!arguments.at(1)->behavesAsNumber())    /// TODO filter out floating point types.
+        if (!arguments.at(1)->isUnsignedInteger())
             throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         type = arguments.front();
@@ -98,6 +98,8 @@ public:
         if (params.size() == 2)
         {
             length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
+            if (length_to_resize > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
+                throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
         }
     }
 
@@ -182,7 +184,7 @@ public:
     {
         ColumnArray & to_array = static_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();
-        ColumnArray::Offsets_t & to_offsets = to_array.getOffsets();
+        ColumnArray::Offsets & to_offsets = to_array.getOffsets();
 
         const Array & arr = data(place).value;
 

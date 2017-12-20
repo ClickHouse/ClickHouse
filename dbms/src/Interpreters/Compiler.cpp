@@ -221,14 +221,23 @@ void Compiler::compile(
         "("
             INTERNAL_COMPILER_EXECUTABLE
             " " INTERNAL_COMPILER_FLAGS
+
+
     #if INTERNAL_COMPILER_CUSTOM_ROOT
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include/"
+            /// To get correct order merge this results carefully:
+            /// echo | clang -x c++ -E -Wp,-v -
+            /// echo | g++ -x c++ -E -Wp,-v -
+
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/backward"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/clang/*/include"                  /// if compiler is clang (from package)
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include"                /// if clang installed manually
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include-fixed"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include"                            /// if something installed manually
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include"
     #endif
             " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
             " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"

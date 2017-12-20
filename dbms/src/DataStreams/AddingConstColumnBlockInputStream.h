@@ -38,7 +38,7 @@ protected:
         if (!res)
             return res;
 
-        res.insert({data_type->createConstColumn(res.rows(), value)->convertToFullColumnIfConst(), data_type, column_name});
+        res.insert({data_type->createColumnConst(res.rows(), value)->convertToFullColumnIfConst(), data_type, column_name});
         return res;
     }
 

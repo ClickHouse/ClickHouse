@@ -1,5 +1,4 @@
-system.processes
-================
+# system.processes
 
 Эта системная таблица используется для реализации запроса `SHOW PROCESSLIST`.
 Столбцы:

@@ -12,6 +12,8 @@
 #include <Parsers/ASTSampleRatio.h>
 
 /// Allow to use __uint128_t as a template parameter for boost::rational.
+// https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
+#if !defined(__GLIBCXX_BITSIZE_INT_N_0)
 namespace std
 {
     template <>
@@ -21,10 +23,11 @@ namespace std
         static constexpr bool is_signed = false;
         static constexpr bool is_integer = true;
         static constexpr int radix = 2;
-        static constexpr int digits = 8 * sizeof(char) * 2;
+        static constexpr int digits = 128;
         static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
     };
 }
+#endif
 
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
@@ -70,14 +73,12 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 /// Construct a block consisting only of possible values of virtual columns
 static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
 {
-    Block res;
-    ColumnWithTypeAndName _part(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_part");
+    auto column = ColumnString::create();
 
     for (const auto & part : parts)
-        _part.column->insert(part->name);
+        column->insert(part->name);
 
-    res.insert(_part);
-    return res;
+    return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_part")};
 }
 
 

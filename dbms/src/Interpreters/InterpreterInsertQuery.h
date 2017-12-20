@@ -25,6 +25,10 @@ public:
     BlockIO execute() override;
 
 private:
+    /// Cache storage to avoid double table function call.
+    StoragePtr cached_table;
+    StoragePtr loadTable();
+
     StoragePtr getTable();
 
     Block getSampleBlock();

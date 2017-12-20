@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -13,7 +14,7 @@ namespace DB
 /// For simple key
 void formatIDs(BlockOutputStreamPtr & out, const std::vector<UInt64> & ids)
 {
-    auto column = std::make_shared<ColumnUInt64>(ids.size());
+    auto column = ColumnUInt64::create(ids.size());
     memcpy(column->getData().data(), ids.data(), ids.size() * sizeof(ids.front()));
 
     Block block{{ std::move(column), std::make_shared<DataTypeUInt64>(), "id" }};
@@ -32,13 +33,13 @@ void formatKeys(const DictionaryStructure & dict_struct, BlockOutputStreamPtr & 
     for (size_t i = 0, size = key_columns.size(); i < size; ++i)
     {
         const ColumnPtr & source_column = key_columns[i];
-        ColumnPtr filtered_column = source_column->cloneEmpty();
+        auto filtered_column = source_column->cloneEmpty();
         filtered_column->reserve(requested_rows.size());
 
         for (size_t idx : requested_rows)
             filtered_column->insertFrom(*source_column, idx);
 
-        block.insert({ filtered_column, (*dict_struct.key)[i].type, toString(i) });
+        block.insert({ std::move(filtered_column), (*dict_struct.key)[i].type, toString(i) });
     }
 
     out->writePrefix();

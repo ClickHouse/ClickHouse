@@ -296,7 +296,7 @@ private:
       * Put in required_joined_columns the set of columns available from JOIN and needed.
       */
     void getRequiredColumnsImpl(const ASTPtr & ast,
-        NameSet & required_columns, NameSet & ignored_names,
+        const NameSet & available_columns, NameSet & required_columns, NameSet & ignored_names,
         const NameSet & available_joined_columns, NameSet & required_joined_columns);
 
     /// Get the table from which the query is made

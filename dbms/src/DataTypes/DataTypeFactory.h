@@ -11,7 +11,7 @@ namespace DB
 {
 
 class IDataType;
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
