@@ -93,7 +93,8 @@ private:
     std::atomic<bool> stream_cancelled{false};
 
     void consumerConfiguration(struct rd_kafka_conf_s * conf);
-    ConsumerPtr claimConsumer(long wait_ms);
+    ConsumerPtr claimConsumer();
+    ConsumerPtr tryClaimConsumer(long wait_ms);
     void pushConsumer(ConsumerPtr c);
 
     void streamThread();
