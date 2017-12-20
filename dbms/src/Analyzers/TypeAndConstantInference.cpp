@@ -173,8 +173,6 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     {
         /// Note that aggregate function could never be constant expression.
 
-        aggregate_function_ptr->setArguments(argument_types);
-
         /// (?) Replace function name to canonical one. Because same function could be referenced by different names.
         // function->name = aggregate_function_ptr->getName();
 

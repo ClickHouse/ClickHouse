@@ -1,9 +1,16 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 namespace
 {
@@ -11,7 +18,7 @@ namespace
 template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
 static IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type, TArgs && ... args)
 {
-         if (typeid_cast<const DataTypeDate     *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
+         if (typeid_cast<const DataTypeDate *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
     else if (typeid_cast<const DataTypeDateTime *>(&argument_type)) return new AggregateFunctionTemplate<UInt32, Data>(std::forward<TArgs>(args)...);
     else return createWithNumericType<AggregateFunctionTemplate, Data, TArgs...>(argument_type, std::forward<TArgs>(args)...);
 }
@@ -32,9 +39,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 
 static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name + ", should be 1",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertUnary(name, argument_types);
 
     bool limit_size = false;
     UInt64 max_elems = std::numeric_limits<UInt64>::max();
