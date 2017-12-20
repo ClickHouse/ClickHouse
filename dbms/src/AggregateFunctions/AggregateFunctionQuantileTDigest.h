@@ -11,8 +11,7 @@
 #include <Common/PODArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,7 +25,7 @@ namespace ErrorCodes
 }
 }
 
-/** The algorithm was implemented by Alexei Borzenkov https: //███████████.yandex-team.ru/snaury
+/** The algorithm was implemented by Alexei Borzenkov https://github.com/snaury
   * He owns the authorship of the code and half the comments in this namespace,
   * except for merging, serialization, and sorting, as well as selecting types and other changes.
   * We thank Alexei Borzenkov for writing the original code.
@@ -161,7 +160,7 @@ public:
 
             if (summary.size() > 3)
             {
-        /// A pair of consecutive bars of the histogram.
+                /// A pair of consecutive bars of the histogram.
                 auto l = summary.begin();
                 auto r = std::next(l);
 
@@ -170,11 +169,11 @@ public:
                 {
                     // we use quantile which gives us the smallest error
 
-        /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
+                    /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
                     Value ql = (sum + l->count * 0.5) / count;
                     Value err = ql * (1 - ql);
 
-        /// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
+                    /// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
                     Value qr = (sum + l->count + r->count * 0.5) / count;
                     Value err2 = qr * (1 - qr);
 
@@ -183,15 +182,15 @@ public:
 
                     Value k = 4 * count * err * params.epsilon;
 
-        /** The ratio of the weight of the glued column pair to all values is not greater,
-          *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
-          *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
+                    /** The ratio of the weight of the glued column pair to all values is not greater,
+                      *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
+                      *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
                       */
 
                     if (l->count + r->count <= k)
                     {
                         // it is possible to merge left and right
-        /// The left column "eats" the right.
+                        /// The left column "eats" the right.
                         *l += *r;
                     }
                     else
@@ -200,14 +199,14 @@ public:
                         sum += l->count;
                         ++l;
 
-        /// We skip all the values "eaten" earlier.
+                        /// We skip all the values "eaten" earlier.
                         if (l != r)
                             *l = *r;
                     }
                     ++r;
                 }
 
-        /// At the end of the loop, all values to the right of l were "eaten".
+                /// At the end of the loop, all values to the right of l were "eaten".
                 summary.resize(l - summary.begin() + 1);
             }
 
@@ -349,7 +348,7 @@ struct AggregateFunctionQuantileTDigestData
 
 template <typename T, bool returns_float = true>
 class AggregateFunctionQuantileTDigest final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigest<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigest<T>>
 {
 private:
     Float32 level;
@@ -357,7 +356,7 @@ private:
     DataTypePtr type;
 
 public:
-    AggregateFunctionQuantileTDigest(double level_ = 0.5) : level(level_) {}
+    AggregateFunctionQuantileTDigest(double level_) : level(level_) {}
 
     String getName() const override { return "quantileTDigest"; }
 
@@ -366,25 +365,9 @@ public:
         return type;
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const
     {
-        if (returns_float)
-            type = std::make_shared<DataTypeFloat32>();
-        else
-            type = argument;
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float32>(), params[0]);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).digest.add(params, static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+        this->data(place).digest.add(params, static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -418,7 +401,7 @@ public:
 
 template <typename T, typename Weight, bool returns_float = true>
 class AggregateFunctionQuantileTDigestWeighted final
-    : public IBinaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigestWeighted<T, Weight, returns_float>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigestWeighted<T, Weight, returns_float>>
 {
 private:
     Float32 level;
@@ -426,7 +409,7 @@ private:
     DataTypePtr type;
 
 public:
-    AggregateFunctionQuantileTDigestWeighted(double level_ = 0.5) : level(level_) {}
+    AggregateFunctionQuantileTDigestWeighted(double level_) : level(level_) {}
 
     String getName() const override { return "quantileTDigestWeighted"; }
 
@@ -435,27 +418,11 @@ public:
         return type;
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
-    {
-        if (returns_float)
-            type = std::make_shared<DataTypeFloat32>();
-        else
-            type = arguments.at(0);
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float32>(), params[0]);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).digest.add(params,
-            static_cast<const ColumnVector<T> &>(column_value).getData()[row_num],
-            static_cast<const ColumnVector<Weight> &>(column_weight).getData()[row_num]);
+            static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num],
+            static_cast<const ColumnVector<Weight> &>(*columns[1]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -489,7 +456,7 @@ public:
 
 template <typename T, bool returns_float = true>
 class AggregateFunctionQuantilesTDigest final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigest<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigest<T>>
 {
 private:
     QuantileLevels<Float32> levels;
@@ -504,22 +471,9 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (returns_float)
-            type = std::make_shared<DataTypeFloat32>();
-        else
-            type = argument;
-    }
-
-    void setParameters(const Array & params) override
-    {
-        levels.set(params);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).digest.add(params, static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+        this->data(place).digest.add(params, static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -574,7 +528,7 @@ public:
 
 template <typename T, typename Weight, bool returns_float = true>
 class AggregateFunctionQuantilesTDigestWeighted final
-    : public IBinaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigestWeighted<T, Weight, returns_float>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigestWeighted<T, Weight, returns_float>>
 {
 private:
     QuantileLevels<Float32> levels;
@@ -589,24 +543,11 @@ public:
         return std::make_shared<DataTypeArray>(type);
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
-    {
-        if (returns_float)
-            type = std::make_shared<DataTypeFloat32>();
-        else
-            type = arguments.at(0);
-    }
-
-    void setParameters(const Array & params) override
-    {
-        levels.set(params);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).digest.add(params,
-            static_cast<const ColumnVector<T> &>(column_value).getData()[row_num],
-            static_cast<const ColumnVector<Weight> &>(column_weight).getData()[row_num]);
+            static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num],
+            static_cast<const ColumnVector<Weight> &>(*columns[1]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionGroupUniqArray.h>
 #include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+
 
 namespace DB
 {
@@ -20,25 +22,24 @@ class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUni
 };
 
 
-static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type)
+static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type)
 {
-         if (typeid_cast<const DataTypeDate *>(&argument_type)) return new AggregateFunctionGroupUniqArrayDate;
-    else if (typeid_cast<const DataTypeDateTime *>(&argument_type)) return new AggregateFunctionGroupUniqArrayDateTime;
+         if (typeid_cast<const DataTypeDate *>(argument_type.get())) return new AggregateFunctionGroupUniqArrayDate;
+    else if (typeid_cast<const DataTypeDateTime *>(argument_type.get())) return new AggregateFunctionGroupUniqArrayDateTime;
     else
     {
         /// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
-        if (argument_type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggreagteFunctionGroupUniqArrayGeneric<true>;
+        if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            return new AggreagteFunctionGroupUniqArrayGeneric<true>(argument_type);
         else
-            return new AggreagteFunctionGroupUniqArrayGeneric<false>;
+            return new AggreagteFunctionGroupUniqArrayGeneric<false>(argument_type);
     }
 }
 
-AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, argument_types);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
 

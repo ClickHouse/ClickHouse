@@ -33,7 +33,7 @@ struct QuantileLevels
 
     size_t size() const { return levels.size(); }
 
-    void set(const Array & params)
+    QuantileLevels(const Array & params)
     {
         if (params.empty())
             throw Exception("Aggregate function quantiles requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

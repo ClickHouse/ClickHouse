@@ -13,7 +13,7 @@
 
 #include <Common/FieldVisitors.h>
 
-#include <AggregateFunctions/AggregateFunctionGroupArray.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
@@ -42,7 +42,7 @@ struct AggregateFunctionTopKData
 
 template <typename T>
 class AggregateFunctionTopK
-    : public IUnaryAggregateFunction<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T>>
 {
 private:
     using State = AggregateFunctionTopKData<T>;
@@ -57,35 +57,12 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & /*argument*/)
-    {
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
-
-        if (k > TOP_K_MAX_SIZE)
-            throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        if (k == 0)
-            throw Exception("Parameter 0 is illegal for aggregate function " + getName(),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        threshold = k;
-        reserved = TOP_K_LOAD_FACTOR * k;
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
             set.resize(reserved);
-        set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+        set.insert(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -147,7 +124,7 @@ struct AggregateFunctionTopKGenericData
  *  For such columns topK() can be implemented more efficently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
-class AggregateFunctionTopKGeneric : public IUnaryAggregateFunction<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column>>
+class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column>>
 {
 private:
     using State = AggregateFunctionTopKGenericData;
@@ -159,26 +136,6 @@ private:
 
 public:
     String getName() const override { return "topK"; }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-        input_data_type = argument;
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
-
-        if (k > TOP_K_MAX_SIZE)
-            throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        threshold = k;
-        reserved = TOP_K_LOAD_FACTOR * k;
-    }
 
     DataTypePtr getReturnType() const override
     {
@@ -217,7 +174,7 @@ public:
         set.readAlphaMap(buf);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
@@ -226,7 +183,7 @@ public:
         }
 
         const char * begin = nullptr;
-        StringRef str_serialized = column.serializeValueIntoArena(row_num, *arena, begin);
+        StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
         set.insert(str_serialized);
         arena->rollback(str_serialized.size);
     }

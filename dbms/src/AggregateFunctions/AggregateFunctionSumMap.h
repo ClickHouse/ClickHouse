@@ -10,7 +10,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/FieldVisitors.h>
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <map>
 
@@ -49,7 +49,7 @@ struct AggregateFunctionSumMapData
   */
 
 template <typename T>
-class AggregateFunctionSumMap final : public IAggregateFunctionHelper<AggregateFunctionSumMapData<typename NearestFieldType<T>::Type>>
+class AggregateFunctionSumMap final : public IAggregateFunctionDataHelper<AggregateFunctionSumMapData<typename NearestFieldType<T>::Type>>
 {
 private:
     DataTypePtr keys_type;
@@ -69,36 +69,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    void setArguments(const DataTypes & arguments) override
-    {
-        if (arguments.size() < 2)
-            throw Exception("Aggregate function " + getName() + " requires at least two arguments of Array type.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        keys_type = array_type->getNestedType();
-
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (!array_type)
-                throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            values_types.push_back(array_type->getNestedType());
-        }
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (!params.empty())
-            throw Exception("This instantiation of " + getName() + "aggregate function doesn't accept any parameters.",
-                            ErrorCodes::LOGICAL_ERROR);
-    }
-
-    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override final
+    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         // Column 0 contains array of keys of known type
         const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[0]);
@@ -252,13 +223,6 @@ public:
             }
         }
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionSumMap &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

@@ -135,108 +135,41 @@ struct AggregateFunctionSequenceMatchData final
 /// Max number of iterations to match the pattern against a sequence, exception thrown when exceeded
 constexpr auto sequence_match_max_iterations = 1000000;
 
-class AggregateFunctionSequenceMatch : public IAggregateFunctionHelper<AggregateFunctionSequenceMatchData>
+
+template <typename Derived>
+class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<AggregateFunctionSequenceMatchData, Derived>
 {
 public:
     static bool sufficientArgs(const size_t arg_count) { return arg_count >= 3; }
-
-    String getName() const override { return "sequenceMatch"; }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception{
-                "Aggregate function " + getName() + " requires exactly one parameter.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        pattern = params.front().safeGet<std::string>();
-    }
-
-    void setArguments(const DataTypes & arguments) override
-    {
-        arg_count = arguments.size();
-
-        if (!sufficientArgs(arg_count))
-            throw Exception{
-                "Aggregate function " + getName() + " requires at least 3 arguments.",
-                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
-
-        if (arg_count - 1 > Data::max_events)
-            throw Exception{
-                "Aggregate function " + getName() + " supports up to " +
-                    std::to_string(Data::max_events) + " event arguments.",
-                ErrorCodes::TOO_MUCH_ARGUMENTS_FOR_FUNCTION};
-
-        const auto time_arg = arguments.front().get();
-        if (!typeid_cast<const DataTypeDateTime *>(time_arg))
-            throw Exception{
-                "Illegal type " + time_arg->getName() + " of first argument of aggregate function " +
-                    getName() + ", must be DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        for (const auto i : ext::range(1, arg_count))
-        {
-            const auto cond_arg = arguments[i].get();
-            if (!typeid_cast<const DataTypeUInt8 *>(cond_arg))
-                throw Exception{
-                    "Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) +
-                        " of aggregate function " + getName() + ", must be UInt8",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        parsePattern();
-    }
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         const auto timestamp = static_cast<const ColumnUInt32 *>(columns[0])->getData()[row_num];
 
-        Data::Events events;
+        AggregateFunctionSequenceMatchData::Events events;
         for (const auto i : ext::range(1, arg_count))
         {
             const auto event = static_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
             events.set(i - 1, event);
         }
 
-        data(place).add(timestamp, events);
+        this->data(place).add(timestamp, events);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).merge(data(rhs));
+        this->data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        data(place).serialize(buf);
+        this->data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
-        data(place).deserialize(buf);
+        this->data(place).deserialize(buf);
     }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        const_cast<Data &>(data(place)).sort();
-
-        const auto & data_ref = data(place);
-
-        const auto events_begin = std::begin(data_ref.events_list);
-        const auto events_end = std::end(data_ref.events_list);
-        auto events_it = events_begin;
-
-        static_cast<ColumnUInt8 &>(to).getData().push_back(match(events_it, events_end));
-    }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionSequenceMatch &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 
@@ -494,7 +427,30 @@ private:
     PatternActions actions;
 };
 
-class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceMatch
+
+class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBase<AggregateFunctionSequenceMatch>
+{
+public:
+    String getName() const override { return "sequenceMatch"; }
+
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
+
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    {
+        const_cast<Data &>(data(place)).sort();
+
+        const auto & data_ref = data(place);
+
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
+        auto events_it = events_begin;
+
+        static_cast<ColumnUInt8 &>(to).getData().push_back(match(events_it, events_end));
+    }
+};
+
+
+class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<AggregateFunctionSequenceCount>
 {
 public:
     String getName() const override { return "sequenceCount"; }

@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/typeid_cast.h>
 
 
@@ -16,14 +17,21 @@ namespace DB
   * and combine them with aggregation.
   */
 
-class AggregateFunctionMerge final : public IAggregateFunction
+class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFunctionMerge>
 {
 private:
-    AggregateFunctionPtr nested_func_owner;
-    IAggregateFunction * nested_func;
+    AggregateFunctionPtr nested_func;
 
 public:
-    AggregateFunctionMerge(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
+    AggregateFunctionMerge(AggregateFunctionPtr nested_, const IDataType & argument)
+        : nested_func(nested_)
+    {
+        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(&argument);
+
+        if (!data_type || data_type->getFunctionName() != nested_func->getName())
+            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 
     String getName() const override
     {
@@ -33,31 +41,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
-    }
-
-    AggregateFunctionPtr getNestedFunction() const
-    {
-        return nested_func_owner;
-    }
-
-    void setArguments(const DataTypes & arguments) override
-    {
-        if (arguments.size() != 1)
-            throw Exception("Passed " + toString(arguments.size()) + " arguments to unary aggregate function " + this->getName(),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
-
-        if (!data_type || data_type->getFunctionName() != nested_func->getName())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        nested_func->setArguments(data_type->getArgumentsDataTypes());
-    }
-
-    void setParameters(const Array & params) override
-    {
-        nested_func->setParameters(params);
     }
 
     void create(AggregateDataPtr place) const override
@@ -114,13 +97,6 @@ public:
     {
         return nested_func->allocatesMemoryInArena();
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionMerge &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

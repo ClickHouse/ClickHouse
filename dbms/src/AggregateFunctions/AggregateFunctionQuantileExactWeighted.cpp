@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/AggregateFunctionQuantileExactWeighted.h>
 
 namespace DB
@@ -8,12 +9,16 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionQuantileExactWeighted(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionQuantileExactWeighted(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    if (argument_types.size() != 2)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertBinary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionQuantileExactWeighted>(*argument_types[0], *argument_types[1]));
+    if (params.size() != 1)
+        throw Exception("Aggregate function " + name + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    Float64 level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+
+    AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionQuantileExactWeighted>(*argument_types[0], *argument_types[1], argument_types[0], level));
 
     if (!res)
         throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
@@ -22,12 +27,11 @@ AggregateFunctionPtr createAggregateFunctionQuantileExactWeighted(const std::str
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionQuantilesExactWeighted(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionQuantilesExactWeighted(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    if (argument_types.size() != 2)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertBinary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionQuantilesExactWeighted>(*argument_types[0], *argument_types[1]));
+    AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionQuantilesExactWeighted>(*argument_types[0], *argument_types[1], argument_types[0], params));
 
     if (!res)
         throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
