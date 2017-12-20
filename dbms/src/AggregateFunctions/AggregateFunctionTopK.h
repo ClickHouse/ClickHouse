@@ -21,9 +21,7 @@ namespace DB
 
 
 // Allow NxK more space before calculating top K to increase accuracy
-#define TOP_K_DEFAULT 10
 #define TOP_K_LOAD_FACTOR 3
-#define TOP_K_MAX_SIZE 0xFFFFFF
 
 
 template <typename T>
@@ -46,10 +44,14 @@ class AggregateFunctionTopK
 {
 private:
     using State = AggregateFunctionTopKData<T>;
-    UInt64 threshold = TOP_K_DEFAULT;
-    UInt64 reserved = TOP_K_LOAD_FACTOR * threshold;
+
+    UInt64 threshold;
+    UInt64 reserved;
 
 public:
+    AggregateFunctionTopK(UInt64 threshold)
+        : threshold(threshold), reserved(TOP_K_LOAD_FACTOR * threshold) {}
+
     String getName() const override { return "topK"; }
 
     DataTypePtr getReturnType() const override
@@ -128,13 +130,17 @@ class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<Aggrega
 {
 private:
     using State = AggregateFunctionTopKGenericData;
+
+    UInt64 threshold;
+    UInt64 reserved;
     DataTypePtr input_data_type;
-    UInt64 threshold = TOP_K_DEFAULT;
-    UInt64 reserved = TOP_K_LOAD_FACTOR * threshold;
 
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
 public:
+    AggregateFunctionTopKGeneric(UInt64 threshold, const DataTypePtr & input_data_type)
+        : threshold(threshold), reserved(TOP_K_LOAD_FACTOR * threshold), input_data_type(input_data_type) {}
+
     String getName() const override { return "topK"; }
 
     DataTypePtr getReturnType() const override
@@ -225,8 +231,6 @@ inline void AggregateFunctionTopKGeneric<true>::deserializeAndInsert(StringRef s
 }
 
 
-#undef TOP_K_DEFAULT
-#undef TOP_K_MAX_SIZE
 #undef TOP_K_LOAD_FACTOR
 
 }

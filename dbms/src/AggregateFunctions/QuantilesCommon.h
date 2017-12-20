@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 /** Parameters of different functions quantiles*.
   * - list of levels of quantiles.
   * It is also necessary to calculate an array of indices of levels that go in ascending order.
@@ -36,7 +31,12 @@ struct QuantileLevels
     QuantileLevels(const Array & params)
     {
         if (params.empty())
-            throw Exception("Aggregate function quantiles requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        {
+            /// If levels are not specified, default is 0.5 (median).
+            levels.push_back(0.5);
+            permutation.push_back(0);
+            return;
+        }
 
         size_t size = params.size();
         levels.resize(size);
