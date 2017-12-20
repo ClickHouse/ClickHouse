@@ -15,6 +15,8 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileExactWeighted
 {
+    using Weight = UInt64;
+
     /// When creating, the hash table must be small.
     using Map = HashMap<
         Value, Weight,
@@ -30,7 +32,6 @@ struct QuantileExactWeighted
         ++map[x];
     }
 
-    template <typename Weight>
     void add(const Value & x, const Weight & weight)
     {
         map[x] += weight;
@@ -66,7 +67,7 @@ struct QuantileExactWeighted
             return Value();
 
         /// Copy the data to a temporary array to get the element you need in order.
-        using Pair = Map::value_type;
+        using Pair = typename Map::value_type;
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
@@ -104,19 +105,19 @@ struct QuantileExactWeighted
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) const
+    void getMany(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
     {
         size_t size = map.size();
 
         if (0 == size)
         {
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < num_levels; ++i)
                 result[i] = Value();
             return;
         }
 
         /// Copy the data to a temporary array to get the element you need in order.
-        using Pair = Map::value_type;
+        using Pair = typename Map::value_type;
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
@@ -148,7 +149,7 @@ struct QuantileExactWeighted
                 result[indices[i]] = it->first;
                 ++level_index;
 
-                if (level_index == size)
+                if (level_index == num_levels)
                     return;
 
                 threshold = std::ceil(sum_weight * levels[indices[i]]);
@@ -157,7 +158,7 @@ struct QuantileExactWeighted
             ++it;
         }
 
-        while (level_index < size)
+        while (level_index < num_levels)
         {
             result[indices[i]] = array[size - 1].first;
             ++level_index;
@@ -165,12 +166,12 @@ struct QuantileExactWeighted
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    float getFloat(Float64 level) const
+    float getFloat(Float64) const
     {
         throw Exception("Method getFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result) const
+    void getManyFloat(const Float64 *, const size_t *, size_t, float *) const
     {
         throw Exception("Method getManyFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }

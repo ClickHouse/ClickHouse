@@ -36,7 +36,7 @@ namespace
     M(Float64)
 
 
-template <template <typename> Data, typename Name, bool returns_float, bool returns_many>
+template <template <typename> class Data, typename Name, bool returns_float, bool returns_many>
 AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertUnary(name, argument_types);
@@ -50,15 +50,15 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
 #undef CREATE
 
     if (typeid_cast<const DataTypeDate *>(argument_type.get()))
-        return std::make_shared<AggregateFunctionQuantile<Data<DataTypeDate::FieldType>, Name, false, returns_many>>(argument_type, params);
+        return std::make_shared<AggregateFunctionQuantile<DataTypeDate::FieldType, void, Data<DataTypeDate::FieldType>, Name, false, returns_many>>(argument_type, params);
     if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
-        return std::make_shared<AggregateFunctionQuantile<Data<DataTypeDateTime::FieldType>, Name, false, returns_many>>(argument_type, params);
+        return std::make_shared<AggregateFunctionQuantile<DataTypeDateTime::FieldType, void, Data<DataTypeDateTime::FieldType>, Name, false, returns_many>>(argument_type, params);
 
     throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 
-template <typename FirstArg, template <typename> Data, typename Name, bool returns_float, bool returns_many>
+template <typename FirstArg, template <typename> class Data, typename Name, bool returns_float, bool returns_many>
 AggregateFunctionPtr createAggregateFunctionQuantileTwoArgsForSecondArg(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     const DataTypePtr & second_argument_type = argument_types[0];
@@ -73,7 +73,7 @@ AggregateFunctionPtr createAggregateFunctionQuantileTwoArgsForSecondArg(const st
     throw Exception("Illegal type " + second_argument_type->getName() + " of second argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
-template <template <typename> Data, typename Name, bool returns_float, bool returns_many>
+template <template <typename> class Data, typename Name, bool returns_float, bool returns_many>
 AggregateFunctionPtr createAggregateFunctionQuantileTwoArgs(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertBinary(name, argument_types);
@@ -81,17 +81,17 @@ AggregateFunctionPtr createAggregateFunctionQuantileTwoArgs(const std::string & 
 
 #define CREATE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(argument_type.get())) \
-        return createAggregateFunctionQuantileTwoArgsForSecondArg<TYPE, Data<TYPE>, Name, returns_float, returns_many>>(name, argument_types, params);
+        return createAggregateFunctionQuantileTwoArgsForSecondArg<TYPE, Data<TYPE>, Name, returns_float, returns_many>(name, argument_types, params);
 
     FOR_NUMERIC_TYPES(CREATE)
 #undef CREATE
 
     if (typeid_cast<const DataTypeDate *>(argument_type.get()))
         return createAggregateFunctionQuantileTwoArgsForSecondArg<
-            DataTypeDate::FieldType, Data<DataTypeDate::FieldType>, Name, false, returns_many>>(name, argument_types, params);
+            DataTypeDate::FieldType, Data<DataTypeDate::FieldType>, Name, false, returns_many>(name, argument_types, params);
     if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
         return createAggregateFunctionQuantileTwoArgsForSecondArg<
-            DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>, Name, false, returns_many>>(name, argument_types, params);
+            DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>, Name, false, returns_many>(name, argument_types, params);
 
     throw Exception("Illegal type " + argument_type->getName() + " of first argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }

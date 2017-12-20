@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
 
 
