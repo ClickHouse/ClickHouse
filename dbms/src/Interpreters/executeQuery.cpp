@@ -274,7 +274,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.written_rows = process_list_elem->progress_out.rows;
                 elem.written_bytes = process_list_elem->progress_out.bytes;
 
-                auto memory_usage = process_list_elem->memory_tracker.getPeak();
+                auto memory_usage = process_list_elem->memory_tracker->getPeak();
                 elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
 
                 if (stream_in)
@@ -332,7 +332,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.read_rows = process_list_elem->progress_in.rows;
                     elem.read_bytes = process_list_elem->progress_in.bytes;
 
-                    auto memory_usage = process_list_elem->memory_tracker.getPeak();
+                    auto memory_usage = process_list_elem->memory_tracker->getPeak();
                     elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
                 }
 

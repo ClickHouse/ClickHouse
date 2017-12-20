@@ -67,7 +67,7 @@ struct ProcessListElement
     /// Progress of output stream
     Progress progress_out;
 
-    MemoryTracker memory_tracker;
+    MemoryTrackerPtr memory_tracker;
 
     QueryPriorities::Handle priority_handle;
 
@@ -102,14 +102,14 @@ public:
         size_t max_memory_usage,
         double memory_tracker_fault_probability,
         QueryPriorities::Handle && priority_handle_)
-        : query(query_), client_info(client_info_), memory_tracker(max_memory_usage),
+        : query(query_), client_info(client_info_), memory_tracker{std::make_shared<MemoryTracker>(max_memory_usage)},
         priority_handle(std::move(priority_handle_))
     {
-        memory_tracker.setDescription("(for query)");
-        current_memory_tracker = &memory_tracker;
+        memory_tracker->setDescription("(for query)");
+        current_memory_tracker = memory_tracker;
 
         if (memory_tracker_fault_probability)
-            memory_tracker.setFaultProbability(memory_tracker_fault_probability);
+            memory_tracker->setFaultProbability(memory_tracker_fault_probability);
     }
 
     ~ProcessListElement()
@@ -146,7 +146,7 @@ public:
         res.total_rows        = progress_in.total_rows;
         res.written_rows      = progress_out.rows;
         res.written_bytes     = progress_out.bytes;
-        res.memory_usage      = memory_tracker.get();
+        res.memory_usage      = memory_tracker->get();
 
         return res;
     }
@@ -173,7 +173,7 @@ struct ProcessListForUser
     QueryToElement queries;
 
     /// Limit and counter for memory of all simultaneously running queries of single user.
-    MemoryTracker user_memory_tracker;
+    MemoryTrackerPtr user_memory_tracker {std::make_shared<MemoryTracker>()};
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
@@ -234,7 +234,7 @@ private:
     QueryPriorities priorities;
 
     /// Limit and counter for memory of all simultaneously running queries.
-    MemoryTracker total_memory_tracker;
+    MemoryTrackerPtr total_memory_tracker {std::make_shared<MemoryTracker>()};
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
     ProcessListElement * tryGetProcessListElement(const String & current_query_id, const String & current_user);

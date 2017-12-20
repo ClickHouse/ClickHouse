@@ -3,11 +3,11 @@
 #include <Interpreters/Aggregator.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/MemoryTracker.h>
 #include <common/ThreadPool.h>
 #include <condition_variable>
 
 
-class MemoryTracker;
 
 namespace DB
 {
@@ -151,7 +151,7 @@ private:
 
     std::unique_ptr<ParallelMergeData> parallel_merge_data;
 
-    void mergeThread(MemoryTracker * memory_tracker);
+    void mergeThread(MemoryTrackerPtr memory_tracker);
 
     void finalize();
 };

@@ -62,7 +62,7 @@ void MemoryTracker::alloc(Int64 size)
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
 
-    if (!next.load(std::memory_order_relaxed))
+    if (!std::atomic_load_explicit(&next, std::memory_order_relaxed))
         CurrentMetrics::add(metric, size);
 
     Int64 current_limit = limit.load(std::memory_order_relaxed);
@@ -102,7 +102,7 @@ void MemoryTracker::alloc(Int64 size)
     if (will_be > peak.load(std::memory_order_relaxed))        /// Races doesn't matter. Could rewrite with CAS, but not worth.
         peak.store(will_be, std::memory_order_relaxed);
 
-    if (auto loaded_next = next.load(std::memory_order_relaxed))
+    if (auto loaded_next = std::atomic_load(&next))
         loaded_next->alloc(size);
 }
 
@@ -123,7 +123,7 @@ void MemoryTracker::free(Int64 size)
         size += new_amount;
     }
 
-    if (auto loaded_next = next.load(std::memory_order_relaxed))
+    if (auto loaded_next = std::atomic_load(&next))
         loaded_next->free(size);
     else
         CurrentMetrics::sub(metric, size);
@@ -132,7 +132,7 @@ void MemoryTracker::free(Int64 size)
 
 void MemoryTracker::reset()
 {
-    if (!next.load(std::memory_order_relaxed))
+    if (!std::atomic_load_explicit(&next, std::memory_order_relaxed))
         CurrentMetrics::sub(metric, amount.load(std::memory_order_relaxed));
 
     amount.store(0, std::memory_order_relaxed);
@@ -150,9 +150,9 @@ void MemoryTracker::setOrRaiseLimit(Int64 value)
 }
 
 #if defined(__apple_build_version__) && __apple_build_version__ <= 9000038
-__thread MemoryTracker * current_memory_tracker = nullptr;
+__thread MemoryTrackerPtr current_memory_tracker;
 #else
-thread_local MemoryTracker * current_memory_tracker = nullptr;
+thread_local MemoryTrackerPtr current_memory_tracker;
 #endif
 
 namespace CurrentMemoryTracker
