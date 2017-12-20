@@ -11,8 +11,8 @@
 
 #include <Common/FieldVisitors.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <map>
+
 
 namespace DB
 {
@@ -57,6 +57,9 @@ private:
     DataTypes values_types;
 
 public:
+    AggregateFunctionSumMap(const DataTypePtr & keys_type, const DataTypes & values_types)
+        : keys_type(keys_type), values_types(values_types) {}
+
     String getName() const override { return "sumMap"; }
 
     DataTypePtr getReturnType() const override

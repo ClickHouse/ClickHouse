@@ -20,16 +20,21 @@ static constexpr UInt8 uniq_upto_max_threshold = 100;
 
 AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    if (params.size() != 1)
-        throw Exception("Aggregate function " + name + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    UInt8 threshold = 5;    /// default value
 
-    UInt64 threshold_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+    if (!params.empty())
+    {
+        if (params.size() != 1)
+            throw Exception("Aggregate function " + name + " requires one parameter or less.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (threshold_param > uniq_upto_max_threshold)
-        throw Exception("Too large parameter for aggregate function " + name + ". Maximum: " + toString(uniq_upto_max_threshold),
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        UInt64 threshold_param = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
-    UInt8 threshold = threshold_param;
+        if (threshold_param > uniq_upto_max_threshold)
+            throw Exception("Too large parameter for aggregate function " + name + ". Maximum: " + toString(uniq_upto_max_threshold),
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+        threshold = threshold_param;
+    }
 
     if (argument_types.size() == 1)
     {
@@ -39,11 +44,11 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
 
         if (res)
             return res;
-        else if (typeid_cast<const DataTypeDate     *>(&argument_type))
+        else if (typeid_cast<const DataTypeDate *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate::FieldType>>(threshold);
-        else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
+        else if (typeid_cast<const DataTypeDateTime *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDateTime::FieldType>>(threshold);
-        else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
+        else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
             return std::make_shared<AggregateFunctionUniqUpTo<String>>(threshold);
         else if (typeid_cast<const DataTypeTuple *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqUpToVariadic<true>>(argument_types, threshold);

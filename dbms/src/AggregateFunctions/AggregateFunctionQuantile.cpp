@@ -39,7 +39,11 @@ namespace
 template <template <typename> class Data, typename Name, bool have_second_arg, bool returns_float, bool returns_many>
 AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    assertUnary(name, argument_types);
+    if (have_second_arg)
+        assertBinary(name, argument_types);
+    else
+        assertUnary(name, argument_types);
+
     const DataTypePtr & argument_type = argument_types[0];
 
 #define CREATE(TYPE) \
