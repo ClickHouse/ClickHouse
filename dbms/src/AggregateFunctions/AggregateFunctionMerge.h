@@ -29,7 +29,7 @@ public:
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(&argument);
 
         if (!data_type || data_type->getFunctionName() != nested_func->getName())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
+            throw Exception("Illegal type " + argument.getName() + " of argument for aggregate function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

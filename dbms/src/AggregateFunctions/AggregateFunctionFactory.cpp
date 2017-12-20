@@ -41,7 +41,7 @@ AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested,
 AggregateFunctionPtr createAggregateFunctionForEach(AggregateFunctionPtr & nested, const DataTypes & argument_types);
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested, const DataTypes & argument_types);
 AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested, const DataTypes & argument_types, const Array & parameters);
-AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+AggregateFunctionPtr createAggregateFunctionMerge(const String & name, AggregateFunctionPtr & nested, const DataTypes & argument_types);
 AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested, const DataTypes & argument_types);
 AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested, const DataTypes & argument_types);
 AggregateFunctionPtr createAggregateFunctionCountNotNull(const String & name, const DataTypes & argument_types, const Array & parameters);
@@ -120,9 +120,9 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         }
 
         if (argument_types.size() == 1)
-            return createAggregateFunctionNullUnary(nested_function);
+            return createAggregateFunctionNullUnary(nested_function, argument_types);
         else
-            return createAggregateFunctionNullVariadic(nested_function);
+            return createAggregateFunctionNullVariadic(nested_function, argument_types);
     }
     else
         return getImpl(name, argument_types, parameters, recursion_level);
@@ -177,7 +177,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 + ", because it corresponds to different aggregate function: " + function->getFunctionName() + " instead of " + nested->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return createAggregateFunctionMerge(nested, argument_types);
+        return createAggregateFunctionMerge(name, nested, argument_types);
     }
 
     if (endsWith(name, "If"))
@@ -205,7 +205,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(type.get()))
                 nested_arguments.push_back(array->getNestedType());
             else
-                throw Exception("Illegal type " + type->getName() + " of argument #" + toString(i + 1) +
+                throw Exception("Illegal type " + type->getName() + " of argument"
                     " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
@@ -221,7 +221,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(type.get()))
                 nested_arguments.push_back(array->getNestedType());
             else
-                throw Exception("Illegal type " + type->getName() + " of argument #" + toString(i + 1) +
+                throw Exception("Illegal type " + type->getName() + " of argument"
                     " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 

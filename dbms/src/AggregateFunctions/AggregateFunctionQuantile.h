@@ -18,12 +18,33 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+/** Generic aggregate function for calculation of quantiles.
+  * It depends on quantile calculation data structure.
+  */
+
+
 template <
+    /// Type of first argument.
     typename Value,
+    /// If the function accept second argument, the type of this argument
+    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
     typename SecondArg,
+    /// Data structure and implementation of calculation. Look at QuantileExact.h for example.
     typename Data,
+    /// Structure with static member "name", containing the name of aggregate function.
     typename Name,
+    /// If true, the function will return float with possibly interpolated results and NaN if there was no values.
+    /// Otherwise it will return Value type and default value if there was no values.
+    /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
     bool returns_float,
+    /// If true, the function will accept multiple parameters with quantile levels
+    ///  and return an Array filled with many values of that quantiles.
     bool returns_many
 >
 class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
@@ -37,11 +58,12 @@ private:
     DataTypePtr argument_type;
 
 public:
-    AggregateFunctionQuantile(const DataTypePtr & argument_type, double level)
-        : level(level), argument_type(argument_type) {}
-
     AggregateFunctionQuantile(const DataTypePtr & argument_type, const Array & params)
-        : levels(params), argument_type(argument_type) {}
+        : levels(params), level(levels.levels[0]), argument_type(argument_type)
+    {
+        if (!returns_many && levels.size() > 1)
+            throw Exception("Aggregate function " + getName() + " require exactly one parameter", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
 
     String getName() const override { return Name::name; }
 
@@ -66,8 +88,6 @@ public:
             this->data(place).insert(
                 static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num],
                 static_cast<const ColumnVector<SecondArg> &>(*columns[1]).getData()[row_num]);
-        else if constexpr (have_determinator)
-
         else
             this->data(place).insert(
                 static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num]);
@@ -80,7 +100,7 @@ public:
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        this->data(place).serialize(buf);
+        this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
@@ -90,6 +110,8 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
+        auto & data = this->data(const_cast<AggregateDataPtr>(place));
+
         if constexpr (returns_many)
         {
             ColumnArray & arr_to = static_cast<ColumnArray &>(to);
@@ -107,7 +129,7 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
+                data.getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
             }
             else
             {
@@ -115,15 +137,15 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                this->data(place).getMany(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
+                data.getMany(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
             }
         }
         else
         {
             if constexpr (returns_float)
-                static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
+                static_cast<ColumnFloat32 &>(to).getData().push_back(data.getFloat(level));
             else
-                static_cast<ColumnVector<Value> &>(to).getData().push_back(this->data(place).get(level));
+                static_cast<ColumnVector<Value> &>(to).getData().push_back(data.get(level));
         }
     }
 
