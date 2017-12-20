@@ -2,6 +2,8 @@
 #include <AggregateFunctions/AggregateFunctionGroupArray.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 
 namespace DB

@@ -11,6 +11,9 @@
 #include <AggregateFunctions/QuantileTiming.h>
 #include <AggregateFunctions/QuantileTDigest.h>
 
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+
 
 namespace DB
 {
@@ -22,19 +25,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-#define FOR_NUMERIC_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Float32) \
-    M(Float64)
-
 
 template <template <typename> class Data, typename Name, bool have_second_arg, bool returns_float, bool returns_many>
 AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
