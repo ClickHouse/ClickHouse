@@ -5,6 +5,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/COWPtr.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -12,32 +13,35 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/IAST.h>
 
-std::ostream & operator<<(std::ostream & stream, const DB::IBlockInputStream & what)
+namespace DB
+{
+
+std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
     stream << "IBlockInputStream(id = " << what.getID() << ", name = " << what.getName() << ")";
     //what.dumpTree(stream); // todo: set const
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::Field & what)
+std::ostream & operator<<(std::ostream & stream, const Field & what)
 {
     stream << "Field(type = " << what.getTypeName() << ")";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::NameAndTypePair & what)
+std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what)
 {
     stream << "NameAndTypePair(name = " << what.name << ", type = " << what.type << ")";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::IDataType & what)
+std::ostream & operator<<(std::ostream & stream, const IDataType & what)
 {
     stream << "IDataType(name = " << what.getName() << ", default = " << what.getDefault() << ")";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::IStorage & what)
+std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
            << what.getColumnsList().toString()
@@ -46,20 +50,20 @@ std::ostream & operator<<(std::ostream & stream, const DB::IStorage & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::TableStructureReadLock &)
+std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
 {
     stream << "TableStructureReadLock()";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::IFunction & what)
+std::ostream & operator<<(std::ostream & stream, const IFunction & what)
 {
     stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = " << what.getNumberOfArguments()
            << ")";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::Block & what)
+std::ostream & operator<<(std::ostream & stream, const Block & what)
 {
     stream << "Block("
            << "size = " << what.columns()
@@ -67,8 +71,6 @@ std::ostream & operator<<(std::ostream & stream, const DB::Block & what)
     return stream;
 }
 
-
-#include <Common/COWPtr.h>
 
 template <typename T>
 std::ostream & printCOWPtr(std::ostream & stream, const typename COWPtr<T>::Ptr & what)
@@ -86,19 +88,19 @@ std::ostream & printCOWPtr(std::ostream & stream, const typename COWPtr<T>::Ptr 
 }
 
 
-std::ostream & operator<<(std::ostream & stream, const DB::ColumnWithTypeAndName & what)
+std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & what)
 {
     stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << what.type << ", column = ";
-    return printCOWPtr<DB::IColumn>(stream, what.column) << ")";
+    return printCOWPtr<IColumn>(stream, what.column) << ")";
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what)
+std::ostream & operator<<(std::ostream & stream, const IColumn & what)
 {
     stream << "IColumn(" << what.dumpStructure() << ")";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what)
+std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what)
 {
     stream << "Connection::Packet("
         << "type = " << what.type;
@@ -110,7 +112,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & 
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::SubqueryForSet & what)
+std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
 {
     stream << "SubqueryForSet(source = " << what.source
     << ", source_sample = " <<  what.source_sample
@@ -120,7 +122,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::SubqueryForSet & what
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::IAST & what)
+std::ostream & operator<<(std::ostream & stream, const IAST & what)
 {
     stream << "IAST("
            << "query_string = " << what.query_string
@@ -130,7 +132,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::IAST & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::ExpressionAnalyzer & what)
+std::ostream & operator<<(std::ostream & stream, const ExpressionAnalyzer & what)
 {
     stream << "ExpressionAnalyzer{"
            << "hasAggregation=" << what.hasAggregation()
@@ -142,3 +144,4 @@ std::ostream & operator<<(std::ostream & stream, const DB::ExpressionAnalyzer & 
     return stream;
 }
 
+}

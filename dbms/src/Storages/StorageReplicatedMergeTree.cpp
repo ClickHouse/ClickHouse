@@ -5,6 +5,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -766,7 +767,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Parts in ZK.
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
-    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    /// There are no PreCommitted parts at startup.
+    auto parts = data.getDataParts({MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
 
     /// Local parts that are not in ZK.
     MergeTreeData::DataParts unexpected_parts;
@@ -997,13 +999,19 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         entry.type == LogEntry::MERGE_PARTS)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
-        MergeTreeData::DataPartPtr containing_part = data.getActiveContainingPart(entry.new_part_name);
+        /// The part may be still in the PreCommitted -> Committed transition so we first search
+        /// among PreCommitted parts to definitely find the desired part if it exists.
+        MergeTreeData::DataPartPtr existing_part = data.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
+        if (!existing_part)
+            existing_part = data.getActiveContainingPart(entry.new_part_name);
 
         /// Even if the part is locally, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-        if (containing_part && getZooKeeper()->exists(replica_path + "/parts/" + containing_part->name))
+        if (existing_part && getZooKeeper()->exists(replica_path + "/parts/" + existing_part->name))
         {
             if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
-                LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " - part already exists.");
+            {
+                LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " because part " + existing_part->name + " already exists.");
+            }
             return true;
         }
     }
@@ -2125,7 +2133,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     if (auto part = data.getPartIfExists(part_name, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
     {
         LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
-        /// Force premature parts cleanup
+        /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
         cleanup_thread->schedule();
         return false;
     }
@@ -2322,7 +2330,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         String last_part;
         zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
 
-        if (!last_part.empty() && !data.getPartIfExists(last_part))    /// TODO Disable replica for distributed queries.
+        if (!last_part.empty() && !data.getActiveContainingPart(last_part))    /// TODO Disable replica for distributed queries.
             throw Exception("Replica doesn't have part " + last_part + " which was successfully written to quorum of other replicas."
                 " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
 
