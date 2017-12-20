@@ -4,7 +4,7 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
-
+#include <Parsers/ASTInsertQuery.h>
 
 namespace DB
 {
@@ -28,6 +28,8 @@ private:
     StoragePtr getTable();
 
     Block getSampleBlock();
+
+    void checkAccess(const ASTInsertQuery & query);
 
     ASTPtr query_ptr;
     const Context & context;
