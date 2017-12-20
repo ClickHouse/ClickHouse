@@ -101,14 +101,14 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
         createAggregateFunctionQuantile<QuantileExactWeighted, NameQuantilesExactWeighted, true, false, true>);
 
     factory.registerFunction(NameQuantileTiming::name,
-        createAggregateFunctionQuantile<QuantileTiming, NameQuantileTiming, false, false, false>);
+        createAggregateFunctionQuantile<QuantileTiming, NameQuantileTiming, false, true, false>);
     factory.registerFunction(NameQuantilesTiming::name,
-        createAggregateFunctionQuantile<QuantileTiming, NameQuantilesTiming, false, false, true>);
+        createAggregateFunctionQuantile<QuantileTiming, NameQuantilesTiming, false, true, true>);
 
     factory.registerFunction(NameQuantileTimingWeighted::name,
-        createAggregateFunctionQuantile<QuantileTiming, NameQuantileTimingWeighted, true, false, false>);
+        createAggregateFunctionQuantile<QuantileTiming, NameQuantileTimingWeighted, true, true, false>);
     factory.registerFunction(NameQuantilesTimingWeighted::name,
-        createAggregateFunctionQuantile<QuantileTiming, NameQuantilesTimingWeighted, true, false, true>);
+        createAggregateFunctionQuantile<QuantileTiming, NameQuantilesTimingWeighted, true, true, true>);
 
     factory.registerFunction(NameQuantileTDigest::name,
         createAggregateFunctionQuantile<QuantileTDigest, NameQuantileTDigest, false, true, false>);
