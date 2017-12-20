@@ -142,7 +142,7 @@ struct QuantileExactWeighted
         const Pair * end = array + size;
 
         size_t level_index = 0;
-        UInt64 threshold = std::ceil(sum_weight * levels[indices[i]]);
+        UInt64 threshold = std::ceil(sum_weight * levels[indices[level_index]]);
 
         while (it < end)
         {
@@ -150,13 +150,13 @@ struct QuantileExactWeighted
 
             while (accumulated >= threshold)
             {
-                result[indices[i]] = it->first;
+                result[indices[level_index]] = it->first;
                 ++level_index;
 
                 if (level_index == num_levels)
                     return;
 
-                threshold = std::ceil(sum_weight * levels[indices[i]]);
+                threshold = std::ceil(sum_weight * levels[indices[level_index]]);
             }
 
             ++it;
@@ -164,7 +164,7 @@ struct QuantileExactWeighted
 
         while (level_index < num_levels)
         {
-            result[indices[i]] = array[size - 1].first;
+            result[indices[level_index]] = array[size - 1].first;
             ++level_index;
         }
     }
