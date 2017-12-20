@@ -212,6 +212,9 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     LOG_WARNING(log, "Checking part " << part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
+    /// If the part is still in the PreCommitted -> Committed transition, it is not lost
+    /// and there is no need to go searching for it on other replicas. To definitely find the needed part
+    /// if it exists (or a part containing it) we first search among the PreCommitted parts.
     auto part = storage.data.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
     if (!part)
         part = storage.data.getActiveContainingPart(part_name);
