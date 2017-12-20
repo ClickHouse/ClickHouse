@@ -1034,6 +1034,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         entry.type == LogEntry::MERGE_PARTS)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
+        /// The part may be still in the PreCommitted -> Committed transition so we first search
+        /// among PreCommitted parts to definitely find the desired part if it exists.
         MergeTreeData::DataPartPtr existing_part = data.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
         if (!existing_part)
             existing_part = data.getActiveContainingPart(entry.new_part_name);
