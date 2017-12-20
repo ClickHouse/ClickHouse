@@ -42,7 +42,7 @@ struct AggregateFunctionForEachData
   *
   * TODO Allow variable number of arguments.
   */
-class AggregateFunctionForEach final : public IAggregateFunctionHelper<AggregateFunctionForEachData>
+class AggregateFunctionForEach final : public IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>
 {
 private:
     AggregateFunctionPtr nested_func;

@@ -181,7 +181,7 @@ class AggregateFunctionNullUnary final : public AggregateFunctionNullBase<result
 {
 public:
     AggregateFunctionNullUnary(AggregateFunctionPtr nested_function)
-        : AggregateFunctionNullBase(nested_function)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(nested_function)
     {
     }
 
@@ -203,7 +203,8 @@ class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<res
 {
 public:
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function, const size_t number_of_arguments)
-        : AggregateFunctionNullBase(nested_function), number_of_arguments(number_of_arguments)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(nested_function),
+        number_of_arguments(number_of_arguments)
     {
     }
 

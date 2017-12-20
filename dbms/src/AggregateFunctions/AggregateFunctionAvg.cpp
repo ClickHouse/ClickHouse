@@ -12,7 +12,7 @@ namespace
 AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
-    assertUnary(name, argument_types)
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionAvg>(*argument_types[0]));
 

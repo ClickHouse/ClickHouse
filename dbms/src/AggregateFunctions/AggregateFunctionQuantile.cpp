@@ -23,63 +23,80 @@ namespace ErrorCodes
 namespace
 {
 
+#define FOR_NUMERIC_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Float32) \
+    M(Float64)
+
+
 template <template <typename> Data, typename Name, bool returns_float, bool returns_many>
 AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertUnary(name, argument_types);
     const DataTypePtr & argument_type = argument_types[0];
 
-    if (params.size() != 1)
-        throw Exception("Aggregate function " + name + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+#define CREATE(TYPE) \
+    if (typeid_cast<const DataType ## TYPE *>(argument_type.get())) \
+        return std::make_shared<AggregateFunctionQuantile<TYPE, void, Data<TYPE>, Name, returns_float, returns_many>>(argument_type, params);
 
-    Float64 level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+    FOR_NUMERIC_TYPES(CREATE)
+#undef CREATE
 
-         if (typeid_cast<const DataTypeUInt8 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt8>>(argument_type, level);
-    else if (typeid_cast<const DataTypeUInt16 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt16>>(argument_type, level);
-    else if (typeid_cast<const DataTypeUInt32 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt32>>(argument_type, level);
-    else if (typeid_cast<const DataTypeUInt64 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt64>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt8 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int8>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt16 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int16>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt32 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int32>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt64 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int64>>(argument_type, level);
-    else if (typeid_cast<const DataTypeFloat32 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Float32>>(argument_type, level);
-    else if (typeid_cast<const DataTypeFloat64 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Float64>>(argument_type, level);
-    else if (typeid_cast<const DataTypeDate *>(argument_type.get()))
-        return std::make_shared<AggregateFunctionQuantile<DataTypeDate::FieldType, false>>();
-    else if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
-        return std::make_shared<AggregateFunctionQuantile<DataTypeDateTime::FieldType, false>>();
-    else
-        throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (typeid_cast<const DataTypeDate *>(argument_type.get()))
+        return std::make_shared<AggregateFunctionQuantile<Data<DataTypeDate::FieldType>, Name, false, returns_many>>(argument_type, params);
+    if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
+        return std::make_shared<AggregateFunctionQuantile<Data<DataTypeDateTime::FieldType>, Name, false, returns_many>>(argument_type, params);
+
+    throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
-template <typename Data, typename Name, bool returns_float, bool returns_many>
+
+template <typename FirstArg, template <typename> Data, typename Name, bool returns_float, bool returns_many>
+AggregateFunctionPtr createAggregateFunctionQuantileTwoArgsForSecondArg(const std::string & name, const DataTypes & argument_types, const Array & params)
+{
+    const DataTypePtr & second_argument_type = argument_types[0];
+
+#define CREATE(TYPE) \
+    if (typeid_cast<const DataType ## TYPE *>(second_argument_type.get())) \
+        return std::make_shared<AggregateFunctionQuantile<FirstArg, TYPE, Data<FirstArg>, Name, returns_float, returns_many>>(argument_types[0], params);
+
+    FOR_NUMERIC_TYPES(CREATE)
+#undef CREATE
+
+    throw Exception("Illegal type " + second_argument_type->getName() + " of second argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+template <template <typename> Data, typename Name, bool returns_float, bool returns_many>
 AggregateFunctionPtr createAggregateFunctionQuantileTwoArgs(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    assertUnary(name, argument_types);
+    assertBinary(name, argument_types);
     const DataTypePtr & argument_type = argument_types[0];
 
-    if (params.size() != 1)
-        throw Exception("Aggregate function " + name + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+#define CREATE(TYPE) \
+    if (typeid_cast<const DataType ## TYPE *>(argument_type.get())) \
+        return createAggregateFunctionQuantileTwoArgsForSecondArg<TYPE, Data<TYPE>, Name, returns_float, returns_many>>(name, argument_types, params);
 
-    Float64 level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+    FOR_NUMERIC_TYPES(CREATE)
+#undef CREATE
 
-         if (typeid_cast<const DataTypeUInt8 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt8>>(argument_type, level);
-    else if (typeid_cast<const DataTypeUInt16 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt16>>(argument_type, level);
-    else if (typeid_cast<const DataTypeUInt32 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt32>>(argument_type, level);
-    else if (typeid_cast<const DataTypeUInt64 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<UInt64>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt8 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int8>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt16 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int16>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt32 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int32>>(argument_type, level);
-    else if (typeid_cast<const DataTypeInt64 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Int64>>(argument_type, level);
-    else if (typeid_cast<const DataTypeFloat32 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Float32>>(argument_type, level);
-    else if (typeid_cast<const DataTypeFloat64 *>(argument_type.get())) return std::make_shared<AggregateFunctionQuantile<Float64>>(argument_type, level);
-    else if (typeid_cast<const DataTypeDate *>(argument_type.get()))
-        return std::make_shared<AggregateFunctionQuantile<DataTypeDate::FieldType, false>>();
-    else if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
-        return std::make_shared<AggregateFunctionQuantile<DataTypeDateTime::FieldType, false>>();
-    else
-        throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (typeid_cast<const DataTypeDate *>(argument_type.get()))
+        return createAggregateFunctionQuantileTwoArgsForSecondArg<
+            DataTypeDate::FieldType, Data<DataTypeDate::FieldType>, Name, false, returns_many>>(name, argument_types, params);
+    if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
+        return createAggregateFunctionQuantileTwoArgsForSecondArg<
+            DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>, Name, false, returns_many>>(name, argument_types, params);
+
+    throw Exception("Illegal type " + argument_type->getName() + " of first argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
+
+#undef FOR_NUMERIC_TYPES
 
 
 struct NameQuantile { static constexpr auto name = "quantile"; };
@@ -132,7 +149,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerFunction("quantileTDigestWeighted", createAggregateFunctionQuantileTwoArgs<QuantileTDigest, NameQuantileTDigestWeighted, true, false>);
     factory.registerFunction("quantilesTDigestWeighted", createAggregateFunctionQuantileTwoArgs<QuantileTDigest, NameQuantilesTDigestWeighted, true, true>);
 
-    /// Aliases
+    /// TODO Aliases
 }
 
 }

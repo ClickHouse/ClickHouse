@@ -16,7 +16,7 @@ AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & 
 {
     const DataTypePtr & nested_return_type = nested->getReturnType();
     if (nested_return_type && !nested_return_type->canBeInsideNullable())
-        return std::make_shared<AggregateFunctionNullVariadic<false>>(nested);
+        return std::make_shared<AggregateFunctionNullVariadic<false>>(nested, types.size());
     else
         return std::make_shared<AggregateFunctionNullVariadic<true>>(nested, types.size());
 }
