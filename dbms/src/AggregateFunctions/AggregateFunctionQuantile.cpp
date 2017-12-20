@@ -81,17 +81,17 @@ AggregateFunctionPtr createAggregateFunctionQuantileTwoArgs(const std::string & 
 
 #define CREATE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(argument_type.get())) \
-        return createAggregateFunctionQuantileTwoArgsForSecondArg<TYPE, Data<TYPE>, Name, returns_float, returns_many>(name, argument_types, params);
+        return createAggregateFunctionQuantileTwoArgsForSecondArg<TYPE, Data, Name, returns_float, returns_many>(name, argument_types, params);
 
     FOR_NUMERIC_TYPES(CREATE)
 #undef CREATE
 
     if (typeid_cast<const DataTypeDate *>(argument_type.get()))
         return createAggregateFunctionQuantileTwoArgsForSecondArg<
-            DataTypeDate::FieldType, Data<DataTypeDate::FieldType>, Name, false, returns_many>(name, argument_types, params);
+            DataTypeDate::FieldType, Data, Name, false, returns_many>(name, argument_types, params);
     if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
         return createAggregateFunctionQuantileTwoArgsForSecondArg<
-            DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>, Name, false, returns_many>(name, argument_types, params);
+            DataTypeDateTime::FieldType, Data, Name, false, returns_many>(name, argument_types, params);
 
     throw Exception("Illegal type " + argument_type->getName() + " of first argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
@@ -108,7 +108,7 @@ struct NameQuantileExact { static constexpr auto name = "quantileExact"; };
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
-
+/*
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };
 struct NameQuantileTimingWeighted { static constexpr auto name = "quantileTimingWeighted"; };
 struct NameQuantilesTiming { static constexpr auto name = "quantilesTiming"; };
@@ -118,7 +118,7 @@ struct NameQuantileTDigest { static constexpr auto name = "quantileTDigest"; };
 struct NameQuantileTDigestWeighted { static constexpr auto name = "quantileTDigestWeighted"; };
 struct NameQuantilesTDigest { static constexpr auto name = "quantilesTDigest"; };
 struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDigestWeighted"; };
-
+*/
 }
 
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
@@ -136,7 +136,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 
     factory.registerFunction("quantileExactWeighted", createAggregateFunctionQuantileTwoArgs<QuantileExactWeighted, NameQuantileExactWeighted, false, false>);
     factory.registerFunction("quantilesExactWeighted", createAggregateFunctionQuantileTwoArgs<QuantileExactWeighted, NameQuantilesExactWeighted, false, true>);
-
+/*
     factory.registerFunction("quantileTiming", createAggregateFunctionQuantile<QuantileTiming, NameQuantileTiming, false, false>);
     factory.registerFunction("quantilesTiming", createAggregateFunctionQuantile<QuantileTiming, NameQuantilesTiming, false, true>);
 
@@ -148,7 +148,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 
     factory.registerFunction("quantileTDigestWeighted", createAggregateFunctionQuantileTwoArgs<QuantileTDigest, NameQuantileTDigestWeighted, true, false>);
     factory.registerFunction("quantilesTDigestWeighted", createAggregateFunctionQuantileTwoArgs<QuantileTDigest, NameQuantilesTDigestWeighted, true, true>);
-
+*/
     /// TODO Aliases
 }
 
