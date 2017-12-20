@@ -28,6 +28,8 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 

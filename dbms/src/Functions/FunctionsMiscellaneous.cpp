@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_INDEX;
     extern const int FUNCTION_IS_SPECIAL;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /** Helper functions
