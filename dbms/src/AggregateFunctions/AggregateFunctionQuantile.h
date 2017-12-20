@@ -63,7 +63,7 @@ public:
         : levels(params), level(levels.levels[0]), argument_type(argument_type)
     {
         if (!returns_many && levels.size() > 1)
-            throw Exception("Aggregate function " + getName() + " require exactly one parameter", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
     String getName() const override { return Name::name; }
