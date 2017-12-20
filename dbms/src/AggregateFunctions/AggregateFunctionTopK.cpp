@@ -2,6 +2,8 @@
 #include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 #define TOP_K_MAX_SIZE 0xFFFFFF
 
