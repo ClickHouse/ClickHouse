@@ -102,7 +102,6 @@ public:
     bool supportsSampling() const override { return data.supportsSampling(); }
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
-    bool supportsParallelReplicas() const override { return true; }
     bool supportsReplication() const override { return true; }
 
     const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
