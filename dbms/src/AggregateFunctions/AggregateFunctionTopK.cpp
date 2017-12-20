@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/Helpers.h>
+#include <memory>
 
 namespace DB
 {
@@ -28,16 +29,16 @@ static IAggregateFunction * createWithExtraTypes(const DataTypes & argument_type
     else if (typeid_cast<const DataTypeDateTime *>(&argument_type))    return new AggregateFunctionTopKDateTime;
     else
     {
-        IAggregateFunction* fun;
+        std::unique_ptr<IAggregateFunction> fun;
 
         /// Check that we can use plain version of AggregateFunctionTopKGeneric
         if (argument_type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            fun = new AggregateFunctionTopKGeneric<true>;
+            fun.reset(new AggregateFunctionTopKGeneric<true>);
         else
-            fun = new AggregateFunctionTopKGeneric<false>;
+            fun.reset(new AggregateFunctionTopKGeneric<false>);
 
         fun->setArguments(argument_types);
-        return fun;
+        return fun.release();
     }
 }
 
