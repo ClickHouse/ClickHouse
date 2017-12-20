@@ -14,7 +14,7 @@ template <template <typename> class Data>
 AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
-    assertUnary(name, argument_types)
+    assertUnary(name, argument_types);
 
     if (!argument_types[0]->canBeUsedInBitOperations())
         throw Exception("The type " + argument_types[0]->getName() + " of argument for aggregate function " + name

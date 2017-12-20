@@ -67,7 +67,7 @@ public:
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
 
-        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(*column[0]).getData()[row_num], arena);
+        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override

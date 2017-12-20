@@ -38,7 +38,7 @@ static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_ty
 
 AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    assertNoParameters(name, argument_types);
+    assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
