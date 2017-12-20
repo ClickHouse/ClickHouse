@@ -571,7 +571,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 std::make_shared<AddingDefaultBlockOutputStream>(
                     std::make_shared<MaterializingBlockOutputStream>(
                         std::make_shared<PushingToViewsBlockOutputStream>(
-                            create.database, create.table,
+                            create.database, create.table, res,
                             create.is_temporary ? context.getSessionContext() : context,
                             query_ptr)),
                     /// @note shouldn't these two contexts be session contexts in case of temporary table?

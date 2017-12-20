@@ -58,10 +58,10 @@ public:
     {
         type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric",
+                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
@@ -139,10 +139,10 @@ public:
     {
         type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric",
+                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
@@ -186,21 +186,21 @@ public:
         Sample & sample = const_cast<Sample &>(this->data(place).sample);
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         size_t size = levels.size();
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 
         if (returns_float)
         {
-            ColumnFloat64::Container_t & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
+            ColumnFloat64::Container & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
             for (size_t i = 0; i < size; ++i)
                 data_to.push_back(sample.quantileInterpolated(levels[i]));
         }
         else
         {
-            typename ColumnVector<ArgumentFieldType>::Container_t & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
+            typename ColumnVector<ArgumentFieldType>::Container & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
 
             for (size_t i = 0; i < size; ++i)
                 data_to.push_back(sample.quantileInterpolated(levels[i]));

@@ -1,5 +1,4 @@
-How to run ClickHouse tests
-===========================
+# How to run ClickHouse tests
 
 The `clickhouse-test` utility that is used for functional testing is written using Python 2.x.
 It also requires you to have some third-party packages:
@@ -16,8 +15,7 @@ In a nutshell:
 -   `cd dbms/tests/`
 -   Run `./clickhouse-test`
 
-Example usage
--------------
+## Example usage
 
 Run `./clickhouse-test --help` to see available options.
 

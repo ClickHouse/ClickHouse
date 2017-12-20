@@ -123,23 +123,23 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         {
             const char * operators[] =
             {
-                "multiply",            " * ",
-                "divide",            " / ",
-                "modulo",            " % ",
-                "plus",             " + ",
-                "minus",             " - ",
-                "notEquals",        " != ",
-                "lessOrEquals",        " <= ",
-                "greaterOrEquals",    " >= ",
-                "less",                " < ",
-                "greater",            " > ",
-                "equals",            " = ",
-                "like",                " LIKE ",
-                "notLike",            " NOT LIKE ",
-                "in",                " IN ",
-                "notIn",            " NOT IN ",
-                "globalIn",            " GLOBAL IN ",
-                "globalNotIn",        " GLOBAL NOT IN ",
+                "multiply",        " * ",
+                "divide",          " / ",
+                "modulo",          " % ",
+                "plus",            " + ",
+                "minus",           " - ",
+                "notEquals",       " != ",
+                "lessOrEquals",    " <= ",
+                "greaterOrEquals", " >= ",
+                "less",            " < ",
+                "greater",         " > ",
+                "equals",          " = ",
+                "like",            " LIKE ",
+                "notLike",         " NOT LIKE ",
+                "in",              " IN ",
+                "notIn",           " NOT IN ",
+                "globalIn",        " GLOBAL IN ",
+                "globalNotIn",     " GLOBAL NOT IN ",
                 nullptr
             };
 
@@ -205,8 +205,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         {
             const char * operators[] =
             {
-                "and",                " AND ",
-                "or",                " OR ",
+                "and", " AND ",
+                "or", " OR ",
                 nullptr
             };
 
@@ -229,7 +229,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             }
         }
 
-        if (!written && arguments->children.size() >= 1 && 0 == strcmp(name.c_str(), "array"))
+        if (!written && 0 == strcmp(name.c_str(), "array"))
         {
             settings.ostr << (settings.hilite ? hilite_operator : "") << '[' << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)

@@ -70,13 +70,11 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /** Extract all states of aggregate functions and merge them with the current group.
       */
-    template <typename TSortCursor>
-    void addRow(TSortCursor & cursor);
+    void addRow(SortCursor & cursor);
 };
 
 }

@@ -27,18 +27,10 @@ static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type
     else
     {
         /// Check that we can use plain version of AggregateFunctionTopKGeneric
-        if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
+        if (argument_type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             return new AggregateFunctionTopKGeneric<true>;
-
-        auto * array_type = typeid_cast<const DataTypeArray *>(&argument_type);
-        if (array_type)
-        {
-            auto nested_type = array_type->getNestedType();
-            if (nested_type->isNumeric() || typeid_cast<DataTypeFixedString *>(nested_type.get()))
-                return new AggregateFunctionTopKGeneric<true>;
-        }
-
-        return new AggregateFunctionTopKGeneric<false>;
+        else
+            return new AggregateFunctionTopKGeneric<false>;
     }
 }
 

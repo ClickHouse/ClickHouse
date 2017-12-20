@@ -27,7 +27,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 
         const ColumnWithTypeAndName & col = block.getByPosition(i);
 
-        if (col.type->isNumeric())
+        if (col.type->shouldAlignRightInPrettyFormats())
         {
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
                 writeCString("─", ostr);

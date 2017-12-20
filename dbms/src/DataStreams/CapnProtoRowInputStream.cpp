@@ -20,12 +20,12 @@ static String getSchemaPath(const String & schema_dir, const String & schema_fil
     return schema_dir + escapeForFileName(schema_file) + ".capnp";
 }
 
-CapnProtoRowInputStream::NestedField split(const Block & sample, size_t i)
+CapnProtoRowInputStream::NestedField split(const Block & header, size_t i)
 {
     CapnProtoRowInputStream::NestedField field = {{}, i};
 
     // Remove leading dot in field definition, e.g. ".msg" -> "msg"
-    String name(sample.safeGetByPosition(i).name);
+    String name(header.safeGetByPosition(i).name);
     if (name.size() > 0 && name[0] == '.')
         name.erase(0, 1);
 
@@ -91,7 +91,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
     String last;
     size_t level = 0;
     capnp::StructSchema::Field parent;
-    
+
     for (const auto & field : sortedFields)
     {
         // Move to a different field in the same structure, keep parent
@@ -115,8 +115,8 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
     }
 }
 
-CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_dir, const String & schema_file, const String & root_object)
-    : istr(istr_), sample(sample_), parser(std::make_shared<SchemaParser>())
+CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object)
+    : istr(istr_), header(header_), parser(std::make_shared<SchemaParser>())
 {
 
     // Parse the schema and fetch the root object
@@ -129,9 +129,9 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
      * and the nesting level doesn't decrease to make traversal easier.
      */
     NestedFieldList list;
-    size_t columns = sample.columns();
-    for (size_t i = 0; i < columns; ++i)
-        list.push_back(split(sample, i));
+    size_t num_columns = header.columns();
+    for (size_t i = 0; i < num_columns; ++i)
+        list.push_back(split(header, i));
 
     // Reorder list to make sure we don't have to backtrack
     std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b)
@@ -145,7 +145,7 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
 }
 
 
-bool CapnProtoRowInputStream::read(Block & block)
+bool CapnProtoRowInputStream::read(MutableColumns & columns)
 {
     if (istr.eof())
         return false;
@@ -153,7 +153,7 @@ bool CapnProtoRowInputStream::read(Block & block)
     // Read from underlying buffer directly
     auto buf = istr.buffer();
     auto base = reinterpret_cast<const capnp::word *>(istr.position());
-    
+
     // Check if there's enough bytes in the buffer to read the full message
     kj::Array<capnp::word> heap_array;
     auto array = kj::arrayPtr(base, buf.size() - istr.offset());
@@ -174,9 +174,9 @@ bool CapnProtoRowInputStream::read(Block & block)
     {
         switch (action.type) {
         case Action::READ: {
-            auto & col = block.getByPosition(action.column);
+            auto & col = columns[i];
             Field value = convertNodeToField(stack.back().get(action.field));
-            col.column->insert(value);
+            col->insert(value);
             break;
         }
         case Action::POP:

@@ -1,11 +1,13 @@
 #include <Interpreters/ExternalLoaderConfigRepository.h>
 
+#include <Common/StringUtils.h>
 #include <Common/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 
 #include <Poco/Glob.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
+
 
 namespace DB
 {
@@ -34,6 +36,14 @@ ExternalLoaderConfigRepository::Files ExternalLoaderConfigRepository::list(
         }
 
         Poco::Glob::glob(pattern, files, 0);
+    }
+
+    for (Files::iterator it = files.begin(); it != files.end();)
+    {
+        if (ConfigProcessor::isPreprocessedFile(*it))
+            files.erase(it++);
+        else
+            ++it;
     }
 
     return files;

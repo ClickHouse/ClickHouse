@@ -242,7 +242,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
 static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 {
     for (const auto & elem : names_and_types)
-        if (elem.type->notForTables())
+        if (elem.type->cannotBeStoredInTables())
             throw Exception("Data type " + elem.type->getName() + " cannot be used in tables", ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES);
 }
 
@@ -656,7 +656,7 @@ StoragePtr StorageFactory::get(
 
             auto type = block.getByPosition(0).type;
 
-            if (!type->isNumeric())
+            if (!type->isValueRepresentedByInteger())
                 throw Exception("Sharding expression has type " + type->getName() +
                     ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
         }
@@ -790,13 +790,15 @@ StoragePtr StorageFactory::get(
           * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
           * UnsortedMergeTree(date, index_granularity)  TODO Add description below.
           *
-          * Alternatively, if experimental_allow_extended_storage_definition_syntax setting is specified,
-          * you can specify:
+          * Alternatively, you can specify:
           *  - Partitioning expression in the PARTITION BY clause;
           *  - Primary key in the ORDER BY clause;
           *  - Sampling expression in the SAMPLE BY clause;
           *  - Additional MergeTreeSettings in the SETTINGS clause;
           */
+
+        bool is_extended_storage_def =
+            storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings;
 
         String name_part = name.substr(0, name.size() - strlen("MergeTree"));
 
@@ -806,9 +808,6 @@ StoragePtr StorageFactory::get(
 
         MergeTreeData::MergingParams merging_params;
         merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-
-        const bool allow_extended_storage_def =
-            attach || local_context.getSettingsRef().experimental_allow_extended_storage_definition_syntax;
 
         if (name_part == "Collapsing")
             merging_params.mode = MergeTreeData::MergingParams::Collapsing;
@@ -824,7 +823,7 @@ StoragePtr StorageFactory::get(
             merging_params.mode = MergeTreeData::MergingParams::Graphite;
         else if (!name_part.empty())
             throw Exception(
-                "Unknown storage " + name + getMergeTreeVerboseHelp(allow_extended_storage_def),
+                "Unknown storage " + name + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::UNKNOWN_STORAGE);
 
         ASTs args;
@@ -832,14 +831,6 @@ StoragePtr StorageFactory::get(
             args = *args_ptr;
 
         /// NOTE Quite complicated.
-
-        bool is_extended_storage_def =
-            storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings;
-
-        if (is_extended_storage_def && !allow_extended_storage_def)
-            throw Exception(
-                "Extended storage definition syntax (PARTITION BY, ORDER BY, SAMPLE BY and SETTINGS clauses) "
-                "is disabled. Enable it with experimental_allow_extended_storage_definition_syntax user setting");
 
         size_t min_num_params = 0;
         size_t max_num_params = 0;
@@ -870,7 +861,7 @@ StoragePtr StorageFactory::get(
         {
             if (merging_params.mode == MergeTreeData::MergingParams::Unsorted)
             {
-                if (args.size() == min_num_params && allow_extended_storage_def)
+                if (args.size() == min_num_params)
                     is_extended_storage_def = true;
                 else
                 {

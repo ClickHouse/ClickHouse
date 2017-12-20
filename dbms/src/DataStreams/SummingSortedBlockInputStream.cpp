@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 String SummingSortedBlockInputStream::getID() const
 {
@@ -36,7 +41,7 @@ String SummingSortedBlockInputStream::getID() const
 }
 
 
-void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion)
+void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -111,12 +116,16 @@ Block SummingSortedBlockInputStream::readImpl()
     if (children.size() == 1)
         return children[0]->read();
 
-    Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    Block header;
+    MutableColumns merged_columns;
 
-    init(merged_block, merged_columns);
+    init(header, merged_columns);
+
+    if (has_collation)
+        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
+
     if (merged_columns.empty())
-        return Block();
+        return {};
 
     /// Additional initialization.
     if (current_row.empty())
@@ -134,7 +143,7 @@ Block SummingSortedBlockInputStream::readImpl()
           */
         for (size_t i = 0; i < num_columns; ++i)
         {
-            ColumnWithTypeAndName & column = merged_block.safeGetByPosition(i);
+            const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
             /// Discover nested Maps and find columns for summation
             if (typeid_cast<const DataTypeArray *>(column.type.get()))
@@ -151,12 +160,7 @@ Block SummingSortedBlockInputStream::readImpl()
             }
             else
             {
-                /// Leave only numeric types. Note that dates and datetime here are not considered such.
-                if (!column.type->isNumeric() ||
-                    column.type->getName() == "Date" ||
-                    column.type->getName() == "DateTime" ||
-                    column.type->getName() == "Nullable(Date)" ||
-                    column.type->getName() == "Nullable(DateTime)")
+                if (!column.type->isSummable())
                 {
                     column_numbers_not_to_aggregate.push_back(i);
                     continue;
@@ -201,7 +205,7 @@ Block SummingSortedBlockInputStream::readImpl()
             /// no elements of map could be in primary key
             auto column_num_it = map.second.begin();
             for (; column_num_it != map.second.end(); ++column_num_it)
-                if (isInPrimaryKey(description, merged_block.safeGetByPosition(*column_num_it).name, *column_num_it))
+                if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name, *column_num_it))
                     break;
             if (column_num_it != map.second.end())
             {
@@ -217,7 +221,7 @@ Block SummingSortedBlockInputStream::readImpl()
             column_num_it = map.second.begin();
             for (; column_num_it != map.second.end(); ++column_num_it)
             {
-                const ColumnWithTypeAndName & key_col = merged_block.safeGetByPosition(*column_num_it);
+                const ColumnWithTypeAndName & key_col = header.safeGetByPosition(*column_num_it);
                 const String & name = key_col.name;
                 const IDataType & nested_type = *static_cast<const DataTypeArray *>(key_col.type.get())->getNestedType();
 
@@ -226,16 +230,14 @@ Block SummingSortedBlockInputStream::readImpl()
                     || endsWith(name, "Key")
                     || endsWith(name, "Type"))
                 {
-                    if (!nested_type.isNumeric()
-                        || nested_type.getName() == "Float32"
-                        || nested_type.getName() == "Float64")
+                    if (!nested_type.isValueRepresentedByInteger())
                         break;
 
                     map_desc.key_col_nums.push_back(*column_num_it);
                 }
                 else
                 {
-                    if (!nested_type.behavesAsNumber())
+                    if (!nested_type.isSummable())
                         break;
 
                     map_desc.val_col_nums.push_back(*column_num_it);
@@ -275,35 +277,46 @@ Block SummingSortedBlockInputStream::readImpl()
         // Wrap aggregated columns in a tuple to match function signature
         if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
-            auto tuple = std::make_shared<ColumnTuple>();
-            auto & tuple_columns = tuple->getColumns();
-            for (auto i : desc.column_numbers)
-                tuple_columns.push_back(merged_block.safeGetByPosition(i).column);
+            size_t tuple_size = desc.column_numbers.size();
+            Columns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = header.safeGetByPosition(desc.column_numbers[i]).column;
 
-            desc.merged_column = tuple;
+            desc.merged_column = ColumnTuple::create(tuple_columns);
         }
         else
-            desc.merged_column = merged_block.safeGetByPosition(desc.column_numbers[0]).column;
+            desc.merged_column = header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty();
     }
 
-    if (has_collation)
-        merge(merged_columns, queue_with_collation);
-    else
-        merge(merged_columns, queue);
+    merge(merged_columns, queue);
+    Block res = header.cloneWithColumns(std::move(merged_columns));
 
-    return merged_block;
+    /// Place aggregation results into block.
+    for (auto & desc : columns_to_aggregate)
+    {
+        if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        {
+            /// Unpack tuple into block.
+            size_t tuple_size = desc.column_numbers.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+                res.getByPosition(desc.column_numbers[i]).column = static_cast<const ColumnTuple &>(*desc.merged_column).getColumnPtr(i);
+        }
+        else
+            res.getByPosition(desc.column_numbers[0]).column = std::move(desc.merged_column);
+    }
+
+    return res;
 }
 
 
-template <typename TSortCursor>
-void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
     merged_rows = 0;
 
-    /// Take the rows in needed order and put them in `merged_block` until rows no more than `max_block_size`
+    /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
     while (!queue.empty())
     {
-        TSortCursor current = queue.top();
+        SortCursor current = queue.top();
 
         setPrimaryKeyRef(next_key, current);
 
@@ -371,8 +384,8 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
     finished = true;
 }
 
-template <typename TSortCursor>
-bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
+
+bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, SortCursor & cursor)
 {
     /// Strongly non-optimal.
 
@@ -455,8 +468,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 }
 
 
-template <typename TSortCursor>
-void SummingSortedBlockInputStream::addRow(TSortCursor & cursor)
+void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -472,7 +484,7 @@ void SummingSortedBlockInputStream::addRow(TSortCursor & cursor)
         else
         {
             // Gather all source columns into a vector
-            ConstColumnPlainPtrs columns(desc.column_numbers.size());
+            ColumnRawPtrs columns(desc.column_numbers.size());
             for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                 columns[i] = cursor->all_columns[desc.column_numbers[i]];
 

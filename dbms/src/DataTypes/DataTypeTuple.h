@@ -21,7 +21,6 @@ public:
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeTuple>(elems); }
 
     bool canBeInsideNullable() const override { return false; }
 
@@ -63,10 +62,17 @@ public:
         bool position_independent_encoding,
         SubstreamPath path) const override;
 
-    ColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return !elems.empty(); }
+    bool textCanContainOnlyValidUTF8() const override;
+    bool haveMaximumSizeOfValue() const override;
+    size_t getMaximumSizeOfValueInMemory() const override;
+    size_t getSizeOfValueInMemory() const override;
 
     const DataTypes & getElements() const { return elems; }
 };

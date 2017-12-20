@@ -5,6 +5,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include <Common/UTF8Helpers.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <limits>
 
@@ -105,13 +107,6 @@ DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.valu
 {
     fillMaps();
 }
-
-template <typename Type>
-DataTypePtr DataTypeEnum<Type>::clone() const
-{
-    return std::make_shared<DataTypeEnum>(*this);
-}
-
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -245,6 +240,28 @@ template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
     static_cast<ColumnType &>(column).getData().push_back(values.front().second);
+}
+
+template <typename Type>
+bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
+{
+    for (const auto & elem : values)
+    {
+        const char * pos = elem.first.data();
+        const char * end = pos + elem.first.size();
+        while (pos < end)
+        {
+            size_t length = UTF8::seqLength(*pos);
+            if (pos + length > end)
+                return false;
+
+            if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(pos), length))
+                pos += length;
+            else
+                return false;
+        }
+    }
+    return true;
 }
 
 template <typename Type>

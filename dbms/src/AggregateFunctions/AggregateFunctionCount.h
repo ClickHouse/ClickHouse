@@ -4,7 +4,6 @@
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/INullaryAggregateFunction.h>
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
@@ -93,7 +92,7 @@ public:
 
     void setArgument(const DataTypePtr & argument)
     {
-        if (!argument->isNullable() && !argument->isNull())
+        if (!argument->isNullable())
             throw Exception("Not Nullable argument passed to aggregate function count", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
@@ -144,7 +143,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
-            is_nullable[i] = arguments[i]->isNullable() || arguments[i]->isNull();
+            is_nullable[i] = arguments[i]->isNullable();
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override

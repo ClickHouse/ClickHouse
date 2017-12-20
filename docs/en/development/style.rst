@@ -102,12 +102,12 @@ Formatting
 
     .. code-block:: cpp
 
-        template <typename T, typename Ptr = std::shared_ptr<T>>
+        template <typename T>
         class MultiVersion
         {
         public:
-            /// Конкретная версия объекта для использования. shared_ptr определяет время жизни версии.
-            using Version = Ptr;
+            /// Version of object for usage. shared_ptr manage lifetime of version.
+            using Version = std::shared_ptr<const T>;
 
 
 #. If there's only one namespace in a file and there's nothing else significant - no need to indent the namespace.
@@ -116,12 +116,9 @@ Formatting
 
     .. code-block:: cpp
 
-        /// Если файлы не открыты, то открываем их.
-        if (streams.empty())
-            for (const auto & name : column_names)
-                streams.emplace(name, std::make_unique<Stream>(
-                    storage.files[name].data_file.path(),
-                    storage.files[name].marks[mark_number].offset));
+        /// Finish write.
+        for (auto & stream : streams)
+            stream.second->finalize();
 
 #. No spaces before end of line.
 
@@ -511,7 +508,7 @@ How to write code
 
 #. Numeric types.
     Use types UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, as well as size_t, ssize_t, ptrdiff_t.
-    Do not use типы signed/unsigned long, long long, short; signed char, unsigned char, аnd char.
+    Do not use signed/unsigned long, long long, short; signed char, unsigned char, аnd char.
 
 #. Passing arguments.
     Pass complex values by reference (including std::string).

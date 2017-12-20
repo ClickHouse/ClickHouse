@@ -54,8 +54,9 @@ endif ()
 
 set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
-if (CCACHE_FOUND)
-    # clang-6.0: warning: argument unused during compilation: '-stdlib=libc++'
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # clang: warning: argument unused during compilation: '-stdlib=libc++'
+    # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
 
@@ -67,7 +68,9 @@ option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
 if (NOT MAKE_STATIC_LIBRARIES)
     option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
+    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
 endif ()
+
 if (SPLIT_SHARED_LIBRARIES)
     set (SPLIT_SHARED SHARED)
 endif ()
@@ -133,6 +136,7 @@ if (CMAKE_VERSION VERSION_LESS "3.8.0")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
 else ()
     set (CMAKE_CXX_STANDARD 17)
+    set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
     set (CMAKE_CXX_STANDARD_REQUIRED ON)
     set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
 endif ()
@@ -162,7 +166,7 @@ if (CMAKE_SYSTEM MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
     if (USE_LIBCXX)
         set (CMAKE_CXX_FLAGS             "${CMAKE_CXX_FLAGS} -stdlib=libc++") # Ok for clang6, for older can cause 'not used option' warning
-        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
+        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
         if (MAKE_STATIC_LIBRARIES)
             link_libraries (-Wl,-Bstatic -stdlib=libc++ c++ c++abi -Wl,-Bdynamic)
         else ()
@@ -195,6 +199,14 @@ set (CMAKE_CXX_FLAGS_MSAN                "${CMAKE_CXX_FLAGS_MSAN}  ${SAN_FLAGS} 
 set (CMAKE_C_FLAGS_MSAN                  "${CMAKE_C_FLAGS_MSAN}    ${SAN_FLAGS} -fsanitize=memory")
 set (CMAKE_CXX_FLAGS_TSAN                "${CMAKE_CXX_FLAGS_TSAN}  ${SAN_FLAGS} -fsanitize=thread")
 set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} -fsanitize=thread")
+
+# clang use static linking by default
+if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_EXE_LINKER_FLAGS_ASAN     "${CMAKE_EXE_LINKER_FLAGS_ASAN} -static-libasan")
+    set (CMAKE_EXE_LINKER_FLAGS_UBSAN    "${CMAKE_EXE_LINKER_FLAGS_UBSAN} -static-libubsan")
+    set (CMAKE_EXE_LINKER_FLAGS_MSAN     "${CMAKE_EXE_LINKER_FLAGS_MSAN} -static-libmsan")
+    set (CMAKE_EXE_LINKER_FLAGS_TSAN     "${CMAKE_EXE_LINKER_FLAGS_TSAN} -static-libtsan")
+endif ()
 
 # Using "include-what-you-use" tool.
 option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
@@ -255,6 +267,7 @@ include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
 include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
+include (cmake/find_execinfo.cmake)
 include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
 include (cmake/find_re2.cmake)

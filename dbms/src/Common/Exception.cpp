@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Common/Exception.h>
+#include <Common/demangle.h>
 
 
 namespace DB
@@ -49,15 +50,6 @@ void throwFromErrno(const std::string & s, int code, int e)
 #endif
 }
 
-
-inline std::string demangle(const char * const mangled, int & status)
-{
-    const auto demangled_str = abi::__cxa_demangle(mangled, 0, 0, &status);
-    std::string demangled{demangled_str};
-    free(demangled_str);
-
-    return demangled;
-}
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {

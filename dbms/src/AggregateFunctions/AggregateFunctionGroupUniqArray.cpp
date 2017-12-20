@@ -22,23 +22,15 @@ class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUni
 
 static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type)
 {
-         if (typeid_cast<const DataTypeDate *>(&argument_type))     return new AggregateFunctionGroupUniqArrayDate;
-    else if (typeid_cast<const DataTypeDateTime *>(&argument_type))    return new AggregateFunctionGroupUniqArrayDateTime;
+         if (typeid_cast<const DataTypeDate *>(&argument_type)) return new AggregateFunctionGroupUniqArrayDate;
+    else if (typeid_cast<const DataTypeDateTime *>(&argument_type)) return new AggregateFunctionGroupUniqArrayDateTime;
     else
     {
         /// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
-        if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
+        if (argument_type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             return new AggreagteFunctionGroupUniqArrayGeneric<true>;
-
-        auto * array_type = typeid_cast<const DataTypeArray *>(&argument_type);
-        if (array_type)
-        {
-            auto nested_type = array_type->getNestedType();
-            if (nested_type->isNumeric() || typeid_cast<DataTypeFixedString *>(nested_type.get()))
-                return new AggreagteFunctionGroupUniqArrayGeneric<true>;
-        }
-
-        return new AggreagteFunctionGroupUniqArrayGeneric<false>;
+        else
+            return new AggreagteFunctionGroupUniqArrayGeneric<false>;
     }
 }
 

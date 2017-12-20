@@ -56,10 +56,9 @@ public:
     std::string getName() const override { return std::string("Interval") + kindToString(); }
     const char * getFamilyName() const override { return "Interval"; }
 
-    bool behavesAsNumber() const override { return false; }
-    bool notForTables() const override { return true; }
-
-    DataTypePtr clone() const override { return std::make_shared<DataTypeInterval>(kind); }
+    bool isParametric() const override { return true; }
+    bool cannotBeStoredInTables() const override { return true; }
+    bool isCategorial() const override { return false; }
 };
 
 }

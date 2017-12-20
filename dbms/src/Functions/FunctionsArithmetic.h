@@ -484,15 +484,6 @@ template <> struct IsIntegral<DataTypeInt16> { static constexpr auto value = tru
 template <> struct IsIntegral<DataTypeInt32> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeInt64> { static constexpr auto value = true; };
 
-template <typename DataType> struct IsFloating { static constexpr auto value = false; };
-template <> struct IsFloating<DataTypeFloat32> { static constexpr auto value = true; };
-template <> struct IsFloating<DataTypeFloat64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsNumeric
-{
-    static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
-};
-
 template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
 template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
 template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto value = true; };
@@ -656,24 +647,24 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -686,20 +677,20 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createColumnConst(col_left->size(), toField(res));
 
             return true;
         }
@@ -849,7 +840,7 @@ public:
             || checkLeftType<DataTypeInt64>(arguments, type_res)
             || checkLeftType<DataTypeFloat32>(arguments, type_res)
             || checkLeftType<DataTypeFloat64>(arguments, type_res)))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type_res;
@@ -925,13 +916,13 @@ private:
         {
             using ResultType = typename Op<T0>::ResultType;
 
-            std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
-            typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
             UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -1250,14 +1241,7 @@ public:
 
         const auto first_arg = arguments.front().get();
 
-        if (!checkDataType<DataTypeUInt8>(first_arg)
-            && !checkDataType<DataTypeUInt16>(first_arg)
-            && !checkDataType<DataTypeUInt32>(first_arg)
-            && !checkDataType<DataTypeUInt64>(first_arg)
-            && !checkDataType<DataTypeInt8>(first_arg)
-            && !checkDataType<DataTypeInt16>(first_arg)
-            && !checkDataType<DataTypeInt32>(first_arg)
-            && !checkDataType<DataTypeInt64>(first_arg))
+        if (!first_arg->isInteger())
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1267,10 +1251,7 @@ public:
         {
             const auto pos_arg = arguments[i].get();
 
-            if (!checkDataType<DataTypeUInt8>(pos_arg)
-                && !checkDataType<DataTypeUInt16>(pos_arg)
-                && !checkDataType<DataTypeUInt32>(pos_arg)
-                && !checkDataType<DataTypeUInt64>(pos_arg))
+            if (!pos_arg->isUnsignedInteger())
                 throw Exception{
                     "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1309,7 +1290,7 @@ private:
             const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
-            const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+            auto out_col = ColumnVector<UInt8>::create(size);
             auto & out = out_col->getData();
 
             if (is_const)
@@ -1325,7 +1306,7 @@ private:
                     out[i] = Impl::apply(val[i], mask[i]);
             }
 
-            block.getByPosition(result).column = out_col;
+            block.getByPosition(result).column = std::move(out_col);
             return true;
         }
         else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
@@ -1337,19 +1318,19 @@ private:
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
             }
             else
             {
                 const auto mask = createMask<T>(size, block, arguments);
-                const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+                auto out_col = ColumnVector<UInt8>::create(size);
 
                 auto & out = out_col->getData();
 
                 for (const auto i : ext::range(0, size))
                     out[i] = Impl::apply(val, mask[i]);
 
-                block.getByPosition(result).column = out_col;
+                block.getByPosition(result).column = std::move(out_col);
             }
 
             return true;

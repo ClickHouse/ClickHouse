@@ -1,6 +1,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
+#include <IO/WriteBufferFromArena.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 
@@ -25,10 +26,9 @@ void ColumnAggregateFunction::addArena(ArenaPtr arena_)
     arenas.push_back(arena_);
 }
 
-ColumnPtr ColumnAggregateFunction::convertToValues() const
+MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 {
     const IAggregateFunction * function = func.get();
-    ColumnPtr res = function->getReturnType()->createColumn();
 
     /** If the aggregate function returns an unfinalized/unfinished state,
         * then you just need to copy pointers to it and also shared ownership of data.
@@ -62,17 +62,18 @@ ColumnPtr ColumnAggregateFunction::convertToValues() const
         */
     if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(function))
     {
-        std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+        auto res = createView();
         res->set(function_state->getNestedFunction());
         res->getData().assign(getData().begin(), getData().end());
-        return res;
+        return std::move(res);
     }
 
-    IColumn & column = *res;
+
+    MutableColumnPtr res = function->getReturnType()->createColumn();
     res->reserve(getData().size());
 
     for (auto val : getData())
-        function->insertResultInto(val, column);
+        function->insertResultInto(val, *res);
 
     return res;
 }
@@ -103,7 +104,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
     else
     {
         /// Keep shared ownership of aggregation states.
-        src = from_concrete.shared_from_this();
+        src = from_concrete.getPtr();
 
         auto & data = getData();
         size_t old_size = data.size();
@@ -113,17 +114,16 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 }
 
 
-ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint) const
+MutableColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint) const
 {
     size_t size = getData().size();
     if (size != filter.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
-
     if (size == 0)
-        return res;
+        return cloneEmpty();
 
+    auto res = createView();
     auto & res_data = res->getData();
 
     if (result_size_hint)
@@ -135,13 +135,13 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 
     /// To save RAM in case of too strong filtering.
     if (res_data.size() * 2 < res_data.capacity())
-        res_data = Container_t(res_data.cbegin(), res_data.cend());
+        res_data = Container(res_data.cbegin(), res_data.cend());
 
-    return res;
+    return std::move(res);
 }
 
 
-ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
+MutableColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = getData().size();
 
@@ -153,13 +153,13 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
     if (perm.size() < limit)
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+    auto res = createView();
 
     res->getData().resize(limit);
     for (size_t i = 0; i < limit; ++i)
         res->getData()[i] = getData()[perm[i]];
 
-    return res;
+    return std::move(res);
 }
 
 /// Is required to support operations with Set
@@ -193,9 +193,9 @@ size_t ColumnAggregateFunction::allocatedBytes() const
     return res;
 }
 
-ColumnPtr ColumnAggregateFunction::cloneEmpty() const
+MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return std::make_shared<ColumnAggregateFunction>(func, Arenas(1, std::make_shared<Arena>()));
+    return create(func, Arenas(1, std::make_shared<Arena>()));
 }
 
 Field ColumnAggregateFunction::operator[](size_t n) const
@@ -281,14 +281,37 @@ void ColumnAggregateFunction::insertDefault()
     function->create(getData().back());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t, Arena &, const char *&) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & dst, const char *& begin) const
 {
-    throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    IAggregateFunction * function = func.get();
+    WriteBufferFromArena out(dst, begin);
+    function->serialize(getData()[n], out);
+    return out.finish();
 }
 
-const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *)
+const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * src_arena)
 {
-    throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    IAggregateFunction * function = func.get();
+
+    /** Parameter "src_arena" points to Arena, from which we will deserialize the state.
+      * And "dst_arena" is another Arena, that aggregate function state will use to store its data.
+      */
+    Arena & dst_arena = createOrGetArena();
+
+    getData().push_back(dst_arena.alloc(function->sizeOfData()));
+    function->create(getData().back());
+
+    /** We will read from src_arena.
+      * There is no limit for reading - it is assumed, that we can read all that we need after src_arena pointer.
+      * Buf ReadBufferFromMemory requires some bound. We will use arbitary big enough number, that will not overflow pointer.
+      * NOTE Technically, this is not compatible with C++ standard,
+      *  as we cannot legally compare pointers after last element + 1 of some valid memory region.
+      *  Probably this will not work under UBSan.
+      */
+    ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena);
+    function->deserialize(getData().back(), read_buffer, &dst_arena);
+
+    return read_buffer.position();
 }
 
 void ColumnAggregateFunction::popBack(size_t n)
@@ -303,21 +326,20 @@ void ColumnAggregateFunction::popBack(size_t n)
     data.resize_assume_reserved(new_size);
 }
 
-ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets) const
+MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
-
     if (size == 0)
-        return res;
+        return cloneEmpty();
 
+    auto res = createView();
     auto & res_data = res->getData();
     res_data.reserve(offsets.back());
 
-    IColumn::Offset_t prev_offset = 0;
+    IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
         size_t size_to_replicate = offsets[i] - prev_offset;
@@ -327,15 +349,15 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets)
             res_data.push_back(data[i]);
     }
 
-    return res;
+    return std::move(res);
 }
 
-Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
+MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
-    Columns columns(num_columns);
+    MutableColumns columns(num_columns);
     for (auto & column : columns)
-        column = std::make_shared<ColumnAggregateFunction>(*this);
+        column = createView();
 
     size_t num_rows = size();
 

@@ -36,4 +36,4 @@ fi
 rm -f "./test_into_outfile_clickhouse-local.out"
 
 echo "performing test: http"
-echo "SELECT 1, 2 INTO OUTFILE './test_into_outfile_http.out'" | curl -s "${CLICKHOUSE_URL}" -d @- --fail || echo "query failed"
+echo "SELECT 1, 2 INTO OUTFILE './test_into_outfile_http.out'" | ${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}" -d @- --fail || echo "query failed"

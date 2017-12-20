@@ -56,7 +56,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     if (parts_set.count(name))
         return;
 
-    parts_queue.emplace_back(name, time(0) + delay_to_check_seconds);
+    parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds);
     parts_set.insert(name);
     task_handle->schedule();
 }
@@ -271,7 +271,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 storage.data.renameAndDetachPart(part, "broken_");
             }
         }
-        else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
+        else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
         {
             /// If the part is not in ZooKeeper, delete it locally.
             /// Probably, someone just wrote down the part, and has not yet added to ZK.
@@ -289,7 +289,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             /// And then for a long time (before restarting), the data on the replicas will be different.
 
             LOG_TRACE(log, "Young part " << part_name
-                << " with age " << (time(0) - part->modification_time)
+                << " with age " << (time(nullptr) - part->modification_time)
                 << " seconds hasn't been added to ZooKeeper yet. It's ok.");
         }
     }
