@@ -46,6 +46,17 @@ Build ClickHouse
     make -j `sysctl -n hw.ncpu`
     cd ..
 
+If you're using macOS 10.13 High Sierra, it's not possible to build it with GCC-7 due to `a bug <https://github.com/yandex/ClickHouse/issues/1474>`_. Build it with Clang 5.0 instead:
+
+.. code-block:: bash
+
+    brew install llvm
+    mkdir build
+    cd build
+    export PATH="/usr/local/opt/llvm/bin:$PATH"
+    cmake .. -DCMAKE_CXX_COMPILER=`which clang++` -DCMAKE_C_COMPILER=`which clang` -DLINKER_NAME=ld -DUSE_STATIC_LIBRARIES=OFF
+    make -j `sysctl -n hw.ncpu` clickhouse
+
 Caveats
 -------
 

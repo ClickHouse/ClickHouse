@@ -104,7 +104,7 @@ set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 find_program (LLD_PATH NAMES lld)
 find_program (GOLD_PATH NAMES gold)
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
 elseif (GOLD_PATH)
     set (LINKER_NAME "gold")
