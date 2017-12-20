@@ -1,60 +1,63 @@
 #pragma once
 #include <iostream>
 
-
-namespace DB { class IBlockInputStream; }
-std::ostream & operator<<(std::ostream & stream, const DB::IBlockInputStream & what);
-
-namespace DB { class Field; }
-std::ostream & operator<<(std::ostream & stream, const DB::Field & what);
-
-namespace DB { struct NameAndTypePair; }
-std::ostream & operator<<(std::ostream & stream, const DB::NameAndTypePair & what);
-
-namespace DB { class IDataType; }
-std::ostream & operator<<(std::ostream & stream, const DB::IDataType & what);
-
-namespace DB { class IStorage; }
-std::ostream & operator<<(std::ostream & stream, const DB::IStorage & what);
-
-namespace DB { class TableStructureReadLock; }
-std::ostream & operator<<(std::ostream & stream, const DB::TableStructureReadLock & what);
-
-namespace DB { class IFunction; }
-std::ostream & operator<<(std::ostream & stream, const DB::IFunction & what);
-
-namespace DB { class Block; }
-std::ostream & operator<<(std::ostream & stream, const DB::Block & what);
-
-namespace DB { struct ColumnWithTypeAndName; }
-std::ostream & operator<<(std::ostream & stream, const DB::ColumnWithTypeAndName & what);
-
-namespace DB { class IColumn; }
-std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what);
-
-
-namespace DB { struct SubqueryForSet; }
-std::ostream & operator<<(std::ostream & stream, const DB::SubqueryForSet & what);
-
-namespace DB { class IAST; }
-std::ostream & operator<<(std::ostream & stream, const DB::IAST & what);
-
-namespace DB { class ExpressionAnalyzer; }
-std::ostream & operator<<(std::ostream & stream, const DB::ExpressionAnalyzer & what);
-
-
 #include <Client/Connection.h>
-std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what);
-
 #include <Common/PODArray.h>
+
+namespace DB
+{
+
+class IBlockInputStream;
+std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what);
+
+class Field;
+std::ostream & operator<<(std::ostream & stream, const Field & what);
+
+struct NameAndTypePair;
+std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what);
+
+class IDataType;
+std::ostream & operator<<(std::ostream & stream, const IDataType & what);
+
+class IStorage;
+std::ostream & operator<<(std::ostream & stream, const IStorage & what);
+
+class TableStructureReadLock;
+std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock & what);
+
+class IFunction;
+std::ostream & operator<<(std::ostream & stream, const IFunction & what);
+
+class Block;
+std::ostream & operator<<(std::ostream & stream, const Block & what);
+
+struct ColumnWithTypeAndName;
+std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & what);
+
+class IColumn;
+std::ostream & operator<<(std::ostream & stream, const IColumn & what);
+
+
+struct SubqueryForSet;
+std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what);
+
+class IAST;
+std::ostream & operator<<(std::ostream & stream, const IAST & what);
+
+class ExpressionAnalyzer;
+std::ostream & operator<<(std::ostream & stream, const ExpressionAnalyzer & what);
+
+std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what);
+
 template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
-std::ostream & operator<<(std::ostream & stream, const DB::PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & what)
+std::ostream & operator<<(std::ostream & stream, const PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & what)
 {
     stream << "PODArray(size = " << what.size() << ", capacity = " << what.capacity() << ")";
     dumpContainer(stream, what);
     return stream;
 };
 
+}
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)
 #include <common/iostream_debug_helpers.h>

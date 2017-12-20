@@ -349,11 +349,11 @@ public:
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
 
-    /// Returns an comitted part with the given name or a part containing it. If there is no such part, returns nullptr.
+    /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
 
-    /// Returns the part with the given name (and state) or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states = {DataPartState::Committed});
+    /// Returns the part with the given name and state or nullptr if no such part.
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;

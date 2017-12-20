@@ -2,7 +2,6 @@
 
 #include <Common/HashTable/Hash.h>
 #include <Common/MemoryTracker.h>
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
 
 
 namespace DB
@@ -443,7 +442,8 @@ namespace detail
 
             while (index != indices_end)
             {
-                result[*index] = BIG_THRESHOLD;
+                result[*index] = std::numeric_limits<ResultType>::max() < BIG_THRESHOLD
+                    ? std::numeric_limits<ResultType>::max() : BIG_THRESHOLD;
                 ++index;
             }
         }
@@ -471,6 +471,7 @@ namespace detail
 /** sizeof - 64 bytes.
   * If there are not enough of them - allocates up to 20 KB of memory in addition.
   */
+template <typename>     /// Unused template parameter is for AggregateFunctionQuantile.
 class QuantileTiming : private boost::noncopyable
 {
 private:
@@ -560,7 +561,7 @@ public:
         }
     }
 
-    void insert(UInt64 x)
+    void add(UInt64 x)
     {
         if (tiny.count < TINY_MAX_ELEMS)
         {
@@ -586,7 +587,7 @@ public:
         }
     }
 
-    void insert(UInt64 x, size_t weight)
+    void add(UInt64 x, size_t weight)
     {
         /// NOTE: First condition is to avoid overflow.
         if (weight < TINY_MAX_ELEMS && tiny.count + weight <= TINY_MAX_ELEMS)

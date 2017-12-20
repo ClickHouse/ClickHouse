@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <Common/RadixSort.h>
 
 
@@ -31,9 +30,12 @@ namespace ErrorCodes
   * does not depend on the expected number of points. Also an variant on java
   * uses asin, which slows down the algorithm a bit.
   */
-template <typename Value, typename Count>
+template <typename T>
 class QuantileTDigest
 {
+    using Value = Float32;
+    using Count = Float32;
+
     /** The centroid stores the weight of points around their mean value
       */
     struct Centroid
@@ -112,20 +114,20 @@ class QuantileTDigest
 
     /** Adds a centroid `c` to the digest
       */
-    void add(const Centroid & c)
+    void addCentroid(const Centroid & c)
     {
         summary.push_back(c);
         count += c.count;
         ++unmerged;
         if (unmerged >= params.max_unmerged)
-            compress(params);
+            compress();
     }
 
     /** Performs compression of accumulated centroids
       * When merging, the invariant is retained to the maximum size of each
       * centroid that does not exceed `4 q (1 - q) \ delta N`.
       */
-    void compress(const Params & params)
+    void compress()
     {
         if (unmerged > 0)
         {
@@ -190,20 +192,20 @@ class QuantileTDigest
 public:
     /** Adds to the digest a change in `x` with a weight of `cnt` (default 1)
       */
-    void add(Value x, Count cnt = 1)
+    void add(T x, UInt64 cnt = 1)
     {
-        add(params, Centroid(x, cnt));
+        addCentroid(Centroid(Value(x), Count(cnt)));
     }
 
     void merge(const QuantileTDigest & other)
     {
         for (const auto & c : other.summary)
-            add(params, c);
+            addCentroid(c);
     }
 
     void serialize(WriteBuffer & buf)
     {
-        compress(params);
+        compress();
         writeVarUInt(summary.size(), buf);
         buf.write(reinterpret_cast<const char *>(&summary[0]), summary.size() * sizeof(summary[0]));
     }
@@ -224,24 +226,24 @@ public:
       * For an empty digest returns NaN.
       */
     template <typename ResultType>
-    ResultType getImpl(Value level)
+    ResultType getImpl(Float64 level)
     {
         if (summary.empty())
             return std::is_floating_point_v<ResultType> ? NAN : 0;
 
-        compress(params);
+        compress();
 
         if (summary.size() == 1)
             return summary.front().mean;
 
-        Value x = level * count;
+        Float64 x = level * count;
+        Float64 prev_x = 0;
         Count sum = 0;
         Value prev_mean = summary.front().mean;
-        Value prev_x = 0;
 
         for (const auto & c : summary)
         {
-            Value current_x = sum + c.count * 0.5;
+            Float64 current_x = sum + c.count * 0.5;
 
             if (current_x >= x)
                 return interpolate(x, prev_x, prev_mean, current_x, c.mean);
@@ -260,7 +262,7 @@ public:
       * result - the array where the results are added, in order of `levels`,
       */
     template <typename ResultType>
-    void getManyImpl(const Value * levels, const size_t * levels_permutation, size_t size, ResultType * result)
+    void getManyImpl(const Float64 * levels, const size_t * levels_permutation, size_t size, ResultType * result)
     {
         if (summary.empty())
         {
@@ -269,7 +271,7 @@ public:
             return;
         }
 
-        compress(params);
+        compress();
 
         if (summary.size() == 1)
         {
@@ -278,15 +280,15 @@ public:
             return;
         }
 
-        Value x = levels[levels_permutation[0]] * count;
+        Float64 x = levels[levels_permutation[0]] * count;
+        Float64 prev_x = 0;
         Count sum = 0;
         Value prev_mean = summary.front().mean;
-        Value prev_x = 0;
 
         size_t result_num = 0;
         for (const auto & c : summary)
         {
-            Value current_x = sum + c.count * 0.5;
+            Float64 current_x = sum + c.count * 0.5;
 
             while (current_x >= x)
             {
@@ -309,22 +311,22 @@ public:
             result[levels_permutation[result_num]] = rest_of_results;
     }
 
-    Value get(Float64 level) const
+    T get(Float64 level)
     {
-        return getImpl<Value>(level);
+        return getImpl<T>(level);
     }
 
-    float getFloat(Float64 level) const
+    float getFloat(Float64 level)
     {
         return getImpl<float>(level);
     }
 
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) const
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, T * result)
     {
         getManyImpl(levels, indices, size, result);
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result) const
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result)
     {
         getManyImpl(levels, indices, size, result);
     }

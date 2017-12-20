@@ -49,7 +49,8 @@ struct AggregateFunctionSumMapData
   */
 
 template <typename T>
-class AggregateFunctionSumMap final : public IAggregateFunctionDataHelper<AggregateFunctionSumMapData<typename NearestFieldType<T>::Type>>
+class AggregateFunctionSumMap final : public IAggregateFunctionDataHelper<
+    AggregateFunctionSumMapData<typename NearestFieldType<T>::Type>, AggregateFunctionSumMap<T>>
 {
 private:
     DataTypePtr keys_type;
