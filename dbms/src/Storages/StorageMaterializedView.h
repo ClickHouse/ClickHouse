@@ -27,7 +27,6 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
-    bool supportsParallelReplicas() const override { return getTargetTable()->supportsParallelReplicas(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;

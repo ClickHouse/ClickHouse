@@ -46,7 +46,7 @@ std::ostream & operator<<(std::ostream & stream, const IStorage & what)
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
            << what.getColumnsList().toString()
            << "}";
-    // isRemote supportsSampling supportsFinal supportsPrewhere supportsParallelReplicas
+    // isRemote supportsSampling supportsFinal supportsPrewhere
     return stream;
 }
 
