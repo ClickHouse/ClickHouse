@@ -53,7 +53,7 @@ struct QuantileExact
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value get(Float64 level) const
+    Value get(Float64 level)
     {
         if (!array.empty())
         {
@@ -70,7 +70,7 @@ struct QuantileExact
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) const
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         if (!array.empty())
         {

@@ -51,10 +51,10 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
     AggregateFunctionQuantile<Value, SecondArg, Data, Name, returns_float, returns_many>>
 {
 private:
-    bool have_second_arg = !std::is_same_v<SecondArg, void>;
+    static constexpr bool have_second_arg = !std::is_same_v<SecondArg, void>;
 
-    Float64 level = 0.5;
     QuantileLevels<Float64> levels;
+    Float64 level = 0.5;
     DataTypePtr argument_type;
 
 public:
@@ -85,11 +85,11 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if constexpr (have_second_arg)
-            this->data(place).insert(
+            this->data(place).add(
                 static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num],
                 static_cast<const ColumnVector<SecondArg> &>(*columns[1]).getData()[row_num]);
         else
-            this->data(place).insert(
+            this->data(place).add(
                 static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num]);
     }
 

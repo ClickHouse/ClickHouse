@@ -32,7 +32,7 @@ struct QuantileReservoirSamplerDeterministic
 
     void merge(const QuantileReservoirSamplerDeterministic & rhs)
     {
-        data.merge(rhs);
+        data.merge(rhs.data);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -46,26 +46,26 @@ struct QuantileReservoirSamplerDeterministic
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value get(Float64 level) const
+    Value get(Float64 level)
     {
         return data.quantileInterpolated(level);
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) const
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         for (size_t i = 0; i < size; ++i)
             result[indices[i]] = data.quantileInterpolated(levels[indices[i]]);
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    float getFloat(Float64 level) const
+    float getFloat(Float64 level)
     {
         return data.quantileInterpolated(level);
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result) const
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result)
     {
         for (size_t i = 0; i < size; ++i)
             result[indices[i]] = data.quantileInterpolated(levels[indices[i]]);
