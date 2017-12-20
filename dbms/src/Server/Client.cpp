@@ -568,7 +568,10 @@ private:
                 ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
                 if (insert && insert->data)
-                    insert->end = find_first_symbols<'\n'>(insert->data, end);
+                {
+                    pos = find_first_symbols<'\n'>(insert->data, end);
+                    insert->end = pos;
+                }
 
                 query = text.substr(begin - text.data(), pos - begin);
 
