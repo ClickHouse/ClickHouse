@@ -217,7 +217,7 @@ public:
         set.readAlphaMap(buf);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
+    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
@@ -225,8 +225,10 @@ public:
             set.resize(reserved);
         }
 
-        StringRef str_serialized = column.getDataAt(row_num);
+        const char * begin = nullptr;
+        StringRef str_serialized = column.serializeValueIntoArena(row_num, *arena, begin);
         set.insert(str_serialized);
+        arena->rollback(str_serialized.size);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

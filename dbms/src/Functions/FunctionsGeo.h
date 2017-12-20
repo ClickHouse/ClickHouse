@@ -11,6 +11,8 @@
 #include <array>
 
 #define DEGREES_IN_RADIANS (M_PI / 180.0)
+#define EARTH_RADIUS_IN_METERS 6372797.560856
+
 
 namespace DB
 {
@@ -19,9 +21,8 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
-
-const Float64 EARTH_RADIUS_IN_METERS = 6372797.560856;
 
 static inline Float64 degToRad(Float64 angle) { return angle * DEGREES_IN_RADIANS; }
 static inline Float64 radToDeg(Float64 angle) { return angle / DEGREES_IN_RADIANS; }
@@ -148,7 +149,7 @@ private:
                     else if (instr_type::get_const_float_64 == instrs[idx].first)
                         vals[idx] = static_cast<const ColumnConst *>(instrs[idx].second)->getValue<Float64>();
                     else
-                        throw std::logic_error{"unknown instr_type"};
+                        throw Exception{"Unknown instruction type in implementation of greatCircleDistance function", ErrorCodes::LOGICAL_ERROR};
                 }
                 dst_data[row] = greatCircleDistance(vals[0], vals[1], vals[2], vals[3]);
             }
