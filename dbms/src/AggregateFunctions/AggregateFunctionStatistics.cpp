@@ -1,17 +1,24 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/AggregateFunctionStatistics.h>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionVarPop(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionVarPop(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionVarPop>(*argument_types[0]));
 
@@ -21,10 +28,10 @@ AggregateFunctionPtr createAggregateFunctionVarPop(const std::string & name, con
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionVarSamp(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionVarSamp(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionVarSamp>(*argument_types[0]));
 
@@ -34,10 +41,10 @@ AggregateFunctionPtr createAggregateFunctionVarSamp(const std::string & name, co
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionStdDevPop(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionStdDevPop(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionStdDevPop>(*argument_types[0]));
 
@@ -47,10 +54,10 @@ AggregateFunctionPtr createAggregateFunctionStdDevPop(const std::string & name, 
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionStdDevSamp(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionStdDevSamp(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionStdDevSamp>(*argument_types[0]));
 
@@ -60,10 +67,10 @@ AggregateFunctionPtr createAggregateFunctionStdDevSamp(const std::string & name,
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionCovarPop(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionCovarPop(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 2)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertBinary(name, argument_types);
 
     AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionCovarPop>(*argument_types[0], *argument_types[1]));
     if (!res)
@@ -73,10 +80,10 @@ AggregateFunctionPtr createAggregateFunctionCovarPop(const std::string & name, c
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionCovarSamp(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionCovarSamp(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 2)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertBinary(name, argument_types);
 
     AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionCovarSamp>(*argument_types[0], *argument_types[1]));
     if (!res)
@@ -87,10 +94,10 @@ AggregateFunctionPtr createAggregateFunctionCovarSamp(const std::string & name, 
 }
 
 
-AggregateFunctionPtr createAggregateFunctionCorr(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionCorr(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 2)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertBinary(name, argument_types);
 
     AggregateFunctionPtr res(createWithTwoNumericTypes<AggregateFunctionCorr>(*argument_types[0], *argument_types[1]));
     if (!res)

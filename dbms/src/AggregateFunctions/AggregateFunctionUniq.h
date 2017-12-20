@@ -378,7 +378,7 @@ public:
   * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
 template <typename Data, bool argument_is_tuple>
-class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>, argument_is_tuple>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, argument_is_tuple>>
 {
 private:
     static constexpr bool is_exact = std::is_same<Data, AggregateFunctionUniqExactData<String>>::value;
@@ -386,8 +386,7 @@ private:
     size_t num_args = 0;
 
 public:
-    AggregateFunctionUniqVariadic(const DataTypes & arguments, UInt8 threshold)
-        : threshold(threshold)
+    AggregateFunctionUniqVariadic(const DataTypes & arguments)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();

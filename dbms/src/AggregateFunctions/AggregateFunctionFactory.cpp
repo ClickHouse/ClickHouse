@@ -42,7 +42,8 @@ AggregateFunctionPtr createAggregateFunctionForEach(AggregateFunctionPtr & neste
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested, const DataTypes & argument_types);
 AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested, const DataTypes & argument_types, const Array & parameters);
 AggregateFunctionPtr createAggregateFunctionMerge(const String & name, AggregateFunctionPtr & nested, const DataTypes & argument_types);
-AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested, const DataTypes & argument_types);
+
+AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested, const DataTypes & argument_types);
 AggregateFunctionPtr createAggregateFunctionCountNotNull(const String & name, const DataTypes & argument_types, const Array & parameters);
 AggregateFunctionPtr createAggregateFunctionNothing();
@@ -120,7 +121,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         }
 
         if (argument_types.size() == 1)
-            return createAggregateFunctionNullUnary(nested_function, argument_types);
+            return createAggregateFunctionNullUnary(nested_function);
         else
             return createAggregateFunctionNullVariadic(nested_function, argument_types);
     }

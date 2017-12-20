@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 
 
@@ -12,7 +11,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** */
+/** Quantile calculation with "reservoir sample" algorithm.
+  * It collects pseudorandom subset of limited size from a stream of values,
+  *  and approximate quantile from it.
+  * The result is non-deterministic. Also look at QuantileReservoirSamplerDeterministic.
+  *
+  * This algorithm is quite inefficient in terms of precision for memory usage,
+  *  but very efficient in CPU (though less efficient than QuantileTiming and than QuantileExact for small sets).
+  */
 template <typename Value>
 struct QuantileReservoirSampler
 {
