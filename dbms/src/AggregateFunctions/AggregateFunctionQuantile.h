@@ -54,7 +54,7 @@ private:
     bool have_second_arg = !std::is_same_v<SecondArg, void>;
 
     Float64 level = 0.5;
-    QuantileLevels levels;
+    QuantileLevels<Float64> levels;
     DataTypePtr argument_type;
 
 public:

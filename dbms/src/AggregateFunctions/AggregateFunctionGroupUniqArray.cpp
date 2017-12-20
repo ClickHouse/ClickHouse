@@ -44,7 +44,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes(*argument_types[0]));
+        res = AggregateFunctionPtr(createWithExtraTypes(argument_types[0]));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() +
