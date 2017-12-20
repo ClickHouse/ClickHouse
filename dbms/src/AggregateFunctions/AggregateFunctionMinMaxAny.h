@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
 #include <Common/typeid_cast.h>
+#include <common/StringRef.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -688,9 +689,13 @@ private:
 public:
     AggregateFunctionsSingleValue(const DataTypePtr & type) : type(type)
     {
-        if (!type->isComparable())
-            throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
-                + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (StringRef(Data::name()) == StringRef("min")
+            || StringRef(Data::name()) == StringRef("max"))
+        {
+            if (!type->isComparable())
+                throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
+                    + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
     }
 
     String getName() const override { return Data::name(); }
