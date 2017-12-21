@@ -104,7 +104,7 @@ set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 find_program (LLD_PATH NAMES lld)
 find_program (GOLD_PATH NAMES gold)
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
 elseif (GOLD_PATH)
     set (LINKER_NAME "gold")
@@ -139,6 +139,8 @@ else ()
     set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
     set (CMAKE_CXX_STANDARD_REQUIRED ON)
     set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
+    # This needs to propagate to vendored projects in contrib
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)

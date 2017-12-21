@@ -1,25 +1,7 @@
 #pragma once
 
-#include <limits>
-
-#include <Common/MemoryTracker.h>
 #include <Common/HashTable/Hash.h>
-
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
-
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
-#include <AggregateFunctions/QuantilesCommon.h>
-
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
-
-#include <ext/range.h>
-
+#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -347,12 +329,12 @@ namespace detail
 
             if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
             {
-        /// Simple serialization for a heavily dense case.
+                /// Simple serialization for a heavily dense case.
                 buf.write(reinterpret_cast<const char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
             }
             else
             {
-        /// More compact serialization for a sparse case.
+                /// More compact serialization for a sparse case.
 
                 for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
                 {
@@ -372,7 +354,7 @@ namespace detail
                     }
                 }
 
-        /// Symbolizes end of data.
+                /// Symbolizes end of data.
                 writeBinary(UInt16(BIG_THRESHOLD), buf);
             }
         }
@@ -460,7 +442,8 @@ namespace detail
 
             while (index != indices_end)
             {
-                result[*index] = BIG_THRESHOLD;
+                result[*index] = std::numeric_limits<ResultType>::max() < BIG_THRESHOLD
+                    ? std::numeric_limits<ResultType>::max() : BIG_THRESHOLD;
                 ++index;
             }
         }
@@ -488,6 +471,7 @@ namespace detail
 /** sizeof - 64 bytes.
   * If there are not enough of them - allocates up to 20 KB of memory in addition.
   */
+template <typename>     /// Unused template parameter is for AggregateFunctionQuantile.
 class QuantileTiming : private boost::noncopyable
 {
 private:
@@ -500,9 +484,9 @@ private:
 
     enum class Kind : UInt8
     {
-        Tiny     = 1,
-        Medium     = 2,
-        Large     = 3
+        Tiny = 1,
+        Medium = 2,
+        Large = 3
     };
 
     Kind which() const
@@ -577,7 +561,7 @@ public:
         }
     }
 
-    void insert(UInt64 x)
+    void add(UInt64 x)
     {
         if (tiny.count < TINY_MAX_ELEMS)
         {
@@ -603,7 +587,7 @@ public:
         }
     }
 
-    void insertWeighted(UInt64 x, size_t weight)
+    void add(UInt64 x, size_t weight)
     {
         /// NOTE: First condition is to avoid overflow.
         if (weight < TINY_MAX_ELEMS && tiny.count + weight <= TINY_MAX_ELEMS)
@@ -648,7 +632,7 @@ public:
                 mediumToLarge();
                 kind = Kind::Large;
             }
-        /// Case when two states are small, but when merged, they will turn into average.
+            /// Case when two states are small, but when merged, they will turn into average.
             else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
             {
                 tinyToMedium();
@@ -680,8 +664,8 @@ public:
             else
                 throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
 
-        /// For determinism, we should always convert to `large` when size condition is reached
-        ///  - regardless of merge order.
+            /// For determinism, we should always convert to `large` when size condition is reached
+            ///  - regardless of merge order.
             if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
             {
                 mediumToLarge();
@@ -788,264 +772,5 @@ public:
 #undef BIG_SIZE
 #undef BIG_PRECISION
 #undef TINY_MAX_ELEMS
-
-
-template <typename ArgumentFieldType>
-class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType>>
-{
-private:
-    double level;
-
-public:
-    AggregateFunctionQuantileTiming(double level_ = 0.5) : level(level_) {}
-
-    String getName() const override { return "quantileTiming"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeFloat32>();
-    }
-
-    void setArgument(const DataTypePtr & /*argument*/)
-    {
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        this->data(place).merge(this->data(rhs));
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).serialize(buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).deserialize(buf);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
-    }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
-};
-
-
-/** Same, but with two arguments. The second argument is "weight" (integer) - how many times to consider the value.
-  */
-template <typename ArgumentFieldType, typename WeightFieldType>
-class AggregateFunctionQuantileTimingWeighted final
-    : public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTimingWeighted<ArgumentFieldType, WeightFieldType>>
-{
-private:
-    double level;
-
-public:
-    AggregateFunctionQuantileTimingWeighted(double level_ = 0.5) : level(level_) {}
-
-    String getName() const override { return "quantileTimingWeighted"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeFloat32>();
-    }
-
-    void setArgumentsImpl(const DataTypes & /*arguments*/)
-    {
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
-    {
-        this->data(place).insertWeighted(
-            static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
-            static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        this->data(place).merge(this->data(rhs));
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).serialize(buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).deserialize(buf);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
-    }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
-};
-
-
-/** Same, but allows you to calculate several quantiles at once.
-  * To do this, takes several levels as parameters. Example: quantilesTiming(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
-  * Returns an array of results.
-  */
-template <typename ArgumentFieldType>
-class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType>>
-{
-private:
-    QuantileLevels<double> levels;
-
-public:
-    String getName() const override { return "quantilesTiming"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
-    }
-
-    void setArgument(const DataTypePtr & /*argument*/)
-    {
-    }
-
-    void setParameters(const Array & params) override
-    {
-        levels.set(params);
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        this->data(place).merge(this->data(rhs));
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).serialize(buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).deserialize(buf);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        size_t size = levels.size();
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
-
-        if (!size)
-            return;
-
-        typename ColumnFloat32::Container & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
-        size_t old_size = data_to.size();
-        data_to.resize(data_to.size() + size);
-
-        this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
-    }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
-};
-
-
-template <typename ArgumentFieldType, typename WeightFieldType>
-class AggregateFunctionQuantilesTimingWeighted final
-    : public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTimingWeighted<ArgumentFieldType, WeightFieldType>>
-{
-private:
-    QuantileLevels<double> levels;
-
-public:
-    String getName() const override { return "quantilesTimingWeighted"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
-    }
-
-    void setArgumentsImpl(const DataTypes & /*arguments*/)
-    {
-    }
-
-    void setParameters(const Array & params) override
-    {
-        levels.set(params);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num, Arena *) const
-    {
-        this->data(place).insertWeighted(
-            static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
-            static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        this->data(place).merge(this->data(rhs));
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).serialize(buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).deserialize(buf);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        size_t size = levels.size();
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
-
-        if (!size)
-            return;
-
-        typename ColumnFloat32::Container & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
-        size_t old_size = data_to.size();
-        data_to.resize(data_to.size() + size);
-
-        this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
-    }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
-};
-
 
 }

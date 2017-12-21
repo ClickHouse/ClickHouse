@@ -307,6 +307,11 @@ bool DataTypeTuple::haveMaximumSizeOfValue() const
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
+bool DataTypeTuple::isComparable() const
+{
+    return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->isComparable(); });
+}
+
 size_t DataTypeTuple::getMaximumSizeOfValueInMemory() const
 {
     size_t res = 0;

@@ -25,25 +25,14 @@ using DataTypes = std::vector<DataTypePtr>;
 using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
-namespace ErrorCodes
-{
-    extern const int AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-}
-
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
   *  but contain only metadata (description) of the aggregate function,
   *  as well as methods for creating, deleting and working with data.
   * The data resulting from the aggregation (intermediate computing states) is stored in other objects
-  *  (which can be created in some pool),
+  *  (which can be created in some memory pool),
   *  and IAggregateFunction is the external interface for manipulating them.
-  *
-  * NOTE: If you add a new aggregate function, don't forget to add it to Interpreters/SpecializedAggregator.h
-  *  so that the new function works with runtime compilation.
   */
 class IAggregateFunction
 {
@@ -51,28 +40,12 @@ public:
     /// Get main function name.
     virtual String getName() const = 0;
 
-    /** Specify the types of arguments. If the function does not apply to these arguments throw an exception.
-      * You must call before other calls.
-      */
-    virtual void setArguments(const DataTypes & arguments) = 0;
-
-    /** Specify parameters for parametric aggregate functions.
-      * If no parameters are provided, or the passed parameters are not valid, throw an exception.
-      * If there are parameters - it is necessary to call before other calls, otherwise - do not call.
-      */
-    virtual void setParameters(const Array & /*params*/)
-    {
-        throw Exception("Aggregate function " + getName() + " doesn't allow parameters.",
-            ErrorCodes::AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS);
-    }
-
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
 
     virtual ~IAggregateFunction() {};
 
-
-    /** Data functions. */
+    /** Data manipulating functions. */
 
     /** Create empty data for aggregation with `placement new` at the specified location.
       * You will have to destroy them using the `destroy` method.
@@ -138,14 +111,29 @@ public:
 };
 
 
-/// Implements several methods. T - type of structure with data for aggregation.
-template <typename T>
+/// Implement method to obtain an address of 'add' function.
+template <typename Derived>
 class IAggregateFunctionHelper : public IAggregateFunction
+{
+private:
+    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
+    {
+        static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
+    }
+
+public:
+    AddFunc getAddressOfAddFunction() const override { return &addFree; }
+};
+
+
+/// Implements several methods for manipulation with data. T - type of structure with data for aggregation.
+template <typename T, typename Derived>
+class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 {
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
+    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data*>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
