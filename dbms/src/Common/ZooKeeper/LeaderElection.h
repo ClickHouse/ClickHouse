@@ -5,7 +5,6 @@
 #include <memory>
 #include <common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/BackgroundSchedulePool.h>
 
 
 namespace ProfileEvents
@@ -37,10 +36,9 @@ public:
       *  and existence of more than one ephemeral node with same identifier indicates an error
       *  (see cleanOldEphemeralNodes).
       */
-    LeaderElection(DB::BackgroundSchedulePool & pool_, const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
-        : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
+    LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
+        : path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
     {
-        task_handle = pool.addTask("LeaderElection", [this] { threadFunction(); });
         createNode();
     }
 
@@ -53,12 +51,9 @@ public:
     ~LeaderElection()
     {
         releaseNode();
-        pool.removeTask(task_handle);
     }
 
 private:
-    DB::BackgroundSchedulePool & pool;
-    DB::BackgroundSchedulePool::TaskHandle task_handle;
     std::string path;
     ZooKeeper & zookeeper;
     LeadershipHandler handler;
@@ -67,10 +62,15 @@ private:
     EphemeralNodeHolderPtr node;
     std::string node_name;
 
+    std::thread thread;
+    std::atomic<bool> shutdown {false};
+    zkutil::EventPtr event = std::make_shared<Poco::Event>();
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
 
     void createNode()
     {
+        shutdown = false;
         node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
         std::string node_path = node->getPath();
@@ -78,8 +78,7 @@ private:
 
         cleanOldEphemeralNodes();
 
-        task_handle->activate();
-        task_handle->schedule();
+        thread = std::thread(&LeaderElection::threadFunction, this);
     }
 
     void cleanOldEphemeralNodes()
@@ -114,41 +113,47 @@ private:
 
     void releaseNode()
     {
-        task_handle->deactivate();
+        shutdown = true;
+        event->set();
+        if (thread.joinable())
+            thread.join();
         node = nullptr;
     }
 
     void threadFunction()
     {
-        bool success = false;
-
-        try
+        while (!shutdown)
         {
-            Strings children = zookeeper.getChildren(path);
-            std::sort(children.begin(), children.end());
-            auto it = std::lower_bound(children.begin(), children.end(), node_name);
-            if (it == children.end() || *it != node_name)
-                throw Poco::Exception("Assertion failed in LeaderElection");
+            bool success = false;
 
-            if (it == children.begin())
+            try
             {
-                ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
-                handler();
-                return;
+                Strings children = zookeeper.getChildren(path);
+                std::sort(children.begin(), children.end());
+                auto it = std::lower_bound(children.begin(), children.end(), node_name);
+                if (it == children.end() || *it != node_name)
+                    throw Poco::Exception("Assertion failed in LeaderElection");
+
+                if (it == children.begin())
+                {
+                    ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
+                    handler();
+                    return;
+                }
+
+                if (zookeeper.exists(path + "/" + *(it - 1), nullptr, event))
+                    event->wait();
+
+                success = true;
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException("LeaderElection");
             }
 
-            if (!zookeeper.exists(path + "/" + *(it - 1), nullptr, task_handle))
-                task_handle->schedule();
-
-            success = true;
+            if (!success)
+                event->tryWait(10 * 1000);
         }
-        catch (...)
-        {
-            DB::tryLogCurrentException("LeaderElection");
-        }
-
-        if (!success)
-            task_handle->scheduleAfter(10 * 1000);
     }
 };
 

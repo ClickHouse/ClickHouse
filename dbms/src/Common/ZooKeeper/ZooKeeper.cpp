@@ -197,23 +197,6 @@ WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
     return callback;
 }
 
-WatchCallback ZooKeeper::callbackForTaskHandle(const TaskHandlePtr & task)
-{
-    WatchCallback callback;
-    if (task)
-    {
-        callback = [t=task](ZooKeeper &, int, int, const char *) mutable
-        {
-            if (t)
-            {
-                t->scheduleAfter(0);
-                t.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
-            }
-        };
-    }
-    return callback;
-}
-
 WatchContext * ZooKeeper::createContext(WatchCallback && callback)
 {
     if (callback)
@@ -273,7 +256,6 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 
     return code;
 }
-
 Strings ZooKeeper::getChildren(
     const std::string & path, Stat * stat, const EventPtr & watch)
 {
@@ -462,11 +444,6 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & 
     return existsWatch(path, stat_, callbackForEvent(watch));
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
-{
-    return existsWatch(path, stat, callbackForTaskHandle(watch));
-}
-
 bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
 {
     int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch_callback));
@@ -517,16 +494,6 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
     int code;
     std::string res;
     if (tryGet(path, res, stat, watch, &code))
-        return res;
-    else
-        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
-}
-
-std::string ZooKeeper::get(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
-{
-    int code;
-    std::string res;
-    if (tryGetWatch(path, res, stat, callbackForTaskHandle(watch), &code))
         return res;
     else
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
