@@ -1222,7 +1222,7 @@ void InterpreterSelectQuery::executePreLimit()
     {
         transformStreams([&](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, false);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, 0, false);
         });
 
         if (hasMoreThanOneStream())
