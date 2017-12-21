@@ -106,16 +106,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             nested_argument_types.reserve(argument_types.size());
 
             for (const auto & arg_type : argument_types)
-            {
-                if (arg_type->isNullable())
-                {
-                    const DataTypeNullable & actual_type = static_cast<const DataTypeNullable &>(*arg_type.get());
-                    const DataTypePtr & nested_type = actual_type.getNestedType();
-                    nested_argument_types.push_back(nested_type);
-                }
-                else
-                    nested_argument_types.push_back(arg_type);
-            }
+                nested_argument_types.push_back(removeNullable(arg_type));
 
             nested_function = getImpl(name, nested_argument_types, parameters, recursion_level);
         }

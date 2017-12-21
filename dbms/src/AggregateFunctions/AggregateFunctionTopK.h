@@ -184,14 +184,19 @@ public:
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
-        {
             set.resize(reserved);
-        }
 
-        const char * begin = nullptr;
-        StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
-        set.insert(str_serialized);
-        arena->rollback(str_serialized.size);
+        if constexpr (is_plain_column)
+        {
+            const char * begin = nullptr;
+            StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
+            set.insert(str_serialized);
+            arena->rollback(str_serialized.size);
+        }
+        else
+        {
+            set.insert(columns[0]->getDataAt(row_num));
+        }
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -210,25 +215,15 @@ public:
 
         for (auto & elem : result_vec)
         {
-            deserializeAndInsert(elem.key, data_to);
+            if constexpr (is_plain_column)
+                data_to.insertData(elem.key.data, elem.key.size);
+            else
+                data_to.deserializeAndInsertFromArena(elem.key.data);
         }
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
-
-
-template <>
-inline void AggregateFunctionTopKGeneric<false>::deserializeAndInsert(StringRef str, IColumn & data_to)
-{
-    data_to.deserializeAndInsertFromArena(str.data);
-}
-
-template <>
-inline void AggregateFunctionTopKGeneric<true>::deserializeAndInsert(StringRef str, IColumn & data_to)
-{
-    data_to.insertData(str.data, str.size);
-}
 
 
 #undef TOP_K_LOAD_FACTOR
