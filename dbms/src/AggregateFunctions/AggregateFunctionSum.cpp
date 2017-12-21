@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+
 
 namespace DB
 {
@@ -8,10 +10,10 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericTypeNearest<AggregateFunctionSum>(*argument_types[0]));
 
@@ -21,10 +23,10 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     return res;
 }
 
-AggregateFunctionPtr createAggregateFunctionSumWithOverflow(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionSumWithOverflow(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionSum>(*argument_types[0]));
 

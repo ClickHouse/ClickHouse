@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
@@ -21,7 +21,7 @@ struct AggregateFunctionSumData
 
 /// Counts the sum of the numbers.
 template <typename T, typename TResult = T>
-class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<TResult>, AggregateFunctionSum<T, TResult>>
+class AggregateFunctionSum final : public IAggregateFunctionDataHelper<AggregateFunctionSumData<TResult>, AggregateFunctionSum<T, TResult>>
 {
 public:
     String getName() const override { return "sum"; }
@@ -31,17 +31,9 @@ public:
         return std::make_shared<DataTypeNumber<TResult>>();
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (!argument->isSummable())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+        this->data(place).sum += static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

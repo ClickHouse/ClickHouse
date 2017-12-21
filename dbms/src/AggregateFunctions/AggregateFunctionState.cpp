@@ -12,9 +12,9 @@ namespace ErrorCodes
 
 DataTypePtr AggregateFunctionState::getReturnType() const
 {
-    auto ptr = std::make_shared<DataTypeAggregateFunction>(nested_func_owner, arguments, params);
+    auto ptr = std::make_shared<DataTypeAggregateFunction>(nested_func, arguments, params);
 
-    /// Special case: it is -MergeState combinator
+    /// Special case: it is -MergeState combinator. TODO Do we need this code?
     if (typeid_cast<const AggregateFunctionMerge *>(ptr->getFunction().get()))
     {
         if (arguments.size() != 1)
@@ -30,9 +30,9 @@ DataTypePtr AggregateFunctionState::getReturnType() const
 }
 
 
-AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested)
+AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested, const DataTypes & arguments, const Array & params)
 {
-    return std::make_shared<AggregateFunctionState>(nested);
+    return std::make_shared<AggregateFunctionState>(nested, arguments, params);
 }
 
 }

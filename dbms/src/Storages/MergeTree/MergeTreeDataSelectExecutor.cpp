@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 

@@ -1718,7 +1718,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     for (auto state : valid_states)
     {
         if ((*it)->state == state)
-            return  *it;
+            return *it;
     }
 
     return nullptr;
