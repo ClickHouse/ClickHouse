@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_AGGREGATION;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_AST;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -2286,11 +2287,6 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
         aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
         aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters);
-
-        if (!aggregate.parameters.empty())
-            aggregate.function->setParameters(aggregate.parameters);
-
-        aggregate.function->setArguments(types);
 
         aggregate_descriptions.push_back(aggregate);
     }

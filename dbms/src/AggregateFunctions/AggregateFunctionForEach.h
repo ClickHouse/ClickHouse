@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -38,12 +39,13 @@ struct AggregateFunctionForEachData
   *  [6, 7]
   * will return:
   *  [10, 13, 5]
+  *
+  * TODO Allow variable number of arguments.
   */
-class AggregateFunctionForEach final : public IAggregateFunctionHelper<AggregateFunctionForEachData>
+class AggregateFunctionForEach final : public IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>
 {
 private:
-    AggregateFunctionPtr nested_func_owner;
-    IAggregateFunction * nested_func;
+    AggregateFunctionPtr nested_func;
     size_t nested_size_of_data = 0;
 
     AggregateFunctionForEachData & ensureAggregateData(AggregateDataPtr place, size_t new_size, Arena & arena) const
@@ -92,9 +94,17 @@ private:
     }
 
 public:
-    explicit AggregateFunctionForEach(AggregateFunctionPtr nested_)
-        : nested_func_owner(nested_), nested_func(nested_func_owner.get())
+    AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments)
+        : nested_func(nested_)
     {
+        nested_size_of_data = nested_func->sizeOfData();
+
+        if (arguments.empty())
+            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        for (const auto & type : arguments)
+            if (!typeid_cast<const DataTypeArray *>(type.get()))
+                throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     String getName() const override
@@ -122,31 +132,6 @@ public:
     bool hasTrivialDestructor() const override
     {
         return nested_func->hasTrivialDestructor();
-    }
-
-    void setArguments(const DataTypes & arguments) override
-    {
-        size_t num_arguments = arguments.size();
-
-        if (1 != num_arguments)
-            throw Exception("Aggregate functions with -ForEach combinator require exactly one argument of array type",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        DataTypes nested_argument;
-        if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*arguments[0]))
-            nested_argument.push_back(array->getNestedType());
-        else
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument for aggregate function " + getName()
-                + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        nested_func->setArguments(nested_argument);
-        nested_size_of_data = nested_func->sizeOfData();
-    }
-
-    void setParameters(const Array & params) override
-    {
-        /// Parameters are passed to the nested function.
-        nested_func->setParameters(params);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -238,13 +223,6 @@ public:
     {
         return true;
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionForEach &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

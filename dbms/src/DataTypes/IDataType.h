@@ -258,6 +258,12 @@ public:
       */
     virtual bool textCanContainOnlyValidUTF8() const { return false; };
 
+    /** Is it possible to compare for less/greater, to calculate min/max?
+      * Not necessarily totally comparable. For example, floats are comparable despite the fact that NaNs compares to nothing.
+      * The same for nullable of comparable types: they are comparable (but not totally-comparable).
+      */
+    virtual bool isComparable() const { return false; };
+
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */

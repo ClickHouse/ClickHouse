@@ -1,11 +1,14 @@
 #include <AggregateFunctions/AggregateFunctionMerge.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+
 
 namespace DB
 {
 
-AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested)
+AggregateFunctionPtr createAggregateFunctionMerge(const String & name, AggregateFunctionPtr & nested, const DataTypes & argument_types)
 {
-    return std::make_shared<AggregateFunctionMerge>(nested);
+    assertUnary(name, argument_types);
+    return std::make_shared<AggregateFunctionMerge>(nested, *argument_types[0]);
 }
 
 }
