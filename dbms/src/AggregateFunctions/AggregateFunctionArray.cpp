@@ -3,9 +3,9 @@
 namespace DB
 {
 
-AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested)
+AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested, const DataTypes & types)
 {
-    return std::make_shared<AggregateFunctionArray>(nested);
+    return std::make_shared<AggregateFunctionArray>(nested, types);
 }
 
 

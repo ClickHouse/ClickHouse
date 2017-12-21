@@ -567,14 +567,11 @@ private:
                 {
                     if (ignore_error)
                     {
-                        // skip rest of bad query
-                        while (begin < end && *begin != ';')
-                        {
-                            ++begin;
-                        }
-                        // skip ';'
-                        if (begin < end)
-                          ++begin;
+                        Tokens tokens(begin, end);
+                        TokenIterator token_iterator(tokens);
+                        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                            ++token_iterator;
+                        begin = token_iterator->end;
 
                         continue;
                     }
@@ -595,7 +592,8 @@ private:
                 while (isWhitespace(*begin) || *begin == ';')
                     ++begin;
 
-                try {
+                try
+                {
                     if (!processSingleQuery(query, ast) && !ignore_error)
                         return false;
                 }
