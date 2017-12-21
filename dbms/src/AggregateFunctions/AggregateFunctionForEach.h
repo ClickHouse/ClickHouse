@@ -97,6 +97,8 @@ public:
     AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments)
         : nested_func(nested_)
     {
+        nested_size_of_data = nested_func->sizeOfData();
+
         if (arguments.empty())
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
