@@ -188,14 +188,14 @@ public:
 
         if constexpr (is_plain_column)
         {
+            set.insert(columns[0]->getDataAt(row_num));
+        }
+        else
+        {
             const char * begin = nullptr;
             StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
             set.insert(str_serialized);
             arena->rollback(str_serialized.size);
-        }
-        else
-        {
-            set.insert(columns[0]->getDataAt(row_num));
         }
     }
 
