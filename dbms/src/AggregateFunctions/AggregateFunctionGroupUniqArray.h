@@ -173,7 +173,7 @@ public:
         StringRef str_serialized = getSerialization(*columns[0], row_num, *arena);
         set.emplace(str_serialized, it, inserted);
 
-        if (!is_plain_column)
+        if constexpr (!is_plain_column)
         {
             if (!inserted)
                 arena->rollback(str_serialized.size);
