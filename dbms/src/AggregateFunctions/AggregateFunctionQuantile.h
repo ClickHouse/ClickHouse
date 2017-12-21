@@ -60,7 +60,7 @@ private:
 
 public:
     AggregateFunctionQuantile(const DataTypePtr & argument_type, const Array & params)
-        : levels(params), level(levels.levels[0]), argument_type(argument_type)
+        : levels(params, returns_many), level(levels.levels[0]), argument_type(argument_type)
     {
         if (!returns_many && levels.size() > 1)
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

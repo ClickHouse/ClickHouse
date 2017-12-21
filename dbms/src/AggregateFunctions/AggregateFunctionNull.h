@@ -202,10 +202,19 @@ template <bool result_is_nullable>
 class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>
 {
 public:
-    AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function, const size_t number_of_arguments)
+    AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function, const DataTypes & arguments)
         : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(nested_function),
-        number_of_arguments(number_of_arguments)
+        number_of_arguments(arguments.size())
     {
+        if (number_of_arguments == 1)
+            throw Exception("Logical error: single argument is passed to AggregateFunctionNullVariadic", ErrorCodes::LOGICAL_ERROR);
+
+        if (number_of_arguments > MAX_ARGS)
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        for (size_t i = 0; i < number_of_arguments; ++i)
+            is_nullable[i] = arguments[i]->isNullable();
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
