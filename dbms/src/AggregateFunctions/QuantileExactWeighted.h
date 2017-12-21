@@ -170,12 +170,12 @@ struct QuantileExactWeighted
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    float getFloat(Float64) const
+    Float64 getFloat(Float64) const
     {
         throw Exception("Method getFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getManyFloat(const Float64 *, const size_t *, size_t, float *) const
+    void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
     {
         throw Exception("Method getManyFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }

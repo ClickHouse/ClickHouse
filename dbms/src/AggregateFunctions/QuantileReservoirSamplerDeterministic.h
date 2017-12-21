@@ -66,12 +66,12 @@ struct QuantileReservoirSamplerDeterministic
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    float getFloat(Float64 level)
+    Float64 getFloat(Float64 level)
     {
         return data.quantileInterpolated(level);
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result)
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
     {
         for (size_t i = 0; i < size; ++i)
             result[indices[i]] = data.quantileInterpolated(levels[indices[i]]);
