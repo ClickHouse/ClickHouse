@@ -1,4 +1,4 @@
-# Релиз ClickHouse 1.1.54327, 2017-12-21
+# ClickHouse release 1.1.54327, 2017-12-21
 
 This release contains bug fixes for the previous release 1.1.54318:
 * Fixed bug with possible race condition in replication, that could lead to data loss. This issue affects versions 1.1.54310 and 1.1.54318. If you use one of these versions with Replicated tables, the update is strongly recommended. This issue shows in logs in Warning messages like `Part ... from own log doesn't exist.` The issue is relevant even if you don't see these messages in logs.
