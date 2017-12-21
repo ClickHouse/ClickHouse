@@ -20,7 +20,7 @@ endif ()
 add_library (common
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
-    src/exp10.cpp
+    src/exp10.c
     src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
