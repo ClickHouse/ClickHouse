@@ -37,8 +37,7 @@ AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, con
         values_types.push_back(array_type->getNestedType());
     }
 
-    return AggregateFunctionPtr(createWithNumericType<AggregateFunctionSumMap>(*array_type->getNestedType(),
-        std::move(keys_type), std::move(values_types)));
+    return AggregateFunctionPtr(createWithNumericType<AggregateFunctionSumMap>(*keys_type, keys_type, std::move(values_types)));
 }
 
 }
