@@ -39,18 +39,20 @@ template <
     /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
     /// Second argument is always obtained through 'getUInt' method.
     bool have_second_arg,
-    /// If true, the function will return float with possibly interpolated results and NaN if there was no values.
+    /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
     /// Otherwise it will return Value type and default value if there was no values.
     /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
-    bool returns_float,
+    typename FloatReturnType,
     /// If true, the function will accept multiple parameters with quantile levels
     ///  and return an Array filled with many values of that quantiles.
     bool returns_many
 >
 class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
-    AggregateFunctionQuantile<Value, Data, Name, have_second_arg, returns_float, returns_many>>
+    AggregateFunctionQuantile<Value, Data, Name, have_second_arg, FloatReturnType, returns_many>>
 {
 private:
+    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
+
     QuantileLevels<Float64> levels;
 
     /// Used when there are single level to get.
@@ -73,7 +75,7 @@ public:
         DataTypePtr res;
 
         if constexpr (returns_float)
-            res = std::make_shared<DataTypeFloat32>();
+            res = std::make_shared<DataTypeNumber<FloatReturnType>>();
         else
             res = argument_type;
 
@@ -128,7 +130,7 @@ public:
 
             if constexpr (returns_float)
             {
-                typename ColumnFloat32::Container & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
+                auto & data_to = static_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
@@ -136,7 +138,7 @@ public:
             }
             else
             {
-                typename ColumnVector<Value>::Container & data_to = static_cast<ColumnVector<Value> &>(arr_to.getData()).getData();
+                auto & data_to = static_cast<ColumnVector<Value> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
@@ -146,7 +148,7 @@ public:
         else
         {
             if constexpr (returns_float)
-                static_cast<ColumnFloat32 &>(to).getData().push_back(data.getFloat(level));
+                static_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
             else
                 static_cast<ColumnVector<Value> &>(to).getData().push_back(data.get(level));
         }

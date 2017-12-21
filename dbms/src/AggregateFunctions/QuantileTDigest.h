@@ -316,9 +316,9 @@ public:
         return getImpl<T>(level);
     }
 
-    float getFloat(Float64 level)
+    Float32 getFloat(Float64 level)
     {
-        return getImpl<float>(level);
+        return getImpl<Float32>(level);
     }
 
     void getMany(const Float64 * levels, const size_t * indices, size_t size, T * result)
@@ -326,7 +326,7 @@ public:
         getManyImpl(levels, indices, size, result);
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, float * result)
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float32 * result)
     {
         getManyImpl(levels, indices, size, result);
     }
