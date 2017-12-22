@@ -277,6 +277,7 @@ public:
 
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
     inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
+    inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
 
     inline time_t toStartOfHour(time_t t) const
     {

@@ -2,38 +2,38 @@
 
 #include <Common/typeid_cast.h>
 
-#include <DataStreams/ProhibitColumnsBlockOutputStream.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
-#include <DataStreams/NullableAdapterBlockInputStream.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
+#include <DataStreams/CountingBlockOutputStream.h>
+#include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DataStreams/NullableAdapterBlockInputStream.h>
+#include <DataStreams/ProhibitColumnsBlockOutputStream.h>
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 
 namespace ProfileEvents
 {
-    extern const Event InsertQuery;
+extern const Event InsertQuery;
 }
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int READONLY;
 }
 
 
@@ -101,6 +101,7 @@ Block InterpreterInsertQuery::getSampleBlock()
 BlockIO InterpreterInsertQuery::execute()
 {
     ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    checkAccess(query);
     StoragePtr table = getTable();
 
     auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
@@ -114,14 +115,13 @@ BlockIO InterpreterInsertQuery::execute()
 
     out = std::make_shared<MaterializingBlockOutputStream>(out);
 
-    out = std::make_shared<AddingDefaultBlockOutputStream>(out,
-        required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
+    out = std::make_shared<AddingDefaultBlockOutputStream>(
+        out, required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
 
     out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, table->materialized_columns);
 
-    out = std::make_shared<SquashingBlockOutputStream>(out,
-        context.getSettingsRef().min_insert_block_size_rows,
-        context.getSettingsRef().min_insert_block_size_bytes);
+    out = std::make_shared<SquashingBlockOutputStream>(
+        out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -150,5 +150,16 @@ BlockIO InterpreterInsertQuery::execute()
     return res;
 }
 
+void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
+{
+    const Settings & settings = context.getSettingsRef();
+    auto readonly = settings.limits.readonly;
 
+    if (!readonly || (query.database.empty() && context.tryGetExternalTable(query.table) && readonly >= 2))
+    {
+        return;
+    }
+
+    throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
+}
 }

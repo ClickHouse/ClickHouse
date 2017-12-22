@@ -1,44 +1,43 @@
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTOptimizeQuery.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTKillQueryQuery.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InterpreterShowTablesQuery.h>
-#include <Interpreters/InterpreterUseQuery.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterOptimizeQuery.h>
-#include <Interpreters/InterpreterExistsQuery.h>
-#include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
-#include <Interpreters/InterpreterKillQueryQuery.h>
-#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterKillQueryQuery.h>
+#include <Interpreters/InterpreterOptimizeQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterShowCreateQuery.h>
+#include <Interpreters/InterpreterShowProcesslistQuery.h>
+#include <Interpreters/InterpreterShowTablesQuery.h>
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/InterpreterUseQuery.h>
 
-#include <Common/typeid_cast.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int READONLY;
@@ -61,17 +60,17 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (typeid_cast<ASTInsertQuery *>(query.get()))
     {
-        throwIfReadOnly(context);
+        /// readonly is checked inside InterpreterInsertQuery
         return std::make_unique<InterpreterInsertQuery>(query, context);
     }
     else if (typeid_cast<ASTCreateQuery *>(query.get()))
     {
-        throwIfReadOnly(context);
+        /// readonly is checked inside InterpreterCreateQuery
         return std::make_unique<InterpreterCreateQuery>(query, context);
     }
     else if (typeid_cast<ASTDropQuery *>(query.get()))
     {
-        throwIfReadOnly(context);
+        /// readonly is checked inside InterpreterDropQuery
         return std::make_unique<InterpreterDropQuery>(query, context);
     }
     else if (typeid_cast<ASTRenameQuery *>(query.get()))
@@ -134,5 +133,4 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 }
-
 }
