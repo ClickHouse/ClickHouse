@@ -307,6 +307,11 @@ bool DataTypeTuple::haveMaximumSizeOfValue() const
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
 }
 
+bool DataTypeTuple::isComparable() const
+{
+    return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->isComparable(); });
+}
+
 size_t DataTypeTuple::getMaximumSizeOfValueInMemory() const
 {
     size_t res = 0;
@@ -326,7 +331,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     DataTypes nested_types;

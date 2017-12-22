@@ -173,15 +173,7 @@ struct UInt256HashCRC32
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
-struct UInt256HashCRC32
-{
-    DefaultHash<UInt64> hash64;
-    size_t operator()(UInt256 x) const
-    {
-        /// TODO This is not optimal.
-        return hash64(hash64(hash64(hash64(x.a) ^ x.b) ^ x.c) ^ x.d);
-    }
-};
+struct UInt256HashCRC32 : public UInt256Hash {};
 
 #endif
 }

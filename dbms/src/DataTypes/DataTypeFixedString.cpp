@@ -208,7 +208,7 @@ MutableColumnPtr DataTypeFixedString::createColumn() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.size() != 1)
+    if (!arguments || arguments->children.size() != 1)
         throw Exception("FixedString data type family must have exactly one argument - size in bytes", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const ASTLiteral * argument = typeid_cast<const ASTLiteral *>(arguments->children[0].get());

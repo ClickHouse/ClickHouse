@@ -12,6 +12,7 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_sources
     AggregateFunctionMerge.cpp
     AggregateFunctionCount.cpp
     parseAggregateFunctionParameters.cpp
+    FactoryHelpers.cpp
 )
 
 list(REMOVE_ITEM clickhouse_aggregate_functions_headers
@@ -26,6 +27,7 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_headers
     AggregateFunctionMerge.h
     AggregateFunctionCount.h
     parseAggregateFunctionParameters.h
+    FactoryHelpers.h
 )
 
 add_library(clickhouse_aggregate_functions ${clickhouse_aggregate_functions_sources})

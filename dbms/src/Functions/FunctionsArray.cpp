@@ -28,6 +28,8 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -2384,9 +2386,6 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
                                                    aggregate_function_name, params_row, "function " + getName());
 
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
-        if (!params_row.empty())
-            aggregate_function->setParameters(params_row);
-        aggregate_function->setArguments(argument_types);
     }
 
     out_return_type = aggregate_function->getReturnType();

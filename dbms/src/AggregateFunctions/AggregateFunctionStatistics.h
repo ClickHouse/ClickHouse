@@ -3,8 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <cmath>
@@ -111,8 +110,7 @@ private:
   */
 template <typename T, typename Op>
 class AggregateFunctionVariance final
-    : public IUnaryAggregateFunction<AggregateFunctionVarianceData<T, Op>,
-        AggregateFunctionVariance<T, Op>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>
 {
 public:
     String getName() const override { return Op::name; }
@@ -122,16 +120,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (!argument->isNumber())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).update(column, row_num);
+        this->data(place).update(*columns[0], row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -367,7 +358,7 @@ private:
 
 template <typename T, typename U, typename Op, bool compute_marginal_moments = false>
 class AggregateFunctionCovariance final
-    : public IBinaryAggregateFunction<
+    : public IAggregateFunctionDataHelper<
         CovarianceData<T, U, Op, compute_marginal_moments>,
         AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>
 {
@@ -379,20 +370,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (!arguments[0]->isNumber())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument to function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!arguments[1]->isNumber())
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument to function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_left, const IColumn & column_right, size_t row_num, Arena *) const
-    {
-        this->data(place).update(column_left, column_right, row_num);
+        this->data(place).update(*columns[0], *columns[1], row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

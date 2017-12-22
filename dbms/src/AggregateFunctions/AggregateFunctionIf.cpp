@@ -3,9 +3,9 @@
 namespace DB
 {
 
-AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested)
+AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested, const DataTypes & types)
 {
-    return std::make_shared<AggregateFunctionIf>(nested);
+    return std::make_shared<AggregateFunctionIf>(nested, types);
 }
 
 }
