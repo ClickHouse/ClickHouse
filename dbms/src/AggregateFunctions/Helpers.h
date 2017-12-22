@@ -74,18 +74,6 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
-template <template <typename, typename> class AggregateFunctionTemplate, typename ... TArgs>
-static IAggregateFunction * createWithNumericTypeNearest(const IDataType & argument_type, TArgs && ... args)
-{
-#define DISPATCH(FIELDTYPE, DATATYPE) \
-    if (typeid_cast<const DATATYPE *>(&argument_type)) \
-        return new AggregateFunctionTemplate<FIELDTYPE, NearestFieldType<FIELDTYPE>::Type>(std::forward<TArgs>(args)...);
-    FOR_NUMERIC_TYPES_AND_ENUMS(DISPATCH)
-#undef DISPATCH
-    return nullptr;
-}
-
-
 template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename ... TArgs>
 static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argument_type, TArgs && ... args)
 {
