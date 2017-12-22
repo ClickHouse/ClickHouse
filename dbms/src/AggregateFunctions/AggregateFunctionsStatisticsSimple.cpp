@@ -21,26 +21,26 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(const std::string & 
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    if (typeid_cast<const DataTypeFloat32 *>(argument_types[0].get())) return std::make_shared<FunctionTemplate<Float32>>();
-    if (typeid_cast<const DataTypeFloat64 *>(argument_types[0].get())) return std::make_shared<FunctionTemplate<Float64>>();
+    AggregateFunctionPtr res(createWithNumericType<FunctionTemplate>(*argument_types[0]));
 
-    throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (!res)
+        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return res;
 }
 
-template <template <typename> class FunctionTemplate>
+template <template <typename, typename> class FunctionTemplate>
 AggregateFunctionPtr createAggregateFunctionStatisticsBinary(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);
 
-    if (!argument_types[0]->equals(*argument_types[1]))
+    AggregateFunctionPtr res(createWithTwoNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1]));
+    if (!res)
         throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
-            + " of arguments for aggregate function " + name + ", must be the same", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            + " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (typeid_cast<const DataTypeFloat32 *>(argument_types[0].get())) return std::make_shared<FunctionTemplate<Float32>>();
-    if (typeid_cast<const DataTypeFloat64 *>(argument_types[0].get())) return std::make_shared<FunctionTemplate<Float64>>();
-
-    throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    return res;
 }
 
 }
