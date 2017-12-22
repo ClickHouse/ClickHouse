@@ -317,7 +317,7 @@ template class DataTypeEnum<Int16>;
 template <typename DataTypeEnum>
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     typename DataTypeEnum::Values values;

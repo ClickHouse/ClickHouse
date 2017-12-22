@@ -97,7 +97,7 @@ NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Nested structure cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();

@@ -331,7 +331,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     DataTypes nested_types;

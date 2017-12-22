@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
+#include <common/intExp.h>
 #include <boost/math/common_factor.hpp>
 
 
@@ -452,6 +453,29 @@ struct LCMImpl
             typename NumberTraits::ToInteger<Result>::Type(b));
     }
 };
+
+template <typename A>
+struct IntExp2Impl
+{
+    using ResultType = UInt64;
+
+    static inline ResultType apply(A a)
+    {
+        return intExp2(a);
+    }
+};
+
+template <typename A>
+struct IntExp10Impl
+{
+    using ResultType = UInt64;
+
+    static inline ResultType apply(A a)
+    {
+        return intExp10(a);
+    }
+};
+
 
 /// this one is just for convenience
 template <bool B, typename T1, typename T2> using If = typename std::conditional<B, T1, T2>::type;
@@ -1013,6 +1037,8 @@ struct NameLeast                { static constexpr auto name = "least"; };
 struct NameGreatest             { static constexpr auto name = "greatest"; };
 struct NameGCD                  { static constexpr auto name = "gcd"; };
 struct NameLCM                  { static constexpr auto name = "lcm"; };
+struct NameIntExp2              { static constexpr auto name = "intExp2"; };
+struct NameIntExp10             { static constexpr auto name = "intExp10"; };
 
 using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
@@ -1036,6 +1062,10 @@ using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD>;
 using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
+/// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
+using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, true>;
+using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, true>;
+
 
 /// Monotonicity properties for some functions.
 
@@ -1069,6 +1099,36 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
     static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return {};
+    }
+};
+
+template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
+{
+    static bool has() { return true; }
+    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    {
+        Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+        Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+
+        if (left_float < 0 || right_float > 63)
+            return {};
+
+        return { true };
+    }
+};
+
+template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
+{
+    static bool has() { return true; }
+    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    {
+        Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+        Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+
+        if (left_float < 0 || right_float > 19)
+            return {};
+
+        return { true };
     }
 };
 
