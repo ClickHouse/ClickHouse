@@ -10,6 +10,18 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
+/** This is simple, not numerically stable
+  *  implementations of variance/covariance/correlation functions.
+  *
+  * It is about two times faster than stable variants.
+  * Numerical errors may occur during summation.
+  *
+  * This implementation is selected as default,
+  *  because "you don't pay for what you don't need" principle.
+  *
+  * For more sophisticated implementation, look at AggregateFunctionStatistics.h
+  */
+
 namespace DB
 {
 
