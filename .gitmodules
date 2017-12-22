@@ -19,6 +19,6 @@
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
 	url = https://github.com/Dead2/zlib-ng.git
-[submodule "contrib/googletest"]
-	path = contrib/googletest
+[submodule "contrib/googletest"]		
+	path = contrib/googletest		
 	url = https://github.com/google/googletest.git

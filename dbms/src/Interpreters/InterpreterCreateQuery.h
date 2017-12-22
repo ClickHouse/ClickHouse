@@ -8,7 +8,6 @@ class ThreadPool;
 
 namespace DB
 {
-
 class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
@@ -28,8 +27,7 @@ public:
 
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
-    static ASTPtr formatColumns(
-        NamesAndTypesList columns,
+    static ASTPtr formatColumns(NamesAndTypesList columns,
         const NamesAndTypesList & materialized_columns,
         const NamesAndTypesList & alias_columns,
         const ColumnDefaults & column_defaults);
@@ -62,7 +60,8 @@ private:
     /// Calculate list of columns of table and return it.
     ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
     void setEngine(ASTCreateQuery & create) const;
-
+    void checkAccess(const ASTCreateQuery & create);
+ 
     ASTPtr query_ptr;
     Context & context;
 
@@ -72,6 +71,4 @@ private:
     /// Skip safety threshold when loading tables.
     bool has_force_restore_data_flag = false;
 };
-
-
 }
