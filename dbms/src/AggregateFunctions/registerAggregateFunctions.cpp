@@ -13,7 +13,8 @@ void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & fact
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory);
-void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
@@ -34,7 +35,8 @@ void registerAggregateFunctions()
     registerAggregateFunctionsQuantile(factory);
     registerAggregateFunctionsSequenceMatch(factory);
     registerAggregateFunctionsMinMaxAny(factory);
-    registerAggregateFunctionsStatistics(factory);
+    registerAggregateFunctionsStatisticsStable(factory);
+    registerAggregateFunctionsStatisticsSimple(factory);
     registerAggregateFunctionSum(factory);
     registerAggregateFunctionSumMap(factory);
     registerAggregateFunctionsUniq(factory);
