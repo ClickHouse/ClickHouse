@@ -1,13 +1,19 @@
 #pragma once
 
-#include <cmath>
+/** exp10 from GNU libm fails to give precise result for integer arguments.
+  * For example, exp10(3) gives 1000.0000000000001
+  *  despite the fact that 1000 is exactly representable in double and float.
+  * Better to always use implementation from MUSL.
+  */
 
-double musl_exp10(double x);
+#include <stdlib.h> /// for __THROW
 
-#if defined(__FreeBSD__)
-#define exp10 musl_exp10
-#endif
+extern "C"
+{
 
-#ifdef __APPLE__
-#define exp10 __exp10
-#endif
+double exp10(double x) __THROW;
+double pow10(double x) __THROW;
+float exp10f(float x) __THROW;
+float pow10f(float x) __THROW;
+
+}

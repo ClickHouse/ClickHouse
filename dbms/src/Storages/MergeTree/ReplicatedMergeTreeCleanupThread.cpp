@@ -158,7 +158,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         int32_t rc = pair.second.get();
         if (rc == ZNOTEMPTY)
         {
-             /// Can happen if there are leftover block nodes with children created by previous server versions.
+            /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper->removeRecursive(path);
         }
         else if (rc != ZOK)
