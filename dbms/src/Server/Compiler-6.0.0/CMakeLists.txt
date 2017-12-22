@@ -47,4 +47,6 @@ ${REQUIRED_LLVM_LIBRARIES}
 #PollyPPCG
 
 libtinfo.a
-common)
+common
+${EXECINFO_LIBRARY}
+)

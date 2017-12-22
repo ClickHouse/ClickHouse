@@ -72,6 +72,7 @@ public:
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
+    bool isComparable() const override { return true; };
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool isFixedString() const override { return true; };
     bool haveMaximumSizeOfValue() const override { return true; }

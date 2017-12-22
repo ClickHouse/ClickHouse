@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
 
@@ -283,7 +284,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     DataTypes argument_types;
     Array params_row;
 
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Data type AggregateFunction requires parameters: "
             "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -326,9 +327,6 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
-    if (!params_row.empty())
-        function->setParameters(params_row);
-    function->setArguments(argument_types);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
 }
 

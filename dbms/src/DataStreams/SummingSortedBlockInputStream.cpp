@@ -488,7 +488,7 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
             for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                 columns[i] = cursor->all_columns[desc.column_numbers[i]];
 
-            desc.add_function(desc.function.get(),desc.state.data(), columns.data(), cursor->pos, nullptr);
+            desc.add_function(desc.function.get(), desc.state.data(), columns.data(), cursor->pos, nullptr);
         }
     }
 }

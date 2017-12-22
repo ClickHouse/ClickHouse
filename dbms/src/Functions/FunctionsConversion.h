@@ -213,7 +213,7 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
 
         /// For argument of DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same<FromDataType, DataTypeDateTime>::value)
-            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
+            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
@@ -332,7 +332,7 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
         if (std::is_same<ToDataType, DataTypeDateTime>::value)
-            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
+            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -506,7 +506,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
             /// For conversion to DateTime type, second argument with time zone could be specified.
             if (std::is_same<ToDataType, DataTypeDateTime>::value)
-                time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
+                time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
             auto col_to = ColumnVector<ToFieldType>::create();
 
@@ -666,7 +666,7 @@ public:
             }
 
             if (std::is_same<ToDataType, DataTypeDateTime>::value)
-                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1));
+                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else
                 out_return_type = std::make_shared<ToDataType>();
         }
