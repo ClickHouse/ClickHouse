@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/ASTDropQuery.h>
 
 
 namespace DB
 {
-
 class Context;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
@@ -22,9 +22,8 @@ public:
     BlockIO execute() override;
 
 private:
+    void checkAccess(const ASTDropQuery & drop);
     ASTPtr query_ptr;
     Context & context;
 };
-
-
 }

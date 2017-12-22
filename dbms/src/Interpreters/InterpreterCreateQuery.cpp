@@ -8,19 +8,19 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
+#include <DataStreams/AddingDefaultBlockOutputStream.h>
+#include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/ProhibitColumnsBlockOutputStream.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
@@ -28,14 +28,14 @@
 #include <Storages/StorageLog.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
@@ -44,7 +44,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
@@ -56,17 +55,20 @@ namespace ErrorCodes
     extern const int TABLE_METADATA_ALREADY_EXISTS;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int DUPLICATE_COLUMN;
+    extern const int READONLY;
 }
 
 
-InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
-{
-}
+InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_) 
+    : query_ptr(query_ptr_), context(context_) 
+    {
+    }
 
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
+    checkAccess(create);
+
     if (!create.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context);
 
@@ -78,7 +80,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     String database_engine_name;
     if (!create.storage)
     {
-        database_engine_name = "Ordinary";    /// Default database engine.
+        database_engine_name = "Ordinary"; /// Default database engine.
         auto engine = std::make_shared<ASTFunction>();
         engine->name = database_engine_name;
         auto storage = std::make_shared<ASTStorage>();
@@ -90,8 +92,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTStorage & storage = *create.storage;
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if (engine.arguments || engine.parameters
-            || storage.partition_by || storage.order_by || storage.sample_by || storage.settings)
+        if (engine.arguments || engine.parameters || storage.partition_by || storage.order_by || storage.sample_by || storage.settings)
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
@@ -256,12 +257,11 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         }
     }
 
-    return { *DataTypeNested::expandNestedColumns(columns), defaults };
+    return {*DataTypeNested::expandNestedColumns(columns), defaults};
 }
 
 
-static NamesAndTypesList removeAndReturnColumns(
-    ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultType type)
+static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultType type)
 {
     auto & columns = columns_and_defaults.first;
     auto & defaults = columns_and_defaults.second;
@@ -345,8 +345,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 }
 
 
-InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::getColumnsInfo(
-    const ASTExpressionList & columns, const Context & context)
+InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::getColumnsInfo(const ASTExpressionList & columns, const Context & context)
 {
     ColumnsInfo res;
 
@@ -446,7 +445,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (as_create.is_view)
             throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
+                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View", 
                 ErrorCodes::INCORRECT_QUERY);
 
         create.set(create.storage, as_create.storage->ptr());
@@ -456,6 +455,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    checkAccess(create);
+
     if (!create.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context);
 
@@ -525,7 +526,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
               * Otherwise, concurrent queries for creating a table, if the table does not exist,
               *  can throw an exception, even if IF NOT EXISTS is specified.
               */
-            guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name,
+            guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name, 
                 "Table " + database_name + "." + table_name + " is creating or attaching right now");
 
             if (!guard)
@@ -537,10 +538,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             }
         }
 
-        res = StorageFactory::instance().get(
-            create, data_path, table_name, database_name, context, context.getGlobalContext(),
-            columns.columns, columns.materialized_columns, columns.alias_columns, columns.column_defaults,
-            create.attach, false);
+        res = StorageFactory::instance().get(create,
+            data_path,
+            table_name,
+            database_name,
+            context,
+            context.getGlobalContext(),
+            columns.columns,
+            columns.materialized_columns,
+            columns.alias_columns,
+            columns.column_defaults,
+            create.attach,
+            false);
 
         if (create.is_temporary)
             context.getSessionContext().addExternalTable(table_name, res);
@@ -593,5 +602,27 @@ BlockIO InterpreterCreateQuery::execute()
         return createTable(create);
 }
 
+void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
+{
+    const Settings & settings = context.getSettingsRef();
+    auto readonly = settings.limits.readonly;
 
+    if (!readonly)
+    {
+        return;
+    }
+
+    /// CREATE|ATTACH DATABASE
+    if (!create.database.empty() && create.table.empty())
+    {
+        throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
+    }
+
+    if (create.is_temporary && readonly >= 2)
+    {
+        return;
+    }
+
+    throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+}
 }
