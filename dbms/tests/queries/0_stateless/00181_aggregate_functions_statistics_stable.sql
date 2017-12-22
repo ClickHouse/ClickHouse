@@ -4,69 +4,69 @@ CREATE TABLE test.series(i UInt32, x_value Float64, y_value Float64) ENGINE = Me
 
 INSERT INTO test.series(i, x_value, y_value) VALUES (1, 5.6,-4.4),(2, -9.6,3),(3, -1.3,-4),(4, 5.3,9.7),(5, 4.4,0.037),(6, -8.6,-7.8),(7, 5.1,9.3),(8, 7.9,-3.6),(9, -8.2,0.62),(10, -3,7.3);
 
-/* varSamp */
+/* varSampStable */
 
-SELECT varSamp(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
-SELECT varSamp(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
+SELECT varSampStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
+SELECT varSampStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
 
 SELECT round(abs(res1 - res2), 6) FROM
 (
 SELECT
-    varSamp(x_value) AS res1,
+    varSampStable(x_value) AS res1,
     (sum(x_value * x_value) - ((sum(x_value) * sum(x_value)) / count())) / (count() - 1) AS res2
 FROM test.series
 );
 
-/* stddevSamp */
+/* stddevSampStable */
 
-SELECT stddevSamp(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
-SELECT stddevSamp(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
+SELECT stddevSampStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
+SELECT stddevSampStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
 
 SELECT round(abs(res1 - res2), 6) FROM
 (
 SELECT
-    stddevSamp(x_value) AS res1,
+    stddevSampStable(x_value) AS res1,
     sqrt((sum(x_value * x_value) - ((sum(x_value) * sum(x_value)) / count())) / (count() - 1)) AS res2
 FROM test.series
 );
 
-/* varPop */
+/* varPopStable */
 
-SELECT varPop(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
-SELECT varPop(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
+SELECT varPopStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
+SELECT varPopStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
 
 SELECT round(abs(res1 - res2), 6) FROM
 (
 SELECT
-    varPop(x_value) AS res1,
+    varPopStable(x_value) AS res1,
     (sum(x_value * x_value) - ((sum(x_value) * sum(x_value)) / count())) / count() AS res2
 FROM test.series
 );
 
-/* stddevPop */
+/* stddevPopStable */
 
-SELECT stddevPop(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
-SELECT stddevPop(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
+SELECT stddevPopStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 0);
+SELECT stddevPopStable(x_value) FROM (SELECT x_value FROM test.series LIMIT 1);
 
 SELECT round(abs(res1 - res2), 6) FROM
 (
 SELECT
-    stddevPop(x_value) AS res1,
+    stddevPopStable(x_value) AS res1,
     sqrt((sum(x_value * x_value) - ((sum(x_value) * sum(x_value)) / count())) / count()) AS res2
 FROM test.series
 );
 
-/* covarSamp */
+/* covarSampStable */
 
-SELECT covarSamp(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 0);
-SELECT covarSamp(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 1);
+SELECT covarSampStable(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 0);
+SELECT covarSampStable(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 1);
 
 SELECT round(abs(COVAR1 - COVAR2), 6)
 FROM
 (
     SELECT
         arrayJoin([1]) AS ID2,
-        covarSamp(x_value, y_value) AS COVAR1
+        covarSampStable(x_value, y_value) AS COVAR1
     FROM test.series
 ) ANY INNER JOIN
 (
@@ -94,17 +94,17 @@ FROM
     )
 ) USING ID2;
 
-/* covarPop */
+/* covarPopStable */
 
-SELECT covarPop(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 0);
-SELECT covarPop(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 1);
+SELECT covarPopStable(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 0);
+SELECT covarPopStable(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 1);
 
 SELECT round(abs(COVAR1 - COVAR2), 6)
 FROM
 (
     SELECT
         arrayJoin([1]) AS ID2,
-        covarPop(x_value, y_value) AS COVAR1
+        covarPopStable(x_value, y_value) AS COVAR1
     FROM test.series
 ) ANY INNER JOIN
 (
@@ -134,9 +134,9 @@ FROM
 
 /* corr */
 
-SELECT corr(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 0);
-SELECT corr(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 1);
+SELECT corrStable(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 0);
+SELECT corrStable(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIMIT 1);
 
-SELECT round(abs(corr(x_value, y_value) - covarPop(x_value, y_value) / (stddevPop(x_value) * stddevPop(y_value))), 6) FROM test.series;
+SELECT round(abs(corrStable(x_value, y_value) - covarPopStable(x_value, y_value) / (stddevPopStable(x_value) * stddevPopStable(y_value))), 6) FROM test.series;
 
 DROP TABLE test.series;

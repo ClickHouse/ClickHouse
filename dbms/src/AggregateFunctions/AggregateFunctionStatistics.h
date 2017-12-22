@@ -50,8 +50,6 @@ template <typename T, typename Op>
 class AggregateFunctionVarianceData
 {
 public:
-    AggregateFunctionVarianceData() = default;
-
     void update(const IColumn & column, size_t row_num)
     {
         T received = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
@@ -446,24 +444,24 @@ struct AggregateFunctionCorrImpl
 };
 
 template <typename T>
-using AggregateFunctionVarSamp = AggregateFunctionVariance<T, AggregateFunctionVarSampImpl>;
+using AggregateFunctionVarSampStable = AggregateFunctionVariance<T, AggregateFunctionVarSampImpl>;
 
 template <typename T>
-using AggregateFunctionStdDevSamp = AggregateFunctionVariance<T, AggregateFunctionStdDevSampImpl>;
+using AggregateFunctionStddevSampStable = AggregateFunctionVariance<T, AggregateFunctionStdDevSampImpl>;
 
 template <typename T>
-using AggregateFunctionVarPop = AggregateFunctionVariance<T, AggregateFunctionVarPopImpl>;
+using AggregateFunctionVarPopStable = AggregateFunctionVariance<T, AggregateFunctionVarPopImpl>;
 
 template <typename T>
-using AggregateFunctionStdDevPop = AggregateFunctionVariance<T, AggregateFunctionStdDevPopImpl>;
+using AggregateFunctionStddevPopStable = AggregateFunctionVariance<T, AggregateFunctionStdDevPopImpl>;
 
 template <typename T, typename U>
-using AggregateFunctionCovarSamp = AggregateFunctionCovariance<T, U, AggregateFunctionCovarSampImpl>;
+using AggregateFunctionCovarSampStable = AggregateFunctionCovariance<T, U, AggregateFunctionCovarSampImpl>;
 
 template <typename T, typename U>
-using AggregateFunctionCovarPop = AggregateFunctionCovariance<T, U, AggregateFunctionCovarPopImpl>;
+using AggregateFunctionCovarPopStable = AggregateFunctionCovariance<T, U, AggregateFunctionCovarPopImpl>;
 
 template <typename T, typename U>
-using AggregateFunctionCorr = AggregateFunctionCovariance<T, U, AggregateFunctionCorrImpl, true>;
+using AggregateFunctionCorrStable = AggregateFunctionCovariance<T, U, AggregateFunctionCorrImpl, true>;
 
 }
