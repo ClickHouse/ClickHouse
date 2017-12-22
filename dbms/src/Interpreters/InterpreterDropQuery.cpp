@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int TABLE_WAS_NOT_DROPPED;
@@ -167,11 +168,13 @@ BlockIO InterpreterDropQuery::execute()
     return {};
 }
 
+
 void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
 {
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.limits.readonly;
 
+    /// It's allowed to drop temporary tables.
     if (!readonly || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))
     {
         return;
@@ -179,4 +182,5 @@ void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
 
     throw Exception("Cannot drop table in readonly mode", ErrorCodes::READONLY);
 }
+
 }

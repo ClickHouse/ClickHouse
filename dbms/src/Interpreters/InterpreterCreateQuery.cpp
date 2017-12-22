@@ -59,16 +59,14 @@ namespace ErrorCodes
 }
 
 
-InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_) 
-    : query_ptr(query_ptr_), context(context_) 
-    {
-    }
+InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_)
+    : query_ptr(query_ptr_), context(context_)
+{
+}
 
 
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
-    checkAccess(create);
-
     if (!create.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context);
 
@@ -445,7 +443,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (as_create.is_view)
             throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View", 
+                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
 
         create.set(create.storage, as_create.storage->ptr());
@@ -455,8 +453,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
-    checkAccess(create);
-
     if (!create.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context);
 
@@ -526,7 +522,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
               * Otherwise, concurrent queries for creating a table, if the table does not exist,
               *  can throw an exception, even if IF NOT EXISTS is specified.
               */
-            guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name, 
+            guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name,
                 "Table " + database_name + "." + table_name + " is creating or attaching right now");
 
             if (!guard)
@@ -592,6 +588,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 BlockIO InterpreterCreateQuery::execute()
 {
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
+    checkAccess(create);
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
@@ -601,6 +598,7 @@ BlockIO InterpreterCreateQuery::execute()
     else
         return createTable(create);
 }
+
 
 void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 {
