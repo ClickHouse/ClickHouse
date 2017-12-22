@@ -92,7 +92,7 @@ struct AggregateFunctionSumKahanData
 
 /// Counts the sum of the numbers.
 template <typename T, typename TResult, typename Data>
-class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data<TResult>, AggregateFunctionSum<T, TResult, Data>>
+class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>
 {
 public:
     String getName() const override { return "sum"; }
