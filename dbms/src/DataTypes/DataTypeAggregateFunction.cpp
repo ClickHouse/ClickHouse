@@ -284,7 +284,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     DataTypes argument_types;
     Array params_row;
 
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Data type AggregateFunction requires parameters: "
             "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
