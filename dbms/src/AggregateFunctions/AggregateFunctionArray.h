@@ -25,11 +25,11 @@ class AggregateFunctionArray final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
-    size_t num_agruments;
+    size_t num_arguments;
 
 public:
     AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : nested_func(nested_), num_agruments(arguments.size())
+        : nested_func(nested_), num_arguments(arguments.size())
     {
         for (const auto & type : arguments)
             if (!typeid_cast<const DataTypeArray *>(type.get()))
@@ -73,9 +73,9 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const IColumn * nested[num_agruments];
+        const IColumn * nested[num_arguments];
 
-        for (size_t i = 0; i < num_agruments; ++i)
+        for (size_t i = 0; i < num_arguments; ++i)
             nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
 
         const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
@@ -85,7 +85,7 @@ public:
         size_t end = offsets[row_num];
 
         /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
-        for (size_t i = 1; i < num_agruments; ++i)
+        for (size_t i = 1; i < num_arguments; ++i)
         {
             const ColumnArray & ith_column = static_cast<const ColumnArray &>(*columns[i]);
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
