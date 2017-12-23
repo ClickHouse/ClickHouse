@@ -9,15 +9,24 @@ namespace DB
 /** Tuple data type.
   * Used as an intermediate result when evaluating expressions.
   * Also can be used as a column - the result of the query execution.
-  * Can not be saved to tables.
+  *
+  * Tuple elements can have names.
+  * If an element is unnamed, it will have automatically assigned name like '1', '2', '3' corresponding to its position.
+  * Manually assigned names must not begin with digit. Names must be unique.
+  *
+  * All tuples with same size and types of elements are equivalent for expressions, regardless to names of elements.
   */
 class DataTypeTuple final : public IDataType
 {
 private:
     DataTypes elems;
+    Strings names;
+    bool have_explicit_names;
 public:
     static constexpr bool is_parametric = true;
-    DataTypeTuple(const DataTypes & elems_) : elems(elems_) {}
+
+    DataTypeTuple(const DataTypes & elems);
+    DataTypeTuple(const DataTypes & elems, const Strings & names);
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
@@ -78,6 +87,7 @@ public:
     size_t getSizeOfValueInMemory() const override;
 
     const DataTypes & getElements() const { return elems; }
+    const Strings & getElementNames() const { return names; }
 };
 
 }
