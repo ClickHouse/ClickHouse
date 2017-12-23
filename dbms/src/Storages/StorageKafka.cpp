@@ -258,6 +258,7 @@ BlockInputStreams StorageKafka::read(
         if (consumer == nullptr)
             break;
 
+        // Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         streams.push_back(std::make_shared<KafkaBlockInputStream>(*this, consumer, context, schema_name, 1));
     }
 
@@ -443,17 +444,18 @@ void StorageKafka::streamToViews()
     for (size_t i = 0; i < num_consumers; ++i)
     {
         auto consumer = claimConsumer();
-        streams.push_back(std::make_shared<KafkaBlockInputStream>(*this, consumer, context, schema_name, block_size));
+        auto stream = std::make_shared<KafkaBlockInputStream>(*this, consumer, context, schema_name, block_size);
+        streams.push_back(stream);
+
+        // Limit read batch to maximum block size to allow DDL
+        IProfilingBlockInputStream::LocalLimits limits;
+        limits.max_execution_time = settings.stream_flush_interval_ms;
+        limits.timeout_overflow_mode = OverflowMode::BREAK;
+        if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
+            p_stream->setLimits(limits);
     }
 
     auto in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, num_consumers);
-
-    // Limit read batch to maximum block size to allow DDL
-    IProfilingBlockInputStream::LocalLimits limits;
-    limits.max_execution_time = settings.stream_flush_interval_ms;
-    limits.timeout_overflow_mode = OverflowMode::BREAK;
-    if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(in.get()))
-        p_stream->setLimits(limits);
 
     // Execute the query
     InterpreterInsertQuery interpreter{insert, context};
