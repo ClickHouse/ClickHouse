@@ -173,6 +173,7 @@ bool defaultImplementationForConstantArguments(
     ColumnNumbers arguments_to_remain_constants = func.getArgumentsThatAreAlwaysConstant();
 
     Block temporary_block;
+    bool have_converted_columns = false;
 
     size_t arguments_size = args.size();
     for (size_t arg_num = 0; arg_num < arguments_size; ++arg_num)
@@ -182,8 +183,18 @@ bool defaultImplementationForConstantArguments(
         if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
             temporary_block.insert(column);
         else
+        {
+            have_converted_columns = true;
             temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
+        }
     }
+
+    /** When using default implementation for constants, the function requires at least one argument
+      *  not in "arguments_to_remain_constants" set. Otherwise we get infinite recursion.
+      */
+    if (!have_converted_columns)
+        throw Exception("Number of arguments for function " + func.getName() + " doesn't match: the function requires more arguments",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     temporary_block.insert(block.getByPosition(result));
 
