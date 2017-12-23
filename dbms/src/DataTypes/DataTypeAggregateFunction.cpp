@@ -45,7 +45,7 @@ std::string DataTypeAggregateFunction::getName() const
         stream << ")";
     }
 
-    for (const auto & argument_type: argument_types)
+    for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
 
     stream << ")";
@@ -274,6 +274,12 @@ Field DataTypeAggregateFunction::getDefault() const
     function->destroy(place);
 
     return field;
+}
+
+
+bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
 }
 
 

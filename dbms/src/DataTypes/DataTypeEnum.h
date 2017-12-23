@@ -113,6 +113,8 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
 
+    bool equals(const IDataType & rhs) const override;
+
     bool textCanContainOnlyValidUTF8() const override;
     size_t getSizeOfValueInMemory() const override { return sizeof(Field); }
 };

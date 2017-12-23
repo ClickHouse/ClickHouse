@@ -70,6 +70,8 @@ public:
         return String();
     }
 
+    bool equals(const IDataType & rhs) const override;
+
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
     bool isComparable() const override { return true; };
