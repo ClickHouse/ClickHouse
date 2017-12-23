@@ -41,6 +41,11 @@ struct AndImpl
     {
         return a && b;
     }
+
+    static inline bool skipNulls()
+    {
+        return false;
+    }
 };
 
 template <typename B>
@@ -60,6 +65,12 @@ struct OrImpl
     {
         return a || b;
     }
+
+    /// x OR NULL = x
+    static inline bool skipNulls()
+    {
+        return true;
+    }
 };
 
 template <typename B>
@@ -78,6 +89,11 @@ struct XorImpl
     static inline UInt8 apply(UInt8 a, B b)
     {
         return (!a) != (!b);
+    }
+
+    static inline bool skipNulls()
+    {
+        return false;
     }
 };
 
