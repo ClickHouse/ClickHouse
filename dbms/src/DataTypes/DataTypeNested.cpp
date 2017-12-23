@@ -1,14 +1,13 @@
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
+#include <string.h>
+
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTNameTypePair.h>
 
 
 namespace DB
@@ -17,14 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_NESTED_NAME;
-    extern const int EMPTY_DATA_PASSED;
-    extern const int NESTED_TYPE_TOO_DEEP;
-}
-
-
-DataTypeNested::DataTypeNested(const NamesAndTypesListPtr & nested_)
-    : nested(nested_)
-{
 }
 
 
@@ -54,45 +45,27 @@ std::string DataTypeNested::extractNestedColumnName(const std::string & nested_n
 }
 
 
-std::string DataTypeNested::getName() const
-{
-    WriteBufferFromOwnString out;
-
-    writeCString("Nested(", out);
-
-    for (NamesAndTypesList::const_iterator it = nested->begin(); it != nested->end(); ++it)
-    {
-        if (it != nested->begin())
-            writeCString(", ", out);
-        writeString(it->name, out);
-        writeChar(' ', out);
-        writeString(it->type->getName(), out);
-    }
-
-    writeChar(')', out);
-    return out.str();
-}
-
-
-bool DataTypeNested::equals(const IDataType & rhs) const
-{
-    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
-}
-
-
 NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList & names_and_types)
 {
     NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
     for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
     {
-        if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&*it->type))
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(it->type.get()))
         {
-            const NamesAndTypesList & nested = *type_nested->getNestedTypesList();
-            for (NamesAndTypesList::const_iterator jt = nested.begin(); jt != nested.end(); ++jt)
+            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get()))
             {
-                String nested_name = DataTypeNested::concatenateNestedName(it->name, jt->name);
-                columns->push_back(NameAndTypePair(nested_name, std::make_shared<DataTypeArray>(jt->type)));
+                const DataTypes & elements = type_tuple->getElements();
+                const Strings & names = type_tuple->getElementNames();
+                size_t tuple_size = elements.size();
+
+                for (size_t i = 0; i < tuple_size; ++i)
+                {
+                    String nested_name = DataTypeNested::concatenateNestedName(it->name, names[i]);
+                    columns->push_back(NameAndTypePair(nested_name, std::make_shared<DataTypeArray>(elements[i])));
+                }
             }
+            else
+                columns->push_back(*it);
         }
         else
             columns->push_back(*it);
@@ -101,29 +74,13 @@ NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
-{
-    if (!arguments || arguments->children.empty())
-        throw Exception("Nested structure cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
-
-    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
-
-    for (const auto & child : arguments->children)
-    {
-        const ASTNameTypePair & name_and_type_pair = typeid_cast<const ASTNameTypePair &>(*child);
-        DataTypePtr type = DataTypeFactory::instance().get(name_and_type_pair.type);
-        if (typeid_cast<const DataTypeNested *>(type.get()))
-            throw Exception("Nested inside Nested is not allowed", ErrorCodes::NESTED_TYPE_TOO_DEEP);
-        columns->emplace_back(name_and_type_pair.name, type);
-    }
-
-    return std::make_shared<DataTypeNested>(columns);
-}
-
-
 void registerDataTypeNested(DataTypeFactory & factory)
 {
-    factory.registerDataType("Nested", create);
+    /// Nested(...) data type is just a sugar for Array(Tuple(...))
+    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
+    {
+        return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
+    });
 }
 
 }

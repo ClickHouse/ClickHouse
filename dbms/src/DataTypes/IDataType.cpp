@@ -85,7 +85,7 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
         else if (elem.type == Substream::ArrayElements)
             ++array_level;
         else if (elem.type == Substream::TupleElement)
-            stream_name += "." + toString(elem.tuple_element);
+            stream_name += "." + escapeForFileName(elem.tuple_element_name);
     }
     return stream_name;
 }

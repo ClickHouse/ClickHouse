@@ -1,9 +1,14 @@
+#include <Common/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTNameTypePair.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <ext/map.h>
 #include <ext/enumerate.h>
@@ -16,16 +21,62 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_DATA_PASSED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int DUPLICATE_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
+
+
+DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
+    : elems(elems_), have_explicit_names(false)
+{
+    /// Automatically assigned names in form of '1', '2', ...
+    size_t size = elems.size();
+    names.resize(size);
+    for (size_t i = 0; i < size; ++i)
+        names[i] = toString(i + 1);
+}
+
+
+DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
+    : elems(elems_), names(names_), have_explicit_names(true)
+{
+    size_t size = elems.size();
+    if (names.size() != size)
+        throw Exception("Wrong number of names passed to constructor of DataTypeTuple", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    std::unordered_set<String> names_set;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (names[i].empty())
+            throw Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+        if (isNumericASCII(names[i][0]))
+            throw Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
+
+        if (!names_set.insert(names[i]).second)
+            throw Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
+    }
+}
+
 
 
 std::string DataTypeTuple::getName() const
 {
-    std::stringstream s;
+    size_t size = elems.size();
+    WriteBufferFromOwnString s;
 
     s << "Tuple(";
-    for (DataTypes::const_iterator it = elems.begin(); it != elems.end(); ++it)
-        s << (it == elems.begin() ? "" : ", ") << (*it)->getName();
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (i != 0)
+            s << ", ";
+
+        if (have_explicit_names)
+            s << backQuoteIfNeed(names[i]) << ' ';
+
+        s << elems[i]->getName();
+    }
     s << ")";
 
     return s.str();
@@ -234,7 +285,7 @@ void DataTypeTuple::enumerateStreams(StreamCallback callback, SubstreamPath path
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
-        path.back().tuple_element = i + 1;
+        path.back().tuple_element_name = names[i];
         elems[i]->enumerateStreams(callback, path);
     }
 }
@@ -250,7 +301,7 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
-        path.back().tuple_element = i + 1;
+        path.back().tuple_element_name = names[i];
         elems[i]->serializeBinaryBulkWithMultipleStreams(
             extractElementColumn(column, i), getter, offset, limit, position_independent_encoding, path);
     }
@@ -267,7 +318,7 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
-        path.back().tuple_element = i + 1;
+        path.back().tuple_element_name = names[i];
         elems[i]->deserializeBinaryBulkWithMultipleStreams(
             extractElementColumn(column, i), getter, limit, avg_value_size_hint, position_independent_encoding, path);
     }
@@ -355,10 +406,26 @@ static DataTypePtr create(const ASTPtr & arguments)
     DataTypes nested_types;
     nested_types.reserve(arguments->children.size());
 
-    for (const ASTPtr & child : arguments->children)
-        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+    Strings names;
+    names.reserve(arguments->children.size());
 
-    return std::make_shared<DataTypeTuple>(nested_types);
+    for (const ASTPtr & child : arguments->children)
+    {
+        if (const ASTNameTypePair * name_and_type_pair = typeid_cast<const ASTNameTypePair *>(child.get()))
+        {
+            nested_types.emplace_back(DataTypeFactory::instance().get(name_and_type_pair->type));
+            names.emplace_back(name_and_type_pair->name);
+        }
+        else
+            nested_types.emplace_back(DataTypeFactory::instance().get(child));
+    }
+
+    if (names.empty())
+        return std::make_shared<DataTypeTuple>(nested_types);
+    else if (names.size() != nested_types.size())
+        throw Exception("Names are specified not for all elements of Tuple type", ErrorCodes::BAD_ARGUMENTS);
+    else
+        return std::make_shared<DataTypeTuple>(nested_types, names);
 }
 
 
