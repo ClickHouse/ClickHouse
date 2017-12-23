@@ -219,10 +219,7 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     /// Checks that two instances belong to the same type
-    inline bool equals(const IDataType & rhs) const
-    {
-        return getName() == rhs.getName();
-    }
+    virtual bool equals(const IDataType & rhs) const = 0;
 
     virtual ~IDataType() {}
 

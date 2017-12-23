@@ -296,6 +296,24 @@ void DataTypeTuple::insertDefaultInto(IColumn & column) const
     });
 }
 
+bool DataTypeTuple::equals(const IDataType & rhs) const
+{
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    const DataTypeTuple & rhs_tuple = static_cast<const DataTypeTuple &>(rhs);
+
+    size_t size = elems.size();
+    if (size != rhs_tuple.elems.size())
+        return false;
+
+    for (size_t i = 0; i < size; ++i)
+        if (!elems[i]->equals(*rhs_tuple.elems[i]))
+            return false;
+
+    return true;
+}
+
 
 bool DataTypeTuple::textCanContainOnlyValidUTF8() const
 {

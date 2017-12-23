@@ -67,6 +67,8 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
 
+    bool equals(const IDataType & rhs) const override;
+
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return !elems.empty(); }
     bool isComparable() const override;

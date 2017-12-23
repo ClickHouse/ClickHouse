@@ -24,6 +24,8 @@ public:
     std::string getName() const override;
     const char * getFamilyName() const override { return "Nested"; }
 
+    bool equals(const IDataType & rhs) const override;
+
     bool isParametric() const override { return true; }
 
     const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }

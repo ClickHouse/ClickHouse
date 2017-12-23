@@ -206,6 +206,12 @@ MutableColumnPtr DataTypeFixedString::createColumn() const
 }
 
 
+bool DataTypeFixedString::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)

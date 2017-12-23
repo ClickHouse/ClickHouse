@@ -19,7 +19,7 @@ namespace DB
 
 
 /** Checks type by comparing typeid.
-  * The exact match of the type is checked. That is, cast in the ancestor will be unsuccessful.
+  * The exact match of the type is checked. That is, cast to the ancestor will be unsuccessful.
   * In the rest, behaves like a dynamic_cast.
   */
 template <typename To, typename From>

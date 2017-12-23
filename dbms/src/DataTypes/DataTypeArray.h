@@ -83,6 +83,8 @@ public:
 
     Field getDefault() const override;
 
+    bool equals(const IDataType & rhs) const override;
+
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }

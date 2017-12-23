@@ -74,6 +74,12 @@ std::string DataTypeNested::getName() const
 }
 
 
+bool DataTypeNested::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+}
+
+
 NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList & names_and_types)
 {
     NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
