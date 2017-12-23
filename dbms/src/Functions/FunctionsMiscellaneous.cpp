@@ -837,13 +837,13 @@ public:
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
     {
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
+        auto index_col = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
         if (!index_col)
             throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         size_t index = index_col->getValue<UInt8>();
 
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(&*arguments[0].type);
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         if (!tuple)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
