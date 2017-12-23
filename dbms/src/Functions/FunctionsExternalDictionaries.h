@@ -1323,19 +1323,19 @@ struct NameDictGetDateOrDefault { static constexpr auto name = "dictGetDateOrDef
 struct NameDictGetDateTimeOrDefault { static constexpr auto name = "dictGetDateTimeOrDefault"; };
 struct NameDictGetUUIDOrDefault { static constexpr auto name = "dictGetUUIDOrDefault"; };
 
-using FunctionDictGetUInt8OrDefault = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8OrDefault>;
-using FunctionDictGetUInt16OrDefault = FunctionDictGet<DataTypeUInt16, NameDictGetUInt16OrDefault>;
-using FunctionDictGetUInt32OrDefault = FunctionDictGet<DataTypeUInt32, NameDictGetUInt32OrDefault>;
-using FunctionDictGetUInt64OrDefault = FunctionDictGet<DataTypeUInt64, NameDictGetUInt64OrDefault>;
-using FunctionDictGetInt8OrDefault = FunctionDictGet<DataTypeInt8, NameDictGetInt8OrDefault>;
-using FunctionDictGetInt16OrDefault = FunctionDictGet<DataTypeInt16, NameDictGetInt16OrDefault>;
-using FunctionDictGetInt32OrDefault = FunctionDictGet<DataTypeInt32, NameDictGetInt32OrDefault>;
-using FunctionDictGetInt64OrDefault = FunctionDictGet<DataTypeInt64, NameDictGetInt64OrDefault>;
-using FunctionDictGetFloat32OrDefault = FunctionDictGet<DataTypeFloat32, NameDictGetFloat32OrDefault>;
-using FunctionDictGetFloat64OrDefault = FunctionDictGet<DataTypeFloat64, NameDictGetFloat64OrDefault>;
-using FunctionDictGetDateOrDefault = FunctionDictGet<DataTypeDate, NameDictGetDateOrDefault>;
-using FunctionDictGetDateTimeOrDefault = FunctionDictGet<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
-using FunctionDictGetUUIDOrDefault = FunctionDictGet<DataTypeUUID, NameDictGetUUIDOrDefault>;
+using FunctionDictGetUInt8OrDefault = FunctionDictGetOrDefault<DataTypeUInt8, NameDictGetUInt8OrDefault>;
+using FunctionDictGetUInt16OrDefault = FunctionDictGetOrDefault<DataTypeUInt16, NameDictGetUInt16OrDefault>;
+using FunctionDictGetUInt32OrDefault = FunctionDictGetOrDefault<DataTypeUInt32, NameDictGetUInt32OrDefault>;
+using FunctionDictGetUInt64OrDefault = FunctionDictGetOrDefault<DataTypeUInt64, NameDictGetUInt64OrDefault>;
+using FunctionDictGetInt8OrDefault = FunctionDictGetOrDefault<DataTypeInt8, NameDictGetInt8OrDefault>;
+using FunctionDictGetInt16OrDefault = FunctionDictGetOrDefault<DataTypeInt16, NameDictGetInt16OrDefault>;
+using FunctionDictGetInt32OrDefault = FunctionDictGetOrDefault<DataTypeInt32, NameDictGetInt32OrDefault>;
+using FunctionDictGetInt64OrDefault = FunctionDictGetOrDefault<DataTypeInt64, NameDictGetInt64OrDefault>;
+using FunctionDictGetFloat32OrDefault = FunctionDictGetOrDefault<DataTypeFloat32, NameDictGetFloat32OrDefault>;
+using FunctionDictGetFloat64OrDefault = FunctionDictGetOrDefault<DataTypeFloat64, NameDictGetFloat64OrDefault>;
+using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate, NameDictGetDateOrDefault>;
+using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
+using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID, NameDictGetUUIDOrDefault>;
 
 
 /// Functions to work with hierarchies.
