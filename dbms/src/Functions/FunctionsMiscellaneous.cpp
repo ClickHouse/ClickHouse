@@ -814,6 +814,7 @@ public:
 
 
 /** Extract element of tuple by constant index or name. The operation is essentially free.
+  * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
   */
 class FunctionTupleElement : public IFunction
 {
@@ -847,22 +848,56 @@ public:
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
     {
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        size_t count_arrays = 0;
+
+        const IDataType * tuple_col = arguments[0].type.get();
+        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(tuple_col))
+        {
+            tuple_col = array->getNestedType().get();
+            ++count_arrays;
+        }
+
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(tuple_col);
         if (!tuple)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         size_t index = getElementNum(arguments[1].column, *tuple);
         out_return_type = tuple->getElements()[index];
+
+        for (; count_arrays; --count_arrays)
+            out_return_type = std::make_shared<DataTypeArray>(out_return_type);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
-        if (!tuple_col)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
+        Columns array_offsets;
 
-        size_t index = getElementNum(block.getByPosition(arguments[1]).column, typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type));
-        block.getByPosition(result).column = tuple_col->getColumns()[index];
+        const auto & first_arg = block.getByPosition(arguments[0]);
+
+        const IDataType * tuple_type = first_arg.type.get();
+        const IColumn * tuple_col = first_arg.column.get();
+        while (const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(tuple_type))
+        {
+            const ColumnArray * array_col = static_cast<const ColumnArray *>(tuple_col);
+
+            tuple_type = array_type->getNestedType().get();
+            tuple_col = &array_col->getData();
+            array_offsets.push_back(array_col->getOffsetsPtr());
+        }
+
+        const DataTypeTuple * tuple_type_concrete = checkAndGetDataType<DataTypeTuple>(tuple_type);
+        const ColumnTuple * tuple_col_concrete = checkAndGetColumn<ColumnTuple>(tuple_col);
+        if (!tuple_type_concrete || !tuple_col_concrete)
+            throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        size_t index = getElementNum(block.getByPosition(arguments[1]).column, *tuple_type_concrete);
+        ColumnPtr res = tuple_col_concrete->getColumns()[index];
+
+        /// Wrap into Arrays
+        for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
+            res = ColumnArray::create(res, *it);
+
+        block.getByPosition(result).column = res;
     }
 
 private:
