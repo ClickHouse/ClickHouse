@@ -813,7 +813,7 @@ public:
 };
 
 
-/** Extract element of tuple by constant index. The operation is essentially free.
+/** Extract element of tuple by constant index or name. The operation is essentially free.
   */
 class FunctionTupleElement : public IFunction
 {
@@ -834,61 +834,58 @@ public:
         return 2;
     }
 
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        return {1};
+    }
+
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
     {
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get());
-        if (!index_col)
-            throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        size_t index = index_col->getValue<UInt8>();
-
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         if (!tuple)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (index == 0)
-            throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
-
-        const DataTypes & elems = tuple->getElements();
-
-        if (index > elems.size())
-            throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-
-        out_return_type = elems[index - 1];
+        size_t index = getElementNum(arguments[1].column, *tuple);
+        out_return_type = tuple->getElements()[index];
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
-        auto const_tuple_col = checkAndGetColumnConst<ColumnTuple>(block.getByPosition(arguments[0]).column.get());
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get());
-
-        if (!tuple_col && !const_tuple_col)
+        if (!tuple_col)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (!index_col)
-            throw Exception("Second argument for function " + getName() + " must be UInt8 constant literal.", ErrorCodes::ILLEGAL_COLUMN);
+        size_t index = getElementNum(block.getByPosition(arguments[1]).column, typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type));
+        block.getByPosition(result).column = tuple_col->getColumns()[index];
+    }
 
-        size_t index = index_col->getValue<UInt8>();
-        if (index == 0)
-            throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
-
-        if (tuple_col)
+private:
+    size_t getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple)
+    {
+        if (auto index_col = checkAndGetColumnConst<ColumnUInt8>(index_column.get()))
         {
-            const Columns & tuple_columns = tuple_col->getColumns();
+            size_t index = index_col->getValue<UInt8>();
 
-            if (index > tuple_columns.size())
+            if (index == 0)
+                throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
+
+            if (index > tuple.getElements().size())
                 throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
 
-            block.getByPosition(result).column = tuple_columns[index - 1];
+            return index - 1;
+        }
+        else if (auto name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
+        {
+            return tuple.getPositionByName(name_col->getValue<String>());
         }
         else
-        {
-            TupleBackend data = const_tuple_col->getValue<Tuple>();
-            block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
-                .getElements()[index - 1]->createColumnConst(block.rows(), data[index - 1]);
-        }
+            throw Exception("Second argument to " + getName() + " must be a constant UInt8 or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
