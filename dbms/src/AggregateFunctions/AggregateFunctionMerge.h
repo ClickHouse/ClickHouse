@@ -23,7 +23,7 @@ private:
     AggregateFunctionPtr nested_func;
 
 public:
-    AggregateFunctionMerge(AggregateFunctionPtr nested_, const IDataType & argument)
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const IDataType & argument)
         : nested_func(nested_)
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(&argument);
