@@ -3,29 +3,16 @@ add_headers_and_sources(clickhouse_aggregate_functions .)
 
 list(REMOVE_ITEM clickhouse_aggregate_functions_sources
     AggregateFunctionFactory.cpp
-    AggregateFunctionState.cpp
-    AggregateFunctionArray.cpp
-    AggregateFunctionNull.cpp
-    AggregateFunctionNothing.cpp
-    AggregateFunctionForEach.cpp
-    AggregateFunctionIf.cpp
-    AggregateFunctionMerge.cpp
-    AggregateFunctionCount.cpp
+    AggregateFunctionCombinatorFactory.cpp
     parseAggregateFunctionParameters.cpp
     FactoryHelpers.cpp
 )
 
 list(REMOVE_ITEM clickhouse_aggregate_functions_headers
-    AggregateFunction.h
+    IAggregateFunction.h
+    IAggregateFunctionCombinator.h
     AggregateFunctionFactory.h
-    AggregateFunctionState.h
-    AggregateFunctionArray.h
-    AggregateFunctionNull.h
-    AggregateFunctionNothing.h
-    AggregateFunctionForEach.h
-    AggregateFunctionIf.h
-    AggregateFunctionMerge.h
-    AggregateFunctionCount.h
+    AggregateFunctionCombinatorFactory.h
     parseAggregateFunctionParameters.h
     FactoryHelpers.h
 )

@@ -71,29 +71,16 @@ list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactor
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
+    src/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     src/AggregateFunctions/FactoryHelpers.cpp
-    src/AggregateFunctions/AggregateFunctionState.cpp
-    src/AggregateFunctions/AggregateFunctionArray.cpp
-    src/AggregateFunctions/AggregateFunctionNull.cpp
-    src/AggregateFunctions/AggregateFunctionNothing.cpp
-    src/AggregateFunctions/AggregateFunctionForEach.cpp
-    src/AggregateFunctions/AggregateFunctionIf.cpp
-    src/AggregateFunctions/AggregateFunctionMerge.cpp
-    src/AggregateFunctions/AggregateFunctionCount.cpp
     src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
     src/AggregateFunctions/IAggregateFunction.h
+    src/AggregateFunctions/IAggregateFunctionCombinator.h
     src/AggregateFunctions/AggregateFunctionFactory.h
+    src/AggregateFunctions/AggregateFunctionCombinatorFactory.h
     src/AggregateFunctions/FactoryHelpers.h
-    src/AggregateFunctions/AggregateFunctionState.h
-    src/AggregateFunctions/AggregateFunctionArray.h
-    src/AggregateFunctions/AggregateFunctionNull.h
-    src/AggregateFunctions/AggregateFunctionNothing.h
-    src/AggregateFunctions/AggregateFunctionForEach.h
-    src/AggregateFunctions/AggregateFunctionIf.h
-    src/AggregateFunctions/AggregateFunctionMerge.h
-    src/AggregateFunctions/AggregateFunctionCount.h
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
