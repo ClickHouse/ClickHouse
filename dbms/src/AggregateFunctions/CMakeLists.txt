@@ -4,6 +4,7 @@ add_headers_and_sources(clickhouse_aggregate_functions .)
 list(REMOVE_ITEM clickhouse_aggregate_functions_sources
     AggregateFunctionFactory.cpp
     AggregateFunctionCombinatorFactory.cpp
+    AggregateFunctionState.cpp
     parseAggregateFunctionParameters.cpp
     FactoryHelpers.cpp
 )
@@ -13,6 +14,7 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_headers
     IAggregateFunctionCombinator.h
     AggregateFunctionFactory.h
     AggregateFunctionCombinatorFactory.h
+    AggregateFunctionState.h
     parseAggregateFunctionParameters.h
     FactoryHelpers.h
 )
