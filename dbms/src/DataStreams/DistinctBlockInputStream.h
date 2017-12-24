@@ -46,6 +46,8 @@ private:
     Sizes key_sizes;
     size_t limit_hint;
 
+    bool no_more_rows = false;
+
     /// Restrictions on the maximum size of the output data.
     size_t max_rows;
     size_t max_bytes;
