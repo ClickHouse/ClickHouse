@@ -542,13 +542,6 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 template <char delimiter = '-'>
 inline void writeDateText(DayNum_t date, WriteBuffer & buf)
 {
-    if (unlikely(!date))
-    {
-        static const char s[] = {'0', '0', '0', '0', delimiter, '0', '0', delimiter, '0', '0'};
-        buf.write(s, sizeof(s));
-        return;
-    }
-
     writeDateText<delimiter>(LocalDate(date), buf);
 }
 
@@ -617,18 +610,6 @@ inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    if (unlikely(!datetime))
-    {
-        static const char s[] =
-        {
-            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-            between_date_time_delimiter,
-            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'
-        };
-        buf.write(s, sizeof(s));
-        return;
-    }
-
     const auto & values = date_lut.getValues(datetime);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
