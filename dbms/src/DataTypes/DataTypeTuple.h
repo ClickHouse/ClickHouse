@@ -88,6 +88,8 @@ public:
 
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
+
+    size_t getPositionByName(const String & name) const;
 };
 
 }

@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int DUPLICATE_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 
@@ -363,6 +364,16 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
             return false;
 
     return true;
+}
+
+
+size_t DataTypeTuple::getPositionByName(const String & name) const
+{
+    size_t size = elems.size();
+    for (size_t i = 0; i < size; ++i)
+        if (names[i] == name)
+            return i;
+    throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 }
 
 
