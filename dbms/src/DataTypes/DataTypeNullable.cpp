@@ -287,6 +287,12 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 }
 
 
+bool DataTypeNullable::equals(const IDataType & rhs) const
+{
+    return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)

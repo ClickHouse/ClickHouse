@@ -200,7 +200,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 
 
 template <typename FromDataType, typename Name>
-struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataType, DataTypeString>::value, DataTypeString>::type, Name>
+struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name>
 {
     using FromFieldType = typename FromDataType::FieldType;
 
@@ -212,7 +212,7 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
         const DateLUTImpl * time_zone = nullptr;
 
         /// For argument of DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same<FromDataType, DataTypeDateTime>::value)
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
@@ -224,9 +224,9 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
 
-            if constexpr (std::is_same<FromDataType, DataTypeDate>::value)
+            if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
                 data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
-            else if constexpr (std::is_same<FromDataType, DataTypeDateTime>::value)
+            else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
                 data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
             else
                 data_to.resize(size * 3);   /// Arbitary
@@ -316,112 +316,157 @@ template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, Rea
     x = tmp;
 }
 
+template <typename DataType>
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+{
+    if constexpr (std::is_integral_v<typename DataType::FieldType>)
+        return tryReadIntText(x, rb);
+    else if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+        return tryReadFloatText(x, rb);
+    /// NOTE Need to implement for Date and DateTime too.
+}
+
+
 /** Throw exception with verbose message when string value is not parsed completely.
   */
 void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result);
 
 
-template <typename ToDataType, typename Name>
-struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeString>::value, DataTypeString>::type, ToDataType, Name>
+enum class ConvertFromStringExceptionMode
 {
+    Throw,  /// Throw exception if value cannot be parsed.
+    Zero,   /// Fill with zero or default if value cannot be parsed.
+    Null    /// Return ColumnNullable with NULLs when value cannot be parsed.
+};
+
+template <typename FromDataType, typename ToDataType, typename Name, ConvertFromStringExceptionMode mode>
+struct ConvertThroughParsing
+{
+    static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
+        "ConvertThroughParsing is only applicable for String or FixedString data types");
+
     using ToFieldType = typename ToDataType::FieldType;
+
+    static bool isAllRead(ReadBuffer & in)
+    {
+        /// In case of FixedString, skip zero bytes at end.
+        if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
+            while (!in.eof() && *in.position() == 0)
+                ++in.position();
+
+        if (in.eof())
+            return true;
+
+        /// Special case, that allows to parse string with DateTime as Date.
+        if (std::is_same_v<ToDataType, DataTypeDate> && (in.buffer().size()) == strlen("YYYY-MM-DD hh:mm:ss"))
+            return true;
+
+        return false;
+    }
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const DateLUTImpl * time_zone = nullptr;
+        const DateLUTImpl * time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
-        if (std::is_same<ToDataType, DataTypeDateTime>::value)
+        if (std::is_same_v<ToDataType, DataTypeDateTime>)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            auto col_to = ColumnVector<ToFieldType>::create();
+        const IColumn * col_from = block.getByPosition(arguments[0]).column.get();
+        const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
+        const ColumnFixedString * col_from_fixed_string = checkAndGetColumn<ColumnFixedString>(col_from);
 
-            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
-            size_t size = col_from->size();
-            vec_to.resize(size);
-
-            const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets & offsets = col_from->getOffsets();
-
-            size_t current_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
-
-                parseImpl<ToDataType>(vec_to[i], read_buffer, time_zone);
-
-                if (!read_buffer.eof()
-                    && !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
-                        && offsets[i] - current_offset - 1 == strlen("YYYY-MM-DD hh:mm:ss")))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
-
-                current_offset = offsets[i];
-            }
-
-            block.getByPosition(result).column = std::move(col_to);
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+        if (std::is_same_v<FromDataType, DataTypeString> && !col_from_string)
+            throw Exception("Illegal column " + col_from->getName()
                 + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        if (std::is_same_v<FromDataType, DataTypeFixedString> && !col_from_fixed_string)
+            throw Exception("Illegal column " + col_from->getName()
+                + " of first argument of function " + Name::name,
+                ErrorCodes::ILLEGAL_COLUMN);
+
+        size_t size = block.rows();
+        auto col_to = ColumnVector<ToFieldType>::create(size);
+        typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
+        if constexpr (mode == ConvertFromStringExceptionMode::Null)
+        {
+            col_null_map_to = ColumnUInt8::create(size);
+            vec_null_map_to = &col_null_map_to->getData();
+        }
+
+        const ColumnString::Chars_t * chars = nullptr;
+        const IColumn::Offsets * offsets = nullptr;
+        size_t fixed_string_size = 0;
+
+        if constexpr (std::is_same_v<FromDataType, DataTypeString>)
+        {
+            chars = &col_from_string->getChars();
+            offsets = &col_from_string->getOffsets();
+        }
+        else
+        {
+            chars = &col_from_fixed_string->getChars();
+            fixed_string_size = col_from_fixed_string->getN();
+        }
+
+        size_t current_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
+
+            ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+
+            if constexpr (mode == ConvertFromStringExceptionMode::Throw)
+            {
+                parseImpl<ToDataType>(vec_to[i], read_buffer, time_zone);
+
+                if (!isAllRead(read_buffer))
+                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
+            }
+            else
+            {
+                bool parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer) && isAllRead(read_buffer);
+
+                if (!parsed)
+                    vec_to[i] = 0;
+
+                if constexpr (mode == ConvertFromStringExceptionMode::Null)
+                    (*vec_null_map_to)[i] = !parsed;
+            }
+
+            current_offset = next_offset;
+        }
+
+        if constexpr (mode == ConvertFromStringExceptionMode::Null)
+            block.getByPosition(result).column = ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+        else
+            block.getByPosition(result).column = std::move(col_to);
     }
 };
 
 
-template <typename DataType>
-bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
-{
-    if constexpr (std::is_integral<typename DataType::FieldType>::value)
-        return tryReadIntText(x, rb);
-    else if constexpr (std::is_floating_point<typename DataType::FieldType>::value)
-        return tryReadFloatText(x, rb);
-}
+template <typename ToDataType, typename Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name>
+    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw> {};
+
+template <typename ToDataType, typename Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name>
+    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw> {};
 
 
 /** Conversion from String through parsing, which returns default value instead of throwing an exception.
   */
 template <typename ToDataType, typename Name>
-struct ConvertOrZeroImpl
-{
-    using ToFieldType = typename ToDataType::FieldType;
+struct ConvertOrZeroImpl : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Zero> {};
 
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            auto col_to = ColumnVector<ToFieldType>::create();
-
-            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
-            size_t size = col_from->size();
-            vec_to.resize(size);
-
-            const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets & offsets = col_from->getOffsets();
-
-            size_t current_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
-
-                /// NOTE Need to implement for Date and DateTime too.
-                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer) || !read_buffer.eof())
-                    vec_to[i] = 0;
-
-                current_offset = offsets[i];
-            }
-
-            block.getByPosition(result).column = std::move(col_to);
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
-    }
-};
+template <typename ToDataType, typename Name>
+struct ConvertOrNullImpl : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null> {};
 
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple.
@@ -482,62 +527,11 @@ struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
 /** If types are identical, just take reference to column.
   */
 template <typename T, typename Name>
-struct ConvertImpl<typename std::enable_if<!T::is_parametric, T>::type, T, Name>
+struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
-    }
-};
-
-
-/** Conversion from FixedString through parsing.
-  */
-template <typename ToDataType, typename Name>
-struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
-{
-    using ToFieldType = typename ToDataType::FieldType;
-
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            const DateLUTImpl * time_zone = nullptr;
-
-            /// For conversion to DateTime type, second argument with time zone could be specified.
-            if (std::is_same<ToDataType, DataTypeDateTime>::value)
-                time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
-
-            auto col_to = ColumnVector<ToFieldType>::create();
-
-            const ColumnFixedString::Chars_t & data_from = col_from->getChars();
-            size_t n = col_from->getN();
-            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
-            size_t size = col_from->size();
-            vec_to.resize(size);
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                ReadBufferFromMemory read_buffer(&data_from[i * n], n);
-                const char * end = read_buffer.buffer().end();
-                parseImpl<ToDataType>(vec_to[i], read_buffer, time_zone);
-
-                if (!read_buffer.eof())
-                {
-                    while (read_buffer.position() < end && *read_buffer.position() == 0)
-                        ++read_buffer.position();
-
-                    if (read_buffer.position() < end)
-                        throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
-                }
-            }
-
-            block.getByPosition(result).column = std::move(col_to);
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -629,14 +623,14 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const Block &) override { return std::is_same<Name, NameToString>::value; }
+    bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }
 
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments,
         DataTypePtr & out_return_type,
         std::vector<ExpressionAction> &) override
     {
-        if constexpr (std::is_same<ToDataType, DataTypeInterval>::value)
+        if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
             out_return_type = std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
         }
@@ -653,10 +647,10 @@ public:
                     throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-                if (!(std::is_same<Name, NameToDateTime>::value
-                    || std::is_same<Name, NameToDate>::value
-                    || std::is_same<Name, NameToUnixTimestamp>::value
-                    || (std::is_same<Name, NameToString>::value
+                if (!(std::is_same_v<Name, NameToDateTime>
+                    || std::is_same_v<Name, NameToDate>
+                    || std::is_same_v<Name, NameToUnixTimestamp>
+                    || (std::is_same_v<Name, NameToString>
                         && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
                 {
                     throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -665,7 +659,7 @@ public:
                 }
             }
 
-            if (std::is_same<ToDataType, DataTypeDateTime>::value)
+            if (std::is_same_v<ToDataType, DataTypeDateTime>)
                 out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else
                 out_return_type = std::make_shared<ToDataType>();
@@ -748,7 +742,7 @@ private:
         else
         {
             /// Generic conversion of any type to String.
-            if (std::is_same<ToDataType, DataTypeString>::value)
+            if (std::is_same_v<ToDataType, DataTypeString>)
             {
                 ConvertImplGenericToString::execute(block, arguments, result);
             }
@@ -794,7 +788,42 @@ public:
             ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
-                + ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'try'.",
+                + ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'orZero'.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+};
+
+
+template <typename ToDataType, typename Name>
+class FunctionConvertOrNull : public IFunction
+{
+public:
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertOrNull>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    {
+        return std::make_shared<DataTypeNullable>(std::make_shared<ToDataType>());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+
+        if (checkAndGetDataType<DataTypeString>(from_type))
+            ConvertOrNullImpl<ToDataType, Name>::execute(block, arguments, result);
+        else
+            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
+                + ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'orNull'.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
@@ -820,13 +849,14 @@ public:
         DataTypePtr & out_return_type,
         std::vector<ExpressionAction> & /*out_prerequisites*/) override
     {
+        if (!arguments[1].type->isUnsignedInteger())
+            throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
         if (!arguments[1].column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
         if (!arguments[0].type->isStringOrFixedString())
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
-        const size_t n = getSize(arguments[1]);
-
+        const size_t n = arguments[1].column->getUInt(0);
         out_return_type = std::make_shared<DataTypeFixedString>(n);
     }
 
@@ -835,7 +865,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto n = getSize(block.getByPosition(arguments[1]));
+        const auto n = block.getByPosition(arguments[1]).column->getUInt(0);
         return execute(block, arguments, result, n);
     }
 
@@ -887,37 +917,6 @@ public:
         }
         else
             throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-    }
-
-private:
-    template <typename T>
-    bool getSizeTyped(const ColumnWithTypeAndName & column, size_t & out_size)
-    {
-        if (!checkDataType<DataTypeNumber<T>>(column.type.get()))
-            return false;
-        auto column_const = checkAndGetColumnConst<ColumnVector<T>>(column.column.get());
-        if (!column_const)
-            throw Exception("Unexpected type of column for FixedString length: " + column.column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-        T s = column_const->template getValue<T>();
-        if (s <= 0)
-            throw Exception("FixedString length must be positive (unlike " + toString(s) + ")", ErrorCodes::ILLEGAL_COLUMN);
-        out_size = static_cast<size_t>(s);
-        return true;
-    }
-
-    size_t getSize(const ColumnWithTypeAndName & column)
-    {
-        size_t res;
-        if (getSizeTyped<UInt8>(column, res) ||
-            getSizeTyped<UInt16>(column, res) ||
-            getSizeTyped<UInt32>(column, res) ||
-            getSizeTyped<UInt64>(column, res) ||
-            getSizeTyped< Int8 >(column, res) ||
-            getSizeTyped< Int16>(column, res) ||
-            getSizeTyped< Int32>(column, res) ||
-            getSizeTyped< Int64>(column, res))
-            return res;
-        throw Exception("Length of FixedString must be integer; got " + column.type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -1107,6 +1106,28 @@ using FunctionToInt32OrZero = FunctionConvertOrZero<DataTypeInt32, NameToInt32Or
 using FunctionToInt64OrZero = FunctionConvertOrZero<DataTypeInt64, NameToInt64OrZero>;
 using FunctionToFloat32OrZero = FunctionConvertOrZero<DataTypeFloat32, NameToFloat32OrZero>;
 using FunctionToFloat64OrZero = FunctionConvertOrZero<DataTypeFloat64, NameToFloat64OrZero>;
+
+struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
+struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
+struct NameToUInt32OrNull { static constexpr auto name = "toUInt32OrNull"; };
+struct NameToUInt64OrNull { static constexpr auto name = "toUInt64OrNull"; };
+struct NameToInt8OrNull { static constexpr auto name = "toInt8OrNull"; };
+struct NameToInt16OrNull { static constexpr auto name = "toInt16OrNull"; };
+struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
+struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
+struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
+struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
+
+using FunctionToUInt8OrNull = FunctionConvertOrNull<DataTypeUInt8, NameToUInt8OrNull>;
+using FunctionToUInt16OrNull = FunctionConvertOrNull<DataTypeUInt16, NameToUInt16OrNull>;
+using FunctionToUInt32OrNull = FunctionConvertOrNull<DataTypeUInt32, NameToUInt32OrNull>;
+using FunctionToUInt64OrNull = FunctionConvertOrNull<DataTypeUInt64, NameToUInt64OrNull>;
+using FunctionToInt8OrNull = FunctionConvertOrNull<DataTypeInt8, NameToInt8OrNull>;
+using FunctionToInt16OrNull = FunctionConvertOrNull<DataTypeInt16, NameToInt16OrNull>;
+using FunctionToInt32OrNull = FunctionConvertOrNull<DataTypeInt32, NameToInt32OrNull>;
+using FunctionToInt64OrNull = FunctionConvertOrNull<DataTypeInt64, NameToInt64OrNull>;
+using FunctionToFloat32OrNull = FunctionConvertOrNull<DataTypeFloat32, NameToFloat32OrNull>;
+using FunctionToFloat64OrNull = FunctionConvertOrNull<DataTypeFloat64, NameToFloat64OrNull>;
 
 
 class FunctionCast final : public IFunction

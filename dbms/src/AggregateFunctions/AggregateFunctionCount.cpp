@@ -24,14 +24,4 @@ void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
     factory.registerFunction("count", createAggregateFunctionCount, AggregateFunctionFactory::CaseInsensitive);
 }
 
-AggregateFunctionPtr createAggregateFunctionCountNotNull(const String & name, const DataTypes & argument_types, const Array & parameters)
-{
-    assertNoParameters(name, parameters);
-
-    if (argument_types.size() == 1)
-        return std::make_shared<AggregateFunctionCountNotNullUnary>(argument_types[0]);
-    else
-        return std::make_shared<AggregateFunctionCountNotNullVariadic>(argument_types);
-}
-
 }

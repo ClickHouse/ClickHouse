@@ -21,7 +21,7 @@ static std::string extractTimeZoneNameFromColumn(const IColumn & column)
 std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
 {
     /// Explicit time zone may be passed in last argument.
-    if (arguments.size() == time_zone_arg_num + 1)
+    if (arguments.size() == time_zone_arg_num + 1 && arguments[time_zone_arg_num].column)
     {
         return extractTimeZoneNameFromColumn(*arguments[time_zone_arg_num].column);
     }

@@ -34,6 +34,8 @@ public:
     {
         return return_type;
     }
+
+    bool equals(const IDataType & rhs) const override;
 };
 
 }

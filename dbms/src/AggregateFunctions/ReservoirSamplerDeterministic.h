@@ -221,6 +221,6 @@ private:
         if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
             throw Poco::Exception("Quantile of empty ReservoirSamplerDeterministic");
         else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point<ResultType>::value>::getValue();
+            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }
 };

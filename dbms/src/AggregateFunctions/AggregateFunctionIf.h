@@ -25,13 +25,13 @@ class AggregateFunctionIf final : public IAggregateFunctionHelper<AggregateFunct
 {
 private:
     AggregateFunctionPtr nested_func;
-    size_t num_agruments;
+    size_t num_arguments;
 
 public:
     AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types)
-        : nested_func(nested), num_agruments(types.size())
+        : nested_func(nested), num_arguments(types.size())
     {
-        if (num_agruments == 0)
+        if (num_arguments == 0)
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!typeid_cast<const DataTypeUInt8 *>(types.back().get()))
@@ -75,7 +75,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (static_cast<const ColumnUInt8 &>(*columns[num_agruments - 1]).getData()[row_num])
+        if (static_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num])
             nested_func->add(place, columns, row_num, arena);
     }
 

@@ -243,6 +243,13 @@ void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 }
 
 template <typename Type>
+bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && name == static_cast<const DataTypeEnum<Type> &>(rhs).name;
+}
+
+
+template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
 {
     for (const auto & elem : values)

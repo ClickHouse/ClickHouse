@@ -5,6 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Server should not crash on any function trash calls
 
-cat $CURDIR/00531_filimonov.data | $CLICKHOUSE_CLIENT -n --ignore-error >/dev/null 2>&1
+cat $CURDIR/00534_filimonov.data | $CLICKHOUSE_CLIENT -n --ignore-error >/dev/null 2>&1
 
 $CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"
