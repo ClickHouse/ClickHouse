@@ -13,6 +13,7 @@ namespace DB
   */
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
+void registerFunctionsTuple(FunctionFactory &);
 void registerFunctionsCoding(FunctionFactory &);
 void registerFunctionsComparison(FunctionFactory &);
 void registerFunctionsConditional(FunctionFactory &);
@@ -48,6 +49,7 @@ void registerFunctions()
 
     registerFunctionsArithmetic(factory);
     registerFunctionsArray(factory);
+    registerFunctionsTuple(factory);
     registerFunctionsCoding(factory);
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);
