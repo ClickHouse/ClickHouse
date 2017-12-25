@@ -31,9 +31,9 @@ namespace ErrorCodes
 
 StorageMerge::StorageMerge(
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_,
     const String & source_database_,
     const String & table_name_regexp_,
@@ -64,11 +64,11 @@ bool StorageMerge::isRemote() const
     return false;
 }
 
-NameAndTypePair StorageMerge::getColumn(const String & column_name) const
+NameAndType StorageMerge::getColumn(const String & column_name) const
 {
     auto type = VirtualColumnFactory::tryGetType(column_name);
     if (type)
-        return NameAndTypePair(column_name, type);
+        return NameAndType(column_name, type);
 
     return IStorage::getColumn(column_name);
 }

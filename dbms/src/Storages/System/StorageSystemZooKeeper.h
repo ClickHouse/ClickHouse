@@ -18,7 +18,7 @@ public:
     std::string getName() const override { return "SystemZooKeeper"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -30,7 +30,7 @@ public:
 
 private:
     const std::string name;
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
 
 protected:
     StorageSystemZooKeeper(const std::string & name_);

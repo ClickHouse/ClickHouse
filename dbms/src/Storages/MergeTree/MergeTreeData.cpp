@@ -78,9 +78,9 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
-    const String & full_path_, const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const String & full_path_, const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
@@ -238,9 +238,9 @@ void MergeTreeData::initPartitionKey()
     }
 
     /// Add all columns used in the partition key to the min-max index.
-    const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
+    const NamesAndTypes & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
     minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());
-    for (const NameAndTypePair & column : minmax_idx_columns_with_types)
+    for (const NameAndType & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
         minmax_idx_column_types.emplace_back(column.type);
@@ -268,7 +268,7 @@ void MergeTreeData::initPartitionKey()
 }
 
 
-void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
+void MergeTreeData::MergingParams::check(const NamesAndTypes & columns) const
 {
     /// Check that if the sign column is needed, it exists and is of type Int8.
     if (mode == MergingParams::Collapsing)
@@ -300,7 +300,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 
         for (const auto & column_to_sum : columns_to_sum)
             if (columns.end() == std::find_if(columns.begin(), columns.end(),
-                [&](const NameAndTypePair & name_and_type) { return column_to_sum == Nested::extractTableName(name_and_type.name); }))
+                [&](const NameAndType & name_and_type) { return column_to_sum == Nested::extractTableName(name_and_type.name); }))
                 throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
     }
 
@@ -842,7 +842,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
 }
 
-void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypes & old_columns, const NamesAndTypes & new_columns,
     ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
     out_expression = nullptr;
@@ -851,7 +851,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     using NameToType = std::map<String, const IDataType *>;
     NameToType new_types;
-    for (const NameAndTypePair & column : new_columns)
+    for (const NameAndType & column : new_columns)
         new_types.emplace(column.name, column.type.get());
 
     /// For every column that need to be converted: source column name, column name of calculated expression for conversion.
@@ -859,7 +859,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : old_columns)
+    for (const NameAndType & column : old_columns)
     {
         column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {
@@ -867,7 +867,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         }, {});
     }
 
-    for (const NameAndTypePair & column : old_columns)
+    for (const NameAndType & column : old_columns)
     {
         if (!new_types.count(column.name))
         {
@@ -904,7 +904,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
                 /// Need to modify column type.
                 if (!out_expression)
-                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
+                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypes(), context.getSettingsRef());
 
                 out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
@@ -983,7 +983,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
-    const NamesAndTypesList & new_columns,
+    const NamesAndTypes & new_columns,
     const ASTPtr & new_primary_key,
     bool skip_sanity_checks)
 {

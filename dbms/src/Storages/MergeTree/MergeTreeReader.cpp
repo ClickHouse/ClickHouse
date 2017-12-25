@@ -34,7 +34,7 @@ MergeTreeReader::~MergeTreeReader() = default;
 
 
 MergeTreeReader::MergeTreeReader(const String & path,
-    const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
+    const MergeTreeData::DataPartPtr & data_part, const NamesAndTypes & columns,
     UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
     MergeTreeData & storage, const MarkRanges & all_mark_ranges,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
@@ -49,7 +49,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
         if (!Poco::File(path).exists())
             throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 
-        for (const NameAndTypePair & column : columns)
+        for (const NameAndType & column : columns)
             addStreams(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
     }
     catch (...)
@@ -82,7 +82,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
         /// check that the offsets column has been already read.
         OffsetColumns offset_columns;
 
-        for (const NameAndTypePair & it : columns)
+        for (const NameAndType & it : columns)
         {
             /// The column is already present in the block so we will append the values to the end.
             bool append = res.has(it.name);

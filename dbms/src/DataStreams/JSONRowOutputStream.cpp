@@ -9,7 +9,7 @@ namespace DB
 JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, const FormatSettingsJSON & settings_)
     : dst_ostr(ostr_), write_statistics(write_statistics_), settings(settings_)
 {
-    NamesAndTypesList columns(sample_.getNamesAndTypesList());
+    NamesAndTypes columns(sample_.getNamesAndTypes());
     fields.assign(columns.begin(), columns.end());
 
     bool need_validate_utf8 = false;

@@ -9,7 +9,7 @@ namespace DB
 XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
     : dst_ostr(ostr_), write_statistics(write_statistics_)
 {
-    NamesAndTypesList columns(sample_.getNamesAndTypesList());
+    NamesAndTypes columns(sample_.getNamesAndTypes());
     fields.assign(columns.begin(), columns.end());
     field_tag_names.resize(sample_.columns());
 

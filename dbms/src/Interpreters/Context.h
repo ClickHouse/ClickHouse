@@ -6,6 +6,9 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
+#include <map>
+#include <set>
 
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>

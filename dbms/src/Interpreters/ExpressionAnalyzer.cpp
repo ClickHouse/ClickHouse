@@ -136,7 +136,7 @@ bool functionIsInOrGlobalInOperator(const String & name)
     return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
 }
 
-void removeDuplicateColumns(NamesAndTypesList & columns)
+void removeDuplicateColumns(NamesAndTypes & columns)
 {
     std::set<String> names;
     for (auto it = columns.begin(); it != columns.end();)
@@ -155,7 +155,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & ast_,
     const Context & context_,
     const StoragePtr & storage_,
-    const NamesAndTypesList & columns_,
+    const NamesAndTypes & columns_,
     size_t subquery_depth_,
     bool do_global_)
     : ast(ast_), context(context_), settings(context.getSettings()),
@@ -541,7 +541,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                     }
                 }
 
-                NameAndTypePair key{column_name, col.type};
+                NameAndType key{column_name, col.type};
 
                 /// Aggregation keys are uniqued.
                 if (!unique_keys.count(key.name))
@@ -569,7 +569,7 @@ void ExpressionAnalyzer::analyzeAggregation()
     }
     else
     {
-        aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+        aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypes();
     }
 }
 
@@ -795,9 +795,9 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
     Block sample = interpreter->getSampleBlock();
-    NamesAndTypesList columns = sample.getNamesAndTypesList();
+    NamesAndTypes columns = sample.getNamesAndTypes();
 
-    StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+    StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypes{}, NamesAndTypes{}, ColumnDefaults{});
     external_storage->startup();
 
     /** There are two ways to perform distributed GLOBAL subqueries.
@@ -892,10 +892,10 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
 }
 
 
-NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypesList & cols)
+NamesAndTypes::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypes & cols)
 {
     return std::find_if(cols.begin(), cols.end(),
-        [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
+        [&](const NamesAndTypes::value_type & val) { return val.name == name; });
 }
 
 
@@ -1460,7 +1460,7 @@ void ExpressionAnalyzer::optimizeGroupBy()
         String unused_column_name = toString(unused_column);
 
         while (columns.end() != std::find_if(columns.begin(), columns.end(),
-            [&unused_column_name](const NameAndTypePair & name_type) { return name_type.name == unused_column_name; }))
+            [&unused_column_name](const NameAndType & name_type) { return name_type.name == unused_column_name; }))
         {
             ++unused_column;
             unused_column_name = toString(unused_column);
@@ -1793,7 +1793,7 @@ struct ExpressionAnalyzer::ScopeStack
             stack.back().new_columns.insert(sample_block.getByPosition(i).name);
     }
 
-    void pushLevel(const NamesAndTypesList & input_columns)
+    void pushLevel(const NamesAndTypes & input_columns)
     {
         stack.emplace_back();
         Level & prev = stack[stack.size() - 2];
@@ -1801,7 +1801,7 @@ struct ExpressionAnalyzer::ScopeStack
         ColumnsWithTypeAndName all_columns;
         NameSet new_names;
 
-        for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+        for (NamesAndTypes::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
         {
             all_columns.emplace_back(nullptr, it->type, it->name);
             new_names.insert(it->name);
@@ -2167,7 +2167,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                         const DataTypeExpression * lambda_type = typeid_cast<const DataTypeExpression *>(argument_types[i].get());
                         ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
                         ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
-                        NamesAndTypesList lambda_arguments;
+                        NamesAndTypes lambda_arguments;
 
                         for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
                         {
@@ -2328,7 +2328,7 @@ void ExpressionAnalyzer::assertAggregation() const
         throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
 }
 
-void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const
+void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAndTypes & columns) const
 {
     if (chain.steps.empty())
     {
@@ -2679,7 +2679,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
-    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(NamesAndTypesList(), settings);
+    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(NamesAndTypes(), settings);
 
     getRootActions(ast, true, true, actions);
 
@@ -2739,7 +2739,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     NameSet required_joined_columns;
     getRequiredColumnsImpl(ast, available_columns, required, ignored, available_joined_columns, required_joined_columns);
 
-    for (NamesAndTypesList::iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
+    for (NamesAndTypes::iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
     {
         if (required_joined_columns.count(it->name))
             ++it;
@@ -2762,7 +2762,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     unknown_required_columns = required;
 
-    for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
+    for (NamesAndTypes::iterator it = columns.begin(); it != columns.end();)
     {
         unknown_required_columns.erase(it->name);
 
@@ -2789,7 +2789,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     }
 }
 
-void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type)
+void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAndTypes & joined_columns_name_type)
 {
     if (!select_query)
         return;

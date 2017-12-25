@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-static NamesAndTypesList chooseColumns(const String & source_database, const String & table_name_regexp_, const Context & context)
+static NamesAndTypes chooseColumns(const String & source_database, const String & table_name_regexp_, const Context & context)
 {
     OptimizedRegularExpression table_name_regexp(table_name_regexp_);
 
@@ -80,8 +80,8 @@ StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Contex
     auto res = StorageMerge::create(
         getName(),
         chooseColumns(source_database, table_name_regexp, context),
-        NamesAndTypesList{},
-        NamesAndTypesList{},
+        NamesAndTypes{},
+        NamesAndTypes{},
         ColumnDefaults{},
         source_database,
         table_name_regexp,

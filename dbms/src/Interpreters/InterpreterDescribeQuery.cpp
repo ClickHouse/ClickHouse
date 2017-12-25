@@ -57,14 +57,14 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 {
     const ASTDescribeQuery & ast = typeid_cast<const ASTDescribeQuery &>(*query_ptr);
 
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
     ColumnDefaults column_defaults;
     StoragePtr table;
 
     auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
 
     if (table_expression->subquery)
-        columns = InterpreterSelectQuery::getSampleBlock(table_expression->subquery->children[0], context).getNamesAndTypesList();
+        columns = InterpreterSelectQuery::getSampleBlock(table_expression->subquery->children[0], context).getNamesAndTypes();
     else
     {
         if (table_expression->table_function)

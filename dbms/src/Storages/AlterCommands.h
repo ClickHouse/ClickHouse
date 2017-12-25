@@ -37,15 +37,15 @@ struct AlterCommand
     ASTPtr primary_key;
 
     /// the names are the same if they match the whole name or name_without_dot matches the part of the name up to the dot
-    static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
+    static bool namesEqual(const String & name_without_dot, const DB::NameAndType & name_type)
     {
         String name_with_dot = name_without_dot + ".";
         return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
     }
 
-    void apply(NamesAndTypesList & columns,
-               NamesAndTypesList & materialized_columns,
-               NamesAndTypesList & alias_columns,
+    void apply(NamesAndTypes & columns,
+               NamesAndTypes & materialized_columns,
+               NamesAndTypes & alias_columns,
                ColumnDefaults & column_defaults) const;
 
     AlterCommand() = default;
@@ -63,9 +63,9 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(NamesAndTypesList & columns,
-               NamesAndTypesList & materialized_columns,
-               NamesAndTypesList & alias_columns,
+    void apply(NamesAndTypes & columns,
+               NamesAndTypes & materialized_columns,
+               NamesAndTypes & alias_columns,
                ColumnDefaults & column_defaults) const;
 
     void validate(IStorage * table, const Context & context);

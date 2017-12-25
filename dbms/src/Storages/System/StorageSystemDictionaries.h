@@ -26,9 +26,9 @@ public:
 
 private:
     const std::string name;
-    const NamesAndTypesList columns;
+    const NamesAndTypes columns;
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
 
 protected:
     StorageSystemDictionaries(const std::string & name);

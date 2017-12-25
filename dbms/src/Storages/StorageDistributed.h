@@ -35,7 +35,7 @@ public:
 
     static StoragePtr createWithOwnCluster(
         const std::string & name_,            /// The name of the table.
-        const NamesAndTypesList & columns_,        /// List of columns.
+        const NamesAndTypes & columns_,        /// List of columns.
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,
@@ -47,8 +47,8 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-    NameAndTypePair getColumn(const String & column_name) const override;
+    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    NameAndType getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
     bool isRemote() const override { return true; }
@@ -94,7 +94,7 @@ public:
 
 
     String name;
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
     String remote_database;
     String remote_table;
 
@@ -130,7 +130,7 @@ public:
 protected:
     StorageDistributed(
         const std::string & name_,
-        const NamesAndTypesList & columns_,
+        const NamesAndTypes & columns_,
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
@@ -140,9 +140,9 @@ protected:
 
     StorageDistributed(
         const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
+        const NamesAndTypes & columns_,
+        const NamesAndTypes & materialized_columns_,
+        const NamesAndTypes & alias_columns_,
         const ColumnDefaults & column_defaults_,
         const String & remote_database_,
         const String & remote_table_,
