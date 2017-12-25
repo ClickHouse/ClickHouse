@@ -34,7 +34,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -255,7 +255,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         }
     }
 
-    return {*DataTypeNested::expandNestedColumns(columns), defaults};
+    return {*Nested::flatten(columns), defaults};
 }
 
 

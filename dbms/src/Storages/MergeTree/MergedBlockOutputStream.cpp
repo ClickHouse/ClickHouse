@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>

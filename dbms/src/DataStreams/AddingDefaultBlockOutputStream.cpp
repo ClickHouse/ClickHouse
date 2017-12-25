@@ -1,7 +1,7 @@
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Core/Block.h>
@@ -36,7 +36,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
 
             if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*elem.column))
             {
-                String offsets_name = DataTypeNested::extractNestedTableName(elem.name);
+                String offsets_name = Nested::extractTableName(elem.name);
                 auto & offsets_column = offset_columns[offsets_name];
 
                 /// If for some reason there are different offset columns for one nested structure, then we take nonempty.
@@ -54,7 +54,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
             column_to_add.name = requested_column.name;
             column_to_add.type = requested_column.type;
 
-            String offsets_name = DataTypeNested::extractNestedTableName(column_to_add.name);
+            String offsets_name = Nested::extractTableName(column_to_add.name);
             if (offset_columns.count(offsets_name))
             {
                 ColumnPtr offsets_column = offset_columns[offsets_name];

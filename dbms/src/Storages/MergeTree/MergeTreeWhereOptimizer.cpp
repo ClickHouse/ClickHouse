@@ -10,7 +10,7 @@
 #include <Parsers/formatAST.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <ext/scope_guard.h>
 #include <ext/map.h>
 #include <memory>
@@ -384,7 +384,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (identifier_ptr->kind == ASTIdentifier::Column)
             if (array_joined_names.count(identifier_ptr->name) ||
-                array_joined_names.count(DataTypeNested::extractNestedTableName(identifier_ptr->name)))
+                array_joined_names.count(Nested::extractTableName(identifier_ptr->name)))
                 return true;
     }
 

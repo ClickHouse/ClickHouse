@@ -18,7 +18,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
@@ -681,7 +681,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         {
             const String & column_name = it_name_and_type->name;
             const DataTypePtr & column_type = it_name_and_type->type;
-            const String offset_column_name = DataTypeNested::extractNestedTableName(column_name);
+            const String offset_column_name = Nested::extractTableName(column_name);
             Names column_name_{column_name};
             Float64 progress_before = merge_entry->progress;
             bool offset_written = offset_columns_written.count(offset_column_name);

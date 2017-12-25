@@ -18,7 +18,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -197,7 +197,7 @@ Block TinyLogBlockInputStream::readImpl()
         /// For nested structures, remember pointers to columns with offsets
         if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
         {
-            String nested_name = DataTypeNested::extractNestedTableName(name);
+            String nested_name = Nested::extractTableName(name);
 
             if (offset_columns.count(nested_name) == 0)
                 offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
