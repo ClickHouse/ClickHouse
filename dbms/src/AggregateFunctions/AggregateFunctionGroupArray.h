@@ -374,7 +374,7 @@ public:
 
         auto & column_data = column_array.getData();
 
-        if (std::is_same<Node, GroupArrayListNodeString>::value)
+        if (std::is_same_v<Node, GroupArrayListNodeString>)
         {
             auto & string_offsets = static_cast<ColumnString &>(column_data).getOffsets();
             string_offsets.reserve(string_offsets.size() + data(place).elems);

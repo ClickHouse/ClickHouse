@@ -149,7 +149,7 @@ public:
 
     bool hasTrivialDestructor() const override
     {
-        return std::is_trivially_destructible<Data>::value;
+        return std::is_trivially_destructible_v<Data>;
     }
 
     size_t sizeOfData() const override

@@ -53,8 +53,8 @@ public:
     using Match = OptimizedRegularExpressionDetails::Match;
     using MatchVec = std::vector<Match>;
 
-    using RegexType = typename std::conditional<thread_safe, re2::RE2, re2_st::RE2>::type;
-    using StringPieceType = typename std::conditional<thread_safe, re2::StringPiece, re2_st::StringPiece>::type;
+    using RegexType = std::conditional_t<thread_safe, re2::RE2, re2_st::RE2>;
+    using StringPieceType = std::conditional_t<thread_safe, re2::StringPiece, re2_st::StringPiece>;
 
     OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0);
 

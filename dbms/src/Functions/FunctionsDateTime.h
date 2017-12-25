@@ -662,7 +662,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// For DateTime, if time zone is specified, attach it to type.
-        if (std::is_same<ToDataType, DataTypeDateTime>::value)
+        if (std::is_same_v<ToDataType, DataTypeDateTime>)
             out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         else
             out_return_type = std::make_shared<ToDataType>();
@@ -695,7 +695,7 @@ public:
         IFunction::Monotonicity is_monotonic { true };
         IFunction::Monotonicity is_not_monotonic;
 
-        if (std::is_same<typename Transform::FactorTransform, ZeroTransform>::value)
+        if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
         {
             is_monotonic.is_always_monotonic = true;
             return is_monotonic;
@@ -978,14 +978,14 @@ public:
 
         if (checkDataType<DataTypeDate>(arguments[0].type.get()))
         {
-            if (std::is_same<decltype(Transform::execute(DataTypeDate::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>::value)
+            if (std::is_same_v<decltype(Transform::execute(DataTypeDate::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>)
                 out_return_type = std::make_shared<DataTypeDate>();
             else
                 out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
         else
         {
-            if (std::is_same<decltype(Transform::execute(DataTypeDateTime::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>::value)
+            if (std::is_same_v<decltype(Transform::execute(DataTypeDateTime::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>)
                 out_return_type = std::make_shared<DataTypeDate>();
             else
                 out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));

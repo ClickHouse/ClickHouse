@@ -173,7 +173,7 @@ private:
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnArray * col_left_array)
     {
-        if constexpr (std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value)
+        if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
         else
         {
@@ -233,7 +233,7 @@ private:
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnConst * col_left_const_array)
     {
-        if constexpr (std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value)
+        if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
         else
         {
