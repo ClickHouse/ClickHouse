@@ -15,8 +15,11 @@ namespace Nested
     /// Returns the name suffix after the first dot on the right '.'. Or the name is unchanged if there is no dot.
     std::string extractElementName(const std::string & nested_name);
 
-    /// Creates a new list in which Nested-type columns are replaced by several columns form of `column_name.cell_name`
-    NamesAndTypesListPtr flatten(const NamesAndTypesList & names_and_types);
+    /// Replace Array(Tuple(...)) columns to a multiple of Array columns in a form of `column_name.element_name`.
+    NamesAndTypesList flatten(const NamesAndTypesList & names_and_types);
+
+    /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
+    NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 };
 
 }

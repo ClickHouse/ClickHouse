@@ -274,7 +274,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & full_path_, NamesAndTypesListPtr columns_,
+                  const String & full_path_, const NamesAndTypesList & columns_,
                   const NamesAndTypesList & materialized_columns_,
                   const NamesAndTypesList & alias_columns_,
                   const ColumnDefaults & column_defaults_,
@@ -305,7 +305,7 @@ public:
 
     Int64 getMaxDataPartIndex();
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -429,7 +429,7 @@ public:
         bool skip_sanity_checks);
 
     /// Must be called with locked lockStructureForAlter().
-    void setColumnsList(const NamesAndTypesList & new_columns) { columns = std::make_shared<NamesAndTypesList>(new_columns); }
+    void setColumnsList(const NamesAndTypesList & new_columns) { columns = new_columns; }
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name)
@@ -548,7 +548,7 @@ private:
     String table_name;
     String full_path;
 
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizes column_sizes;

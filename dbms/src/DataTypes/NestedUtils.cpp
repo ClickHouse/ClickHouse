@@ -47,12 +47,13 @@ std::string extractElementName(const std::string & nested_name)
 }
 
 
-NamesAndTypesListPtr flatten(const NamesAndTypesList & names_and_types)
+NamesAndTypesList flatten(const NamesAndTypesList & names_and_types)
 {
-    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
-    for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
+    NamesAndTypesList res;
+
+    for (const auto & name_type : names_and_types)
     {
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(it->type.get()))
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
         {
             if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get()))
             {
@@ -62,17 +63,23 @@ NamesAndTypesListPtr flatten(const NamesAndTypesList & names_and_types)
 
                 for (size_t i = 0; i < tuple_size; ++i)
                 {
-                    String nested_name = concatenateName(it->name, names[i]);
-                    columns->push_back(NameAndTypePair(nested_name, std::make_shared<DataTypeArray>(elements[i])));
+                    String nested_name = concatenateName(name_type.name, names[i]);
+                    res.emplace_back(nested_name, std::make_shared<DataTypeArray>(elements[i]));
                 }
             }
             else
-                columns->push_back(*it);
+                res.push_back(name_type);
         }
         else
-            columns->push_back(*it);
+            res.push_back(name_type);
     }
-    return columns;
+
+    return res;
+}
+
+NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
+{
+    return names_and_types; // TODO
 }
 
 }

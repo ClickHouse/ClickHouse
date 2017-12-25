@@ -78,7 +78,7 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
-    const String & full_path_, NamesAndTypesListPtr columns_,
+    const String & full_path_, const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -107,7 +107,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_name(data_parts_indexes.get<TagByName>()),
     data_parts_by_state_and_name(data_parts_indexes.get<TagByStateAndName>())
 {
-    merging_params.check(*columns);
+    merging_params.check(columns);
 
     if (primary_expr_ast && merging_params.mode == MergingParams::Unsorted)
         throw Exception("Primary key cannot be set for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
@@ -769,7 +769,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    auto new_columns = *columns;
+    auto new_columns = columns;
     auto new_materialized_columns = materialized_columns;
     auto new_alias_columns = alias_columns;
     auto new_column_defaults = column_defaults;
@@ -807,10 +807,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
-    for (const auto & column : *columns)
-    {
+    for (const auto & column : columns)
         old_types.emplace(column.name, column.type.get());
-    }
 
     for (const AlterCommand & command : commands)
     {
@@ -1804,7 +1802,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : *columns)
+    for (const auto & column : columns)
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";

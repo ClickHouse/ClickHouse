@@ -59,7 +59,7 @@ StorageMaterializedView::StorageMaterializedView(
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,

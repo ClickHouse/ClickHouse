@@ -80,7 +80,7 @@ void AlterCommand::apply(
             column_defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
 
         /// Slow, because each time a list is copied
-        columns = *Nested::flatten(columns);
+        columns = Nested::flatten(columns);
     }
     else if (type == DROP_COLUMN)
     {
