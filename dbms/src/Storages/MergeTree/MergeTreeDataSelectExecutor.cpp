@@ -174,9 +174,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         }
     }
 
-    NamesAndTypesList available_real_columns = data.getColumnsList();
+    NamesAndTypes available_real_columns = data.getColumnsList();
 
-    NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
+    NamesAndTypes available_real_and_virtual_columns = available_real_columns;
     for (const auto & name : virt_column_names)
         available_real_and_virtual_columns.emplace_back(data.getColumn(name));
 

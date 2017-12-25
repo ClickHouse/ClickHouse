@@ -31,7 +31,7 @@ public:
         return table_name;
     }
 
-    const NamesAndTypesList & getColumnsListImpl() const override
+    const NamesAndTypes & getColumnsListImpl() const override
     {
         return columns;
     }
@@ -67,9 +67,9 @@ protected:
         const std::string & db_dir_path,
         const std::string & table_name_,
         const std::string & format_name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
+        const NamesAndTypes & columns_,
+        const NamesAndTypes & materialized_columns_,
+        const NamesAndTypes & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_);
 
@@ -77,7 +77,7 @@ private:
 
     std::string table_name;
     std::string format_name;
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
     Context & context_global;
 
     std::string path;

@@ -27,7 +27,7 @@ using namespace DB;
 int main(int argc, char ** argv)
 try
 {
-    NamesAndTypesList names_and_types_list
+    NamesAndTypes names_and_types_list
     {
         {"WatchID", std::make_shared<DataTypeUInt64>()},
         {"JavaEnable", std::make_shared<DataTypeUInt8>()},
@@ -99,7 +99,7 @@ try
     /// create a hit log table
 
     StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+        NamesAndTypes{}, NamesAndTypes{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
     table->startup();
 
     /// create a description of how to read data from the tab separated dump

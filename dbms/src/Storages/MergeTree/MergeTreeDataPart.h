@@ -248,7 +248,7 @@ struct MergeTreeDataPart
     Checksums checksums;
 
     /// Columns description.
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
 
     using ColumnToSize = std::map<std::string, size_t>;
 

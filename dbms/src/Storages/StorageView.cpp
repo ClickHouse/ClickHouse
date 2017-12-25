@@ -20,9 +20,9 @@ StorageView::StorageView(
     const String & table_name_,
     const String & database_name_,
     const ASTCreateQuery & query,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
     database_name(database_name_), columns(columns_)

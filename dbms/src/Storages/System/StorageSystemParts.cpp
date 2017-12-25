@@ -244,7 +244,7 @@ BlockInputStreams StorageSystemParts::read(
             res_columns[i++]->insert(static_cast<UInt64>(part->marks_count));
 
             size_t marks_size = 0;
-            for (const NameAndTypePair & it : part->columns)
+            for (const NameAndType & it : part->columns)
             {
                 String name = escapeForFileName(it.name);
                 auto checksum = part->checksums.files.find(name + ".mrk");
@@ -285,10 +285,10 @@ BlockInputStreams StorageSystemParts::read(
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
 }
 
-NameAndTypePair StorageSystemParts::getColumn(const String & column_name) const
+NameAndType StorageSystemParts::getColumn(const String & column_name) const
 {
     if (column_name == "_state")
-        return NameAndTypePair("_state", std::make_shared<DataTypeString>());
+        return NameAndType("_state", std::make_shared<DataTypeString>());
 
     return ITableDeclaration::getColumn(column_name);
 }

@@ -1,5 +1,10 @@
 #pragma once
 
+#include <set>
+#include <map>
+#include <unordered_map>
+#include <memory>
+
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
@@ -70,7 +75,7 @@ public:
         const ASTPtr & ast_,
         const Context & context_,
         const StoragePtr & storage_,
-        const NamesAndTypesList & columns_,
+        const NamesAndTypes & columns_,
         size_t subquery_depth_ = 0,
         bool do_global_ = false);
 
@@ -154,16 +159,16 @@ private:
     /** Original columns.
       * First, all available columns of the table are placed here. Then (when parsing the query), unused columns are deleted.
       */
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
 
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
-    NamesAndTypesList aggregated_columns;
+    NamesAndTypes aggregated_columns;
 
     /// The table from which the query is made.
     const StoragePtr storage;
 
     bool has_aggregation = false;
-    NamesAndTypesList aggregation_keys;
+    NamesAndTypes aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
 
     SubqueriesForSets subqueries_for_sets;
@@ -182,7 +187,7 @@ private:
     Names join_key_names_left;
     Names join_key_names_right;
 
-    NamesAndTypesList columns_added_by_join;
+    NamesAndTypes columns_added_by_join;
 
     using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
@@ -211,8 +216,8 @@ private:
 
     void init();
 
-    static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
-    NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
+    static NamesAndTypes::iterator findColumn(const String & name, NamesAndTypes & cols);
+    NamesAndTypes::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_columns`),
@@ -222,7 +227,7 @@ private:
 
     /** Find the columns that are obtained by JOIN.
       */
-    void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
+    void collectJoinedColumns(NameSet & joined_columns, NamesAndTypes & joined_columns_name_type);
 
     /** Create a dictionary of aliases.
       */
@@ -303,7 +308,7 @@ private:
     StoragePtr getTable();
 
     /// columns - the columns that are present before the transformations begin.
-    void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
+    void initChain(ExpressionActionsChain & chain, const NamesAndTypes & columns) const;
 
     void assertSelect() const;
     void assertAggregation() const;

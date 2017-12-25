@@ -12,7 +12,7 @@ namespace DB
 {
 
 void evaluateMissingDefaults(Block & block,
-    const NamesAndTypesList & required_columns,
+    const NamesAndTypes & required_columns,
     const ColumnDefaults & column_defaults,
     const Context & context)
 {
@@ -43,7 +43,7 @@ void evaluateMissingDefaults(Block & block,
     Block copy_block{block};
     /// evaluate default values for defaulted columns
 
-    NamesAndTypesList available_columns;
+    NamesAndTypes available_columns;
     for (size_t i = 0, size = block.columns(); i < size; ++i)
         available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
 

@@ -741,7 +741,7 @@ public:
 
             /// Let's add to the block all the columns mentioned in the expression, multiplied into an array parallel to the one being processed.
             const ExpressionActions & expression = *column_expression->getExpression();
-            const NamesAndTypesList & required_columns = expression.getRequiredColumnsWithTypes();
+            const NamesAndTypes & required_columns = expression.getRequiredColumnsWithTypes();
 
             Names argument_name_vector = column_expression->getArgumentNames();
             NameSet argument_names(argument_name_vector.begin(), argument_name_vector.end());
