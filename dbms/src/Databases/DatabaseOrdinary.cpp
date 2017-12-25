@@ -445,9 +445,9 @@ void DatabaseOrdinary::drop()
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & name,
-    const NamesAndTypes & columns,
-    const NamesAndTypes & materialized_columns,
-    const NamesAndTypes & alias_columns,
+    const NamesAndTypesList & columns,
+    const NamesAndTypesList & materialized_columns,
+    const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
     const ASTModifier & storage_modifier)
 {

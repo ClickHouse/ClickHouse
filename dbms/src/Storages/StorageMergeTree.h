@@ -35,9 +35,9 @@ public:
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
 
-    const NamesAndTypes & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
+    const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
 
-    NameAndType getColumn(const String & column_name) const override
+    NameAndTypePair getColumn(const String & column_name) const override
     {
         return data.getColumn(column_name);
     }
@@ -131,9 +131,9 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        const NamesAndTypes & columns_,
-        const NamesAndTypes & materialized_columns_,
-        const NamesAndTypes & alias_columns_,
+        const NamesAndTypesList & columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         bool attach,
         Context & context_,

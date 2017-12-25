@@ -58,7 +58,7 @@ try
 
     Context context = Context::createGlobal();
 
-    ExpressionAnalyzer analyzer(ast, context, {}, {NameAndType("number", std::make_shared<DataTypeUInt64>())});
+    ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", std::make_shared<DataTypeUInt64>())});
     ExpressionActionsChain chain;
     analyzer.appendSelect(chain, false);
     analyzer.appendProjectResult(chain);

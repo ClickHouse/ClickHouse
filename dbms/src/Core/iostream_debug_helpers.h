@@ -13,8 +13,8 @@ std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 class Field;
 std::ostream & operator<<(std::ostream & stream, const Field & what);
 
-struct NameAndType;
-std::ostream & operator<<(std::ostream & stream, const NameAndType & what);
+struct NameAndTypePair;
+std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what);
 
 class IDataType;
 std::ostream & operator<<(std::ostream & stream, const IDataType & what);

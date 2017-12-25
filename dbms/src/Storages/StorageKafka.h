@@ -32,7 +32,7 @@ public:
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const { return database_name; }
 
-    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     void startup() override;
     void shutdown() override;
@@ -73,7 +73,7 @@ private:
     String table_name;
     String database_name;
     Context & context;
-    NamesAndTypes columns;
+    NamesAndTypesList columns;
     Names topics;
     const String brokers;
     const String group;
@@ -105,9 +105,9 @@ protected:
         const std::string & table_name_,
         const std::string & database_name_,
         Context & context_,
-        const NamesAndTypes & columns_,
-        const NamesAndTypes & materialized_columns_,
-        const NamesAndTypes & alias_columns_,
+        const NamesAndTypesList & columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, const String & schema_name_, size_t num_consumers_);

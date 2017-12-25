@@ -232,8 +232,8 @@ void StorageCatBoostPool::parseColumnDescription()
 void StorageCatBoostPool::createSampleBlockAndColumns()
 {
     columns.clear();
-    NamesAndTypes cat_columns;
-    NamesAndTypes num_columns;
+    NamesAndTypesList cat_columns;
+    NamesAndTypesList num_columns;
     sample_block.clear();
     for (auto & desc : columns_description)
     {

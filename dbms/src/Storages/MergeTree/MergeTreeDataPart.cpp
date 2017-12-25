@@ -722,7 +722,7 @@ void MergeTreeDataPart::loadRowsCount()
     {
         size_t rows_approx = storage.index_granularity * marks_count;
 
-        for (const NameAndType & column : columns)
+        for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
             const auto checksum = tryGetBinChecksum(column.name);
@@ -758,7 +758,7 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 {
     std::shared_lock<std::shared_mutex> part_lock(columns_lock);
 
-    for (const NameAndType & name_type : storage.columns)
+    for (const NameAndTypePair & name_type : storage.columns)
     {
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {
@@ -778,7 +778,7 @@ void MergeTreeDataPart::loadColumns(bool require)
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
-        for (const NameAndType & column : storage.getColumnsList())
+        for (const NameAndTypePair & column : storage.getColumnsList())
             if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
                 columns.push_back(column);
 
@@ -809,7 +809,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
         if (require_part_metadata)
         {
-            for (const NameAndType & name_type : columns)
+            for (const NameAndTypePair & name_type : columns)
             {
                 name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
@@ -871,7 +871,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         /// Check that all marks are nonempty and have the same size.
 
         std::optional<size_t> marks_size;
-        for (const NameAndType & name_type : columns)
+        for (const NameAndTypePair & name_type : columns)
         {
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
             {

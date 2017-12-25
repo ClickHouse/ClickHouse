@@ -32,7 +32,7 @@ using namespace DB;
 int main(int argc, char ** argv)
 try
 {
-    NamesAndTypes names_and_types_list
+    NamesAndTypesList names_and_types_list
     {
         {"WatchID", std::make_shared<DataTypeUInt64>()},
         {"JavaEnable", std::make_shared<DataTypeUInt8>()},
@@ -108,7 +108,7 @@ try
     /// create an object of an existing hit log table
 
     StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-        NamesAndTypes{}, NamesAndTypes{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
     table->startup();
 
     /// read from it, sort it, and write it in tsv form to the console

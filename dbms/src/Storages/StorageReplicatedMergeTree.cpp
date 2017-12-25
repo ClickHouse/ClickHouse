@@ -165,9 +165,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & replica_name_,
     bool attach,
     const String & path_, const String & database_name_, const String & name_,
-    const NamesAndTypes & columns_,
-    const NamesAndTypes & materialized_columns_,
-    const NamesAndTypes & alias_columns_,
+    const NamesAndTypesList & columns_,
+    const NamesAndTypesList & materialized_columns_,
+    const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
@@ -2411,9 +2411,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
                 throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
 
-        NamesAndTypes new_columns = data.getColumnsListNonMaterialized();
-        NamesAndTypes new_materialized_columns = data.materialized_columns;
-        NamesAndTypes new_alias_columns = data.alias_columns;
+        NamesAndTypesList new_columns = data.getColumnsListNonMaterialized();
+        NamesAndTypesList new_materialized_columns = data.materialized_columns;
+        NamesAndTypesList new_alias_columns = data.alias_columns;
         ColumnDefaults new_column_defaults = data.column_defaults;
         params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 

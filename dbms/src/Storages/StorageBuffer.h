@@ -53,7 +53,7 @@ public:
     std::string getName() const override { return "Buffer"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -82,7 +82,7 @@ public:
 
 private:
     String name;
-    NamesAndTypes columns;
+    NamesAndTypesList columns;
 
     Context & context;
 
@@ -125,9 +125,9 @@ protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)
       * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
       */
-    StorageBuffer(const std::string & name_, const NamesAndTypes & columns_,
-        const NamesAndTypes & materialized_columns_,
-        const NamesAndTypes & alias_columns_,
+    StorageBuffer(const std::string & name_, const NamesAndTypesList & columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,

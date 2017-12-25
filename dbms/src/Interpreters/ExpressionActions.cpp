@@ -133,7 +133,7 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypes & columns_added_by_join_)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_)
 {
     ExpressionAction a;
     a.type = JOIN;
@@ -521,7 +521,7 @@ std::string ExpressionAction::toString() const
 
         case JOIN:
             ss << "JOIN ";
-            for (NamesAndTypes::const_iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
+            for (NamesAndTypesList::const_iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
             {
                 if (it != columns_added_by_join.begin())
                     ss << ", ";
@@ -583,7 +583,7 @@ void ExpressionActions::addInput(const ColumnWithTypeAndName & column)
     sample_block.insert(column);
 }
 
-void ExpressionActions::addInput(const NameAndType & column)
+void ExpressionActions::addInput(const NameAndTypePair & column)
 {
     addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 }
@@ -717,7 +717,7 @@ void ExpressionActions::executeOnTotals(Block & block) const
         action.executeOnTotals(block);
 }
 
-std::string ExpressionActions::getSmallestColumn(const NamesAndTypes & columns)
+std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
     std::optional<size_t> min_size;
     String res;
@@ -758,8 +758,8 @@ void ExpressionActions::finalize(const Names & output_columns)
     NameSet unmodified_columns;
 
     {
-        NamesAndTypes sample_columns = sample_block.getNamesAndTypes();
-        for (NamesAndTypes::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
+        NamesAndTypesList sample_columns = sample_block.getNamesAndTypesList();
+        for (NamesAndTypesList::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
             unmodified_columns.insert(it->name);
     }
 
@@ -856,9 +856,9 @@ void ExpressionActions::finalize(const Names & output_columns)
     if (final_columns.empty())
         final_columns.insert(getSmallestColumn(input_columns));
 
-    for (NamesAndTypes::iterator it = input_columns.begin(); it != input_columns.end();)
+    for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
     {
-        NamesAndTypes::iterator it0 = it;
+        NamesAndTypesList::iterator it0 = it;
         ++it;
         if (!needed_columns.count(it0->name))
         {
@@ -965,8 +965,8 @@ std::string ExpressionActions::getID() const
     }
 
     ss << ": {";
-    NamesAndTypes output_columns = sample_block.getNamesAndTypes();
-    for (NamesAndTypes::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
+    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
+    for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
     {
         if (it != output_columns.begin())
             ss << ", ";
@@ -982,7 +982,7 @@ std::string ExpressionActions::dumpActions() const
     std::stringstream ss;
 
     ss << "input:\n";
-    for (NamesAndTypes::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+    for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
         ss << it->name << " " << it->type->getName() << "\n";
 
     ss << "\nactions:\n";
@@ -990,8 +990,8 @@ std::string ExpressionActions::dumpActions() const
         ss << actions[i].toString() << '\n';
 
     ss << "\noutput:\n";
-    NamesAndTypes output_columns = sample_block.getNamesAndTypes();
-    for (NamesAndTypes::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
+    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
+    for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
         ss << it->name << " " << it->type->getName() << "\n";
 
     return ss.str();

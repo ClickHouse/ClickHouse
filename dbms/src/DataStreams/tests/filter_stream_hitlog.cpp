@@ -33,7 +33,7 @@ int main(int, char **)
 
     try
     {
-        NamesAndTypes names_and_types_list
+        NamesAndTypesList names_and_types_list
         {
             {"WatchID", std::make_shared<DataTypeUInt64>()},
             {"JavaEnable", std::make_shared<DataTypeUInt8>()},
@@ -106,7 +106,7 @@ int main(int, char **)
         /// create an object of an existing hit log table
 
         StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-            NamesAndTypes{}, NamesAndTypes{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+            NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
         table->startup();
 
         /// read from it, apply the expression, filter, and write in tsv form to the console

@@ -625,8 +625,8 @@ bool TCPHandler::receiveData()
             /// If such a table does not exist, create it.
             if (!(storage = query_context.tryGetExternalTable(external_table_name)))
             {
-                NamesAndTypes columns = block.getNamesAndTypes();
-                storage = StorageMemory::create(external_table_name, columns, NamesAndTypes{}, NamesAndTypes{}, ColumnDefaults{});
+                NamesAndTypesList columns = block.getNamesAndTypesList();
+                storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }

@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-void NamesAndTypes::readText(ReadBuffer & buf)
+void NamesAndTypesList::readText(ReadBuffer & buf)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -27,7 +27,7 @@ void NamesAndTypes::readText(ReadBuffer & buf)
     DB::readText(count, buf);
     assertString(" columns:\n", buf);
     resize(count);
-    for (NameAndType & it : *this)
+    for (NameAndTypePair & it : *this)
     {
         readBackQuotedStringWithSQLStyle(it.name, buf);
         assertChar(' ', buf);
@@ -38,7 +38,7 @@ void NamesAndTypes::readText(ReadBuffer & buf)
     }
 }
 
-void NamesAndTypes::writeText(WriteBuffer & buf) const
+void NamesAndTypesList::writeText(WriteBuffer & buf) const
 {
     writeString("columns format version: 1\n", buf);
     DB::writeText(size(), buf);
@@ -52,23 +52,23 @@ void NamesAndTypes::writeText(WriteBuffer & buf) const
     }
 }
 
-String NamesAndTypes::toString() const
+String NamesAndTypesList::toString() const
 {
     WriteBufferFromOwnString out;
     writeText(out);
     return out.str();
 }
 
-NamesAndTypes NamesAndTypes::parse(const String & s)
+NamesAndTypesList NamesAndTypesList::parse(const String & s)
 {
     ReadBufferFromString in(s);
-    NamesAndTypes res;
+    NamesAndTypesList res;
     res.readText(in);
     assertEOF(in);
     return res;
 }
 
-bool NamesAndTypes::isSubsetOf(const NamesAndTypes & rhs) const
+bool NamesAndTypesList::isSubsetOf(const NamesAndTypesList & rhs) const
 {
     NamesAndTypes vector(rhs.begin(), rhs.end());
     vector.insert(vector.end(), begin(), end());
@@ -76,7 +76,7 @@ bool NamesAndTypes::isSubsetOf(const NamesAndTypes & rhs) const
     return std::unique(vector.begin(), vector.end()) == vector.begin() + rhs.size();
 }
 
-size_t NamesAndTypes::sizeOfDifference(const NamesAndTypes & rhs) const
+size_t NamesAndTypesList::sizeOfDifference(const NamesAndTypesList & rhs) const
 {
     NamesAndTypes vector(rhs.begin(), rhs.end());
     vector.insert(vector.end(), begin(), end());
@@ -84,39 +84,43 @@ size_t NamesAndTypes::sizeOfDifference(const NamesAndTypes & rhs) const
     return (std::unique(vector.begin(), vector.end()) - vector.begin()) * 2 - size() - rhs.size();
 }
 
-Names NamesAndTypes::getNames() const
+Names NamesAndTypesList::getNames() const
 {
     Names res;
     res.reserve(size());
-    for (const NameAndType & column : *this)
+    for (const NameAndTypePair & column : *this)
+    {
         res.push_back(column.name);
+    }
     return res;
 }
 
-NamesAndTypes NamesAndTypes::filter(const NameSet & names) const
+NamesAndTypesList NamesAndTypesList::filter(const NameSet & names) const
 {
-    NamesAndTypes res;
-    for (const NameAndType & column : *this)
+    NamesAndTypesList res;
+    for (const NameAndTypePair & column : *this)
+    {
         if (names.count(column.name))
             res.push_back(column);
+    }
     return res;
 }
 
-NamesAndTypes NamesAndTypes::filter(const Names & names) const
+NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 {
     return filter(NameSet(names.begin(), names.end()));
 }
 
-NamesAndTypes NamesAndTypes::addTypes(const Names & names) const
+NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE It's better to make a map in `IStorage` than to create it here every time again.
     google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
     types.set_empty_key(StringRef());
 
-    for (const NameAndType & column : *this)
+    for (const NameAndTypePair & column : *this)
         types[column.name] = &column.type;
 
-    NamesAndTypes res;
+    NamesAndTypesList res;
     for (const String & name : names)
     {
         auto it = types.find(name);

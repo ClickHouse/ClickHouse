@@ -94,8 +94,8 @@ private:
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
     std::vector<NameSet> per_part_column_name_set;
-    std::vector<NamesAndTypes> per_part_columns;
-    std::vector<NamesAndTypes> per_part_pre_columns;
+    std::vector<NamesAndTypesList> per_part_columns;
+    std::vector<NamesAndTypesList> per_part_pre_columns;
     /// @todo actually all of these values are either true or false for the whole query, thus no vector required
     std::vector<char> per_part_remove_prewhere_column;
     std::vector<char> per_part_should_reorder;

@@ -139,9 +139,9 @@ void DatabaseDictionary::renameTable(
 void DatabaseDictionary::alterTable(
     const Context &,
     const String &,
-    const NamesAndTypes &,
-    const NamesAndTypes &,
-    const NamesAndTypes &,
+    const NamesAndTypesList &,
+    const NamesAndTypesList &,
+    const NamesAndTypesList &,
     const ColumnDefaults &,
     const ASTModifier &)
 {
