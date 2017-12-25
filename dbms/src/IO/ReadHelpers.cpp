@@ -249,7 +249,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 template <typename Vector, typename ReturnType>
 static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     auto error = [](const char * message, int code)
     {
@@ -586,7 +586,7 @@ template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s
 template <typename Vector, typename ReturnType>
 ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     auto error = [](const char * message, int code)
     {

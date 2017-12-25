@@ -278,10 +278,10 @@ struct OneAdder
 {
     static void ALWAYS_INLINE add(Data & data, const IColumn & column, size_t row_num)
     {
-        if constexpr (std::is_same<Data, AggregateFunctionUniqUniquesHashSetData>::value
-            || std::is_same<Data, AggregateFunctionUniqHLL12Data<T>>::value)
+        if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>
+            || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<T>>)
         {
-            if constexpr (!std::is_same<T, String>::value)
+            if constexpr (!std::is_same_v<T, String>)
             {
                 const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
                 data.set.insert(AggregateFunctionUniqTraits<T>::hash(value));
@@ -292,12 +292,12 @@ struct OneAdder
                 data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
             }
         }
-        else if constexpr (std::is_same<Data, AggregateFunctionUniqCombinedRawData<T>>::value
-            || std::is_same<Data, AggregateFunctionUniqCombinedLinearCountingData<T>>::value
-            || std::is_same<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T>>::value
-            || std::is_same<Data, AggregateFunctionUniqCombinedData<T>>::value)
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqCombinedRawData<T>>
+            || std::is_same_v<Data, AggregateFunctionUniqCombinedLinearCountingData<T>>
+            || std::is_same_v<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T>>
+            || std::is_same_v<Data, AggregateFunctionUniqCombinedData<T>>)
         {
-            if constexpr (!std::is_same<T, String>::value)
+            if constexpr (!std::is_same_v<T, String>)
             {
                 const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
                 data.set.insert(AggregateFunctionUniqCombinedTraits<T>::hash(value));
@@ -308,9 +308,9 @@ struct OneAdder
                 data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
             }
         }
-        else if constexpr (std::is_same<Data, AggregateFunctionUniqExactData<T>>::value)
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T>>)
         {
-            if constexpr (!std::is_same<T, String>::value)
+            if constexpr (!std::is_same_v<T, String>)
             {
                 data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
             }
@@ -381,7 +381,7 @@ template <typename Data, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, argument_is_tuple>>
 {
 private:
-    static constexpr bool is_exact = std::is_same<Data, AggregateFunctionUniqExactData<String>>::value;
+    static constexpr bool is_exact = std::is_same_v<Data, AggregateFunctionUniqExactData<String>>;
 
     size_t num_args = 0;
 

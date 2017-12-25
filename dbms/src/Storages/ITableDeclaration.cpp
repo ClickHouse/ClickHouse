@@ -140,7 +140,7 @@ static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res) { return res
 template <typename Arg, typename... Args>
 static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res, const Arg & arg, const Args &... args)
 {
-    static_assert(std::is_same<Arg, NamesAndTypesList>::value, "getColumnsMap requires arguments of type NamesAndTypesList");
+    static_assert(std::is_same_v<Arg, NamesAndTypesList>, "getColumnsMap requires arguments of type NamesAndTypesList");
 
     for (const auto & column : arg)
         res.insert({column.name, column.type.get()});

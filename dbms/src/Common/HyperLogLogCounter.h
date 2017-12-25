@@ -98,7 +98,7 @@ template <typename HashValueType, typename DenominatorType, DenominatorMode deno
 struct IntermediateDenominator;
 
 template <typename DenominatorType, DenominatorMode denominator_mode>
-struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode, typename std::enable_if<denominator_mode != DenominatorMode::ExactType>::type>
+struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode, std::enable_if_t<denominator_mode != DenominatorMode::ExactType>>
 {
     using Type = double;
 };
@@ -122,7 +122,7 @@ template <UInt8 precision, int max_rank, typename HashValueType, typename Denomi
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
-    typename std::enable_if<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>::type>
+    std::enable_if_t<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>>
 {
 private:
     using T = typename IntermediateDenominator<HashValueType, DenominatorType, denominator_mode>::Type;
@@ -166,7 +166,7 @@ template <UInt8 precision, int max_rank, typename HashValueType, typename Denomi
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
-    typename std::enable_if<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>::type>
+    std::enable_if_t<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>>
 {
 public:
     Denominator(DenominatorType initial_value)
@@ -443,7 +443,7 @@ private:
             return applyBiasCorrection(raw_estimate);
         else if (mode == HyperLogLogMode::FullFeatured)
         {
-            static constexpr bool fix_big_cardinalities = std::is_same<HashValueType, UInt32>::value;
+            static constexpr bool fix_big_cardinalities = std::is_same_v<HashValueType, UInt32>;
             static constexpr double pow2_32 = 4294967296.0;
 
             double fixed_estimate;

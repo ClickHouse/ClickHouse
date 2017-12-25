@@ -1062,7 +1062,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 
         if (offset != 0)
         {
-            typename std::decay<Source>::type::Slice slice;
+            typename std::decay_t<Source>::Slice slice;
 
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
@@ -1103,7 +1103,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
 
         if (offset != 0 && size > 0)
         {
-            typename std::decay<Source>::type::Slice slice;
+            typename std::decay_t<Source>::Slice slice;
 
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1, size);

@@ -200,7 +200,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 
 
 template <typename FromDataType, typename Name>
-struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataType, DataTypeString>::value, DataTypeString>::type, Name>
+struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name>
 {
     using FromFieldType = typename FromDataType::FieldType;
 
@@ -212,7 +212,7 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
         const DateLUTImpl * time_zone = nullptr;
 
         /// For argument of DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same<FromDataType, DataTypeDateTime>::value)
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
@@ -224,9 +224,9 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
 
-            if constexpr (std::is_same<FromDataType, DataTypeDate>::value)
+            if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
                 data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
-            else if constexpr (std::is_same<FromDataType, DataTypeDateTime>::value)
+            else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
                 data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
             else
                 data_to.resize(size * 3);   /// Arbitary
@@ -319,9 +319,9 @@ template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, Rea
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
 {
-    if constexpr (std::is_integral<typename DataType::FieldType>::value)
+    if constexpr (std::is_integral_v<typename DataType::FieldType>)
         return tryReadIntText(x, rb);
-    else if constexpr (std::is_floating_point<typename DataType::FieldType>::value)
+    else if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
     /// NOTE Need to implement for Date and DateTime too.
 }
@@ -358,7 +358,7 @@ struct ConvertThroughParsing
             return true;
 
         /// Special case, that allows to parse string with DateTime as Date.
-        if (std::is_same<ToDataType, DataTypeDate>::value && (in.buffer().size()) == strlen("YYYY-MM-DD hh:mm:ss"))
+        if (std::is_same_v<ToDataType, DataTypeDate> && (in.buffer().size()) == strlen("YYYY-MM-DD hh:mm:ss"))
             return true;
 
         return false;
@@ -369,7 +369,7 @@ struct ConvertThroughParsing
         const DateLUTImpl * time_zone = nullptr;
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
-        if (std::is_same<ToDataType, DataTypeDateTime>::value)
+        if (std::is_same_v<ToDataType, DataTypeDateTime>)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         const IColumn * col_from = block.getByPosition(arguments[0]).column.get();
@@ -528,7 +528,7 @@ struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
 /** If types are identical, just take reference to column.
   */
 template <typename T, typename Name>
-struct ConvertImpl<typename std::enable_if<!T::is_parametric, T>::type, T, Name>
+struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
@@ -624,14 +624,14 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const Block &) override { return std::is_same<Name, NameToString>::value; }
+    bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }
 
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments,
         DataTypePtr & out_return_type,
         std::vector<ExpressionAction> &) override
     {
-        if constexpr (std::is_same<ToDataType, DataTypeInterval>::value)
+        if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
             out_return_type = std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
         }
@@ -648,10 +648,10 @@ public:
                     throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-                if (!(std::is_same<Name, NameToDateTime>::value
-                    || std::is_same<Name, NameToDate>::value
-                    || std::is_same<Name, NameToUnixTimestamp>::value
-                    || (std::is_same<Name, NameToString>::value
+                if (!(std::is_same_v<Name, NameToDateTime>
+                    || std::is_same_v<Name, NameToDate>
+                    || std::is_same_v<Name, NameToUnixTimestamp>
+                    || (std::is_same_v<Name, NameToString>
                         && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
                 {
                     throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -660,7 +660,7 @@ public:
                 }
             }
 
-            if (std::is_same<ToDataType, DataTypeDateTime>::value)
+            if (std::is_same_v<ToDataType, DataTypeDateTime>)
                 out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else
                 out_return_type = std::make_shared<ToDataType>();
@@ -743,7 +743,7 @@ private:
         else
         {
             /// Generic conversion of any type to String.
-            if (std::is_same<ToDataType, DataTypeString>::value)
+            if (std::is_same_v<ToDataType, DataTypeString>)
             {
                 ConvertImplGenericToString::execute(block, arguments, result);
             }

@@ -226,7 +226,7 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf)
 template <typename T, typename ReturnType = void>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
     x = 0;
@@ -245,7 +245,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '+':
                 break;
             case '-':
-                if (std::is_signed<T>::value)
+                if (std::is_signed_v<T>)
                     negative = true;
                 else
                 {
@@ -314,7 +314,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (unlikely(buf.eof()))
         return on_error();
 
-    if (std::is_signed<T>::value && *buf.position() == '-')
+    if (std::is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
@@ -340,7 +340,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             break;
     }
 
-    if (std::is_signed<T>::value && negative)
+    if (std::is_signed_v<T> && negative)
         x = -x;
 }
 
@@ -377,7 +377,7 @@ void assertNaN(ReadBuffer & buf);
 template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
     x = 0;
@@ -706,7 +706,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
@@ -718,11 +718,11 @@ inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, b
 
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value, void>::type
+inline std::enable_if_t<std::is_integral_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
-inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
@@ -741,7 +741,7 @@ inline void readText(UInt128 &, ReadBuffer &)
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
@@ -763,7 +763,7 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
@@ -818,7 +818,7 @@ inline void readDateTimeCSV(time_t & datetime, ReadBuffer & buf, const DateLUTIm
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
@@ -937,7 +937,7 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
             case '+':
                 break;
             case '-':
-                if (std::is_signed<T>::value)
+                if (std::is_signed_v<T>)
                     negative = true;
                 else
                     return pos;

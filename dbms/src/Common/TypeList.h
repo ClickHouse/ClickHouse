@@ -31,7 +31,7 @@ struct TypeList<THead, TTail...>
     static constexpr size_t size = 1 + sizeof...(TTail);
 
     template <size_t I>
-    using At = typename std::template conditional<I == 0, Head, typename Tail::template At<I - 1>>::type;
+    using At = typename std::template conditional_t<I == 0, Head, typename Tail::template At<I - 1>>;
 
     template <typename Func, size_t index = 0>
     static void ALWAYS_INLINE forEach(Func && func)
