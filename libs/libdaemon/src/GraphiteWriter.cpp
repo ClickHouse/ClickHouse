@@ -17,7 +17,8 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
 
     root_path = config.getString(config_name + ".root_path", "one_min");
 
-    if (config.getBool(config_name + ".hostname_in_path", true)) {
+    if (config.getBool(config_name + ".hostname_in_path", true))
+    {
         if (!root_path.empty())
             root_path += ".";
 
@@ -35,7 +36,6 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
             root_path += ".";
         root_path += sub_path;
     }
-    std::cerr << "RP=" << root_path << "\n";
 }
 
 
