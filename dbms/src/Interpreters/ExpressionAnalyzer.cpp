@@ -15,6 +15,7 @@
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeExpression.h>
 #include <DataTypes/DataTypeNested.h>
@@ -2838,7 +2839,9 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
             && !joined_columns.count(col.name)) /// Duplicate columns in the subquery for JOIN do not make sense.
         {
             joined_columns.insert(col.name);
-            joined_columns_name_type.emplace_back(col.name, col.type);
+
+            bool make_nullable = settings.join_use_nulls && (table_join.kind == ASTTableJoin::Kind::Left || table_join.kind == ASTTableJoin::Kind::Full);
+            joined_columns_name_type.emplace_back(col.name, make_nullable ? makeNullable(col.type) : col.type);
         }
     }
 }
