@@ -29,9 +29,9 @@ std::ostream & operator<<(std::ostream & stream, const Field & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const NameAndType & what)
+std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what)
 {
-    stream << "NameAndType(name = " << what.name << ", type = " << what.type << ")";
+    stream << "NameAndTypePair(name = " << what.name << ", type = " << what.type << ")";
     return stream;
 }
 

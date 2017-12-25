@@ -12,6 +12,13 @@ ColumnExpression::ColumnExpression(
     s = s_;
 }
 
+ColumnExpression::ColumnExpression(
+    size_t s_, const ExpressionActionsPtr & expression_, const NamesAndTypesList & arguments_, const DataTypePtr & return_type_, const String & return_name_)
+    : expression(expression_), arguments(arguments_.begin(), arguments_.end()), return_type(return_type_), return_name(return_name_)
+{
+    s = s_;
+}
+
 MutableColumnPtr ColumnExpression::cloneDummy(size_t s_) const
 {
     return ColumnExpression::create(s_, expression, arguments, return_type, return_name);

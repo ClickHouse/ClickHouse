@@ -328,7 +328,7 @@ void SystemLog<LogElement>::prepareTable()
         create->table = table_name;
 
         Block sample = LogElement::createBlock();
-        create->set(create->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypes()));
+        create->set(create->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
 
         ParserStorage storage_parser;
         ASTPtr storage_ast = parseQuery(

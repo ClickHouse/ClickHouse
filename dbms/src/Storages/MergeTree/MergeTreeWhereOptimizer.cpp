@@ -42,7 +42,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         : primary_key_columns{ext::map<std::unordered_set>(data.getSortDescription(),
             [] (const SortColumnDescription & col) { return col.column_name; })},
         table_columns{ext::map<std::unordered_set>(data.getColumnsList(),
-            [] (const NameAndType & col) { return col.name; })},
+            [] (const NameAndTypePair & col) { return col.name; })},
         block_with_constants{PKCondition::getBlockWithConstants(query_info.query, context, data.getColumnsList())},
         prepared_sets(query_info.sets),
         log{log}

@@ -18,15 +18,15 @@ StorageJoin::StorageJoin(
     const String & name_,
     const Names & key_names_,
     ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
-    const NamesAndTypes & columns_,
-    const NamesAndTypes & materialized_columns_,
-    const NamesAndTypes & alias_columns_,
+    const NamesAndTypesList & columns_,
+    const NamesAndTypesList & materialized_columns_,
+    const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
     key_names(key_names_), kind(kind_), strictness(strictness_)
 {
     /// Check that key exists in table definition.
-    const auto check_key_exists = [] (const NamesAndTypes & columns, const String & key)
+    const auto check_key_exists = [] (const NamesAndTypesList & columns, const String & key)
     {
         for (const auto & column : columns)
             if (column.name == key)

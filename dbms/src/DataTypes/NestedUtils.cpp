@@ -1,5 +1,4 @@
 #include <string.h>
-#include <unordered_map>
 
 #include <Common/typeid_cast.h>
 
@@ -48,9 +47,9 @@ std::string extractElementName(const std::string & nested_name)
 }
 
 
-NamesAndTypes flatten(const NamesAndTypes & names_and_types)
+NamesAndTypesList flatten(const NamesAndTypesList & names_and_types)
 {
-    NamesAndTypes res;
+    NamesAndTypesList res;
 
     for (const auto & name_type : names_and_types)
     {
@@ -78,7 +77,7 @@ NamesAndTypes flatten(const NamesAndTypes & names_and_types)
     return res;
 }
 
-NamesAndTypes collect(const NamesAndTypes & names_and_types)
+NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 {
     return names_and_types; // TODO
 }

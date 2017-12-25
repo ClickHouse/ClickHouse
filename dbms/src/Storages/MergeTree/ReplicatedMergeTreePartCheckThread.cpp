@@ -241,7 +241,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                     zookeeper->get(storage.replica_path + "/parts/" + part_name + "/checksums"));
                 zk_checksums.checkEqual(part->checksums, true);
 
-                auto zk_columns = NamesAndTypes::parse(
+                auto zk_columns = NamesAndTypesList::parse(
                     zookeeper->get(storage.replica_path + "/parts/" + part_name + "/columns"));
                 if (part->columns != zk_columns)
                     throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");

@@ -64,7 +64,7 @@ public:
         const ASTPtr & query_ptr_,
         const Context & context_,
         const Names & required_column_names,
-        const NamesAndTypes & table_column_names_,
+        const NamesAndTypesList & table_column_names_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
         BlockInputStreamPtr input = nullptr);
@@ -176,7 +176,7 @@ private:
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
-    NamesAndTypes table_column_names;
+    NamesAndTypesList table_column_names;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;

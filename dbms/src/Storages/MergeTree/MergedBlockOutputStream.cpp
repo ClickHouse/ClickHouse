@@ -215,7 +215,7 @@ void IMergedBlockOutputStream::ColumnStream::addToChecksums(MergeTreeData::DataP
 MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
-    const NamesAndTypes & columns_list_,
+    const NamesAndTypesList & columns_list_,
     CompressionSettings compression_settings)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
@@ -231,7 +231,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
-    const NamesAndTypes & columns_list_,
+    const NamesAndTypesList & columns_list_,
     CompressionSettings compression_settings,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
     size_t aio_threshold_)
@@ -281,7 +281,7 @@ void MergedBlockOutputStream::writeSuffix()
 
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
-        const NamesAndTypes * total_column_list,
+        const NamesAndTypesList * total_column_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
     if (!total_column_list)
