@@ -76,7 +76,6 @@ public:
     bool supportsPrewhere() const override { return false; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
-    bool supportsParallelReplicas() const override { return true; }
 
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;

@@ -22,8 +22,6 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    bool supportsParallelReplicas() const override { return true; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
