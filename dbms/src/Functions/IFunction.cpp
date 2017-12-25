@@ -30,10 +30,15 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
     ColumnPtr result_null_map_column;
 
     /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
     if (src->onlyNull())
         return src;
     else if (src->isColumnNullable())
+    {
+        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr();
         result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
+    }
 
     for (const auto & arg : args)
     {
@@ -74,10 +79,10 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
     if (!result_null_map_column)
         return makeNullable(src);
 
-    if (src->isColumnConst())
-        return ColumnNullable::create(src->convertToFullColumnIfConst(), result_null_map_column);
+    if (src_not_nullable->isColumnConst())
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
     else
-        return ColumnNullable::create(src, result_null_map_column);
+        return ColumnNullable::create(src_not_nullable, result_null_map_column);
 }
 
 
