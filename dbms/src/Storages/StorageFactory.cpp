@@ -365,7 +365,7 @@ StoragePtr StorageFactory::get(
     const String & database_name,
     Context & local_context,
     Context & context,
-    NamesAndTypesListPtr columns,
+    const NamesAndTypesList & columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
@@ -384,7 +384,7 @@ StoragePtr StorageFactory::get(
 
     /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
     /// Exception: any type is allowed in View, because plain (non-materialized) View does not store anything itself.
-    checkAllTypesAreAllowedInTable(*columns);
+    checkAllTypesAreAllowedInTable(columns);
     checkAllTypesAreAllowedInTable(materialized_columns);
     checkAllTypesAreAllowedInTable(alias_columns);
 
@@ -648,7 +648,7 @@ StoragePtr StorageFactory::get(
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(true);
+            auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, columns).getActions(true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)

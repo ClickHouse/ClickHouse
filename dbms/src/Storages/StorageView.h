@@ -16,7 +16,7 @@ class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 public:
     std::string getName() const override { return "View"; }
     std::string getTableName() const override { return table_name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -36,14 +36,14 @@ private:
     String table_name;
     String database_name;
     ASTPtr inner_query;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
 
 protected:
     StorageView(
         const String & table_name_,
         const String & database_name_,
         const ASTCreateQuery & query,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);

@@ -308,7 +308,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 StorageTinyLog::StorageTinyLog(
     const std::string & path_,
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -320,7 +320,7 @@ StorageTinyLog::StorageTinyLog(
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
-    if (columns->empty())
+    if (columns.empty())
         throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     String full_path = path + escapeForFileName(name) + '/';

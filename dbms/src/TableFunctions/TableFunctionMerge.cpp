@@ -79,7 +79,7 @@ StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Contex
 
     auto res = StorageMerge::create(
         getName(),
-        std::make_shared<NamesAndTypesList>(chooseColumns(source_database, table_name_regexp, context)),
+        chooseColumns(source_database, table_name_regexp, context),
         NamesAndTypesList{},
         NamesAndTypesList{},
         ColumnDefaults{},

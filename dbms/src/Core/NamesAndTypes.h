@@ -70,6 +70,4 @@ public:
     NamesAndTypesList addTypes(const Names & names) const;
 };
 
-using NamesAndTypesListPtr = std::shared_ptr<NamesAndTypesList>;
-
 }
