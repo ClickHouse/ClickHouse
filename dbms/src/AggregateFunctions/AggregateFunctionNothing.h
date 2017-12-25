@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Columns/IColumn.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -21,7 +22,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNothing>();
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 
     void create(AggregateDataPtr) const override

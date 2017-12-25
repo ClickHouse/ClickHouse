@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
 
@@ -47,6 +48,7 @@ class AggregateFunctionForEach final : public IAggregateFunctionDataHelper<Aggre
 private:
     AggregateFunctionPtr nested_func;
     size_t nested_size_of_data = 0;
+    size_t num_arguments;
 
     AggregateFunctionForEachData & ensureAggregateData(AggregateDataPtr place, size_t new_size, Arena & arena) const
     {
@@ -95,7 +97,7 @@ private:
 
 public:
     AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : nested_func(nested_)
+        : nested_func(nested_), num_arguments(arguments.size())
     {
         nested_size_of_data = nested_func->sizeOfData();
 
@@ -136,20 +138,33 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
+        const IColumn * nested[num_arguments];
+
+        for (size_t i = 0; i < num_arguments; ++i)
+            nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
+
         const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
-        const IColumn * array_data = &first_array_column.getData();
+
         size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
         size_t end = offsets[row_num];
 
-        size_t array_size = end - begin;
+        /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
+        for (size_t i = 1; i < num_arguments; ++i)
+        {
+            const ColumnArray & ith_column = static_cast<const ColumnArray &>(*columns[i]);
+            const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
-        AggregateFunctionForEachData & state = ensureAggregateData(place, array_size, *arena);
+            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
+                throw Exception("Arrays passed to " + getName() + " aggregate function have different sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+        }
+
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
 
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = begin; i < end; ++i)
         {
-            nested_func->add(nested_state, static_cast<const IColumn **>(&array_data), i, arena);
+            nested_func->add(nested_state, nested, i, arena);
             nested_state += nested_size_of_data;
         }
     }

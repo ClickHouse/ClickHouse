@@ -28,7 +28,7 @@ struct NameAndTypePair
 
     bool operator==(const NameAndTypePair & rhs) const
     {
-        return name == rhs.name && type->getName() == rhs.type->getName();
+        return name == rhs.name && type->equals(*rhs.type);
     }
 };
 

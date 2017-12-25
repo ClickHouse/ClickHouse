@@ -82,7 +82,7 @@ public:
         Type type;
 
         /// Index of tuple element, starting at 1.
-        size_t tuple_element = 0;
+        String tuple_element_name;
 
         Substream(Type type) : type(type) {}
     };
@@ -219,10 +219,7 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     /// Checks that two instances belong to the same type
-    inline bool equals(const IDataType & rhs) const
-    {
-        return getName() == rhs.getName();
-    }
+    virtual bool equals(const IDataType & rhs) const = 0;
 
     virtual ~IDataType() {}
 

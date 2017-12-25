@@ -813,7 +813,8 @@ public:
 };
 
 
-/** Extract element of tuple by constant index. The operation is essentially free.
+/** Extract element of tuple by constant index or name. The operation is essentially free.
+  * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
   */
 class FunctionTupleElement : public IFunction
 {
@@ -834,61 +835,92 @@ public:
         return 2;
     }
 
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        return {1};
+    }
+
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
     {
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
-        if (!index_col)
-            throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        size_t count_arrays = 0;
 
-        size_t index = index_col->getValue<UInt8>();
+        const IDataType * tuple_col = arguments[0].type.get();
+        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(tuple_col))
+        {
+            tuple_col = array->getNestedType().get();
+            ++count_arrays;
+        }
 
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(&*arguments[0].type);
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(tuple_col);
         if (!tuple)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (index == 0)
-            throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
+        size_t index = getElementNum(arguments[1].column, *tuple);
+        out_return_type = tuple->getElements()[index];
 
-        const DataTypes & elems = tuple->getElements();
-
-        if (index > elems.size())
-            throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-
-        out_return_type = elems[index - 1];
+        for (; count_arrays; --count_arrays)
+            out_return_type = std::make_shared<DataTypeArray>(out_return_type);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
-        auto const_tuple_col = checkAndGetColumnConst<ColumnTuple>(block.getByPosition(arguments[0]).column.get());
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get());
+        Columns array_offsets;
 
-        if (!tuple_col && !const_tuple_col)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
+        const auto & first_arg = block.getByPosition(arguments[0]);
 
-        if (!index_col)
-            throw Exception("Second argument for function " + getName() + " must be UInt8 constant literal.", ErrorCodes::ILLEGAL_COLUMN);
-
-        size_t index = index_col->getValue<UInt8>();
-        if (index == 0)
-            throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
-
-        if (tuple_col)
+        const IDataType * tuple_type = first_arg.type.get();
+        const IColumn * tuple_col = first_arg.column.get();
+        while (const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(tuple_type))
         {
-            const Columns & tuple_columns = tuple_col->getColumns();
+            const ColumnArray * array_col = static_cast<const ColumnArray *>(tuple_col);
 
-            if (index > tuple_columns.size())
+            tuple_type = array_type->getNestedType().get();
+            tuple_col = &array_col->getData();
+            array_offsets.push_back(array_col->getOffsetsPtr());
+        }
+
+        const DataTypeTuple * tuple_type_concrete = checkAndGetDataType<DataTypeTuple>(tuple_type);
+        const ColumnTuple * tuple_col_concrete = checkAndGetColumn<ColumnTuple>(tuple_col);
+        if (!tuple_type_concrete || !tuple_col_concrete)
+            throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        size_t index = getElementNum(block.getByPosition(arguments[1]).column, *tuple_type_concrete);
+        ColumnPtr res = tuple_col_concrete->getColumns()[index];
+
+        /// Wrap into Arrays
+        for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
+            res = ColumnArray::create(res, *it);
+
+        block.getByPosition(result).column = res;
+    }
+
+private:
+    size_t getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple)
+    {
+        if (auto index_col = checkAndGetColumnConst<ColumnUInt8>(index_column.get()))
+        {
+            size_t index = index_col->getValue<UInt8>();
+
+            if (index == 0)
+                throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
+
+            if (index > tuple.getElements().size())
                 throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
 
-            block.getByPosition(result).column = tuple_columns[index - 1];
+            return index - 1;
+        }
+        else if (auto name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
+        {
+            return tuple.getPositionByName(name_col->getValue<String>());
         }
         else
-        {
-            TupleBackend data = const_tuple_col->getValue<Tuple>();
-            block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
-                .getElements()[index - 1]->createColumnConst(block.rows(), data[index - 1]);
-        }
+            throw Exception("Second argument to " + getName() + " must be a constant UInt8 or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -1310,11 +1342,11 @@ struct IsFiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        if constexpr (std::is_same<T, float>::value)
+        if constexpr (std::is_same_v<T, float>)
             return (ext::bit_cast<uint32_t>(t)
                  & 0b01111111100000000000000000000000)
                 != 0b01111111100000000000000000000000;
-        else if constexpr (std::is_same<T, double>::value)
+        else if constexpr (std::is_same_v<T, double>)
             return (ext::bit_cast<uint64_t>(t)
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
@@ -1332,11 +1364,11 @@ struct IsInfiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        if constexpr (std::is_same<T, float>::value)
+        if constexpr (std::is_same_v<T, float>)
             return (ext::bit_cast<uint32_t>(t)
                  & 0b01111111111111111111111111111111)
                 == 0b01111111100000000000000000000000;
-        else if constexpr (std::is_same<T, double>::value)
+        else if constexpr (std::is_same_v<T, double>)
             return (ext::bit_cast<uint64_t>(t)
                  & 0b0111111111111111111111111111111111111111111111111111111111111111)
                 == 0b0111111111110000000000000000000000000000000000000000000000000000;

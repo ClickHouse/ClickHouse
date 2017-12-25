@@ -20,7 +20,7 @@ class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
     PushingToViewsBlockOutputStream(String database, String table, StoragePtr storage,
-                                    const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
+        const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
     void write(const Block & block) override;
 

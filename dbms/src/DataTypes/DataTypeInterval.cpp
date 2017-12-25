@@ -5,6 +5,12 @@
 namespace DB
 {
 
+bool DataTypeInterval::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && kind == static_cast<const DataTypeInterval &>(rhs).kind;
+}
+
+
 void registerDataTypeInterval(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType("IntervalSecond", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Second)); });

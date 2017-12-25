@@ -325,7 +325,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
             const auto & deduced_type = tmp_column.type;
 
             // column not specified explicitly in the ALTER query may require default_expression modification
-            if (explicit_type->getName() != deduced_type->getName())
+            if (!explicit_type->equals(*deduced_type))
             {
                 const auto default_it = defaults.find(column_name);
 
