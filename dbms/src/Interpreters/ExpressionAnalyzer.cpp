@@ -139,13 +139,11 @@ bool functionIsInOrGlobalInOperator(const String & name)
 void removeDuplicateColumns(NamesAndTypes & columns)
 {
     std::set<String> names;
-    for (auto it = columns.begin(); it != columns.end();)
-    {
-        if (names.emplace(it->name).second)
-            ++it;
-        else
-            columns.erase(it++);
-    }
+    NamesAndTypes filtered(columns.size());
+    for (auto & name_type : columns)
+        if (names.emplace(name_type.name).second)
+            filtered.push_back(std::move(name_type));
+    columns = std::move(filtered);
 }
 
 }
@@ -2739,13 +2737,9 @@ void ExpressionAnalyzer::collectUsedColumns()
     NameSet required_joined_columns;
     getRequiredColumnsImpl(ast, available_columns, required, ignored, available_joined_columns, required_joined_columns);
 
-    for (NamesAndTypes::iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
-    {
-        if (required_joined_columns.count(it->name))
-            ++it;
-        else
-            columns_added_by_join.erase(it++);
-    }
+    columns_added_by_join.erase(std::remove_if(columns_added_by_join.begin(), columns_added_by_join.end(),
+        [&required_joined_columns] (const auto & name_type) { return !required_joined_columns.count(name_type.name); }),
+        columns_added_by_join.end());
 
     /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
     NameSet array_join_sources;
@@ -2762,15 +2756,14 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     unknown_required_columns = required;
 
-    for (NamesAndTypes::iterator it = columns.begin(); it != columns.end();)
+    NamesAndTypes filtered_columns;
+    for (const auto & name_type : columns)
     {
-        unknown_required_columns.erase(it->name);
-
-        if (!required.count(it->name))
-            columns.erase(it++);
-        else
-            ++it;
+        unknown_required_columns.erase(name_type.name);
+        if (required.count(name_type.name))
+            filtered_columns.push_back(name_type);
     }
+    columns = std::move(filtered_columns);
 
     /// Perhaps, there are virtual columns among the unknown columns. Remove them from the list of unknown and add
     /// in columns list, so that when further processing the request they are perceived as real.
