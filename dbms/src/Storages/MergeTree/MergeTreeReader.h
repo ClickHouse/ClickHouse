@@ -24,7 +24,7 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
 
     MergeTreeReader(const String & path, /// Path to the directory containing the part
-        const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
+        const MergeTreeData::DataPartPtr & data_part, const NamesAndTypes & columns,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         bool save_marks_in_cache,
@@ -93,7 +93,7 @@ private:
     FileStreams streams;
 
     /// Columns that are read.
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;

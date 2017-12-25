@@ -76,9 +76,9 @@ BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const
 StorageSetOrJoinBase::StorageSetOrJoinBase(
     const String & path_,
     const String & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     path(path_ + escapeForFileName(name_) + '/'), name(name_), columns(columns_)
@@ -90,9 +90,9 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 StorageSet::StorageSet(
     const String & path_,
     const String & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
     set(std::make_shared<Set>(Limits{}))

@@ -52,8 +52,8 @@ private:
     /// Used by Task
     Names ordered_names;
     NameSet column_name_set;
-    NamesAndTypesList columns;
-    NamesAndTypesList pre_columns;
+    NamesAndTypes columns;
+    NamesAndTypes pre_columns;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;

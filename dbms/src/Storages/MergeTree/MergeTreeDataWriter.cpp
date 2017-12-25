@@ -198,7 +198,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_settings = data.context.chooseCompressionSettings(0, 0);
 
-    NamesAndTypesList columns = data.getColumnsList().filter(block.getNames());
+    NamesAndTypes columns = data.getColumnsList().filter(block.getNames());
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_settings);
 
     out.writePrefix();

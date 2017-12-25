@@ -104,9 +104,9 @@ void DatabaseMemory::renameTable(
 void DatabaseMemory::alterTable(
     const Context &,
     const String &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
+    const NamesAndTypes &,
+    const NamesAndTypes &,
+    const NamesAndTypes &,
     const ColumnDefaults &,
     const ASTModifier &)
 {

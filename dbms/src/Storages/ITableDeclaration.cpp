@@ -24,9 +24,9 @@ namespace ErrorCodes
 }
 
 
-NamesAndTypesList ITableDeclaration::getColumnsList() const
+NamesAndTypes ITableDeclaration::getColumnsList() const
 {
-    return ext::collection_cast<NamesAndTypesList>(getColumnsListRange());
+    return ext::collection_cast<NamesAndTypes>(getColumnsListRange());
 }
 
 
@@ -51,7 +51,7 @@ Names ITableDeclaration::getColumnNamesList() const
 }
 
 
-NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) const
+NameAndType ITableDeclaration::getRealColumn(const String & column_name) const
 {
     for (auto & it : getColumnsListRange())
         if (it.name == column_name)
@@ -59,7 +59,7 @@ NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) con
     throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
-NameAndTypePair ITableDeclaration::getMaterializedColumn(const String & column_name) const
+NameAndType ITableDeclaration::getMaterializedColumn(const String & column_name) const
 {
     for (auto & column : materialized_columns)
         if (column.name == column_name)
@@ -82,7 +82,7 @@ bool ITableDeclaration::hasColumn(const String & column_name) const
     return hasRealColumn(column_name); /// By default, we assume that there are no virtual columns in the storage.
 }
 
-NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
+NameAndType ITableDeclaration::getColumn(const String & column_name) const
 {
     return getRealColumn(column_name); /// By default, we assume that there are no virtual columns in the storage.
 }
@@ -120,10 +120,10 @@ Block ITableDeclaration::getSampleBlockNonMaterialized() const
 }
 
 
-static std::string listOfColumns(const NamesAndTypesList & available_columns)
+static std::string listOfColumns(const NamesAndTypes & available_columns)
 {
     std::stringstream s;
-    for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
+    for (NamesAndTypes::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
     {
         if (it != available_columns.begin())
             s << ", ";
@@ -140,7 +140,7 @@ static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res) { return res
 template <typename Arg, typename... Args>
 static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res, const Arg & arg, const Args &... args)
 {
-    static_assert(std::is_same_v<Arg, NamesAndTypesList>, "getColumnsMap requires arguments of type NamesAndTypesList");
+    static_assert(std::is_same_v<Arg, NamesAndTypes>, "getColumnsMap requires arguments of type NamesAndTypes");
 
     for (const auto & column : arg)
         res.insert({column.name, column.type.get()});
@@ -160,7 +160,7 @@ static NamesAndTypesMap getColumnsMap(const Args &... args)
 
 void ITableDeclaration::check(const Names & column_names) const
 {
-    const NamesAndTypesList & available_columns = getColumnsList();
+    const NamesAndTypes & available_columns = getColumnsList();
 
     if (column_names.empty())
         throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
@@ -186,16 +186,16 @@ void ITableDeclaration::check(const Names & column_names) const
 }
 
 
-void ITableDeclaration::check(const NamesAndTypesList & columns) const
+void ITableDeclaration::check(const NamesAndTypes & columns) const
 {
-    const NamesAndTypesList & available_columns = getColumnsList();
+    const NamesAndTypes & available_columns = getColumnsList();
     const auto columns_map = getColumnsMap(available_columns);
 
     using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
     UniqueStrings unique_names;
     unique_names.set_empty_key(StringRef());
 
-    for (const NameAndTypePair & column : columns)
+    for (const NameAndType & column : columns)
     {
         NamesAndTypesMap::const_iterator it = columns_map.find(column.name);
         if (columns_map.end() == it)
@@ -214,9 +214,9 @@ void ITableDeclaration::check(const NamesAndTypesList & columns) const
 }
 
 
-void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & column_names) const
+void ITableDeclaration::check(const NamesAndTypes & columns, const Names & column_names) const
 {
-    const NamesAndTypesList & available_columns = getColumnsList();
+    const NamesAndTypes & available_columns = getColumnsList();
     const auto available_columns_map = getColumnsMap(available_columns);
     const NamesAndTypesMap & provided_columns_map = getColumnsMap(columns);
 
@@ -253,7 +253,7 @@ void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & c
 
 void ITableDeclaration::check(const Block & block, bool need_all) const
 {
-    const NamesAndTypesList & available_columns = getColumnsList();
+    const NamesAndTypes & available_columns = getColumnsList();
     const auto columns_map = getColumnsMap(available_columns);
 
     using NameSet = std::unordered_set<String>;
@@ -281,7 +281,7 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 
     if (need_all && names_in_block.size() < columns_map.size())
     {
-        for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
+        for (NamesAndTypes::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
         {
             if (!names_in_block.count(it->name))
                 throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);

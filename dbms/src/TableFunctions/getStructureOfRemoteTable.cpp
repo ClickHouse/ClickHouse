@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-NamesAndTypesList getStructureOfRemoteTable(
+NamesAndTypes getStructureOfRemoteTable(
     const Cluster & cluster,
     const std::string & database,
     const std::string & table,
@@ -25,7 +25,7 @@ NamesAndTypesList getStructureOfRemoteTable(
 {
     /// Request for a table description
     String query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
-    NamesAndTypesList res;
+    NamesAndTypes res;
 
     /// Send to the first any remote shard.
     const auto & shard_info = cluster.getAnyShardInfo();

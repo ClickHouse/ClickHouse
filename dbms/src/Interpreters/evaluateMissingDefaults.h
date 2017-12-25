@@ -9,11 +9,11 @@ namespace DB
 
 class Block;
 class Context;
-class NamesAndTypesList;
+class NamesAndTypes;
 struct ColumnDefault;
 
 void evaluateMissingDefaults(Block & block,
-    const NamesAndTypesList & required_columns,
+    const NamesAndTypes & required_columns,
     const std::unordered_map<std::string, ColumnDefault> & column_defaults,
     const Context & context);
 

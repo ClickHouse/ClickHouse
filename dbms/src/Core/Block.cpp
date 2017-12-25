@@ -356,9 +356,9 @@ const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 }
 
 
-NamesAndTypesList Block::getNamesAndTypesList() const
+NamesAndTypes Block::getNamesAndTypes() const
 {
-    NamesAndTypesList res;
+    NamesAndTypes res;
 
     for (const auto & elem : data)
         res.emplace_back(elem.name, elem.type);

@@ -205,7 +205,7 @@ public:
     PKCondition(
         const SelectQueryInfo & query_info,
         const Context & context,
-        const NamesAndTypesList & all_columns,
+        const NamesAndTypes & all_columns,
         const SortDescription & sort_descr,
         const ExpressionActionsPtr & pk_expr);
 
@@ -276,7 +276,7 @@ public:
     };
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
+        const ASTPtr & query, const Context & context, const NamesAndTypes & all_columns);
 
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
     static const AtomMap atom_map;
