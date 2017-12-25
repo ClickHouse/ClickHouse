@@ -112,7 +112,7 @@ BlockInputStreams StorageSystemColumns::read(
         const std::string database_name = (*filtered_database_column)[i].get<std::string>();
         const std::string table_name = (*filtered_table_column)[i].get<std::string>();
 
-        NamesAndTypes columns;
+        NamesAndTypesList columns;
         ColumnDefaults column_defaults;
         MergeTreeData::ColumnSizes column_sizes;
 

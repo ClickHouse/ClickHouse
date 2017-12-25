@@ -47,9 +47,9 @@ protected:
         const String & name_,
         const Names & key_names_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
-        const NamesAndTypes & columns_,
-        const NamesAndTypes & materialized_columns_,
-        const NamesAndTypes & alias_columns_,
+        const NamesAndTypesList & columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);
 };
 

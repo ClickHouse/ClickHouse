@@ -76,9 +76,9 @@ private:
 
 StorageMemory::StorageMemory(
     const std::string & name_,
-    const NamesAndTypes & columns_,
-    const NamesAndTypes & materialized_columns_,
-    const NamesAndTypes & alias_columns_,
+    const NamesAndTypesList & columns_,
+    const NamesAndTypesList & materialized_columns_,
+    const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     name(name_), columns(columns_)

@@ -19,7 +19,7 @@ class AddingDefaultBlockOutputStream : public IBlockOutputStream
 public:
     AddingDefaultBlockOutputStream(
         const BlockOutputStreamPtr & output_,
-        NamesAndTypes required_columns_,
+        NamesAndTypesList required_columns_,
         const ColumnDefaults & column_defaults_,
         const Context & context_,
         bool only_explicit_column_defaults_)
@@ -38,7 +38,7 @@ public:
 
 private:
     BlockOutputStreamPtr output;
-    NamesAndTypes required_columns;
+    NamesAndTypesList required_columns;
     const ColumnDefaults column_defaults;
     const Context & context;
     bool only_explicit_column_defaults;

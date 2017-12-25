@@ -23,7 +23,7 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-String chooseSuffix(const NamesAndTypes & columns, const String & name)
+String chooseSuffix(const NamesAndTypesList & columns, const String & name)
 {
     int id = 0;
     String current_suffix;
@@ -43,7 +43,7 @@ String chooseSuffix(const NamesAndTypes & columns, const String & name)
     return current_suffix;
 }
 
-String chooseSuffixForSet(const NamesAndTypes & columns, const std::vector<String> & names)
+String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<String> & names)
 {
     int id = 0;
     String current_suffix;
@@ -140,7 +140,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return false;
 
     NameSet columns;
-    for (const auto & it : block.getNamesAndTypes())
+    for (const auto & it : block.getNamesAndTypesList())
         columns.insert(it.name);
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
@@ -154,7 +154,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return false;
 
     /// Let's analyze and calculate the expression.
-    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypes());
+    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
     actions->execute(block);
 

@@ -18,9 +18,9 @@ StoragePtr StorageDictionary::create(
     const String & table_name,
     Context & context,
     const ASTCreateQuery & query,
-    const NamesAndTypes & columns,
-    const NamesAndTypes & materialized_columns,
-    const NamesAndTypes & alias_columns,
+    const NamesAndTypesList & columns,
+    const NamesAndTypesList & materialized_columns,
+    const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults)
 {
     const ASTFunction & engine = *query.storage->engine;
@@ -41,9 +41,9 @@ StoragePtr StorageDictionary::create(
 
 StoragePtr StorageDictionary::create(
     const String & table_name,
-    const NamesAndTypes & columns,
-    const NamesAndTypes & materialized_columns,
-    const NamesAndTypes & alias_columns,
+    const NamesAndTypesList & columns,
+    const NamesAndTypesList & materialized_columns,
+    const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
     const DictionaryStructure & dictionary_structure,
     const String & dictionary_name)
@@ -55,9 +55,9 @@ StoragePtr StorageDictionary::create(
 
 StorageDictionary::StorageDictionary(
     const String & table_name_,
-    const NamesAndTypes & columns_,
-    const NamesAndTypes & materialized_columns_,
-    const NamesAndTypes & alias_columns_,
+    const NamesAndTypesList & columns_,
+    const NamesAndTypesList & materialized_columns_,
+    const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     const DictionaryStructure & dictionary_structure_,
     const String & dictionary_name_)
@@ -81,9 +81,9 @@ BlockInputStreams StorageDictionary::read(
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }
 
-NamesAndTypes StorageDictionary::getNamesAndTypes(const DictionaryStructure & dictionary_structure)
+NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure & dictionary_structure)
 {
-    NamesAndTypes dictionary_names_and_types;
+    NamesAndTypesList dictionary_names_and_types;
 
     if (dictionary_structure.id)
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
@@ -104,7 +104,7 @@ NamesAndTypes StorageDictionary::getNamesAndTypes(const DictionaryStructure & di
 void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const
 {
     auto dictionary_names_and_types = getNamesAndTypes(dictionary_structure);
-    std::set<NameAndType> namesAndTypesSet(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
+    std::set<NameAndTypePair> namesAndTypesSet(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
     for (auto & column : columns)
     {

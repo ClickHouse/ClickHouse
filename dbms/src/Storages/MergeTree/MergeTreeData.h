@@ -203,7 +203,7 @@ public:
         ~AlterDataPartTransaction();
 
         /// Review the changes before the commit.
-        const NamesAndTypes & getNewColumns() const { return new_columns; }
+        const NamesAndTypesList & getNewColumns() const { return new_columns; }
         const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
 
     private:
@@ -221,7 +221,7 @@ public:
         std::unique_lock<std::mutex> alter_lock;
 
         DataPart::Checksums new_checksums;
-        NamesAndTypes new_columns;
+        NamesAndTypesList new_columns;
         /// If the value is an empty string, the file is not temporary, and it must be deleted.
         NameToNameMap rename_map;
     };
@@ -259,7 +259,7 @@ public:
         Graphite::Params graphite_params;
 
         /// Check that needed columns are present and have correct types.
-        void check(const NamesAndTypes & columns) const;
+        void check(const NamesAndTypesList & columns) const;
 
         String getModeName() const;
     };
@@ -274,9 +274,9 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & full_path_, const NamesAndTypes & columns_,
-                  const NamesAndTypes & materialized_columns_,
-                  const NamesAndTypes & alias_columns_,
+                  const String & full_path_, const NamesAndTypesList & columns_,
+                  const NamesAndTypesList & materialized_columns_,
+                  const NamesAndTypesList & alias_columns_,
                   const ColumnDefaults & column_defaults_,
                   Context & context_,
                   const ASTPtr & primary_expr_ast_,
@@ -305,16 +305,16 @@ public:
 
     Int64 getMaxDataPartIndex();
 
-    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
-    NameAndType getColumn(const String & column_name) const override
+    NameAndTypePair getColumn(const String & column_name) const override
     {
         if (column_name == "_part")
-            return NameAndType("_part", std::make_shared<DataTypeString>());
+            return NameAndTypePair("_part", std::make_shared<DataTypeString>());
         if (column_name == "_part_index")
-            return NameAndType("_part_index", std::make_shared<DataTypeUInt64>());
+            return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
         if (column_name == "_sample_factor")
-            return NameAndType("_sample_factor", std::make_shared<DataTypeFloat64>());
+            return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
         return ITableDeclaration::getColumn(column_name);
     }
@@ -424,12 +424,12 @@ public:
     /// If no data transformations are necessary, returns nullptr.
     AlterDataPartTransactionPtr alterDataPart(
         const DataPartPtr & part,
-        const NamesAndTypes & new_columns,
+        const NamesAndTypesList & new_columns,
         const ASTPtr & new_primary_key,
         bool skip_sanity_checks);
 
     /// Must be called with locked lockStructureForAlter().
-    void setColumnsList(const NamesAndTypes & new_columns) { columns = new_columns; }
+    void setColumnsList(const NamesAndTypesList & new_columns) { columns = new_columns; }
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name)
@@ -548,7 +548,7 @@ private:
     String table_name;
     String full_path;
 
-    NamesAndTypes columns;
+    NamesAndTypesList columns;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizes column_sizes;
@@ -651,7 +651,7 @@ private:
     /// for transformation-free changing of Enum values list).
     /// Files to be deleted are mapped to an empty string in out_rename_map.
     /// If part == nullptr, just checks that all type conversions are possible.
-    void createConvertExpression(const DataPartPtr & part, const NamesAndTypes & old_columns, const NamesAndTypes & new_columns,
+    void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
         ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.

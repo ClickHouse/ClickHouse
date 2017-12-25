@@ -202,7 +202,7 @@ inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisi
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block PKCondition::getBlockWithConstants(
-    const ASTPtr & query, const Context & context, const NamesAndTypes & all_columns)
+    const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
 {
     Block result
     {
@@ -221,7 +221,7 @@ Block PKCondition::getBlockWithConstants(
 PKCondition::PKCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
-    const NamesAndTypes & all_columns,
+    const NamesAndTypesList & all_columns,
     const SortDescription & sort_descr_,
     const ExpressionActionsPtr & pk_expr_)
     : sort_descr(sort_descr_), pk_expr(pk_expr_), prepared_sets(query_info.sets)

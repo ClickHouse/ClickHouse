@@ -16,10 +16,10 @@ namespace Nested
     std::string extractElementName(const std::string & nested_name);
 
     /// Replace Array(Tuple(...)) columns to a multiple of Array columns in a form of `column_name.element_name`.
-    NamesAndTypes flatten(const NamesAndTypes & names_and_types);
+    NamesAndTypesList flatten(const NamesAndTypesList & names_and_types);
 
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
-    NamesAndTypes collect(const NamesAndTypes & names_and_types);
+    NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 };
 
 }

@@ -29,7 +29,7 @@ String ColumnsDescription<store>::toString() const
     writeText(columns.size() + materialized.size() + alias.size(), buf);
     writeString(" columns:\n", buf);
 
-    const auto write_columns = [this, &buf] (const NamesAndTypes & columns)
+    const auto write_columns = [this, &buf] (const NamesAndTypesList & columns)
     {
         for (const auto & column : columns)
         {

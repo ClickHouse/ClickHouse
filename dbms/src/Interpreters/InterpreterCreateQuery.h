@@ -26,11 +26,11 @@ public:
     BlockIO execute() override;
 
     /// List of columns and their types in AST.
-    static ASTPtr formatColumns(const NamesAndTypes & columns);
+    static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(
-        const NamesAndTypes & columns,
-        const NamesAndTypes & materialized_columns,
-        const NamesAndTypes & alias_columns,
+        const NamesAndTypesList & columns,
+        const NamesAndTypesList & materialized_columns,
+        const NamesAndTypesList & alias_columns,
         const ColumnDefaults & column_defaults);
 
     void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
@@ -45,9 +45,9 @@ public:
 
     struct ColumnsInfo
     {
-        NamesAndTypes columns;
-        NamesAndTypes materialized_columns;
-        NamesAndTypes alias_columns;
+        NamesAndTypesList columns;
+        NamesAndTypesList materialized_columns;
+        NamesAndTypesList alias_columns;
         ColumnDefaults column_defaults;
     };
 

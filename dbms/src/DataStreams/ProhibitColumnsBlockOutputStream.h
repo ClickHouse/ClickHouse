@@ -11,7 +11,7 @@ namespace DB
 class ProhibitColumnsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ProhibitColumnsBlockOutputStream(const BlockOutputStreamPtr & output, const NamesAndTypes & columns)
+    ProhibitColumnsBlockOutputStream(const BlockOutputStreamPtr & output, const NamesAndTypesList & columns)
         : output{output}, columns{columns}
     {
     }
@@ -25,7 +25,7 @@ private:
     void writeSuffix() override { output->writeSuffix(); }
 
     BlockOutputStreamPtr output;
-    NamesAndTypes columns;
+    NamesAndTypesList columns;
 };
 
 }

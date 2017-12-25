@@ -78,7 +78,7 @@ public:
 
     /// For JOIN
     std::shared_ptr<const Join> join;
-    NamesAndTypes columns_added_by_join;
+    NamesAndTypesList columns_added_by_join;
 
     /// For PROJECT.
     NamesWithAliases projection;
@@ -93,7 +93,7 @@ public:
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypes & columns_added_by_join_);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
     /// If this `Action` is not already added to `ExpressionActions`, the returned list may be incomplete, because `prerequisites` are not taken into account.
@@ -118,7 +118,7 @@ class ExpressionActions
 public:
     using Actions = std::vector<ExpressionAction>;
 
-    ExpressionActions(const NamesAndTypes & input_columns_, const Settings & settings_)
+    ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
         : input_columns(input_columns_), settings(settings_)
     {
         for (const auto & input_elem : input_columns)
@@ -140,7 +140,7 @@ public:
     /// The name of the column must not match the names of the intermediate columns that occur when evaluating the expression.
     /// The expression must not have any PROJECT actions.
     void addInput(const ColumnWithTypeAndName & column);
-    void addInput(const NameAndType & column);
+    void addInput(const NameAndTypePair & column);
 
     void add(const ExpressionAction & action);
 
@@ -173,12 +173,12 @@ public:
     Names getRequiredColumns() const
     {
         Names names;
-        for (NamesAndTypes::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+        for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
             names.push_back(it->name);
         return names;
     }
 
-    const NamesAndTypes & getRequiredColumnsWithTypes() const { return input_columns; }
+    const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block) const;
@@ -195,12 +195,12 @@ public:
 
     std::string dumpActions() const;
 
-    static std::string getSmallestColumn(const NamesAndTypes & columns);
+    static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
     BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(size_t max_block_size) const;
 
 private:
-    NamesAndTypes input_columns;
+    NamesAndTypesList input_columns;
     Actions actions;
     Block sample_block;
     Settings settings;
