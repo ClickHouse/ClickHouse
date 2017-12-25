@@ -757,8 +757,11 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// Which columns nobody will touch from the current action to the last.
     NameSet unmodified_columns;
 
-    for (const auto & name_type : sample_block.getNamesAndTypes())
-        unmodified_columns.insert(name_type.name);
+    {
+        NamesAndTypes sample_columns = sample_block.getNamesAndTypes();
+        for (NamesAndTypes::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
+            unmodified_columns.insert(it->name);
+    }
 
     /// Let's go from the end and maintain set of required columns at this stage.
     /// We will throw out unnecessary actions, although usually they are absent by construction.
@@ -853,18 +856,17 @@ void ExpressionActions::finalize(const Names & output_columns)
     if (final_columns.empty())
         final_columns.insert(getSmallestColumn(input_columns));
 
-    NamesAndTypes input_columns_filtered;
-    for (const auto & name_type : input_columns)
+    for (NamesAndTypes::iterator it = input_columns.begin(); it != input_columns.end();)
     {
-        if (needed_columns.count(name_type.name))
-            input_columns_filtered.push_back(name_type);
-        else
+        NamesAndTypes::iterator it0 = it;
+        ++it;
+        if (!needed_columns.count(it0->name))
         {
-            if (unmodified_columns.count(name_type.name))
-                sample_block.erase(name_type.name);
+            if (unmodified_columns.count(it0->name))
+                sample_block.erase(it0->name);
+            input_columns.erase(it0);
         }
     }
-    input_columns = std::move(input_columns_filtered);
 
 /*    std::cerr << "\n";
     for (const auto & action : actions)
