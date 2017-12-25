@@ -89,7 +89,6 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & sampling_expression_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
-    const String & log_name_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
@@ -104,7 +103,7 @@ MergeTreeData::MergeTreeData(
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
     broken_part_callback(broken_part_callback_),
-    log_name(log_name_), log(&Logger::get(log_name + " (Data)")),
+    log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_name(data_parts_indexes.get<TagByName>()),
     data_parts_by_state_and_name(data_parts_indexes.get<TagByStateAndName>())
 {

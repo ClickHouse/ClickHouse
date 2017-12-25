@@ -136,12 +136,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams,
-    size_t * inout_part_index,
     Int64 max_block_number_to_read) const
 {
-    size_t part_index_var = 0;
-    if (!inout_part_index)
-        inout_part_index = &part_index_var;
+    size_t part_index = 0;
 
     MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
@@ -520,7 +517,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     size_t sum_ranges = 0;
     for (auto & part : parts)
     {
-        RangesInDataPart ranges(part, (*inout_part_index)++);
+        RangesInDataPart ranges(part, part_index++);
 
         if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
             ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);

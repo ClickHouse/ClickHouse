@@ -285,7 +285,6 @@ public:
                   const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
-                  const String & log_name_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});

@@ -187,7 +187,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         materialized_columns_, alias_columns_, column_defaults_,
         context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
         sampling_expression_, merging_params_,
-        settings_, database_name_ + "." + table_name, true, attach,
+        settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger(data, context.getBackgroundPool()), queue(data.format_version),
     fetcher(data),
@@ -281,51 +281,6 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     /// Tracking lag of replicas.
     zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
     zookeeper->createIfNotExists(replica_path + "/max_processed_insert_time", "");
-}
-
-
-StoragePtr StorageReplicatedMergeTree::create(
-    const String & zookeeper_path_,
-    const String & replica_name_,
-    bool attach,
-    const String & path_, const String & database_name_, const String & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    Context & context_,
-    const ASTPtr & primary_expr_ast_,
-    const String & date_column_name,
-    const ASTPtr & partition_expr_ast_,
-    const ASTPtr & sampling_expression_,
-    const MergeTreeData::MergingParams & merging_params_,
-    const MergeTreeSettings & settings_,
-    bool has_force_restore_data_flag_)
-{
-    auto res = ext::shared_ptr_helper<StorageReplicatedMergeTree>::create(
-        zookeeper_path_, replica_name_, attach,
-        path_, database_name_, name_,
-        columns_, materialized_columns_, alias_columns_, column_defaults_,
-        context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
-        sampling_expression_, merging_params_, settings_,
-        has_force_restore_data_flag_);
-    StoragePtr res_ptr = res;
-
-    auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
-    {
-        return std::make_shared<InterserverIOEndpointHolder>(
-            endpoint->getId(res->replica_path),
-            endpoint,
-            res->context.getInterserverIOHandler());
-    };
-
-    if (res->tryGetZooKeeper())
-    {
-        InterserverIOEndpointPtr endpoint = std::make_shared<DataPartsExchange::Service>(res->data, res_ptr);
-        res->data_parts_exchange_endpoint_holder = get_endpoint_holder(endpoint);
-    }
-
-    return res;
 }
 
 
@@ -2266,6 +2221,11 @@ void StorageReplicatedMergeTree::startup()
     /// NOTE: not updating last_queue_update_start_time because it must contain the time when
     /// the notification of queue change was received. In the beginning it is effectively infinite.
 
+    StoragePtr ptr = shared_from_this();
+    InterserverIOEndpointPtr data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(data, ptr);
+    data_parts_exchange_endpoint_holder = std::make_shared<InterserverIOEndpointHolder>(
+        data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, context.getInterserverIOHandler());
+
     /// In this thread replica will be activated.
     restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
 }
@@ -2316,12 +2276,6 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 {
     const Settings & settings = context.getSettingsRef();
 
-    size_t part_index = 0;
-
-    /** The `parallel_replica_offset` and `parallel_replicas_count` settings allow you to read one part of the data from one replica, and the other from other replica.
-      * For replicated data, the data is broken by the same mechanism as the SAMPLE section.
-      */
-
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
@@ -2358,7 +2312,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     }
 
     return reader.read(
-        column_names, query_info, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
+        column_names, query_info, context, processed_stage, max_block_size, num_streams, max_block_number_to_read);
 }
 
 
