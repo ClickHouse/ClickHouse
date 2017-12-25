@@ -26,7 +26,7 @@ ColumnNullable::ColumnNullable(const ColumnPtr & nested_column_, const ColumnPtr
         nested_column = nested_column_materialized;
 
     if (!getNestedColumn().canBeInsideNullable())
-        throw Exception{getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
+        throw Exception{getNestedColumn().getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
 
     if (null_map->isColumnConst())
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
