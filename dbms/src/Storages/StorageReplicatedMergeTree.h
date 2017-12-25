@@ -69,26 +69,6 @@ namespace DB
 class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
 public:
-    /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
-      */
-    static StoragePtr create(
-        const String & zookeeper_path_,
-        const String & replica_name_,
-        bool attach,
-        const String & path_, const String & database_name_, const String & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_,
-        const ASTPtr & primary_expr_ast_,
-        const String & date_column_name,
-        const ASTPtr & partition_expr_ast_,
-        const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        const MergeTreeData::MergingParams & merging_params_,
-        const MergeTreeSettings & settings_,
-        bool has_force_restore_data_flag);
-
     void startup() override;
     void shutdown() override;
     ~StorageReplicatedMergeTree() override;
@@ -444,6 +424,8 @@ private:
         zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
 
 protected:
+    /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
+      */
     StorageReplicatedMergeTree(
         const String & zookeeper_path_,
         const String & replica_name_,
