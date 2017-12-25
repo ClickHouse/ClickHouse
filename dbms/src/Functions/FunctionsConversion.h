@@ -316,15 +316,53 @@ template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, Rea
     x = tmp;
 }
 
+template <typename DataType>
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+{
+    if constexpr (std::is_integral<typename DataType::FieldType>::value)
+        return tryReadIntText(x, rb);
+    else if constexpr (std::is_floating_point<typename DataType::FieldType>::value)
+        return tryReadFloatText(x, rb);
+    /// NOTE Need to implement for Date and DateTime too.
+}
+
+
 /** Throw exception with verbose message when string value is not parsed completely.
   */
 void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result);
 
 
-template <typename ToDataType, typename Name>
-struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeString>::value, DataTypeString>::type, ToDataType, Name>
+enum class ConvertFromStringExceptionMode
 {
+    Throw,  /// Throw exception if value cannot be parsed.
+    Zero,   /// Fill with zero or default if value cannot be parsed.
+    Null    /// Return ColumnNullable with NULLs when value cannot be parsed.
+};
+
+template <typename FromDataType, typename ToDataType, typename Name, ConvertFromStringExceptionMode mode>
+struct ConvertThroughParsing
+{
+    static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
+        "ConvertThroughParsing is only applicable for String or FixedString data tyoes");
+
     using ToFieldType = typename ToDataType::FieldType;
+
+    static bool isAllRead(ReadBuffer & in)
+    {
+        /// In case of FixedString, skip zero bytes at end.
+        if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
+            while (!in.eof() && *in.position() == 0)
+                ++in.position();
+
+        if (in.eof())
+            return true;
+
+        /// Special case, that allows to parse string with DateTime as Date.
+        if (std::is_same<ToDataType, DataTypeDate>::value && (in.buffer().size()) == strlen("YYYY-MM-DD hh:mm:ss"))
+            return true;
+
+        return false;
+    }
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
@@ -334,94 +372,102 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
         if (std::is_same<ToDataType, DataTypeDateTime>::value)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            auto col_to = ColumnVector<ToFieldType>::create();
+        const IColumn * col_from = block.getByPosition(arguments[0]).column.get();
+        const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
+        const ColumnFixedString * col_from_fixed_string = checkAndGetColumn<ColumnFixedString>(col_from);
 
-            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
-            size_t size = col_from->size();
-            vec_to.resize(size);
-
-            const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets & offsets = col_from->getOffsets();
-
-            size_t current_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
-
-                parseImpl<ToDataType>(vec_to[i], read_buffer, time_zone);
-
-                if (!read_buffer.eof()
-                    && !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
-                        && offsets[i] - current_offset - 1 == strlen("YYYY-MM-DD hh:mm:ss")))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
-
-                current_offset = offsets[i];
-            }
-
-            block.getByPosition(result).column = std::move(col_to);
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+        if (std::is_same_v<FromDataType, DataTypeString> && !col_from_string)
+            throw Exception("Illegal column " + col_from->getName()
                 + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        if (std::is_same_v<FromDataType, DataTypeFixedString> && !col_from_fixed_string)
+            throw Exception("Illegal column " + col_from->getName()
+                + " of first argument of function " + Name::name,
+                ErrorCodes::ILLEGAL_COLUMN);
+
+        size_t size = block.rows();
+        auto col_to = ColumnVector<ToFieldType>::create(size);
+        typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
+
+        ColumnUInt8::MutablePtr col_null_map_to;
+        NullMap * vec_null_map_to = nullptr;
+        if constexpr (mode == ConvertFromStringExceptionMode::Null)
+        {
+            col_null_map_to = ColumnUInt8::create(size);
+            vec_null_map_to = &col_null_map_to->getData();
+        }
+
+        const ColumnString::Chars_t * chars = nullptr;
+        const IColumn::Offsets * offsets = nullptr;
+        size_t fixed_string_size = 0;
+
+        if constexpr (std::is_same_v<FromDataType, DataTypeString>)
+        {
+            chars = &col_from_string->getChars();
+            offsets = &col_from_string->getOffsets();
+        }
+        else
+        {
+            chars = &col_from_fixed_string->getChars();
+            fixed_string_size = col_from_fixed_string->getN();
+        }
+
+        size_t current_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
+
+            ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+
+            if constexpr (mode == ConvertFromStringExceptionMode::Throw)
+            {
+                parseImpl<ToDataType>(vec_to[i], read_buffer, time_zone);
+
+                if (!isAllRead(read_buffer))
+                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
+            }
+            else
+            {
+                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer) || !isAllRead(read_buffer))
+                {
+                    vec_to[i] = 0;
+                    if constexpr (mode == ConvertFromStringExceptionMode::Null)
+                        vec_null_map_to[i] = 1;
+                }
+                else if constexpr (mode == ConvertFromStringExceptionMode::Null)
+                    vec_null_map_to[i] = 0;
+            }
+
+            current_offset = next_offset;
+        }
+
+        if constexpr (mode == ConvertFromStringExceptionMode::Null)
+            block.getByPosition(result).column = ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+        else
+            block.getByPosition(result).column = std::move(col_to);
     }
 };
 
 
-template <typename DataType>
-bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
-{
-    if constexpr (std::is_integral<typename DataType::FieldType>::value)
-        return tryReadIntText(x, rb);
-    else if constexpr (std::is_floating_point<typename DataType::FieldType>::value)
-        return tryReadFloatText(x, rb);
-}
+template <typename ToDataType, typename Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name>
+    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw> {};
+
+template <typename ToDataType, typename Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name>
+    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw> {};
 
 
 /** Conversion from String through parsing, which returns default value instead of throwing an exception.
   */
 template <typename ToDataType, typename Name>
-struct ConvertOrZeroImpl
-{
-    using ToFieldType = typename ToDataType::FieldType;
+struct ConvertOrZeroImpl : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Zero> {};
 
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            auto col_to = ColumnVector<ToFieldType>::create();
-
-            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
-            size_t size = col_from->size();
-            vec_to.resize(size);
-
-            const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets & offsets = col_from->getOffsets();
-
-            size_t current_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
-
-                /// NOTE Need to implement for Date and DateTime too.
-                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer) || !read_buffer.eof())
-                    vec_to[i] = 0;
-
-                current_offset = offsets[i];
-            }
-
-            block.getByPosition(result).column = std::move(col_to);
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
-    }
-};
+template <typename ToDataType, typename Name>
+struct ConvertOrNullImpl : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null> {};
 
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple.
@@ -487,57 +533,6 @@ struct ConvertImpl<typename std::enable_if<!T::is_parametric, T>::type, T, Name>
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
-    }
-};
-
-
-/** Conversion from FixedString through parsing.
-  */
-template <typename ToDataType, typename Name>
-struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
-{
-    using ToFieldType = typename ToDataType::FieldType;
-
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            const DateLUTImpl * time_zone = nullptr;
-
-            /// For conversion to DateTime type, second argument with time zone could be specified.
-            if (std::is_same<ToDataType, DataTypeDateTime>::value)
-                time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
-
-            auto col_to = ColumnVector<ToFieldType>::create();
-
-            const ColumnFixedString::Chars_t & data_from = col_from->getChars();
-            size_t n = col_from->getN();
-            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
-            size_t size = col_from->size();
-            vec_to.resize(size);
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                ReadBufferFromMemory read_buffer(&data_from[i * n], n);
-                const char * end = read_buffer.buffer().end();
-                parseImpl<ToDataType>(vec_to[i], read_buffer, time_zone);
-
-                if (!read_buffer.eof())
-                {
-                    while (read_buffer.position() < end && *read_buffer.position() == 0)
-                        ++read_buffer.position();
-
-                    if (read_buffer.position() < end)
-                        throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
-                }
-            }
-
-            block.getByPosition(result).column = std::move(col_to);
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
