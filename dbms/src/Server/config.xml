@@ -180,6 +180,7 @@
     <!--
         interval - send every X second
         root_path - prefix for keys
+        hostname_in_path - append hostname to root_path (default = enabled)
         metrics - send data from table system.metrics
         events - send data from table system.events
         asynchronous_metrics - send data from table system.asynchronous_metrics
@@ -191,6 +192,7 @@
         <timeout>0.1</timeout>
         <interval>60</interval>
         <root_path>one_min</root_path>
+        <hostname_in_path>true<hostname_in_path>
 
         <metrics>true</metrics>
         <events>true</events>
