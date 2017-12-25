@@ -1,0 +1,3 @@
+#!/bin/bash
+
+service clickhouse-server stop
