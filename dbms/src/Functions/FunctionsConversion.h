@@ -366,7 +366,7 @@ struct ConvertThroughParsing
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const DateLUTImpl * time_zone = nullptr;
+        const DateLUTImpl * time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
         if (std::is_same_v<ToDataType, DataTypeDateTime>)
