@@ -13,7 +13,7 @@
 
 /// Allow to use __uint128_t as a template parameter for boost::rational.
 // https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
-#if !defined(__GLIBCXX_BITSIZE_INT_N_0)
+#if !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
 namespace std
 {
     template <>
