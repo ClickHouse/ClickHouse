@@ -343,7 +343,7 @@ template <typename FromDataType, typename ToDataType, typename Name, ConvertFrom
 struct ConvertThroughParsing
 {
     static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
-        "ConvertThroughParsing is only applicable for String or FixedString data tyoes");
+        "ConvertThroughParsing is only applicable for String or FixedString data types");
 
     using ToFieldType = typename ToDataType::FieldType;
 
