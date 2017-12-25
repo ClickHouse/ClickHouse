@@ -302,10 +302,10 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(const NamesAndTypes & all_columns, ExpressionActionsPtr primary_key_expressions,
+static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns, ExpressionActionsPtr primary_key_expressions,
     const MergeTreeData::MergingParams & merging_params,
-    NamesAndTypes & gathering_columns, Names & gathering_column_names,
-    NamesAndTypes & merging_columns, Names & merging_column_names
+    NamesAndTypesList & gathering_columns, Names & gathering_column_names,
+    NamesAndTypesList & merging_columns, Names & merging_column_names
 )
 {
     Names key_columns_dup = primary_key_expressions->getRequiredColumns();
@@ -505,10 +505,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         part->accumulateColumnSizes(merged_column_to_size);
 
     Names all_column_names = data.getColumnNamesList();
-    NamesAndTypes all_columns = data.getColumnsList();
+    NamesAndTypesList all_columns = data.getColumnsList();
     const SortDescription sort_desc = data.getSortDescription();
 
-    NamesAndTypes gathering_columns, merging_columns;
+    NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.merging_params,
         gathering_columns, gathering_column_names, merging_columns, merging_column_names);
@@ -762,7 +762,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
 MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
     const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
-    const NamesAndTypes & gathering_columns, bool deduplicate) const
+    const NamesAndTypesList & gathering_columns, bool deduplicate) const
 {
     if (deduplicate)
         return MergeAlgorithm::Horizontal;

@@ -67,7 +67,7 @@ String MergeTreeBlockInputStream::getID() const
     std::stringstream res;
     res << "MergeTree(" << path << ", columns";
 
-    for (const NameAndType & column : columns)
+    for (const NameAndTypePair & column : columns)
         res << ", " << column.name;
 
     if (prewhere_actions)

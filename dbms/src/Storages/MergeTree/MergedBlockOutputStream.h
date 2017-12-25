@@ -92,13 +92,13 @@ public:
     MergedBlockOutputStream(
         MergeTreeData & storage_,
         String part_path_,
-        const NamesAndTypes & columns_list_,
+        const NamesAndTypesList & columns_list_,
         CompressionSettings compression_settings);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
         String part_path_,
-        const NamesAndTypes & columns_list_,
+        const NamesAndTypesList & columns_list_,
         CompressionSettings compression_settings,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
         size_t aio_threshold_);
@@ -117,7 +117,7 @@ public:
 
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
-            const NamesAndTypes * total_columns_list = nullptr,
+            const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
     /// How many rows are already written.
@@ -132,7 +132,7 @@ private:
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
 private:
-    NamesAndTypes columns_list;
+    NamesAndTypesList columns_list;
     String part_path;
 
     size_t rows_count = 0;

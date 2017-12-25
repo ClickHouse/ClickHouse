@@ -18,9 +18,9 @@ public:
     std::string getName() const override { return "SystemParts"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
-    NameAndType getColumn(const String & column_name) const override;
+    NameAndTypePair getColumn(const String & column_name) const override;
 
     bool hasColumn(const String & column_name) const override;
 
@@ -34,7 +34,7 @@ public:
 
 private:
     const std::string name;
-    NamesAndTypes columns;
+    NamesAndTypesList columns;
 
 protected:
     StorageSystemParts(const std::string & name_);

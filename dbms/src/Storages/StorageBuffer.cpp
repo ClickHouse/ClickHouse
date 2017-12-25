@@ -43,9 +43,9 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypes & columns_,
-    const NamesAndTypes & materialized_columns_,
-    const NamesAndTypes & alias_columns_,
+StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList & columns_,
+    const NamesAndTypesList & materialized_columns_,
+    const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,

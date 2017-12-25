@@ -143,7 +143,7 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
     {
         if (table_column_names.empty())
         {
-            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getNamesAndTypes();
+            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getNamesAndTypesList();
         }
     }
     else
@@ -251,7 +251,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const 
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
     const Names & required_column_names_,
-    const NamesAndTypes & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input)
+    const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
@@ -344,7 +344,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
     DataTypes res;
-    const NamesAndTypes & columns = query_analyzer->getSelectSampleBlock().getNamesAndTypes();
+    const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getNamesAndTypesList();
     for (auto & column : columns)
         res.push_back(column.type);
 

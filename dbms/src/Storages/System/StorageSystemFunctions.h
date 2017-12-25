@@ -18,7 +18,7 @@ class StorageSystemFunctions : public ext::shared_ptr_helper<StorageSystemFuncti
 public:
     std::string getName() const override { return "SystemFunctions"; }
     std::string getTableName() const override { return name; }
-    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -33,7 +33,7 @@ protected:
 
 private:
     const std::string name;
-    NamesAndTypes columns;
+    NamesAndTypesList columns;
 };
 
 }

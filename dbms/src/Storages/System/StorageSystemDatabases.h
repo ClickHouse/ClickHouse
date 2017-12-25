@@ -18,7 +18,7 @@ public:
     std::string getName() const override { return "SystemDatabases"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -30,7 +30,7 @@ public:
 
 private:
     const std::string name;
-    NamesAndTypes columns;
+    NamesAndTypesList columns;
 
 protected:
     StorageSystemDatabases(const std::string & name_);

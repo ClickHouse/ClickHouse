@@ -161,17 +161,17 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 }
 
 
-using ColumnsAndDefaults = std::pair<NamesAndTypes, ColumnDefaults>;
+using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
 
 /// AST to the list of columns with types. Columns of Nested type are expanded into a list of real columns.
 static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
 {
     /// list of table columns in correct order
-    NamesAndTypes columns{};
+    NamesAndTypesList columns{};
     ColumnDefaults defaults{};
 
     /// Columns requiring type-deduction or default_expression type-check
-    std::vector<std::pair<NameAndType *, ASTColumnDeclaration *>> defaulted_columns{};
+    std::vector<std::pair<NameAndTypePair *, ASTColumnDeclaration *>> defaulted_columns{};
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
@@ -261,12 +261,12 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
 }
 
 
-static NamesAndTypes removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultType type)
+static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultType type)
 {
     auto & columns = columns_and_defaults.first;
     auto & defaults = columns_and_defaults.second;
 
-    NamesAndTypes removed{};
+    NamesAndTypesList removed{};
 
     for (auto it = std::begin(columns); it != std::end(columns);)
     {
@@ -284,7 +284,7 @@ static NamesAndTypes removeAndReturnColumns(ColumnsAndDefaults & columns_and_def
 }
 
 
-ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypes & columns)
+ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 {
     auto columns_list = std::make_shared<ASTExpressionList>();
 
@@ -307,9 +307,9 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypes & columns)
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(
-    const NamesAndTypes & columns,
-    const NamesAndTypes & materialized_columns,
-    const NamesAndTypes & alias_columns,
+    const NamesAndTypesList & columns,
+    const NamesAndTypesList & materialized_columns,
+    const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults)
 {
     auto columns_list = std::make_shared<ASTExpressionList>();
@@ -393,7 +393,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 
     /// Check for duplicates
     std::set<String> all_columns;
-    auto check_column_already_exists = [&all_columns](const NameAndType & column_name_and_type)
+    auto check_column_already_exists = [&all_columns](const NameAndTypePair & column_name_and_type)
     {
         if (!all_columns.emplace(column_name_and_type.name).second)
             throw Exception("Column " + backQuoteIfNeed(column_name_and_type.name) + " already exists", ErrorCodes::DUPLICATE_COLUMN);
