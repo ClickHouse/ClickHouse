@@ -1,6 +1,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/NextGenReplication/StorageNextGenReplicatedMergeTree.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -355,6 +356,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
         name_part = name_part.substr(strlen("Replicated"));
 
+    bool next_gen_replicated = startsWith(name_part, "NextGenReplicated");
+    if (next_gen_replicated)
+    {
+        replicated = true;
+        name_part = name_part.substr(strlen("NextGenReplicated"));
+    }
+
     MergeTreeData::MergingParams merging_params;
     merging_params.mode = MergeTreeData::MergingParams::Ordinary;
 
@@ -585,7 +593,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
-    if (replicated)
+    if (next_gen_replicated)
+        return StorageNextGenReplicatedMergeTree::create(
+            zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
+            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.context, primary_expr_list, date_column_name, partition_expr_list,
+            sampling_expression, merging_params, storage_settings,
+            args.has_force_restore_data_flag);
+    else if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
             args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
@@ -617,6 +632,13 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedAggregatingMergeTree", create);
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
+
+    factory.registerStorage("NextGenReplicatedMergeTree", create);
+    factory.registerStorage("NextGenReplicatedCollapsingMergeTree", create);
+    factory.registerStorage("NextGenReplicatedReplacingMergeTree", create);
+    factory.registerStorage("NextGenReplicatedAggregatingMergeTree", create);
+    factory.registerStorage("NextGenReplicatedSummingMergeTree", create);
+    factory.registerStorage("NextGenReplicatedGraphiteMergeTree", create);
 }
 
 }

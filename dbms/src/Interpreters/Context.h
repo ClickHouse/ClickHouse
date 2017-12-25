@@ -287,6 +287,8 @@ public:
     const MergeList & getMergeList() const;
 
     void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
+    /// Return current session or nullptr.
+    std::shared_ptr<zkutil::ZooKeeper> tryGetZooKeeper() const;
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper

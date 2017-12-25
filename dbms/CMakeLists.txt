@@ -52,6 +52,7 @@ add_headers_and_sources(dbms src/Columns)
 add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)
+add_headers_and_sources(dbms src/Storages/NextGenReplication)
 add_headers_and_sources(dbms src/Client)
 add_headers_only(dbms src/Server)
 

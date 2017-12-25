@@ -1289,6 +1289,12 @@ void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
     shared->zookeeper = std::move(zookeeper);
 }
 
+zkutil::ZooKeeperPtr Context::tryGetZooKeeper() const
+{
+    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
+    return shared->zookeeper;
+}
+
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
