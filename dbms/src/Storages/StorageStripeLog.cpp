@@ -175,9 +175,9 @@ private:
 StorageStripeLog::StorageStripeLog(
     const std::string & path_,
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_,
     bool attach,
     size_t max_compress_block_size_)

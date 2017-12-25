@@ -59,9 +59,9 @@ StorageMaterializedView::StorageMaterializedView(
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_,
     bool attach_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
@@ -126,7 +126,7 @@ StorageMaterializedView::StorageMaterializedView(
     }
 }
 
-NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
+NameAndType StorageMaterializedView::getColumn(const String & column_name) const
 {
     return getTargetTable()->getColumn(column_name);
 }

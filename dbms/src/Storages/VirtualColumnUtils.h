@@ -10,18 +10,18 @@ namespace DB
 {
 
 class Context;
-class NamesAndTypesList;
+class NamesAndTypes;
 
 
 namespace VirtualColumnUtils
 {
 
 /// Calculate the minimum numeric suffix to add to the string so that it is not present in the set
-String chooseSuffix(const NamesAndTypesList & columns, const String & name);
+String chooseSuffix(const NamesAndTypes & columns, const String & name);
 
 /// Calculate the minimum total numeric suffix to add to each string,
 /// so that none is present in the set.
-String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<String> & names);
+String chooseSuffixForSet(const NamesAndTypes & columns, const std::vector<String> & names);
 
 /// Adds to the select query section `select column_name as value`
 /// For example select _port as 9000.

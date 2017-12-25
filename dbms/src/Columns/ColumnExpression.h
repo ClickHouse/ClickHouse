@@ -20,7 +20,6 @@ private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
     ColumnExpression(size_t s_, const ExpressionActionsPtr & expression_, const NamesAndTypes & arguments_, const DataTypePtr & return_type_, const String & return_name_);
-    ColumnExpression(size_t s_, const ExpressionActionsPtr & expression_, const NamesAndTypesList & arguments_, const DataTypePtr & return_type_, const String & return_name_);
 
     ColumnExpression(const ColumnExpression &) = default;
 

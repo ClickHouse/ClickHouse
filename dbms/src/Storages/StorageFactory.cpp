@@ -239,7 +239,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
 
 
 /// Some types are only for intermediate values of expressions and cannot be used in tables.
-static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
+static void checkAllTypesAreAllowedInTable(const NamesAndTypes & names_and_types)
 {
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
@@ -365,9 +365,9 @@ StoragePtr StorageFactory::get(
     const String & database_name,
     Context & local_context,
     Context & context,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
+    const NamesAndTypes & columns,
+    const NamesAndTypes & materialized_columns,
+    const NamesAndTypes & alias_columns,
     const ColumnDefaults & column_defaults,
     bool attach,
     bool has_force_restore_data_flag) const

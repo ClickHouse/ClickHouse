@@ -20,7 +20,7 @@ public:
     std::string getName() const override { return "Null"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names &,
@@ -45,14 +45,14 @@ public:
 
 private:
     String name;
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
 
 protected:
     StorageNull(
         const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
+        const NamesAndTypes & columns_,
+        const NamesAndTypes & materialized_columns_,
+        const NamesAndTypes & alias_columns_,
         const ColumnDefaults & column_defaults_)
         : IStorage{materialized_columns_, alias_columns_, column_defaults_}, name(name_), columns(columns_) {}
 };

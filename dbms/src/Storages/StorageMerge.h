@@ -26,8 +26,8 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-    NameAndTypePair getColumn(const String & column_name) const override;
+    const NamesAndTypes & getColumnsListImpl() const override { return columns; }
+    NameAndType getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
     BlockInputStreams read(
@@ -47,7 +47,7 @@ public:
 
 private:
     String name;
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     const Context & context;
@@ -61,9 +61,9 @@ private:
 protected:
     StorageMerge(
         const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
+        const NamesAndTypes & columns_,
+        const NamesAndTypes & materialized_columns_,
+        const NamesAndTypes & alias_columns_,
         const ColumnDefaults & column_defaults_,
         const String & source_database_,
         const String & table_name_regexp_,

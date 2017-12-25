@@ -153,7 +153,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     if (!path.empty() && path.back() != '/')
         path += "/";
 
-    NamesAndTypesList columns;
+    NamesAndTypes columns;
 
     {
         ReadBufferFromFile buf(path + "columns.txt");
@@ -239,7 +239,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     }
 
     /// Read all columns, calculate checksums and validate marks.
-    for (const NameAndTypePair & name_type : columns)
+    for (const NameAndType & name_type : columns)
     {
         LOG_DEBUG(log, "Checking column " + name_type.name + " in " + path);
 

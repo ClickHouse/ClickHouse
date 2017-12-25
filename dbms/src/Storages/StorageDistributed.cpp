@@ -127,7 +127,7 @@ StorageDistributed::~StorageDistributed() = default;
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    const NamesAndTypesList & columns_,
+    const NamesAndTypes & columns_,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -146,9 +146,9 @@ StorageDistributed::StorageDistributed(
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
+    const NamesAndTypes & columns_,
+    const NamesAndTypes & materialized_columns_,
+    const NamesAndTypes & alias_columns_,
     const ColumnDefaults & column_defaults_,
     const String & remote_database_,
     const String & remote_table_,
@@ -169,7 +169,7 @@ StorageDistributed::StorageDistributed(
 
 StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
-    const NamesAndTypesList & columns_,
+    const NamesAndTypes & columns_,
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
@@ -303,7 +303,7 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 }
 
 
-NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
+NameAndType StorageDistributed::getColumn(const String & column_name) const
 {
     if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
         return { column_name, type };

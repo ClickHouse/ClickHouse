@@ -37,9 +37,9 @@ struct MergeTreeReadTask
     /// used to determine whether column should be filtered during PREWHERE or WHERE
     const NameSet & column_name_set;
     /// column names to read during WHERE
-    const NamesAndTypesList & columns;
+    const NamesAndTypes & columns;
     /// column names to read during PREWHERE
-    const NamesAndTypesList & pre_columns;
+    const NamesAndTypes & pre_columns;
     /// should PREWHERE column be returned to requesting side?
     const bool remove_prewhere_column;
     /// resulting block may require reordering in accordance with `ordered_names`
@@ -56,8 +56,8 @@ struct MergeTreeReadTask
 
     MergeTreeReadTask(
         const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
-        const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
-        const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
+        const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypes & columns,
+        const NamesAndTypes & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
         MergeTreeBlockSizePredictorPtr && size_predictor);
 
     virtual ~MergeTreeReadTask();
