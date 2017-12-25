@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
 #include <common/DateLUT.h>
+#include <Common/demangle.h>
 
 
 class SipHash;
@@ -135,22 +136,22 @@ class FieldVisitorConvertToNumber : public StaticVisitor<T>
 public:
     T operator() (const Null &) const
     {
-        throw Exception("Cannot convert NULL to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert NULL to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const String &) const
     {
-        throw Exception("Cannot convert String to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert String to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Array &) const
     {
-        throw Exception("Cannot convert Array to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert Array to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Tuple &) const
     {
-        throw Exception("Cannot convert Tuple to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const UInt64 & x) const { return x; }

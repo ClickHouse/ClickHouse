@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
@@ -19,9 +21,16 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-
-/** Return an UInt8 containing 0 or 1.
+/** Behaviour in presence of NULLs:
+  *
+  * Functions AND, XOR, NOT use default implementation for NULLs:
+  * - if one of arguments is Nullable, they return Nullable result where NULLs are returned when at least one argument was NULL.
+  *
+  * But function OR is different.
+  * It always return non-Nullable result and NULL are equivalent to 0 (false).
+  * For example, 1 OR NULL returns 1, not NULL.
   */
+
 
 struct AndImpl
 {
@@ -30,15 +39,17 @@ struct AndImpl
         return true;
     }
 
-    static inline bool isSaturatedValue(UInt8 a)
+    static inline bool isSaturatedValue(bool a)
     {
         return !a;
     }
 
-    static inline UInt8 apply(UInt8 a, UInt8 b)
+    static inline bool apply(bool a, bool b)
     {
         return a && b;
     }
+
+    static inline bool specialImplementationForNulls() { return false; }
 };
 
 struct OrImpl
@@ -48,15 +59,17 @@ struct OrImpl
         return true;
     }
 
-    static inline bool isSaturatedValue(UInt8 a)
+    static inline bool isSaturatedValue(bool a)
     {
         return a;
     }
 
-    static inline UInt8 apply(UInt8 a, UInt8 b)
+    static inline bool apply(bool a, bool b)
     {
         return a || b;
     }
+
+    static inline bool specialImplementationForNulls() { return true; }
 };
 
 struct XorImpl
@@ -66,15 +79,17 @@ struct XorImpl
         return false;
     }
 
-    static inline bool isSaturatedValue(UInt8)
+    static inline bool isSaturatedValue(bool)
     {
         return false;
     }
 
-    static inline UInt8 apply(UInt8 a, UInt8 b)
+    static inline bool apply(bool a, bool b)
     {
-        return (!a) != (!b);
+        return a != b;
     }
+
+    static inline bool specialImplementationForNulls() { return false; }
 };
 
 template <typename A>
@@ -170,21 +185,23 @@ private:
         bool has_res = false;
         for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
         {
-            if (in[i]->isColumnConst())
-            {
-                UInt8 x = !!in[i]->getUInt(0);
-                if (has_res)
-                {
-                    res = Impl::apply(res, x);
-                }
-                else
-                {
-                    res = x;
-                    has_res = true;
-                }
+            if (!in[i]->isColumnConst())
+                continue;
 
-                in.erase(in.begin() + i);
+            Field value = (*in[i])[0];
+
+            UInt8 x = !value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), value);
+            if (has_res)
+            {
+                res = Impl::apply(res, x);
             }
+            else
+            {
+                res = x;
+                has_res = true;
+            }
+
+            in.erase(in.begin() + i);
         }
         return has_res;
     }
@@ -195,10 +212,29 @@ private:
         auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
-        const typename ColumnVector<T>::Container & vec = col->getData();
+        const auto & vec = col->getData();
         size_t n = res.size();
         for (size_t i = 0; i < n; ++i)
             res[i] = !!vec[i];
+
+        return true;
+    }
+
+    template <typename T>
+    bool convertNullableTypeToUInt8(const IColumn * column, UInt8Container & res)
+    {
+        auto col_nullable = checkAndGetColumn<ColumnNullable>(column);
+
+        auto col = checkAndGetColumn<ColumnVector<T>>(&col_nullable->getNestedColumn());
+        if (!col)
+            return false;
+
+        const auto & vec = col->getData();
+        const auto & null_map = col_nullable->getNullMapData();
+
+        size_t n = res.size();
+        for (size_t i = 0; i < n; ++i)
+            res[i] = !!vec[i] && !null_map[i];
 
         return true;
     }
@@ -213,7 +249,17 @@ private:
             !convertTypeToUInt8<UInt32>(column, res) &&
             !convertTypeToUInt8<UInt64>(column, res) &&
             !convertTypeToUInt8<Float32>(column, res) &&
-            !convertTypeToUInt8<Float64>(column, res))
+            !convertTypeToUInt8<Float64>(column, res) &&
+            !convertNullableTypeToUInt8<Int8>(column, res) &&
+            !convertNullableTypeToUInt8<Int16>(column, res) &&
+            !convertNullableTypeToUInt8<Int32>(column, res) &&
+            !convertNullableTypeToUInt8<Int64>(column, res) &&
+            !convertNullableTypeToUInt8<UInt8>(column, res) &&
+            !convertNullableTypeToUInt8<UInt16>(column, res) &&
+            !convertNullableTypeToUInt8<UInt32>(column, res) &&
+            !convertNullableTypeToUInt8<UInt64>(column, res) &&
+            !convertNullableTypeToUInt8<Float32>(column, res) &&
+            !convertNullableTypeToUInt8<Float64>(column, res))
             throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -226,6 +272,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -235,7 +283,8 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < arguments.size(); ++i)
-            if (!arguments[i]->isNumber())
+            if (!(arguments[i]->isNumber()
+                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || removeNullable(arguments[i])->isNumber()))))
                 throw Exception("Illegal type ("
                     + arguments[i]->getName()
                     + ") of " + toString(i + 1) + " argument of function " + getName(),
