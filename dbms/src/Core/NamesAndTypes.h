@@ -33,7 +33,12 @@ struct NameAndType
 class NamesAndTypes : public std::vector<NameAndType>
 {
 public:
-    using std::vector<NameAndType>::vector;
+    NamesAndTypes() {}
+
+    NamesAndTypes(std::initializer_list<NameAndType> init) : std::vector<NameAndType>(init) {}
+
+    template <typename Iterator>
+    NamesAndTypes(Iterator begin, Iterator end) : std::vector<NameAndType>(begin, end) {}
 
     void readText(ReadBuffer & buf);
     void writeText(WriteBuffer & buf) const;
