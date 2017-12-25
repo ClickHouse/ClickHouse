@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
@@ -300,7 +300,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 
         for (const auto & column_to_sum : columns_to_sum)
             if (columns.end() == std::find_if(columns.begin(), columns.end(),
-                [&](const NameAndTypePair & name_and_type) { return column_to_sum == DataTypeNested::extractNestedTableName(name_and_type.name); }))
+                [&](const NameAndTypePair & name_and_type) { return column_to_sum == Nested::extractTableName(name_and_type.name); }))
                 throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
     }
 

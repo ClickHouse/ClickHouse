@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -70,7 +70,7 @@ size_t IDataType::getSizeOfValueInMemory() const
 
 String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
 {
-    String nested_table_name = DataTypeNested::extractNestedTableName(column_name);
+    String nested_table_name = Nested::extractTableName(column_name);
     bool is_sizes_of_nested_type = !path.empty() && path.back().type == IDataType::Substream::ArraySizes
         && nested_table_name != column_name;
 
