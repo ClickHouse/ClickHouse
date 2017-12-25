@@ -391,7 +391,7 @@ struct ConvertThroughParsing
         typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
 
         ColumnUInt8::MutablePtr col_null_map_to;
-        ColumnUInt8::Container * vec_null_map_to = nullptr;
+        ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
         if constexpr (mode == ConvertFromStringExceptionMode::Null)
         {
             col_null_map_to = ColumnUInt8::create(size);
