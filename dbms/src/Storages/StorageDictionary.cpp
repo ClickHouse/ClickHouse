@@ -1,6 +1,7 @@
 #include <sstream>
 #include <Parsers/ASTCreateQuery.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/CacheDictionary.h>
@@ -87,9 +88,9 @@ NamesAndTypes StorageDictionary::getNamesAndTypes(const DictionaryStructure & di
     if (dictionary_structure.id)
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
     if (dictionary_structure.range_min)
-        dictionary_names_and_types.emplace_back(dictionary_structure.range_min->name, std::make_shared<DataTypeUInt16>());
+        dictionary_names_and_types.emplace_back(dictionary_structure.range_min->name, std::make_shared<DataTypeDate>());
     if (dictionary_structure.range_max)
-        dictionary_names_and_types.emplace_back(dictionary_structure.range_max->name, std::make_shared<DataTypeUInt16>());
+        dictionary_names_and_types.emplace_back(dictionary_structure.range_max->name, std::make_shared<DataTypeDate>());
     if (dictionary_structure.key)
         for (const auto & attribute : *dictionary_structure.key)
             dictionary_names_and_types.emplace_back(attribute.name, attribute.type);
