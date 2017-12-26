@@ -391,7 +391,8 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPOD
     start_dates.reserve(attr.size());
     end_dates.reserve(attr.size());
 
-    for (const auto & key : attr) {
+    for (const auto & key : attr)
+    {
         for (const auto & value : key.second)
         {
             ids.push_back(key.first);
