@@ -92,29 +92,24 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
     insertColumn(sample_block, "Extra");
     std::string table_name = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
     MySQLBlockInputStream result(pool.Get(), std::string("DESCRIBE ") + table_name, sample_block, 1 << 16);
-    Block resultBlock = result.read();
-    const IColumn & names = *resultBlock.getByPosition(0).column.get();
-    const IColumn & types = *resultBlock.getByPosition(1).column.get();
+    Block result_block = result.read();
+    const IColumn & names = *result_block.getByPosition(0).column.get();
+    const IColumn & types = *result_block.getByPosition(1).column.get();
     size_t field_count = names.size();
-    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
-    NamesAndTypesList materialized_columns;
-    NamesAndTypesList alias_columns;
-    ColumnDefaults column_defaults;
+    NamesAndTypesList columns;
+
     for (size_t i = 0; i < field_count; ++i)
-    {
         columns->push_back(NameAndTypePair(names.getDataAt(i).data, getDataType(types.getDataAt(i).data)));
-    }
-    auto res = StorageMySQL::create(table_name,
+
+    auto res = StorageMySQL::create(
+        table_name,
         host_port,
         database_name,
         table_name,
         user_name,
         password,
-        columns,
-        materialized_columns,
-        alias_columns,
-        column_defaults,
-        context);
+        columns);
+
     res->startup();
     return res;
 }

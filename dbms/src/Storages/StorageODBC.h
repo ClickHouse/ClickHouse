@@ -2,53 +2,40 @@
 
 #include <Storages/IStorage.h>
 
-#include <Poco/Data/SessionPool.h>
 
-#include <sparsehash/dense_hash_map>
+namespace Poco
+{
+    namespace Data
+    {
+        class SessionPool;
+    }
+}
+
 
 namespace DB
 {
+
+/** Implements storage in the ODBC database.
+  * Use ENGINE = odbc(connection_string, table_name)
+  * Example ENGINE = odbc('dsn=test', table)
+  * Read only.
+  */
 class StorageODBC : public IStorage
 {
 public:
-    StorageODBC(const std::string & table_name_,
-        const std::string & database_name_,
-        const std::string & odbc_table_name_,
-        const NamesAndTypesListPtr & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const Context & context_);
+    StorageODBC(
+        const std::string & name,
+        const std::string & connection_string,
+        const std::string & remote_database_name,
+        const std::string & remote_table_name,
+        const NamesAndTypesList & columns);
 
-    static StoragePtr create(const std::string & table_name,
-        const std::string & database_name,
-        const std::string & odbc_table_name,
-        const NamesAndTypesListPtr & columns,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const Context & context)
-    {
-        return std::make_shared<StorageODBC>(
-            table_name, database_name, odbc_table_name, columns, materialized_columns_, alias_columns_, column_defaults_, context);
-    }
+    std::string getName() const override { return "ODBC"; }
+    std::string getTableName() const override { return name; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
-    std::string getName() const override
-    {
-        return "ODBC";
-    }
-
-    std::string getTableName() const override
-    {
-        return table_name;
-    }
-
-    const NamesAndTypesList & getColumnsListImpl() const override
-    {
-        return *columns;
-    }
-
-    BlockInputStreams read(const Names & column_names,
+    BlockInputStreams read(
+        const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
@@ -56,13 +43,14 @@ public:
         unsigned num_streams) override;
 
 private:
-    std::string table_name;
-    std::string database_name;
-    std::string odbc_table_name;
-    Block sample_block;
-    NamesAndTypesListPtr columns;
-    const Context & context_global;
-    google::dense_hash_map<std::string, DataTypePtr> column_map;
-    Poco::Data::SessionPool pool;
+    std::string name;
+
+    std::string connection_string;
+    std::string remote_database_name;
+    std::string remote_table_name;
+
+    NamesAndTypesList columns;
+
+    std::shared_ptr<Poco::Data::SessionPool> pool;
 };
 }
