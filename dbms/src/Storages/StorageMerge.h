@@ -26,7 +26,7 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
@@ -47,7 +47,7 @@ public:
 
 private:
     String name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     const Context & context;
@@ -61,7 +61,7 @@ private:
 protected:
     StorageMerge(
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,

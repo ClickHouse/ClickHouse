@@ -361,7 +361,7 @@ NamesAndTypesList Block::getNamesAndTypesList() const
     NamesAndTypesList res;
 
     for (const auto & elem : data)
-        res.push_back(NameAndTypePair(elem.name, elem.type));
+        res.emplace_back(elem.name, elem.type);
 
     return res;
 }

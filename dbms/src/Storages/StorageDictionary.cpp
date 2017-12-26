@@ -18,7 +18,7 @@ StoragePtr StorageDictionary::create(
     const String & table_name,
     Context & context,
     const ASTCreateQuery & query,
-    NamesAndTypesListPtr columns,
+    const NamesAndTypesList & columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults)
@@ -41,7 +41,7 @@ StoragePtr StorageDictionary::create(
 
 StoragePtr StorageDictionary::create(
     const String & table_name,
-    NamesAndTypesListPtr columns,
+    const NamesAndTypesList & columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
@@ -55,7 +55,7 @@ StoragePtr StorageDictionary::create(
 
 StorageDictionary::StorageDictionary(
     const String & table_name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -81,35 +81,32 @@ BlockInputStreams StorageDictionary::read(
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }
 
-NamesAndTypesListPtr StorageDictionary::getNamesAndTypes(const DictionaryStructure & dictionaryStructure)
+NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure & dictionary_structure)
 {
-    NamesAndTypesListPtr dictionaryNamesAndTypes = std::make_shared<NamesAndTypesList>();
+    NamesAndTypesList dictionary_names_and_types;
 
-    if (dictionaryStructure.id)
-        dictionaryNamesAndTypes->push_back(NameAndTypePair(dictionaryStructure.id->name,
-                                                          std::make_shared<DataTypeUInt64>()));
-    if (dictionaryStructure.range_min)
-        dictionaryNamesAndTypes->push_back(NameAndTypePair(dictionaryStructure.range_min->name,
-                                                          std::make_shared<DataTypeDate>()));
-    if (dictionaryStructure.range_max)
-        dictionaryNamesAndTypes->push_back(NameAndTypePair(dictionaryStructure.range_max->name,
-                                                          std::make_shared<DataTypeDate>()));
-    if (dictionaryStructure.key)
-        for (const auto & attribute : *dictionaryStructure.key)
-            dictionaryNamesAndTypes->push_back(NameAndTypePair(attribute.name, attribute.type));
+    if (dictionary_structure.id)
+        dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
+    if (dictionary_structure.range_min)
+        dictionary_names_and_types.emplace_back(dictionary_structure.range_min->name, std::make_shared<DataTypeDate>());
+    if (dictionary_structure.range_max)
+        dictionary_names_and_types.emplace_back(dictionary_structure.range_max->name, std::make_shared<DataTypeDate>());
+    if (dictionary_structure.key)
+        for (const auto & attribute : *dictionary_structure.key)
+            dictionary_names_and_types.emplace_back(attribute.name, attribute.type);
 
-    for (const auto & attribute : dictionaryStructure.attributes)
-        dictionaryNamesAndTypes->push_back(NameAndTypePair(attribute.name, attribute.type));
+    for (const auto & attribute : dictionary_structure.attributes)
+        dictionary_names_and_types.emplace_back(attribute.name, attribute.type);
 
-    return dictionaryNamesAndTypes;
+    return dictionary_names_and_types;
 }
 
-void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionaryStructure) const
+void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const
 {
-    auto dictionaryNamesAndTypes = getNamesAndTypes(dictionaryStructure);
-    std::set<NameAndTypePair> namesAndTypesSet(dictionaryNamesAndTypes->begin(), dictionaryNamesAndTypes->end());
+    auto dictionary_names_and_types = getNamesAndTypes(dictionary_structure);
+    std::set<NameAndTypePair> namesAndTypesSet(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
-    for (auto & column : *columns)
+    for (auto & column : columns)
     {
         if (namesAndTypesSet.find(column) == namesAndTypesSet.end())
         {
@@ -117,7 +114,7 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
             message += column.name + " " + column.type->getName();
             message += " in dictionary " + dictionary_name + ". ";
             message += "There are only columns ";
-            message += generateNamesAndTypesDescription(dictionaryNamesAndTypes->begin(), dictionaryNamesAndTypes->end());
+            message += generateNamesAndTypesDescription(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
             throw Exception(message);
         }
     }

@@ -217,7 +217,7 @@ StorageKafka::StorageKafka(
     const std::string & table_name_,
     const std::string & database_name_,
     Context & context_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,

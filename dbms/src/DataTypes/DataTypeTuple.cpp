@@ -1,6 +1,7 @@
 #include <Common/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -443,6 +444,15 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create);
+}
+
+void registerDataTypeNested(DataTypeFactory & factory)
+{
+    /// Nested(...) data type is just a sugar for Array(Tuple(...))
+    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
+    {
+        return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
+    });
 }
 
 }
