@@ -52,8 +52,8 @@ UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
 DEBIAN_MIRROR="deb.debian.org"
 #UBUNTU_MIRROR="mirrors.kernel.org"
 
-UBUNTU_MIRROR="mirror.yandex.ru"
 #DEBIAN_MIRROR="mirror.yandex.ru"
+UBUNTU_MIRROR="mirror.yandex.ru"
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 : ${DIST:="$(lsb_release --short --codename)"}
@@ -81,9 +81,11 @@ if [ -n "${ARCH}" ]; then
     DEBOOTSTRAPOPTS=("--arch" "$ARCH" "${DEBOOTSTRAPOPTS[@]}")
 fi
 
-BASETGZ="/var/cache/pbuilder/$NAME-base.tgz"
+BASETGZ=${SET_BASETGZ}
+BASETGZ=${BASETGZ:="/var/cache/pbuilder/$NAME-base.tgz"}
 DISTRIBUTION="$DIST"
-BUILDRESULT="/var/cache/pbuilder/$NAME/result/"
+BUILDRESULT=${SET_BUILDRESULT}
+BUILDRESULT=${BUILDRESULT:="/var/cache/pbuilder/$NAME/result/"}
 APTCACHE="/var/cache/pbuilder/$NAME/aptcache/"
 BUILDPLACE="/var/cache/pbuilder/build/"
 
