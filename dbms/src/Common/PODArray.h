@@ -122,10 +122,12 @@ protected:
     void reserveForNextSize(TAllocatorParams ... allocator_params)
     {
         if (size() == 0)
+        {
             // The allocated memory should be multiplication of sizeof(T) to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
-            realloc(std::max(((INITIAL_SIZE -1)/sizeof(T) + 1) * sizeof(T) , minimum_memory_for_elements(1)),
+            realloc(std::max(((INITIAL_SIZE - 1) / sizeof(T) + 1) * sizeof(T), minimum_memory_for_elements(1)),
                     std::forward<TAllocatorParams>(allocator_params)...);
+        }
         else
             realloc(allocated_bytes() * 2, std::forward<TAllocatorParams>(allocator_params)...);
     }
