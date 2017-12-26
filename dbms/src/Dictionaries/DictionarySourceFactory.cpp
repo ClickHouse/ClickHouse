@@ -54,7 +54,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 
     if (dict_struct.id)
         block.insert(ColumnWithTypeAndName{
-            ColumnUInt64::create(1), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
+            ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
 
     if (dict_struct.key)
     {
@@ -70,7 +70,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
     if (dict_struct.range_min)
         for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
             block.insert(ColumnWithTypeAndName{
-                ColumnUInt16::create(1), std::make_shared<DataTypeDate>(), attribute->name});
+                ColumnUInt16::create(1, 0), std::make_shared<DataTypeDate>(), attribute->name});
 
     for (const auto & attribute : dict_struct.attributes)
     {
