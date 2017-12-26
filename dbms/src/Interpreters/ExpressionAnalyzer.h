@@ -141,6 +141,11 @@ public:
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
+    NamesAndTypesList & getUsedColumns()
+    {
+        return columns;
+    }
+
 private:
     ASTPtr ast;
     ASTSelectQuery * select_query;
