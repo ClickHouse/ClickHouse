@@ -1,4 +1,8 @@
 #!/bin/bash
 
-#service clickhouse-server start
+# delete me:
+env
+
 clickhouse-client -q "SELECT version();"
+
+clickhouse-test --queries /usr/share/clickhouse-test/queries || true

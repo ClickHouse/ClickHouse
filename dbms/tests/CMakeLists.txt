@@ -20,7 +20,7 @@ macro(grep_gtest_sources BASE_DIR DST_VAR)
     file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
 endmacro()
 
-install (FILES clickhouse-test DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+install (PROGRAMS clickhouse-test DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 install (
     DIRECTORY queries performance external_dictionaries
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse-test
