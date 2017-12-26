@@ -53,3 +53,11 @@ Priority: extra
 Depends: ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
 Description: debugging symbols for clickhouse-server-base
  This package contains the debugging symbols for clickhouse-server-base.
+
+
+Package: clickhouse-test
+Section: Database
+Priority: extra
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, curl, perl
+Description: Clickhouse tests
