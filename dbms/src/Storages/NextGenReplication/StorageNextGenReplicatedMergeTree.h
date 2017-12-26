@@ -89,7 +89,7 @@ private:
     String replica_name;
     String replica_path;
 
-    void createTableOrReplica();
+    void createTableOrReplica(zkutil::ZooKeeper & zookeeper);
 
     zkutil::ZooKeeperPtr tryGetZooKeeper();
     zkutil::ZooKeeperPtr getZooKeeper();
@@ -109,6 +109,8 @@ private:
     /// A thread that selects parts to merge.
     std::thread merge_selecting_thread;
     Poco::Event merge_selecting_event;
+
+    friend class NextGenReplicatedBlockOutputStream;
 };
 
 }

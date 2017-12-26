@@ -120,14 +120,21 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
+    BlockWithPartition & block_with_partition, std::optional<Int64> block_number)
 {
     Block & block = block_with_partition.block;
 
     static const String TMP_PREFIX = "tmp_insert_";
 
-    /// This will generate unique name in scope of current server process.
-    Int64 temp_index = data.insert_increment.get();
+    Int64 temp_index;
+    if (block_number)
+        temp_index = block_number.value();
+    else
+    {
+        /// This will generate unique name in scope of current server process.
+        temp_index = data.insert_increment.get();
+    }
 
     MergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
