@@ -13,6 +13,12 @@ ReplicatedAggregatingMergeTree
 ReplicatedSummingMergeTree
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+ReplicatedReplacingMergeTree
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ReplicatedGraphiteMergeTree
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Replication is only supported for tables in the MergeTree family. Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
 INSERT and ALTER are replicated (for more information, see ALTER). Compressed data is replicated, not query texts.
