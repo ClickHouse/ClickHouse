@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 /* mysql ('host:port', database, table, user, password) - creates a temporary StorageMySQL.
  * The structure of the table is taken from the mysql query DESCRIBE table.
  * If there is no such table, an exception is thrown.
@@ -19,4 +20,5 @@ public:
     }
     StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
 };
+
 }
