@@ -1,5 +1,7 @@
 #include <memory>
 
+#include <boost/range/join.hpp>
+
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
 
@@ -34,7 +36,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -255,7 +257,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         }
     }
 
-    return {*DataTypeNested::expandNestedColumns(columns), defaults};
+    return {Nested::flatten(columns), defaults};
 }
 
 
@@ -304,17 +306,15 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
     return columns_list;
 }
 
-ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
+ASTPtr InterpreterCreateQuery::formatColumns(
+    const NamesAndTypesList & columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults)
 {
-    columns.insert(std::end(columns), std::begin(materialized_columns), std::end(materialized_columns));
-    columns.insert(std::end(columns), std::begin(alias_columns), std::end(alias_columns));
-
     auto columns_list = std::make_shared<ASTExpressionList>();
 
-    for (const auto & column : columns)
+    for (const auto & column : boost::join(columns, boost::join(materialized_columns, alias_columns)))
     {
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
@@ -350,10 +350,10 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::getColumnsInfo(const
     auto && columns_and_defaults = parseColumns(columns, context);
     res.materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
     res.alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
-    res.columns = std::make_shared<NamesAndTypesList>(std::move(columns_and_defaults.first));
+    res.columns = std::move(columns_and_defaults.first);
     res.column_defaults = std::move(columns_and_defaults.second);
 
-    if (res.columns->size() + res.materialized_columns.size() == 0)
+    if (res.columns.size() + res.materialized_columns.size() == 0)
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
 
     return res;
@@ -371,22 +371,21 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
     }
     else if (!create.as_table.empty())
     {
-        res.columns = std::make_shared<NamesAndTypesList>(as_storage->getColumnsListNonMaterialized());
+        res.columns = as_storage->getColumnsListNonMaterialized();
         res.materialized_columns = as_storage->materialized_columns;
         res.alias_columns = as_storage->alias_columns;
         res.column_defaults = as_storage->column_defaults;
     }
     else if (create.select)
     {
-        res.columns = std::make_shared<NamesAndTypesList>();
         for (size_t i = 0; i < as_select_sample.columns(); ++i)
-            res.columns->push_back(NameAndTypePair(as_select_sample.safeGetByPosition(i).name, as_select_sample.safeGetByPosition(i).type));
+            res.columns.emplace_back(as_select_sample.safeGetByPosition(i).name, as_select_sample.safeGetByPosition(i).type);
     }
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
-    ASTPtr new_columns = formatColumns(*res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
+    ASTPtr new_columns = formatColumns(res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
     if (create.columns)
         create.replace(create.columns, new_columns);
     else
@@ -400,7 +399,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
             throw Exception("Column " + backQuoteIfNeed(column_name_and_type.name) + " already exists", ErrorCodes::DUPLICATE_COLUMN);
     };
 
-    for (const auto & elem : *res.columns)
+    for (const auto & elem : res.columns)
         check_column_already_exists(elem);
     for (const auto & elem : res.materialized_columns)
         check_column_already_exists(elem);

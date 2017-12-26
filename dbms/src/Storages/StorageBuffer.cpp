@@ -43,7 +43,7 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -596,11 +596,11 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
-        *columns, materialized_columns, alias_columns, column_defaults, {});
+        columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 }

@@ -131,7 +131,7 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,

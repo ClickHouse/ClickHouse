@@ -20,7 +20,7 @@ StorageView::StorageView(
     const String & table_name_,
     const String & database_name_,
     const ASTCreateQuery & query,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)

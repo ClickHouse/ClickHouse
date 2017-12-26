@@ -18,7 +18,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeExpression.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnSet.h>
@@ -795,7 +795,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
     Block sample = interpreter->getSampleBlock();
-    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getNamesAndTypesList());
+    NamesAndTypesList columns = sample.getNamesAndTypesList();
 
     StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
     external_storage->startup();
@@ -1912,11 +1912,11 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
                 bool found = false;
                 for (const auto & column_name_type : columns)
                 {
-                    String table_name = DataTypeNested::extractNestedTableName(column_name_type.name);
-                    String column_name = DataTypeNested::extractNestedColumnName(column_name_type.name);
+                    String table_name = Nested::extractTableName(column_name_type.name);
+                    String column_name = Nested::extractElementName(column_name_type.name);
                     if (table_name == source_name)
                     {
-                        array_join_result_to_source[DataTypeNested::concatenateNestedName(result_name, column_name)] = column_name_type.name;
+                        array_join_result_to_source[Nested::concatenateName(result_name, column_name)] = column_name_type.name;
                         found = true;
                         break;
                     }
@@ -1939,7 +1939,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
     {
         if (node->kind == ASTIdentifier::Column)
         {
-            String table_name = DataTypeNested::extractNestedTableName(node->name);
+            String table_name = Nested::extractTableName(node->name);
 
             if (array_join_alias_to_name.count(node->name))
             {
@@ -1949,9 +1949,9 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
             else if (array_join_alias_to_name.count(table_name))
             {
                 /// ARRAY JOIN was written with a nested table. Example: SELECT PP.KEY1 FROM ... ARRAY JOIN ParsedParams AS PP
-                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[node->name]    /// PP.Key1 -> ParsedParams.Key1
-                    = DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
+                    = Nested::concatenateName(array_join_alias_to_name[table_name], nested_column);
             }
             else if (array_join_name_to_alias.count(node->name))
             {
@@ -1959,7 +1959,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
                   * That is, the query uses the original array, replicated by itself.
                   */
 
-                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
                     array_join_name_to_alias[node->name]] = node->name;
             }
@@ -1968,9 +1968,9 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
                 /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
                  */
 
-                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-                DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
+                Nested::concatenateName(array_join_name_to_alias[table_name], nested_column)] = node->name;
             }
         }
     }
@@ -2877,7 +2877,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
     {
         if (node->kind == ASTIdentifier::Column
             && !ignored_names.count(node->name)
-            && !ignored_names.count(DataTypeNested::extractNestedTableName(node->name)))
+            && !ignored_names.count(Nested::extractTableName(node->name)))
         {
             if (!available_joined_columns.count(node->name)
                 || available_columns.count(node->name)) /// Read column from left table if has.

@@ -24,7 +24,7 @@ public:
         const String & database_name,
         Context & local_context,
         Context & context,
-        NamesAndTypesListPtr columns,
+        const NamesAndTypesList & columns,
         const NamesAndTypesList & materialized_columns,
         const NamesAndTypesList & alias_columns,
         const ColumnDefaults & column_defaults,
