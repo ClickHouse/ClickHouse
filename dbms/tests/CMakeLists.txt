@@ -24,6 +24,7 @@ install (PROGRAMS clickhouse-test DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT 
 install (
     DIRECTORY queries performance external_dictionaries
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse-test
+    USE_SOURCE_PERMISSIONS
     COMPONENT clickhouse
     PATTERN "CMakeLists.txt" EXCLUDE
     PATTERN ".gitignore" EXCLUDE
