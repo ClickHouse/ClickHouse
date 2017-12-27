@@ -130,8 +130,6 @@ void StorageNextGenReplicatedMergeTree::createTableOrReplica(zkutil::ZooKeeper &
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
             zookeeper_path, String(), acl, zkutil::CreateMode::Persistent));
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-            zookeeper_path + "/seq_numbers", String(), acl, zkutil::CreateMode::Persistent));
-        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
             zookeeper_path + "/parts", String(), acl, zkutil::CreateMode::Persistent));
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
             zookeeper_path + "/replicas", String(), acl, zkutil::CreateMode::Persistent));

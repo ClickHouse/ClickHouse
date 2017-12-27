@@ -13,7 +13,6 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
-#include <optional>
 
 namespace DB
 {
@@ -47,7 +46,7 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, std::optional<Int64> block_number = std::nullopt);
+    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block);
 
 private:
     MergeTreeData & data;
