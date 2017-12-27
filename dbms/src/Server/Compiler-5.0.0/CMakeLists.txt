@@ -48,6 +48,7 @@ LLVMSupport
 #PollyPPCG
 
 libtinfo.a
-common
+${ZLIB_LIBRARIES}
 ${EXECINFO_LIBRARY}
+Threads::Threads
 )
