@@ -1543,7 +1543,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
             {
                 makeExplicitSet(func, sample_block, true);
             }
-            catch (const DB::Exception & e)
+            catch (const Exception & e)
             {
                 /// in `sample_block` there are no columns that add `getActions`
                 if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
@@ -1672,7 +1672,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     /** NOTE If tuple in left hand side specified non-explicitly
       * Example: identity((a, b)) IN ((1, 2), (3, 4))
       *  instead of       (a, b)) IN ((1, 2), (3, 4))
-      * then set creation of set doesn't work correctly.
+      * then set creation doesn't work correctly.
       */
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
