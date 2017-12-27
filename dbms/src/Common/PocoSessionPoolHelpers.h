@@ -14,4 +14,4 @@ using PocoSessionPoolConstructor = std::function<std::shared_ptr<Poco::Data::Ses
 /** Is used to adjust max size of default Poco thread pool. See issue #750
   * Acquire the lock, resize pool and construct new Session.
   */
-static std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr);
+std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr);

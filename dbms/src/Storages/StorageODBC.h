@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.h>
+
 #include <Storages/IStorage.h>
 
 
@@ -20,7 +22,7 @@ namespace DB
   * Example ENGINE = odbc('dsn=test', table)
   * Read only.
   */
-class StorageODBC : public IStorage
+class StorageODBC : public ext::shared_ptr_helper<StorageODBC>, public IStorage
 {
 public:
     StorageODBC(
@@ -45,7 +47,6 @@ public:
 private:
     std::string name;
 
-    std::string connection_string;
     std::string remote_database_name;
     std::string remote_table_name;
 

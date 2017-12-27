@@ -39,8 +39,9 @@ static bool isCompatible(const IAST & node)
 
     if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(&node))
     {
-        if (literal->value.type == Field::Type::Array
-            || literal->value.type == Field::Type::Tuple)
+        /// Foreign databases often have no support for Array and Tuple literals.
+        if (literal->value.getType() == Field::Types::Array
+            || literal->value.getType() == Field::Types::Tuple)
             return false;
 
         return true;

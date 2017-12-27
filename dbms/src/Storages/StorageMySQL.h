@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.h>
+
 #include <Storages/IStorage.h>
 #include <mysqlxx/Pool.h>
 
@@ -11,7 +13,7 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL : public IStorage
+class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
 {
 public:
     StorageMySQL(
@@ -39,12 +41,8 @@ public:
 private:
     std::string name;
 
-    std::string host;
-    UInt16 port;
     std::string remote_database_name;
     std::string remote_table_name;
-    std::string user;
-    std::string password;
 
     NamesAndTypesList columns;
     mysqlxx::Pool pool;

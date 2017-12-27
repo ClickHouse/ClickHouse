@@ -16,11 +16,9 @@ StorageMySQL::StorageMySQL(
     const std::string & password,
     const NamesAndTypesList & columns)
     : name(name)
-    , host(host), port(port)
     , remote_database_name(remote_database_name)
     , remote_table_name(remote_table_name)
-    , user(user), password(password)
-    , columns(columns_)
+    , columns(columns)
     , pool(remote_database_name, host, user, password, port)
 {
 }

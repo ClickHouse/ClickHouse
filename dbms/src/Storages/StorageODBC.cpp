@@ -14,10 +14,9 @@ StorageODBC::StorageODBC(
     const std::string & remote_table_name,
     const NamesAndTypesList & columns)
     : name(name)
-    , connection_string(connection_string)
     , remote_database_name(remote_database_name)
     , remote_table_name(remote_table_name)
-    , columns(columns_)
+    , columns(columns)
 {
     pool = createAndCheckResizePocoSessionPool([&]
     {
