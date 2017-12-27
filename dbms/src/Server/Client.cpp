@@ -385,7 +385,9 @@ private:
         : Protocol::Encryption::Disable;
 
         String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+        UInt16 port = config().getInt("port", config().getInt(
+                static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port",
+                static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
         String default_database = config().getString("database", "");
         String user = config().getString("user", "");
         String password = config().getString("password", "");
@@ -401,11 +403,12 @@ private:
                 << (!user.empty() ? " as user " + user : "")
                 << "." << std::endl;
 
-        connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
-            encryption,
-            Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+        ConnectionTimeouts timeouts(
+                Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
+                Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
+                Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+        connection = std::make_unique<Connection>(host, port, default_database, user, password, timeouts, "client",
+                                                  compression, encryption);
 
         String server_name;
         UInt64 server_version_major = 0;
