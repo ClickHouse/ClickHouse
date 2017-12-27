@@ -48,4 +48,5 @@ ${REQUIRED_LLVM_LIBRARIES}
 
 libtinfo.a
 ${EXECINFO_LIBRARY}
+Threads::Threads
 )
