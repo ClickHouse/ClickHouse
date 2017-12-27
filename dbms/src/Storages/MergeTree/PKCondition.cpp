@@ -864,7 +864,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
                         break;
                     }
 
-                    /// Compute the function.
+                    /// Apply the function.
                     DataTypePtr new_type;
                     if (!key_range_transformed.left.isNull())
                         applyFunction(func, current_type, key_range_transformed.left, new_type, key_range_transformed.left);
