@@ -14,6 +14,10 @@
     #include <emmintrin.h>
 #endif
 
+#if __SSE4_2__
+    #include <smmintrin.h>
+    #include <nmmintrin.h>
+#endif
 
 
 /// The thing to avoid creating strings to find substrings in the hash table.
@@ -171,8 +175,6 @@ struct StringRefHash64
 };
 
 #if __SSE4_2__
-
-#include <smmintrin.h>
 
 /// Parts are taken from CityHash.
 
