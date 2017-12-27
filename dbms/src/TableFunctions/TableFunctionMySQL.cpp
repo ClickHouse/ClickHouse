@@ -61,27 +61,29 @@ DataTypePtr getDataType(const char * mysql_type)
 
 StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Context & context) const
 {
-    ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
+    const ASTs & args_func = typeid_cast<const ASTFunction &>(*ast_function).children;
 
-    if (args_func.size() != 1)
-        throw Exception(
-            "Table function 'mysql' requires exactly one argument: amount of numbers.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (!args_func.arguments)
+        throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+    const ASTs & args = typeid_cast<const ASTExpressionList &>(*args_func.arguments).children;
 
     if (args.size() != 5)
-        throw Exception("Table function 'mysql' requires exactly 5 arguments: host:port, database name, table name, user name and password",
+        throw Exception("Table function 'mysql' requires exactly 5 arguments: host:port, database name, table name, username and password",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (int i = 0; i < 5; ++i)
+    for (size_t i = 0; i < 5; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    int port;
     std::string host_port = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-    std::string server = splitHostPort(host_port.c_str(), port);
     std::string database_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+    std::string table_name = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
     std::string user_name = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
     std::string password = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+
+    UInt16 port;
+    std::string server = splitHostPort(host_port.c_str(), port);
+
     mysqlxx::Pool pool(database_name, server, user_name, password, port);
     Block sample_block;
     insertColumn(sample_block, "Field");
@@ -90,7 +92,7 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
     insertColumn(sample_block, "Key");
     insertColumn(sample_block, "Default");
     insertColumn(sample_block, "Extra");
-    std::string table_name = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+
     MySQLBlockInputStream result(pool.Get(), std::string("DESCRIBE ") + table_name, sample_block, 1 << 16);
     Block result_block = result.read();
     const IColumn & names = *result_block.getByPosition(0).column.get();
