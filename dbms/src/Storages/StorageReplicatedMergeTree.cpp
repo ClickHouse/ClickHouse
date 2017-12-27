@@ -20,6 +20,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ConnectionTimeouts.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
@@ -2124,8 +2125,9 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     Stopwatch stopwatch;
 
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
     MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
-        part_name, replica_path, address.host, address.replication_port, to_detached);
+        part_name, replica_path, address.host, address.replication_port, timeouts, to_detached);
 
     if (!to_detached)
     {
@@ -3094,11 +3096,12 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
 
+    auto timeouts = ConnectionTimeouts::getTCPTimeouts(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        "", "", "ClickHouse replica");
+        "", "", timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), context, &settings);
     NullBlockOutputStream output;

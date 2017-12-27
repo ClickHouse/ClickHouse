@@ -7,7 +7,7 @@
 #include <Common/isLocalAddress.h>
 #include <memory>
 #include <ext/range.h>
-
+#include <IO/ConnectionTimeouts.h>
 
 namespace DB
 {
@@ -21,11 +21,13 @@ namespace ErrorCodes
 static const size_t MAX_CONNECTIONS = 16;
 
 static ConnectionPoolWithFailoverPtr createPool(
-        const std::string & host, UInt16 port, const std::string & db, const std::string & user, const std::string & password)
+        const std::string & host, UInt16 port, const std::string & db,
+        const std::string & user, const std::string & password, const Context & context)
 {
+    auto timeouts = ConnectionTimeouts::getTCPTimeouts(context.getSettingsRef());
     ConnectionPoolPtrs pools;
     pools.emplace_back(std::make_shared<ConnectionPool>(
-            MAX_CONNECTIONS, host, port, db, user, password, "ClickHouseDictionarySource"));
+            MAX_CONNECTIONS, host, port, db, user, password, timeouts, "ClickHouseDictionarySource"));
     return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
 }
 
@@ -46,7 +48,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
         query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
         sample_block{sample_block}, context(context),
         is_local{isLocalAddress({ host, port }, config.getInt("tcp_port", 0))},
-        pool{is_local ? nullptr : createPool(host, port, db, user, password)},
+        pool{is_local ? nullptr : createPool(host, port, db, user, password, context)},
         load_all_query{query_builder.composeLoadAllQuery()}
 {}
 
@@ -59,7 +61,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
         query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
         sample_block{other.sample_block}, context(other.context),
         is_local{other.is_local},
-        pool{is_local ? nullptr : createPool(host, port, db, user, password)},
+        pool{is_local ? nullptr : createPool(host, port, db, user, password, context)},
         load_all_query{other.load_all_query}
 {}
 
