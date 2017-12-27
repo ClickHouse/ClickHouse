@@ -48,6 +48,5 @@ LLVMSupport
 #PollyPPCG
 
 libtinfo.a
-common
 ${EXECINFO_LIBRARY}
 )
