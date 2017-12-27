@@ -1,9 +1,6 @@
 #!/bin/bash
 
-# delete me:
-env
-
 clickhouse-client -q "SELECT * from system.build_options;"
 
 # --no-shard because default server listen only :: and 127.0.0.1
-[ -n "$TEST_RUN" ] && clickhouse-test --no-shard --queries /usr/share/clickhouse-test/queries || true
+[ -n "$TEST_RUN" ] && clickhouse-test --no-shard --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ || true
