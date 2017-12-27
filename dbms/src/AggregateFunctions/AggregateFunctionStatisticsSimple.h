@@ -8,6 +8,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnVector.h>
 
 
 /** This is simple, not numerically stable

@@ -8,7 +8,7 @@ TABLE_HASH="cityHash64(groupArray(cityHash64(*)))"
 
 function pack_unpack_compare()
 {
-    local buf_file="test.buf.'.$3"
+    local buf_file="${CLICKHOUSE_TMP}/test.buf.'.$3"
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.buf"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.buf_file"
@@ -20,12 +20,12 @@ function pack_unpack_compare()
     local res_db_file=$(${CLICKHOUSE_CLIENT} --max_threads=1 --query "SELECT $TABLE_HASH FROM test.buf_file")
 
     ${CLICKHOUSE_CLIENT} --max_threads=1 --query "SELECT * FROM test.buf FORMAT $3" > "$buf_file"
-    local res_ch_local1=$(${CLICKHOUSE_LOCAL} --structure "$2" --file "$buf_file" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" 2>stderr || cat stderr 1>&2)
-    local res_ch_local2=$(${CLICKHOUSE_LOCAL} --structure "$2" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" < "$buf_file" 2>stderr || cat stderr 1>&2)
+    local res_ch_local1=$(${CLICKHOUSE_LOCAL} --structure "$2" --file "$buf_file" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" 2>${CLICKHOUSE_TMP}/stderr || cat stderr 1>&2)
+    local res_ch_local2=$(${CLICKHOUSE_LOCAL} --structure "$2" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" < "$buf_file" 2>${CLICKHOUSE_TMP}/stderr || cat ${CLICKHOUSE_TMP}/stderr 1>&2)
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.buf"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.buf_file"
-    rm -f "$buf_file" stderr
+    rm -f "${CLICKHOUSE_TMP}/$buf_file" stderr
 
     echo $((res_orig - res_db_file)) $((res_orig - res_ch_local1)) $((res_orig - res_ch_local2))
 }
