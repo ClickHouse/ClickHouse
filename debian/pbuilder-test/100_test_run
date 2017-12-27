@@ -1,4 +1,9 @@
 #!/bin/bash
 
-#service clickhouse-server start
-clickhouse-client -q "SELECT version();"
+# delete me:
+env
+
+clickhouse-client -q "SELECT * from system.build_options;"
+
+# --no-shard because default server listen only :: and 127.0.0.1
+[ -n "$TEST_RUN" ] && clickhouse-test --no-shard --queries /usr/share/clickhouse-test/queries || true
