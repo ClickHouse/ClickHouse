@@ -1,0 +1,2 @@
+add_executable (test_zk_seqnum_generation test_zk_seqnum_generation.cpp)
+target_link_libraries (test_zk_seqnum_generation dbms)
