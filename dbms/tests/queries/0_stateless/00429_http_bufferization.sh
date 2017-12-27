@@ -66,11 +66,11 @@ corner_sizes="1048576 `seq 500000 1000000 3500000`"
 # Check HTTP results with $CLICKHOUSE_CLIENT in normal case
 
 function cmp_cli_and_http() {
-    $CLICKHOUSE_CLIENT -q "`query $1`" > res1
-    ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > res2
-    ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > res3
-    cmp res1 res2 && cmp res1 res3 || echo FAIL
-    rm -rf res1 res2 res3
+    $CLICKHOUSE_CLIENT -q "`query $1`" > ${CLICKHOUSE_TMP}/res1
+    ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > ${CLICKHOUSE_TMP}/res2
+    ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > ${CLICKHOUSE_TMP}/res3
+    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 && cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res3 || echo FAIL
+    rm -rf ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 ${CLICKHOUSE_TMP}/res3
 }
 
 function check_cli_and_http() {
@@ -88,14 +88,14 @@ check_cli_and_http
 # Check HTTP internal compression in normal case
 
 function cmp_http_compression() {
-    $CLICKHOUSE_CLIENT -q "`query $1`" > res0
-    ch_url 'compress=1' $1 | clickhouse-compressor --decompress > res1
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" $1 | clickhouse-compressor --decompress > res2
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" $1 | clickhouse-compressor --decompress > res3
-    cmp res0 res1
-    cmp res1 res2
-    cmp res1 res3
-    rm -rf res0 res1 res2 res3
+    $CLICKHOUSE_CLIENT -q "`query $1`" > ${CLICKHOUSE_TMP}/res0
+    ch_url 'compress=1' $1 | clickhouse-compressor --decompress > ${CLICKHOUSE_TMP}/res1
+    ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" $1 | clickhouse-compressor --decompress > ${CLICKHOUSE_TMP}/res2
+    ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" $1 | clickhouse-compressor --decompress > ${CLICKHOUSE_TMP}/res3
+    cmp ${CLICKHOUSE_TMP}/res0 ${CLICKHOUSE_TMP}/res1
+    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2
+    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res3
+    rm -rf ${CLICKHOUSE_TMP}/res0 ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 ${CLICKHOUSE_TMP}/res3
 }
 
 function check_http_compression() {
