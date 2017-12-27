@@ -51,7 +51,6 @@ public:
             */
         ARRAY_JOIN,
 
-        /// INNER|LEFT JOIN.
         JOIN,
 
         /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.

@@ -127,7 +127,7 @@ StorageDistributed::~StorageDistributed() = default;
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -137,7 +137,7 @@ StorageDistributed::StorageDistributed(
     : name(name_), columns(columns_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
@@ -146,7 +146,7 @@ StorageDistributed::StorageDistributed(
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -160,7 +160,7 @@ StorageDistributed::StorageDistributed(
     name(name_), columns(columns_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
@@ -169,7 +169,7 @@ StorageDistributed::StorageDistributed(
 
 StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
@@ -250,11 +250,11 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
-        *columns, materialized_columns, alias_columns, column_defaults, {});
+        columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 

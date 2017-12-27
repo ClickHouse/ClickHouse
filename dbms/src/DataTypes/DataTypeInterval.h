@@ -56,6 +56,8 @@ public:
     std::string getName() const override { return std::string("Interval") + kindToString(); }
     const char * getFamilyName() const override { return "Interval"; }
 
+    bool equals(const IDataType & rhs) const override;
+
     bool isParametric() const override { return true; }
     bool cannotBeStoredInTables() const override { return true; }
     bool isCategorial() const override { return false; }

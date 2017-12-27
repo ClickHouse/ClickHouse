@@ -1,6 +1,7 @@
 #pragma once
 
 #include <thread>
+#include <functional>
 #include <common/MultiVersion.h>
 #include <Poco/Event.h>
 

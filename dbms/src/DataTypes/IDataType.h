@@ -82,7 +82,7 @@ public:
         Type type;
 
         /// Index of tuple element, starting at 1.
-        size_t tuple_element = 0;
+        String tuple_element_name;
 
         Substream(Type type) : type(type) {}
     };
@@ -219,10 +219,7 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     /// Checks that two instances belong to the same type
-    inline bool equals(const IDataType & rhs) const
-    {
-        return getName() == rhs.getName();
-    }
+    virtual bool equals(const IDataType & rhs) const = 0;
 
     virtual ~IDataType() {}
 
@@ -257,6 +254,12 @@ public:
       * For Enum, it depends.
       */
     virtual bool textCanContainOnlyValidUTF8() const { return false; };
+
+    /** Is it possible to compare for less/greater, to calculate min/max?
+      * Not necessarily totally comparable. For example, floats are comparable despite the fact that NaNs compares to nothing.
+      * The same for nullable of comparable types: they are comparable (but not totally-comparable).
+      */
+    virtual bool isComparable() const { return false; };
 
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.

@@ -108,8 +108,7 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs,
-        [[maybe_unused]] typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, void>::type * unused = nullptr)
+    Field(T && rhs, std::integral_constant<int, Field::TypeToEnum<std::decay_t<T>>::value> * = nullptr)
     {
         createConcrete(std::forward<T>(rhs));
     }
@@ -169,10 +168,10 @@ public:
     }
 
     template <typename T>
-    typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, Field &>::type
+    std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
     operator= (T && rhs)
     {
-        if (which != TypeToEnum<typename std::decay<T>::type>::value)
+        if (which != TypeToEnum<std::decay_t<T>>::value)
         {
             destroy();
             createConcrete(std::forward<T>(rhs));
@@ -197,21 +196,21 @@ public:
 
     template <typename T> T & get()
     {
-        using TWithoutRef = typename std::remove_reference<T>::type;
+        using TWithoutRef = std::remove_reference_t<T>;
         TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(&storage);
         return *ptr;
     };
 
     template <typename T> const T & get() const
     {
-        using TWithoutRef = typename std::remove_reference<T>::type;
+        using TWithoutRef = std::remove_reference_t<T>;
         const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(&storage);
         return *ptr;
     };
 
     template <typename T> bool tryGet(T & result)
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             return false;
         result = get<T>();
@@ -220,7 +219,7 @@ public:
 
     template <typename T> bool tryGet(T & result) const
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             return false;
         result = get<T>();
@@ -229,7 +228,7 @@ public:
 
     template <typename T> T & safeGet()
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
         return get<T>();
@@ -237,7 +236,7 @@ public:
 
     template <typename T> const T & safeGet() const
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
         return get<T>();
@@ -328,9 +327,9 @@ public:
     }
 
 private:
-    std::aligned_union<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, Int64, Float64, String, Array, Tuple
-        >::type storage;
+        > storage;
 
     Types::Which which;
 
@@ -339,7 +338,7 @@ private:
     template <typename T>
     void createConcrete(T && x)
     {
-        using JustT = typename std::decay<T>::type;
+        using JustT = std::decay_t<T>;
         JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
         new (ptr) JustT(std::forward<T>(x));
         which = TypeToEnum<JustT>::value;
@@ -349,7 +348,7 @@ private:
     template <typename T>
     void assignConcrete(T && x)
     {
-        using JustT = typename std::decay<T>::type;
+        using JustT = std::decay_t<T>;
         JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }

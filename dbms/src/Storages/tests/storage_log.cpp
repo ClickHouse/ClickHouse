@@ -21,9 +21,9 @@ try
 
     /// create table with a pair of columns
 
-    NamesAndTypesListPtr names_and_types = std::make_shared<NamesAndTypesList>();
-    names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeUInt64>()));
-    names_and_types->push_back(NameAndTypePair("b", std::make_shared<DataTypeUInt8>()));
+    NamesAndTypesList names_and_types;
+    names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
+    names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
     StoragePtr table = StorageLog::create("./", "test", names_and_types,
         NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);

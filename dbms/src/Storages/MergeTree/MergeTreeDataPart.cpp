@@ -758,7 +758,7 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 {
     std::shared_lock<std::shared_mutex> part_lock(columns_lock);
 
-    for (const NameAndTypePair & name_type : *storage.columns)
+    for (const NameAndTypePair & name_type : storage.columns)
     {
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {

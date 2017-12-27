@@ -18,7 +18,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -197,7 +197,7 @@ Block TinyLogBlockInputStream::readImpl()
         /// For nested structures, remember pointers to columns with offsets
         if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
         {
-            String nested_name = DataTypeNested::extractNestedTableName(name);
+            String nested_name = Nested::extractTableName(name);
 
             if (offset_columns.count(nested_name) == 0)
                 offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
@@ -308,7 +308,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 StorageTinyLog::StorageTinyLog(
     const std::string & path_,
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -320,7 +320,7 @@ StorageTinyLog::StorageTinyLog(
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
-    if (columns->empty())
+    if (columns.empty())
         throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     String full_path = path + escapeForFileName(name) + '/';

@@ -5,10 +5,11 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/IDataType.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+#include <common/StringRef.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
@@ -680,12 +681,23 @@ struct AggregateFunctionAnyHeavyData : Data
 
 
 template <typename Data>
-class AggregateFunctionsSingleValue final : public IUnaryAggregateFunction<Data, AggregateFunctionsSingleValue<Data>>
+class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
     DataTypePtr type;
 
 public:
+    AggregateFunctionsSingleValue(const DataTypePtr & type) : type(type)
+    {
+        if (StringRef(Data::name()) == StringRef("min")
+            || StringRef(Data::name()) == StringRef("max"))
+        {
+            if (!type->isComparable())
+                throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
+                    + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    }
+
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override
@@ -693,18 +705,9 @@ public:
         return type;
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        type = argument;
-
-        if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-            throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).changeIfBetter(column, row_num);
+        this->data(place).changeIfBetter(*columns[0], row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ccache -M 32G

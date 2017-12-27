@@ -38,8 +38,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_INDEX;
     extern const int FUNCTION_IS_SPECIAL;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /** Helper functions
@@ -54,9 +54,6 @@ namespace ErrorCodes
   *
   * in(x, set) - function for evaluating the IN
   * notIn(x, set) - and NOT IN.
-  *
-  * tuple(x, y, ...) is a function that allows you to group several columns
-  * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   *
   * arrayJoin(arr) - a special function - it can not be executed directly;
   *                     is used only to get the result type of the corresponding expression.
@@ -751,147 +748,6 @@ public:
 };
 
 
-class FunctionTuple : public IFunction
-{
-public:
-    static constexpr auto name = "tuple";
-
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionTuple>();
-    }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    bool isInjective(const Block &) override
-    {
-        return true;
-    }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 1)
-            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        return std::make_shared<DataTypeTuple>(arguments);
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-    {
-        size_t tuple_size = arguments.size();
-        Columns tuple_columns(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-        {
-            tuple_columns[i] = block.getByPosition(arguments[i]).column;
-
-            /** If tuple is mixed of constant and not constant columns,
-            *  convert all to non-constant columns,
-            *  because many places in code expect all non-constant columns in non-constant tuple.
-            */
-            if (ColumnPtr converted = tuple_columns[i]->convertToFullColumnIfConst())
-                tuple_columns[i] = converted;
-        }
-        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
-    }
-};
-
-
-/** Extract element of tuple by constant index. The operation is essentially free.
-  */
-class FunctionTupleElement : public IFunction
-{
-public:
-    static constexpr auto name = "tupleElement";
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionTupleElement>();
-    }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
-    {
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
-        if (!index_col)
-            throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        size_t index = index_col->getValue<UInt8>();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(&*arguments[0].type);
-        if (!tuple)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (index == 0)
-            throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
-
-        const DataTypes & elems = tuple->getElements();
-
-        if (index > elems.size())
-            throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-
-        out_return_type = elems[index - 1];
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-    {
-        const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
-        auto const_tuple_col = checkAndGetColumnConst<ColumnTuple>(block.getByPosition(arguments[0]).column.get());
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get());
-
-        if (!tuple_col && !const_tuple_col)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
-
-        if (!index_col)
-            throw Exception("Second argument for function " + getName() + " must be UInt8 constant literal.", ErrorCodes::ILLEGAL_COLUMN);
-
-        size_t index = index_col->getValue<UInt8>();
-        if (index == 0)
-            throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
-
-        if (tuple_col)
-        {
-            const Columns & tuple_columns = tuple_col->getColumns();
-
-            if (index > tuple_columns.size())
-                throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-
-            block.getByPosition(result).column = tuple_columns[index - 1];
-        }
-        else
-        {
-            TupleBackend data = const_tuple_col->getValue<Tuple>();
-            block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
-                .getElements()[index - 1]->createColumnConst(block.rows(), data[index - 1]);
-        }
-    }
-};
-
-
 class FunctionIgnore : public IFunction
 {
 public:
@@ -1309,11 +1165,11 @@ struct IsFiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        if constexpr (std::is_same<T, float>::value)
+        if constexpr (std::is_same_v<T, float>)
             return (ext::bit_cast<uint32_t>(t)
                  & 0b01111111100000000000000000000000)
                 != 0b01111111100000000000000000000000;
-        else if constexpr (std::is_same<T, double>::value)
+        else if constexpr (std::is_same_v<T, double>)
             return (ext::bit_cast<uint64_t>(t)
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
@@ -1331,11 +1187,11 @@ struct IsInfiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        if constexpr (std::is_same<T, float>::value)
+        if constexpr (std::is_same_v<T, float>)
             return (ext::bit_cast<uint32_t>(t)
                  & 0b01111111111111111111111111111111)
                 == 0b01111111100000000000000000000000;
-        else if constexpr (std::is_same<T, double>::value)
+        else if constexpr (std::is_same_v<T, double>)
             return (ext::bit_cast<uint64_t>(t)
                  & 0b0111111111111111111111111111111111111111111111111111111111111111)
                 == 0b0111111111110000000000000000000000000000000000000000000000000000;
@@ -1864,8 +1720,8 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
         auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort());
-        auto names_and_types_list = std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, database_name, table_name, global_context));
-        const auto & names = names_and_types_list->getNames();
+        auto names_and_types_list = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
+        const auto & names = names_and_types_list.getNames();
         has_column = std::find(names.begin(), names.end(), column_name) != names.end();
     }
 
@@ -1905,8 +1761,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionBar>();
     factory.registerFunction<FunctionHasColumnInTable>();
 
-    factory.registerFunction<FunctionTuple>();
-    factory.registerFunction<FunctionTupleElement>();
     factory.registerFunction<FunctionIn<false, false>>();
     factory.registerFunction<FunctionIn<false, true>>();
     factory.registerFunction<FunctionIn<true, false>>();

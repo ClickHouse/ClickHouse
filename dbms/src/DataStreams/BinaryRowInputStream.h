@@ -1,12 +1,12 @@
 #pragma once
 
 #include <DataStreams/IRowInputStream.h>
+#include <Core/Block.h>
 
 
 namespace DB
 {
 
-class Block;
 class ReadBuffer;
 
 

@@ -287,9 +287,15 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 }
 
 
+bool DataTypeNullable::equals(const IDataType & rhs) const
+{
+    return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.size() != 1)
+    if (!arguments || arguments->children.size() != 1)
         throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);

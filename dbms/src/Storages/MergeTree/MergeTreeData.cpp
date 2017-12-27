@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
@@ -78,7 +78,7 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
-    const String & full_path_, NamesAndTypesListPtr columns_,
+    const String & full_path_, const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -89,7 +89,6 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & sampling_expression_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
-    const String & log_name_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
@@ -104,11 +103,11 @@ MergeTreeData::MergeTreeData(
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
     broken_part_callback(broken_part_callback_),
-    log_name(log_name_), log(&Logger::get(log_name + " (Data)")),
+    log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_name(data_parts_indexes.get<TagByName>()),
     data_parts_by_state_and_name(data_parts_indexes.get<TagByStateAndName>())
 {
-    merging_params.check(*columns);
+    merging_params.check(columns);
 
     if (primary_expr_ast && merging_params.mode == MergingParams::Unsorted)
         throw Exception("Primary key cannot be set for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
@@ -301,7 +300,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 
         for (const auto & column_to_sum : columns_to_sum)
             if (columns.end() == std::find_if(columns.begin(), columns.end(),
-                [&](const NameAndTypePair & name_and_type) { return column_to_sum == DataTypeNested::extractNestedTableName(name_and_type.name); }))
+                [&](const NameAndTypePair & name_and_type) { return column_to_sum == Nested::extractTableName(name_and_type.name); }))
                 throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
     }
 
@@ -770,7 +769,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    auto new_columns = *columns;
+    auto new_columns = columns;
     auto new_materialized_columns = materialized_columns;
     auto new_alias_columns = alias_columns;
     auto new_column_defaults = column_defaults;
@@ -808,10 +807,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
-    for (const auto & column : *columns)
-    {
+    for (const auto & column : columns)
         old_types.emplace(column.name, column.type.get());
-    }
 
     for (const AlterCommand & command : commands)
     {
@@ -1718,7 +1715,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     for (auto state : valid_states)
     {
         if ((*it)->state == state)
-            return  *it;
+            return *it;
     }
 
     return nullptr;
@@ -1805,7 +1802,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : *columns)
+    for (const auto & column : columns)
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";

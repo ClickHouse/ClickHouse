@@ -26,6 +26,8 @@ generate_function_register(Arithmetic
   FunctionBitTestAll
   FunctionGCD
   FunctionLCM
+  FunctionIntExp2
+  FunctionIntExp10
 )
 
 generate_function_register(Array

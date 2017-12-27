@@ -12,7 +12,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -212,7 +212,7 @@ Block LogBlockInputStream::readImpl()
         /// For nested structures, remember pointers to columns with offsets
         if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
         {
-            String nested_name = DataTypeNested::extractNestedTableName(name);
+            String nested_name = Nested::extractTableName(name);
 
             if (offset_columns.count(nested_name) == 0)
                 offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
@@ -392,7 +392,7 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 StorageLog::StorageLog(
     const std::string & path_,
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -402,7 +402,7 @@ StorageLog::StorageLog(
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json")
 {
-    if (columns->empty())
+    if (columns.empty())
         throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     /// create files if they do not exist
@@ -502,8 +502,8 @@ void StorageLog::rename(const String & new_path_to_db, const String & /*new_data
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    const String & column_name = columns->front().name;
-    const IDataType & column_type = *columns->front().type;
+    const String & column_name = columns.front().name;
+    const IDataType & column_type = *columns.front().type;
     String filename;
 
     /** We take marks from first column.

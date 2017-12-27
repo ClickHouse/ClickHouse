@@ -174,7 +174,7 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns)
     {
         switch (action.type) {
         case Action::READ: {
-            auto & col = columns[i];
+            auto & col = columns[action.column];
             Field value = convertNodeToField(stack.back().get(action.field));
             col->insert(value);
             break;

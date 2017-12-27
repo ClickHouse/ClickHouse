@@ -15,9 +15,10 @@
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeExpression.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnSet.h>
@@ -79,6 +80,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_AGGREGATION;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_AST;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -793,7 +795,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
     Block sample = interpreter->getSampleBlock();
-    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getNamesAndTypesList());
+    NamesAndTypesList columns = sample.getNamesAndTypesList();
 
     StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
     external_storage->startup();
@@ -1910,11 +1912,11 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
                 bool found = false;
                 for (const auto & column_name_type : columns)
                 {
-                    String table_name = DataTypeNested::extractNestedTableName(column_name_type.name);
-                    String column_name = DataTypeNested::extractNestedColumnName(column_name_type.name);
+                    String table_name = Nested::extractTableName(column_name_type.name);
+                    String column_name = Nested::extractElementName(column_name_type.name);
                     if (table_name == source_name)
                     {
-                        array_join_result_to_source[DataTypeNested::concatenateNestedName(result_name, column_name)] = column_name_type.name;
+                        array_join_result_to_source[Nested::concatenateName(result_name, column_name)] = column_name_type.name;
                         found = true;
                         break;
                     }
@@ -1937,7 +1939,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
     {
         if (node->kind == ASTIdentifier::Column)
         {
-            String table_name = DataTypeNested::extractNestedTableName(node->name);
+            String table_name = Nested::extractTableName(node->name);
 
             if (array_join_alias_to_name.count(node->name))
             {
@@ -1947,9 +1949,9 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
             else if (array_join_alias_to_name.count(table_name))
             {
                 /// ARRAY JOIN was written with a nested table. Example: SELECT PP.KEY1 FROM ... ARRAY JOIN ParsedParams AS PP
-                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[node->name]    /// PP.Key1 -> ParsedParams.Key1
-                    = DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
+                    = Nested::concatenateName(array_join_alias_to_name[table_name], nested_column);
             }
             else if (array_join_name_to_alias.count(node->name))
             {
@@ -1957,7 +1959,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
                   * That is, the query uses the original array, replicated by itself.
                   */
 
-                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
                     array_join_name_to_alias[node->name]] = node->name;
             }
@@ -1966,9 +1968,9 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
                 /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
                  */
 
-                String nested_column = DataTypeNested::extractNestedColumnName(node->name);    /// Key1
+                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-                DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
+                Nested::concatenateName(array_join_name_to_alias[table_name], nested_column)] = node->name;
             }
         }
     }
@@ -2286,11 +2288,6 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
         aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
         aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters);
-
-        if (!aggregate.parameters.empty())
-            aggregate.function->setParameters(aggregate.parameters);
-
-        aggregate.function->setArguments(types);
 
         aggregate_descriptions.push_back(aggregate);
     }
@@ -2707,6 +2704,10 @@ void ExpressionAnalyzer::collectUsedColumns()
     NameSet required;
     NameSet ignored;
 
+    NameSet available_columns;
+    for (const auto & column : columns)
+        available_columns.insert(column.name);
+
     if (select_query && select_query->array_join_expression_list())
     {
         ASTs & expressions = select_query->array_join_expression_list()->children;
@@ -2722,7 +2723,7 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 /// Nothing needs to be ignored for expressions in ARRAY JOIN.
                 NameSet empty;
-                getRequiredColumnsImpl(expressions[i], required, empty, empty, empty);
+                getRequiredColumnsImpl(expressions[i], available_columns, required, empty, empty, empty);
             }
 
             ignored.insert(expressions[i]->getAliasOrColumnName());
@@ -2736,7 +2737,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     collectJoinedColumns(available_joined_columns, columns_added_by_join);
 
     NameSet required_joined_columns;
-    getRequiredColumnsImpl(ast, required, ignored, available_joined_columns, required_joined_columns);
+    getRequiredColumnsImpl(ast, available_columns, required, ignored, available_joined_columns, required_joined_columns);
 
     for (NamesAndTypesList::iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
     {
@@ -2838,7 +2839,9 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
             && !joined_columns.count(col.name)) /// Duplicate columns in the subquery for JOIN do not make sense.
         {
             joined_columns.insert(col.name);
-            joined_columns_name_type.emplace_back(col.name, col.type);
+
+            bool make_nullable = settings.join_use_nulls && (table_join.kind == ASTTableJoin::Kind::Left || table_join.kind == ASTTableJoin::Kind::Full);
+            joined_columns_name_type.emplace_back(col.name, make_nullable ? makeNullable(col.type) : col.type);
         }
     }
 }
@@ -2858,7 +2861,7 @@ Names ExpressionAnalyzer::getRequiredColumns() const
 
 
 void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
-    NameSet & required_columns, NameSet & ignored_names,
+    const NameSet & available_columns, NameSet & required_columns, NameSet & ignored_names,
     const NameSet & available_joined_columns, NameSet & required_joined_columns)
 {
     /** Find all the identifiers in the query.
@@ -2874,9 +2877,10 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
     {
         if (node->kind == ASTIdentifier::Column
             && !ignored_names.count(node->name)
-            && !ignored_names.count(DataTypeNested::extractNestedTableName(node->name)))
+            && !ignored_names.count(Nested::extractTableName(node->name)))
         {
-            if (!available_joined_columns.count(node->name))
+            if (!available_joined_columns.count(node->name)
+                || available_columns.count(node->name)) /// Read column from left table if has.
                 required_columns.insert(node->name);
             else
                 required_joined_columns.insert(node->name);
@@ -2914,7 +2918,7 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
             }
 
             getRequiredColumnsImpl(node->arguments->children.at(1),
-                required_columns, ignored_names,
+                available_columns, required_columns, ignored_names,
                 available_joined_columns, required_joined_columns);
 
             for (size_t i = 0; i < added_ignored.size(); ++i)
@@ -2937,7 +2941,8 @@ void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
           */
         if (!typeid_cast<ASTSelectQuery *>(child.get())
             && !typeid_cast<ASTArrayJoin *>(child.get()))
-            getRequiredColumnsImpl(child, required_columns, ignored_names, available_joined_columns, required_joined_columns);
+            getRequiredColumnsImpl(child, available_columns, required_columns,
+                                   ignored_names, available_joined_columns, required_joined_columns);
     }
 }
 

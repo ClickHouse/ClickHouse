@@ -40,7 +40,7 @@ inline bool endsWith(const std::string & s, const char * suffix)
 template <typename T>
 std::string getOrdinalSuffix(T n)
 {
-    static_assert(std::is_integral<T>::value && std::is_unsigned<T>::value,
+    static_assert(std::is_integral_v<T> && std::is_unsigned_v<T>,
         "Unsigned integer value required");
 
     const auto last_digit = n % 10;

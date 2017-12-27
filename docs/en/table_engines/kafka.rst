@@ -9,7 +9,7 @@ A table engine backed by Apache Kafka, a streaming platform having three key cap
 
 .. code-block:: text
 
-  Kafka(broker_list, topic_list, group_name, format[, schema])
+  Kafka(broker_list, topic_list, group_name, format[, schema, num_consumers])
 
 Engine parameters:
 
@@ -28,6 +28,9 @@ format
 schema
   Optional schema value for formats that require a schema to interpret consumed messages, for example Cap'n Proto format requires
   a path to schema file and root object - ``schema:Message``. Self-describing formats such as JSON don't require any schema.
+
+num_consumers
+  Number of created consumers per engine. By default ``1``. Create more consumers if the throughput of a single consumer is insufficient. The total number of consumers shouldn't exceed the number of partitions in given topic, as there can be at most 1 consumers assigned to any single partition.
 
 Example:
 
@@ -85,3 +88,24 @@ In order to stop topic consumption, or alter the transformation logc, you simply
   ATTACH MATERIALIZED VIEW consumer;
 
 Note: When you're performing ALTERs on target table, it's recommended to detach materializing views to prevent a mismatch between the current schema and the result of MATERIALIZED VIEWS.
+
+Configuration
+~~~~~~~~~~~~~
+
+Similarly to GraphiteMergeTree, Kafka engine supports extended configuration through the ClickHouse config file. There are two configuration keys you can use - global, and per-topic. The global configuration is applied first, then per-topic configuration (if exists).
+
+.. code-block:: xml
+
+  <!--  Global configuration options for all tables of Kafka engine type -->
+  <kafka>
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+  </kafka>
+
+  <!-- Configuration specific for topic "logs" -->
+  <kafka_topic_logs>
+    <retry_backoff_ms>250</retry_backoff_ms>
+    <fetch_min_bytes>100000</fetch_min_bytes>
+  </kafka_topic_logs>
+
+See `librdkafka configuration reference <https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md>`_ for the list of possible configuration options. Use underscores instead of dots in the ClickHouse configuration, for example ``check.crcs=true`` would correspond to ``<check_crcs>true</check_crcs>``.

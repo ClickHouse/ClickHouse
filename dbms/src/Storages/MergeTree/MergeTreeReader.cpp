@@ -1,4 +1,4 @@
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -96,7 +97,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             /// For nested data structures collect pointers to offset columns.
             if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(it.type.get()))
             {
-                String name = DataTypeNested::extractNestedTableName(it.name);
+                String name = Nested::extractTableName(it.name);
 
                 auto it_inserted = offset_columns.emplace(name, nullptr);
 
@@ -431,7 +432,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
 
             if (const ColumnArray * array = typeid_cast<const ColumnArray *>(column.column.get()))
             {
-                String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+                String offsets_name = Nested::extractTableName(column.name);
                 auto & offsets_column = offset_columns[offsets_name];
 
                 /// If for some reason multiple offsets columns are present for the same nested data structure,
@@ -473,7 +474,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                 column_to_add.name = requested_column.name;
                 column_to_add.type = requested_column.type;
 
-                String offsets_name = DataTypeNested::extractNestedTableName(column_to_add.name);
+                String offsets_name = Nested::extractTableName(column_to_add.name);
                 if (offset_columns.count(offsets_name))
                 {
                     ColumnPtr offsets_column = offset_columns[offsets_name];

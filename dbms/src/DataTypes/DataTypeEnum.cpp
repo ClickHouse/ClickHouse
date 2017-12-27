@@ -243,6 +243,13 @@ void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 }
 
 template <typename Type>
+bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && name == static_cast<const DataTypeEnum<Type> &>(rhs).name;
+}
+
+
+template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
 {
     for (const auto & elem : values)
@@ -317,7 +324,7 @@ template class DataTypeEnum<Int16>;
 template <typename DataTypeEnum>
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     typename DataTypeEnum::Values values;

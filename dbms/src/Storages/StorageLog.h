@@ -26,7 +26,7 @@ public:
     std::string getName() const override { return "Log"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -50,7 +50,7 @@ protected:
     StorageLog(
         const std::string & path_,
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
@@ -59,7 +59,7 @@ protected:
 private:
     String path;
     String name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
 
     mutable std::shared_mutex rwlock;
 

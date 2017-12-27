@@ -13,7 +13,7 @@
 
 /// Allow to use __uint128_t as a template parameter for boost::rational.
 // https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
-#if !defined(__GLIBCXX_BITSIZE_INT_N_0)
+#if !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
 namespace std
 {
     template <>
@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -135,12 +136,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams,
-    size_t * inout_part_index,
     Int64 max_block_number_to_read) const
 {
-    size_t part_index_var = 0;
-    if (!inout_part_index)
-        inout_part_index = &part_index_var;
+    size_t part_index = 0;
 
     MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
@@ -519,7 +517,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     size_t sum_ranges = 0;
     for (auto & part : parts)
     {
-        RangesInDataPart ranges(part, (*inout_part_index)++);
+        RangesInDataPart ranges(part, part_index++);
 
         if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
             ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);

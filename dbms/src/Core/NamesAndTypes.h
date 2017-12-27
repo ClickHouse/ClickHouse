@@ -28,7 +28,7 @@ struct NameAndTypePair
 
     bool operator==(const NameAndTypePair & rhs) const
     {
-        return name == rhs.name && type->getName() == rhs.type->getName();
+        return name == rhs.name && type->equals(*rhs.type);
     }
 };
 
@@ -69,7 +69,5 @@ public:
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
 };
-
-using NamesAndTypesListPtr = std::shared_ptr<NamesAndTypesList>;
 
 }

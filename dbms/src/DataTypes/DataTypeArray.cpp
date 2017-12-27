@@ -431,6 +431,12 @@ Field DataTypeArray::getDefault() const
 }
 
 
+bool DataTypeArray::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && nested->equals(*static_cast<const DataTypeArray &>(rhs).nested);
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)

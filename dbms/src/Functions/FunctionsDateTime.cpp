@@ -18,10 +18,10 @@ static std::string extractTimeZoneNameFromColumn(const IColumn & column)
 }
 
 
-std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num)
+std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
 {
     /// Explicit time zone may be passed in last argument.
-    if (arguments.size() == time_zone_arg_num + 1)
+    if (arguments.size() == time_zone_arg_num + 1 && arguments[time_zone_arg_num].column)
     {
         return extractTimeZoneNameFromColumn(*arguments[time_zone_arg_num].column);
     }
@@ -31,14 +31,14 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
             return {};
 
         /// If time zone is attached to an argument of type DateTime.
-        if (const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(arguments[0].type.get()))
+        if (const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(arguments[datetime_arg_num].type.get()))
             return type->getTimeZone().getTimeZone();
 
         return {};
     }
 }
 
-const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments, size_t time_zone_arg_num)
+const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
 {
     if (arguments.size() == time_zone_arg_num + 1)
         return DateLUT::instance(extractTimeZoneNameFromColumn(*block.getByPosition(arguments[time_zone_arg_num]).column));
@@ -48,7 +48,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const Co
             return DateLUT::instance();
 
         /// If time zone is attached to an argument of type DateTime.
-        if (const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(block.getByPosition(arguments[0]).type.get()))
+        if (const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(block.getByPosition(arguments[datetime_arg_num]).type.get()))
             return type->getTimeZone();
 
         return DateLUT::instance();
@@ -58,6 +58,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const Co
 void registerFunctionsDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToYear>();
+    factory.registerFunction<FunctionToQuarter>();
     factory.registerFunction<FunctionToMonth>();
     factory.registerFunction<FunctionToDayOfMonth>();
     factory.registerFunction<FunctionToDayOfWeek>();
@@ -71,8 +72,10 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionToStartOfYear>();
     factory.registerFunction<FunctionToStartOfMinute>();
     factory.registerFunction<FunctionToStartOfFiveMinute>();
+    factory.registerFunction<FunctionToStartOfFifteenMinutes>();
     factory.registerFunction<FunctionToStartOfHour>();
     factory.registerFunction<FunctionToRelativeYearNum>();
+    factory.registerFunction<FunctionToRelativeQuarterNum>();
     factory.registerFunction<FunctionToRelativeMonthNum>();
     factory.registerFunction<FunctionToRelativeWeekNum>();
     factory.registerFunction<FunctionToRelativeDayNum>();
@@ -80,7 +83,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionToRelativeMinuteNum>();
     factory.registerFunction<FunctionToRelativeSecondNum>();
     factory.registerFunction<FunctionToTime>();
-    factory.registerFunction<FunctionNow>();
+    factory.registerFunction(FunctionNow::name, FunctionNow::create, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionToday>();
     factory.registerFunction<FunctionYesterday>();
     factory.registerFunction<FunctionTimeSlot>();
@@ -104,6 +107,8 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionSubtractWeeks>();
     factory.registerFunction<FunctionSubtractMonths>();
     factory.registerFunction<FunctionSubtractYears>();
+
+    factory.registerFunction(FunctionDateDiff::name, FunctionDateDiff::create, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToTimeZone>();
 }

@@ -1,6 +1,6 @@
 #include <DataStreams/SummingSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnTuple.h>
@@ -148,7 +148,7 @@ Block SummingSortedBlockInputStream::readImpl()
             /// Discover nested Maps and find columns for summation
             if (typeid_cast<const DataTypeArray *>(column.type.get()))
             {
-                const auto map_name = DataTypeNested::extractNestedTableName(column.name);
+                const auto map_name = Nested::extractTableName(column.name);
                 /// if nested table name ends with `Map` it is a possible candidate for special handling
                 if (map_name == column.name || !endsWith(map_name, "Map"))
                 {
@@ -488,7 +488,7 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
             for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                 columns[i] = cursor->all_columns[desc.column_numbers[i]];
 
-            desc.add_function(desc.function.get(),desc.state.data(), columns.data(), cursor->pos, nullptr);
+            desc.add_function(desc.function.get(), desc.state.data(), columns.data(), cursor->pos, nullptr);
         }
     }
 }

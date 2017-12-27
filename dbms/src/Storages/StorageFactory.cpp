@@ -365,7 +365,7 @@ StoragePtr StorageFactory::get(
     const String & database_name,
     Context & local_context,
     Context & context,
-    NamesAndTypesListPtr columns,
+    const NamesAndTypesList & columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
@@ -384,7 +384,7 @@ StoragePtr StorageFactory::get(
 
     /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
     /// Exception: any type is allowed in View, because plain (non-materialized) View does not store anything itself.
-    checkAllTypesAreAllowedInTable(*columns);
+    checkAllTypesAreAllowedInTable(columns);
     checkAllTypesAreAllowedInTable(materialized_columns);
     checkAllTypesAreAllowedInTable(alias_columns);
 
@@ -648,7 +648,7 @@ StoragePtr StorageFactory::get(
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, *columns).getActions(true);
+            auto sharding_expr = ExpressionAnalyzer(sharding_key, context, nullptr, columns).getActions(true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)
@@ -717,10 +717,10 @@ StoragePtr StorageFactory::get(
           * - Schema (optional, if the format supports it)
           */
 
-        if (!args_ptr || !(args_ptr->size() == 4 || args_ptr->size() == 5))
+        if (!args_ptr || args_ptr->size() < 3 || args_ptr->size() > 6)
             throw Exception(
-                "Storage Kafka requires 4 parameters"
-                " - Kafka broker list, list of topics to consume, consumer group ID, message format",
+                "Storage Kafka requires 3-6 parameters"
+                " - Kafka broker list, list of topics to consume, consumer group ID, message format, schema, number of consumers",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         ASTs & args = *args_ptr;
 
@@ -735,12 +735,28 @@ StoragePtr StorageFactory::get(
         args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], local_context);
         args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], local_context);
 
-        // Additionally parse schema if supported
+        // Parse format schema if supported (optional)
         String schema;
-        if (args.size() == 5)
+        if (args.size() >= 5)
         {
             args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(args[4], local_context);
-            schema = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+
+            auto ast = typeid_cast<ASTLiteral *>(&*args[4]);
+            if (ast && ast->value.getType() == Field::Types::String)
+                schema = safeGet<String>(ast->value);
+            else
+                throw Exception("Format schema must be a string", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        // Parse number of consumers (optional)
+        UInt64 num_consumers = 1;
+        if (args.size() >= 6)
+        {
+            auto ast = typeid_cast<ASTLiteral *>(&*args[5]);
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+                num_consumers = safeGet<UInt64>(ast->value);
+            else
+                throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
         }
 
         // Parse topic list and consumer group
@@ -754,14 +770,14 @@ StoragePtr StorageFactory::get(
         if (ast && ast->value.getType() == Field::Types::String)
             format = safeGet<String>(ast->value);
         else
-            throw Exception(String("Format must be a string"), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Format must be a string", ErrorCodes::BAD_ARGUMENTS);
 
         return StorageKafka::create(
             table_name, database_name, context, columns,
             materialized_columns, alias_columns, column_defaults,
-            brokers, group, topics, format, schema);
+            brokers, group, topics, format, schema, num_consumers);
 #else
-            throw Exception{"Storage `Kafka` disabled because ClickHouse built without kafka support.", ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception("Storage `Kafka` disabled because ClickHouse built without Kafka support.", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else if (endsWith(name, "MergeTree"))

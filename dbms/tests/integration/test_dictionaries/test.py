@@ -45,10 +45,12 @@ def started_cluster():
     ('clickhouse_flat', ('id',), True),
     ('clickhouse_complex_integers_key_hashed', ('key0', 'key1'), False),
     ('clickhouse_complex_mixed_key_hashed', ('key0_str', 'key1'), False),
+    ('clickhouse_range_hashed', ('id', 'StartDate', 'EndDate'), False),
 ],
     ids=['clickhouse_hashed', 'clickhouse_flat',
          'clickhouse_complex_integers_key_hashed',
-         'clickhouse_complex_mixed_key_hashed']
+         'clickhouse_complex_mixed_key_hashed',
+         'clickhouse_range_hashed']
 )
 def dictionary_structure(started_cluster, request):
     return request.param

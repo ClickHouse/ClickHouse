@@ -14,6 +14,9 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 
+#include <common/readline_use.h>
+#include <common/find_first_symbols.h>
+
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -22,7 +25,6 @@
 #include <Common/UnicodeBar.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
-#include <common/readline_use.h>
 #include <Common/Throttler.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
@@ -528,23 +530,25 @@ private:
 
     void nonInteractive()
     {
-        String line;
+        String text;
+
         if (config().has("query"))
-            line = config().getString("query");
+            text = config().getString("query");
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
             /// The query is read entirely into memory (streaming is disabled).
             ReadBufferFromFileDescriptor in(STDIN_FILENO);
-            readStringUntilEOF(line, in);
+            readStringUntilEOF(text, in);
         }
 
-        process(line);
+        process(text);
     }
 
 
-    bool process(const String & line)
+    bool process(const String & text)
     {
+        const auto ignore_error = config().getBool("ignore-error", false);
         if (config().has("multiquery"))
         {
             /// Several queries separated by ';'.
@@ -552,36 +556,54 @@ private:
 
             String query;
 
-            const char * begin = line.data();
-            const char * end = begin + line.size();
+            const char * begin = text.data();
+            const char * end = begin + text.size();
 
             while (begin < end)
             {
                 const char * pos = begin;
                 ASTPtr ast = parseQuery(pos, end, true);
                 if (!ast)
+                {
+                    if (ignore_error)
+                    {
+                        Tokens tokens(begin, end);
+                        TokenIterator token_iterator(tokens);
+                        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                            ++token_iterator;
+                        begin = token_iterator->end;
+
+                        continue;
+                    }
                     return true;
+                }
 
                 ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
                 if (insert && insert->data)
                 {
-                    pos = insert->data;
-                    while (*pos && *pos != '\n')
-                        ++pos;
+                    pos = find_first_symbols<'\n'>(insert->data, end);
                     insert->end = pos;
                 }
 
-                query = line.substr(begin - line.data(), pos - begin);
+                query = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
                 while (isWhitespace(*begin) || *begin == ';')
                     ++begin;
 
-                if (!processSingleQuery(query, ast))
-                    return false;
+                try
+                {
+                    if (!processSingleQuery(query, ast) && !ignore_error)
+                        return false;
+                }
+                catch (...)
+                {
+                    std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                    got_exception = true;
+                }
 
-                if (got_exception)
+                if (got_exception && !ignore_error)
                 {
                     if (is_interactive)
                         break;
@@ -594,7 +616,7 @@ private:
         }
         else
         {
-            return processSingleQuery(line);
+            return processSingleQuery(text);
         }
     }
 
@@ -749,7 +771,9 @@ private:
         ParserQuery parser(end);
         ASTPtr res;
 
-        if (is_interactive)
+        const auto ignore_error = config().getBool("ignore-error", false);
+
+        if (is_interactive || ignore_error)
         {
             String message;
             res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements);
@@ -1268,6 +1292,7 @@ public:
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
+            ("ignore-error", "Do not stop processing in multiquery mode")
             ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -1373,6 +1398,8 @@ public:
             config().setBool("multiline", true);
         if (options.count("multiquery"))
             config().setBool("multiquery", true);
+        if (options.count("ignore-error"))
+            config().setBool("ignore-error", true);
         if (options.count("format"))
             config().setString("format", options["format"].as<std::string>());
         if (options.count("vertical"))
