@@ -49,4 +49,5 @@ LLVMSupport
 
 libtinfo.a
 ${EXECINFO_LIBRARY}
+Threads::Threads
 )
