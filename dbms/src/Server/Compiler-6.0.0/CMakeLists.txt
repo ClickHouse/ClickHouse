@@ -47,6 +47,7 @@ ${REQUIRED_LLVM_LIBRARIES}
 #PollyPPCG
 
 libtinfo.a
+${ZLIB_LIBRARIES}
 ${EXECINFO_LIBRARY}
 Threads::Threads
 )
