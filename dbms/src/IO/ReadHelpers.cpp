@@ -665,38 +665,61 @@ void readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
-    static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
     static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
 
-    char s[DATE_TIME_BROKEN_DOWN_LENGTH];
-    char * s_pos = s;
+    char s[5];
+    readPODBinary(s, buf);
 
-    /// A piece similar to unix timestamp.
-    while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && isNumericASCII(*buf.position()))
+    /// 2015-01-01 01:02:03 longest
+    /// 2015-1-1 1:2:3 shortest
+    if (!isNumericASCII(s[4]))
     {
-        *s_pos = *buf.position();
-        ++s_pos;
-        ++buf.position();
-    }
+        UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
 
-    /// 2015-01-01 01:02:03
-    if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
-    {
-        const size_t remaining_size = DATE_TIME_BROKEN_DOWN_LENGTH - (s_pos - s);
-        size_t size = buf.read(s_pos, remaining_size);
-        if (remaining_size != size)
+        char chars_month[2];
+        readPODBinary(chars_month, buf);
+        UInt8 month = chars_month[0] - '0';
+        if (isNumericASCII(chars_month[1]))
         {
-            s_pos[size] = 0;
-            throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+            month = month * 10 + chars_month[1] - '0';
+            buf.ignore();
         }
 
-        UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-        UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-        UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+        char chars_day[2];
+        readPODBinary(chars_day, buf);
+        UInt8 day = chars_day[0] - '0';
+        if (isNumericASCII(chars_day[1]))
+        {
+            day = day * 10 + chars_day[1] - '0';
+            buf.ignore();
+        }
 
-        UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-        UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-        UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+        char chars_hour[2];
+        readPODBinary(chars_hour, buf);
+        UInt8 hour = chars_hour[0] - '0';
+        if (isNumericASCII(chars_hour[1]))
+        {
+            hour = hour * 10 + chars_hour[1] - '0';
+            buf.ignore();
+        }
+
+        char chars_minute[2];
+        readPODBinary(chars_minute, buf);
+        UInt8 minute = chars_minute[0] - '0';
+        if (isNumericASCII(chars_minute[1]))
+        {
+            minute = minute * 10 + chars_minute[1] - '0';
+            buf.ignore();
+        }
+
+        char char_second;
+        readChar(char_second, buf);
+        UInt8 second = char_second - '0';
+        if (!buf.eof() && isNumericASCII(*buf.position()))
+        {
+            second = second * 10 + *buf.position() - '0';
+            ++buf.position();
+        }
 
         if (unlikely(year == 0))
             datetime = 0;
@@ -704,7 +727,17 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
             datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
     }
     else
+    {
+        /// A piece similar to unix timestamp.
+        char * s_pos = s;
+        while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && isNumericASCII(*buf.position()))
+        {
+            *s_pos = *buf.position();
+            ++s_pos;
+            ++buf.position();
+        }
         datetime = parse<time_t>(s, s_pos - s);
+    }
 }
 
 

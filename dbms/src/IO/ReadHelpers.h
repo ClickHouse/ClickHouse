@@ -640,36 +640,73 @@ inline T parse(const char * data, size_t size);
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
 /** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
+  * For convenience, Month, Day, Hour, Minute and Second parts can have single digit instead of two digits.
+  * Any separators other than '-' are supported.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
-    /** Read 10 characters, that could represent unix timestamp.
-      * Only unix timestamp of 5-10 characters is supported.
-      * Then look at 5th charater. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
-      */
-
     /// Optimistic path, when whole value is in buffer.
-    const char * s = buf.position();
-    if (s + 19 <= buf.buffer().end())
+    if (buf.position() + 19 <= buf.buffer().end())
     {
-        if (s[4] < '0' || s[4] > '9')
-        {
-            UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-            UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-            UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+        /** Read 10 characters, that could represent unix timestamp.
+         * Only unix timestamp of 5-10 characters is supported.
+         * Then look at 5th charater. If it is a number - treat whole as unix timestamp.
+         * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or shortened format.
+         */
+        if (!isNumericASCII(buf.position()[4])) {
+            UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
+            buf.position() += 5;
 
-            UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-            UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-            UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+            UInt8 month = buf.position()[0] - '0';
+            if (isNumericASCII(buf.position()[1]))
+            {
+                month = month * 10 + buf.position()[1] - '0';
+                buf.position() += 3;
+            }
+            else
+                buf.position() += 2;
+
+            UInt8 day = buf.position()[0] - '0';
+            if (isNumericASCII(buf.position()[1]))
+            {
+                day = day * 10 + buf.position()[1] - '0';
+                buf.position() += 3;
+            }
+            else
+                buf.position() += 2;
+
+            UInt8 hour = buf.position()[0] - '0';
+            if (isNumericASCII(buf.position()[1]))
+            {
+                hour = hour * 10 + buf.position()[1] - '0';
+                buf.position() += 3;
+            }
+            else
+                buf.position() += 2;
+
+            UInt8 minute = buf.position()[0] - '0';
+            if (isNumericASCII(buf.position()[1]))
+            {
+                minute = minute * 10 + buf.position()[1] - '0';
+                buf.position() += 3;
+            }
+            else
+                buf.position() += 2;
+
+            UInt8 second = buf.position()[0] - '0';
+            if (isNumericASCII(buf.position()[1]))
+            {
+                second = second * 10 + buf.position()[1] - '0';
+                buf.position() += 2;
+            }
+            else
+                buf.position() += 1;
 
             if (unlikely(year == 0))
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
-
-            buf.position() += 19;
         }
         else
             /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
