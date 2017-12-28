@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
 }

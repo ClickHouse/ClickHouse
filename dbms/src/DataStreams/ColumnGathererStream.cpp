@@ -35,7 +35,7 @@ String ColumnGathererStream::getID() const
     std::stringstream res;
 
     res << getName() << "(";
-    for (size_t i = 0; i < children.size(); i++)
+    for (size_t i = 0; i < children.size(); ++i)
         res << (i == 0 ? "" : ", " ) << children[i]->getID();
     res << ")";
 
@@ -46,7 +46,7 @@ String ColumnGathererStream::getID() const
 void ColumnGathererStream::init()
 {
     sources.reserve(children.size());
-    for (size_t i = 0; i < children.size(); i++)
+    for (size_t i = 0; i < children.size(); ++i)
     {
         sources.emplace_back(children[i]->read(), name);
 
