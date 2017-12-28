@@ -75,9 +75,6 @@ struct Settings
     /** Number of threads performing background work for tables (for example, merging in merge tree). \
       * TODO: Now only applies when the server is started. You can make it dynamically variable. */ \
     M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE, "Number of threads performing background work for tables (for example, merging in merge tree).") \
-    /** Number of threads performing background tasks for replicated tables. \
-      * TODO: Now only applies when the server is started. You can make it dynamically variable. */ \
-    M(SettingUInt64, background_schedule_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE, "Number of threads performing background tasks for replicated tables.") \
     \
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS, "Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown.") \
@@ -300,12 +297,6 @@ struct Settings
     M(SettingUInt64, insert_distributed_timeout, 0, "Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled.") \
     /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
     M(SettingInt64, distributed_ddl_task_timeout, 120, "Timeout for DDL query responses from all hosts in cluster. Negative value means infinite.") \
-    \
-    /** If true, allow parameters of storage engines such as partitioning expression, primary key, etc. \
-      * to be set not in the engine parameters but as separate clauses (PARTITION BY, ORDER BY...) \
-      * Enable this setting to allow custom MergeTree partitions. \
-      */ \
-    M(SettingBool, experimental_allow_extended_storage_definition_syntax, false, "If true, allow parameters of storage engines such as partitioning expression, primary key, etc.") \
     /* Timeout for flushing data from streaming storages. */ \
     M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS, "Timeout for flushing data from streaming storages.") \
     /* Schema identifier (used by schema-based formats) */ \

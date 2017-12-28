@@ -1,6 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionGroupUniqArray.h>
 #include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+
 
 namespace DB
 {
@@ -20,38 +24,29 @@ class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUni
 };
 
 
-static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type)
+static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type)
 {
-         if (typeid_cast<const DataTypeDate *>(&argument_type))     return new AggregateFunctionGroupUniqArrayDate;
-    else if (typeid_cast<const DataTypeDateTime *>(&argument_type))    return new AggregateFunctionGroupUniqArrayDateTime;
+         if (typeid_cast<const DataTypeDate *>(argument_type.get())) return new AggregateFunctionGroupUniqArrayDate;
+    else if (typeid_cast<const DataTypeDateTime *>(argument_type.get())) return new AggregateFunctionGroupUniqArrayDateTime;
     else
     {
         /// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
-        if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-            return new AggreagteFunctionGroupUniqArrayGeneric<true>;
-
-        auto * array_type = typeid_cast<const DataTypeArray *>(&argument_type);
-        if (array_type)
-        {
-            auto nested_type = array_type->getNestedType();
-            if (nested_type->isNumeric() || typeid_cast<DataTypeFixedString *>(nested_type.get()))
-                return new AggreagteFunctionGroupUniqArrayGeneric<true>;
-        }
-
-        return new AggreagteFunctionGroupUniqArrayGeneric<false>;
+        if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            return new AggreagteFunctionGroupUniqArrayGeneric<true>(argument_type);
+        else
+            return new AggreagteFunctionGroupUniqArrayGeneric<false>(argument_type);
     }
 }
 
-AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes(*argument_types[0]));
+        res = AggregateFunctionPtr(createWithExtraTypes(argument_types[0]));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() +

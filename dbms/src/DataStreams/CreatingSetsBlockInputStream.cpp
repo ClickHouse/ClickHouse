@@ -83,7 +83,6 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     if (done_with_set && done_with_join && done_with_table)
         throw Exception("Logical error: nothing to do with subquery", ErrorCodes::LOGICAL_ERROR);
 
-    subquery.source->readPrefix();
     if (table_out)
         table_out->writePrefix();
 
@@ -144,7 +143,6 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         }
     }
 
-// subquery.source->readSuffix();  /// TODO Blocked in `RemoteBlockInputStream::readSuffixImpl` when querying `SELECT number FROM system.numbers WHERE number IN (SELECT number FROM remote(`127.0.0.{1,2}', system, numbers) WHERE number % 2 = 1 LIMIT 10) LIMIT 10`
     if (table_out)
         table_out->writeSuffix();
 

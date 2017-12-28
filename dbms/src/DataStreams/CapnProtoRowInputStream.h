@@ -29,12 +29,12 @@ public:
     using NestedFieldList = std::vector<NestedField>;
 
     /** schema_dir  - base path for schema files
-      * schema_file - location of the capnproto schema, e.g. "schema.canpn"
+      * schema_file - location of the capnproto schema, e.g. "schema.capnp"
       * root_object - name to the root object, e.g. "Message"
       */
-    CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_dir, const String & schema_file, const String & root_object);
+    CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object);
 
-    bool read(Block & block) override;
+    bool read(MutableColumns & columns) override;
 
 private:
     // Build a traversal plan from a sorted list of fields
@@ -45,8 +45,8 @@ private:
     {
       enum Type { POP, PUSH, READ };
       Type type;
-      capnp::StructSchema::Field field;
-      size_t column;
+      capnp::StructSchema::Field field = {};
+      size_t column = 0;
     };
 
     // Wrapper for classes that could throw in destructor
@@ -62,7 +62,7 @@ private:
     using SchemaParser = DestructorCatcher<capnp::SchemaParser>;
 
     ReadBuffer & istr;
-    const Block sample;
+    Block header;
     std::shared_ptr<SchemaParser> parser;
     capnp::StructSchema root;
     std::vector<Action> actions;

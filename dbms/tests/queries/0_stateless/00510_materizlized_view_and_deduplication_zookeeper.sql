@@ -1,5 +1,3 @@
-SET experimental_allow_extended_storage_definition_syntax=1;
-
 DROP TABLE IF EXISTS test.with_deduplication;
 DROP TABLE IF EXISTS test.without_deduplication;
 DROP TABLE IF EXISTS test.with_deduplication_mv;

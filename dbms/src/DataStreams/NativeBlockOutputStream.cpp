@@ -5,14 +5,6 @@
 #include <IO/VarInt.h>
 #include <IO/CompressedWriteBuffer.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-
 #include <DataStreams/MarkInCompressedFile.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
@@ -55,7 +47,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
       */
     ColumnPtr full_column;
 
-    if (auto converted = column->convertToFullColumnIfConst())
+    if (ColumnPtr converted = column->convertToFullColumnIfConst())
         full_column = converted;
     else
         full_column = column;

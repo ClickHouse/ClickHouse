@@ -4,13 +4,17 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalResultDescription.h>
 #include <Dictionaries/IDictionarySource.h>
-
-#include <iostream>
+#include <common/LocalDateTime.h>
 
 
 namespace Poco
 {
-class Logger;
+    class Logger;
+
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
 }
 
 
@@ -61,4 +65,5 @@ private:
     ExternalResultDescription description;
     std::shared_ptr<CStringsHolder> settings;
 };
+
 }

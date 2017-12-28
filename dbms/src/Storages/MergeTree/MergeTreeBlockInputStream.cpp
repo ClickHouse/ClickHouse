@@ -113,7 +113,7 @@ try
         const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
         /// If the expression in PREWHERE is not a column of the table, you do not need to output a column with it
         ///  (from storage expect to receive only the columns of the table).
-        remove_prewhere_column = !pre_name_set.count(prewhere_column);
+        remove_prewhere_column = !pre_name_set.count(prewhere_column_name);
 
         Names post_column_names;
         for (const auto & name : column_names)

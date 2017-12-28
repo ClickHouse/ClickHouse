@@ -109,9 +109,9 @@ template <char not_case_lower_bound,
 struct LowerUpperUTF8Impl
 {
     static void vector(const ColumnString::Chars_t & data,
-        const ColumnString::Offsets_t & offsets,
+        const ColumnString::Offsets & offsets,
         ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets);
+        ColumnString::Offsets & res_offsets);
 
     static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data);
 
@@ -156,11 +156,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
+        if (!arguments[0]->isStringOrFixedString())
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return arguments[0]->clone();
+        return arguments[0];
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -170,15 +170,15 @@ public:
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
             Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnFixedString>(col->getN());
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(col->getN());
             Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(

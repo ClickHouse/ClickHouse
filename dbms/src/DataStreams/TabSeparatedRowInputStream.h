@@ -18,9 +18,9 @@ public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
-    TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
+    TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_ = false, bool with_types_ = false);
 
-    bool read(Block & block) override;
+    bool read(MutableColumns & columns) override;
     void readPrefix() override;
     bool allowSyncAfterError() const override { return true; };
     void syncAfterError() override;
@@ -29,7 +29,7 @@ public:
 
 private:
     ReadBuffer & istr;
-    const Block sample;
+    Block header;
     bool with_names;
     bool with_types;
     DataTypes data_types;
@@ -47,7 +47,7 @@ private:
 
     void updateDiagnosticInfo();
 
-    bool parseRowAndPrintDiagnosticInfo(Block & block,
+    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
 };
 

@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unistd.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -160,11 +161,9 @@ public:
     int32_t tryRemoveEphemeralNodeWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
 
     bool exists(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    bool exists(const std::string & path, Stat * stat, const TaskHandlePtr & watch);
     bool existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
 
     std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    std::string get(const std::string & path, Stat * stat, const TaskHandlePtr & watch);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist. Returns false in this case.
@@ -372,7 +371,6 @@ private:
     void tryRemoveChildrenRecursive(const std::string & path);
 
     static WatchCallback callbackForEvent(const EventPtr & event);
-    static WatchCallback callbackForTaskHandle(const TaskHandlePtr & task);
     WatchContext * createContext(WatchCallback && callback);
     static void destroyContext(WatchContext * context);
     static void processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx);

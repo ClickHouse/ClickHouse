@@ -16,6 +16,8 @@ RegionsNames::RegionsNames(IRegionsNamesDataProviderPtr data_provider)
         const std::string & language = getSupportedLanguages()[language_id];
         names_sources[language_id] = data_provider->getLanguageRegionsNamesSource(language);
     }
+
+    reload();
 }
 
 std::string RegionsNames::dumpSupportedLanguagesNames()
@@ -64,6 +66,9 @@ void RegionsNames::reload()
         while (names_reader->readNext(name_entry))
         {
             size_t old_size = new_chars.size();
+
+            if (new_chars.capacity() < old_size + name_entry.name.length() + 1)
+                throw Poco::Exception("Logical error. Maybe size estimate of " + names_source->getSourceName() + " is wrong.");
 
             new_chars.resize(old_size + name_entry.name.length() + 1);
             memcpy(&new_chars[old_size], name_entry.name.c_str(), name_entry.name.length() + 1);

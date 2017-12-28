@@ -4,7 +4,7 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
-
+#include <Parsers/ASTInsertQuery.h>
 
 namespace DB
 {
@@ -25,9 +25,15 @@ public:
     BlockIO execute() override;
 
 private:
+    /// Cache storage to avoid double table function call.
+    StoragePtr cached_table;
+    StoragePtr loadTable();
+
     StoragePtr getTable();
 
     Block getSampleBlock();
+
+    void checkAccess(const ASTInsertQuery & query);
 
     ASTPtr query_ptr;
     const Context & context;

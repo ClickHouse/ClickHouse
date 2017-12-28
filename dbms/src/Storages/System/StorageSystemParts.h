@@ -19,7 +19,7 @@ public:
 
 protected:
     explicit StorageSystemParts(const std::string & name);
-    void processNextStorage(Block & block, const StoragesInfo & info, bool has_state_column) override;
+    void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) override;
 };
 
 }

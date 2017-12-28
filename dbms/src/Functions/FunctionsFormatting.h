@@ -44,16 +44,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const IDataType * type = &*arguments[0];
+        const IDataType * type = arguments[0].get();
 
-        if (!checkDataType<DataTypeUInt8>(type) &&
-            !checkDataType<DataTypeUInt16>(type) &&
-            !checkDataType<DataTypeUInt32>(type) &&
-            !checkDataType<DataTypeUInt64>(type) &&
-            !checkDataType<DataTypeInt8>(type) &&
-            !checkDataType<DataTypeInt16>(type) &&
-            !checkDataType<DataTypeInt32>(type) &&
-            !checkDataType<DataTypeInt64>(type))
+        if (!type->isInteger())
             throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -98,12 +91,11 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
@@ -117,6 +109,8 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -145,7 +139,7 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (!type.behavesAsNumber())
+        if (!type.isNumber())
             throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -176,12 +170,11 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
@@ -195,13 +188,12 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
-        }
-        else
-        {
-            return false;
+
+            block.getByPosition(result).column = std::move(col_to);
+            return true;
         }
 
-        return true;
+        return false;
     }
 };
 

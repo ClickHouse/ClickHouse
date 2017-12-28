@@ -2,12 +2,12 @@
 #include <malloc.h>
 #endif
 #include <execinfo.h>
-#include <cxxabi.h>
 #include <string.h>
 
 #include <sstream>
 
 #include <Common/StackTrace.h>
+#include <Common/demangle.h>
 
 
 StackTrace::StackTrace()
@@ -31,7 +31,7 @@ std::string StackTrace::toString() const
 
             char * name_start = nullptr;
             char * name_end = nullptr;
-            char * demangled_name = nullptr;
+            std::string demangled_name;
             int status = 0;
 
             if (nullptr != (name_start = strchr(symbols[i], '('))
@@ -39,30 +39,21 @@ std::string StackTrace::toString() const
             {
                 ++name_start;
                 *name_end = '\0';
-                demangled_name = abi::__cxa_demangle(name_start, 0, 0, &status);
+                demangled_name = demangle(name_start, status);
                 *name_end = '+';
             }
 
-            try
-            {
-                res << i << ". ";
+            res << i << ". ";
 
-                if (nullptr != demangled_name && 0 == status)
-                {
-                    res.write(symbols[i], name_start - symbols[i]);
-                    res << demangled_name << name_end;
-                }
-                else
-                    res << symbols[i];
-
-                res << std::endl;
-            }
-            catch (...)
+            if (0 == status && name_start && name_end)
             {
-                free(demangled_name);
-                throw;
+                res.write(symbols[i], name_start - symbols[i]);
+                res << demangled_name << name_end;
             }
-            free(demangled_name);
+            else
+                res << symbols[i];
+
+            res << std::endl;
         }
     }
     catch (...)

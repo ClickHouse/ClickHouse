@@ -33,11 +33,8 @@ class DataTypeDateTime final : public DataTypeNumberBase<UInt32>
 public:
     DataTypeDateTime(const std::string & time_zone_name = "");
 
-    bool behavesAsNumber() const override { return false; }
-
-    std::string getName() const override;
     const char * getFamilyName() const override { return "DateTime"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeDateTime>(); }
+    std::string getName() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -48,6 +45,12 @@ public:
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+
+    bool canBeUsedAsVersion() const override { return true; }
+    bool isDateOrDateTime() const override { return true; }
+    bool canBeInsideNullable() const override { return true; }
+
+    bool equals(const IDataType & rhs) const override;
 
     const DateLUTImpl & getTimeZone() const { return time_zone; }
 

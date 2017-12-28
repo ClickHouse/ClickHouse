@@ -2,7 +2,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/isConvertableTypes.h>
 
 
 namespace DB
@@ -51,7 +50,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-                const auto & null_map = nullable_col.getNullMap();
+                const auto & null_map = nullable_col.getNullMapData();
                 bool has_nulls = !memoryIsZero(null_map.data(), null_map.size());
 
                 if (has_nulls)
@@ -59,7 +58,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                         ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
                 else
                     res.insert({
-                        nullable_col.getNestedColumn(),
+                        nullable_col.getNestedColumnPtr(),
                         nullable_type.getNestedType(),
                         rename[i].value_or(elem.name)
                     });
@@ -67,13 +66,12 @@ Block NullableAdapterBlockInputStream::readImpl()
             }
             case TO_NULLABLE:
             {
-                auto null_map = std::make_shared<ColumnUInt8>(elem.column->size(), 0);
+                ColumnPtr null_map = ColumnUInt8::create(elem.column->size(), 0);
 
                 res.insert({
-                    std::make_shared<ColumnNullable>(elem.column, null_map),
+                    ColumnNullable::create(elem.column, null_map),
                     std::make_shared<DataTypeNullable>(elem.type),
-                    rename[i].value_or(elem.name)
-                });
+                    rename[i].value_or(elem.name)});
                 break;
             }
             case NONE:
@@ -107,33 +105,23 @@ void NullableAdapterBlockInputStream::buildActions(
         const auto & in_elem  = in_sample.getByPosition(i);
         const auto & out_elem = out_sample.getByPosition(i);
 
-        if (isConvertableTypes(in_elem.type, out_elem.type))
-        {
-            bool is_in_nullable = in_elem.type->isNullable();
-            bool is_out_nullable = out_elem.type->isNullable();
+        bool is_in_nullable = in_elem.type->isNullable();
+        bool is_out_nullable = out_elem.type->isNullable();
 
-            if (is_in_nullable && !is_out_nullable)
-                actions.push_back(TO_ORDINARY);
-            else if (!is_in_nullable && is_out_nullable)
-                actions.push_back(TO_NULLABLE);
-            else
-                actions.push_back(NONE);
-
-            if (in_elem.name != out_elem.name)
-                rename.emplace_back(std::make_optional(out_elem.name));
-            else
-                rename.emplace_back();
-
-            if (actions.back() != NONE || rename.back())
-                must_transform = true;
-        }
+        if (is_in_nullable && !is_out_nullable)
+            actions.push_back(TO_ORDINARY);
+        else if (!is_in_nullable && is_out_nullable)
+            actions.push_back(TO_NULLABLE);
         else
-        {
-            throw Exception{String("Types must be the same for columns at same position. ")
-                + "Column " + in_elem.name + " has type " + in_elem.type->getName()
-                + ", but column " + out_elem.name + " has type " + out_elem.type->getName(),
-                ErrorCodes::TYPE_MISMATCH};
-        }
+            actions.push_back(NONE);
+
+        if (in_elem.name != out_elem.name)
+            rename.emplace_back(std::make_optional(out_elem.name));
+        else
+            rename.emplace_back();
+
+        if (actions.back() != NONE || rename.back())
+            must_transform = true;
     }
 }
 

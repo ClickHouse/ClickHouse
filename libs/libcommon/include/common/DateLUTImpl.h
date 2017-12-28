@@ -104,6 +104,7 @@ public:
 
     inline time_t toDate(time_t t) const { return find(t).date; }
     inline unsigned toMonth(time_t t) const { return find(t).month; }
+    inline unsigned toQuarter(time_t t) const { return (find(t).month - 1) / 3 + 1; }
     inline unsigned toYear(time_t t) const { return find(t).year; }
     inline unsigned toDayOfWeek(time_t t) const { return find(t).day_of_week; }
     inline unsigned toDayOfMonth(time_t t) const { return find(t).day_of_month; }
@@ -122,8 +123,7 @@ public:
 
     inline DayNum_t toFirstDayNumOfWeek(time_t t) const
     {
-        size_t index = findIndex(t);
-        return DayNum_t(index - (lut[index].day_of_week - 1));
+        return toFirstDayNumOfWeek(toDayNum(t));
     }
 
     /// Round down to start of month.
@@ -140,8 +140,7 @@ public:
 
     inline DayNum_t toFirstDayNumOfMonth(time_t t) const
     {
-        size_t index = findIndex(t);
-        return DayNum_t(index - (lut[index].day_of_month - 1));
+        return toFirstDayNumOfMonth(toDayNum(t));
     }
 
     /// Round down to start of quarter.
@@ -181,9 +180,9 @@ public:
         return years_lut[lut[d].year - DATE_LUT_MIN_YEAR];
     }
 
-    inline time_t toFirstDayNumOfYear(time_t t) const
+    inline DayNum_t toFirstDayNumOfYear(time_t t) const
     {
-        return lut[years_lut[lut[findIndex(t)].year - DATE_LUT_MIN_YEAR]].date;
+        return toFirstDayNumOfYear(toDayNum(t));
     }
 
     inline time_t toFirstDayOfNextMonth(time_t t) const
@@ -278,6 +277,7 @@ public:
 
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
     inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
+    inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
 
     inline time_t toStartOfHour(time_t t) const
     {
@@ -302,6 +302,7 @@ public:
 
     inline time_t toDate(DayNum_t d) const { return lut[d].date; }
     inline unsigned toMonth(DayNum_t d) const { return lut[d].month; }
+    inline unsigned toQuarter(DayNum_t d) const { return (lut[d].month - 1) / 3 + 1; }
     inline unsigned toYear(DayNum_t d) const { return lut[d].year; }
     inline unsigned toDayOfWeek(DayNum_t d) const { return lut[d].day_of_week; }
     inline unsigned toDayOfMonth(DayNum_t d) const { return lut[d].day_of_month; }
@@ -317,8 +318,7 @@ public:
 
     inline unsigned toRelativeWeekNum(time_t t) const
     {
-        size_t index = findIndex(t);
-        return (index + 8 - lut[index].day_of_week) / 7;
+        return toRelativeWeekNum(toDayNum(t));
     }
 
     /// Number of month from some fixed moment in the past (year * 12 + month)
@@ -329,11 +329,20 @@ public:
 
     inline unsigned toRelativeMonthNum(time_t t) const
     {
-        size_t index = findIndex(t);
-        return lut[index].year * 12 + lut[index].month;
+        return toRelativeMonthNum(toDayNum(t));
     }
 
-    /// We calculate all hour-length intervals, unrelated to offset changes.
+    inline unsigned toRelativeQuarterNum(DayNum_t d) const
+    {
+        return lut[d].year * 4 + (lut[d].month - 1) / 3;
+    }
+
+    inline unsigned toRelativeQuarterNum(time_t t) const
+    {
+        return toRelativeQuarterNum(toDayNum(t));
+    }
+
+    /// We count all hour-length intervals, unrelated to offset changes.
     inline time_t toRelativeHourNum(time_t t) const
     {
         if (offset_is_whole_number_of_hours_everytime)
@@ -344,9 +353,19 @@ public:
         return (t + 86400 - offset_at_start_of_epoch) / 3600;
     }
 
+    inline time_t toRelativeHourNum(DayNum_t d) const
+    {
+        return toRelativeHourNum(lut[d].date);
+    }
+
     inline time_t toRelativeMinuteNum(time_t t) const
     {
         return t / 60;
+    }
+
+    inline time_t toRelativeMinuteNum(DayNum_t d) const
+    {
+        return toRelativeMinuteNum(lut[d].date);
     }
 
     /// Create DayNum_t from year, month, day of month.
@@ -475,17 +494,9 @@ public:
     /// Example: 31 Aug + 1 month = 30 Sep.
     inline time_t addMonths(time_t t, Int64 delta) const
     {
-        size_t index = findIndex(t);
-        const Values & values = lut[index];
+        DayNum_t result_day = addMonths(toDayNum(t), delta);
 
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
-
-        auto month = values.month + delta;
-        auto year = values.year + (month - 1) / 12;
-        month = ((month - 1) % 12) + 1;
-        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
-
-        DayNum_t result_day = makeDayNum(year, month, day_of_month);
 
         if (time_offset >= lut[result_day].time_at_offset_change)
             time_offset -= lut[result_day].amount_of_offset_change;
@@ -497,31 +508,32 @@ public:
     {
         const Values & values = lut[d];
 
-        auto month = values.month + delta;
-        auto year = values.year + (month - 1) / 12;
-        month = ((month - 1) % 12) + 1;
-        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+        Int64 month = static_cast<Int64>(values.month) + delta;
 
-        return makeDayNum(year, month, day_of_month);
+        if (month > 0)
+        {
+            auto year = values.year + (month - 1) / 12;
+            month = ((month - 1) % 12) + 1;
+            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+
+            return makeDayNum(year, month, day_of_month);
+        }
+        else
+        {
+            auto year = values.year - (12 - month) / 12;
+            month = 12 - (-month % 12);
+            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+
+            return makeDayNum(year, month, day_of_month);
+        }
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
     inline time_t addYears(time_t t, Int64 delta) const
     {
-        size_t index = findIndex(t);
-        const Values & values = lut[index];
+        DayNum_t result_day = addYears(toDayNum(t), delta);
 
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
-
-        auto year = values.year + delta;
-        auto month = values.month;
-        auto day_of_month = values.day_of_month;
-
-        /// Saturation to 28 Feb can happen.
-        if (unlikely(day_of_month == 29 && month == 2))
-            day_of_month = saturateDayOfMonth(year, month, day_of_month);
-
-        DayNum_t result_day = makeDayNum(year, month, day_of_month);
 
         if (time_offset >= lut[result_day].time_at_offset_change)
             time_offset -= lut[result_day].amount_of_offset_change;

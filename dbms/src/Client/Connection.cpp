@@ -57,7 +57,7 @@ void Connection::connect()
 #if Poco_NetSSL_FOUND
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
-            throw Exception{"tcp_ssl protocol is disabled because poco library built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception{"tcp_ssl protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         }
         else
@@ -401,7 +401,6 @@ void Connection::sendData(const Block & block, const String & name)
 
     size_t prev_bytes = out->count();
 
-    block.checkNestedArraysOffsets();
     block_out->write(block);
     maybe_compressed_out->next();
     out->next();

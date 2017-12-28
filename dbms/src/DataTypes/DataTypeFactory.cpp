@@ -113,7 +113,7 @@ void registerDataTypeEnum(DataTypeFactory & factory);
 void registerDataTypeArray(DataTypeFactory & factory);
 void registerDataTypeTuple(DataTypeFactory & factory);
 void registerDataTypeNullable(DataTypeFactory & factory);
-void registerDataTypeNull(DataTypeFactory & factory);
+void registerDataTypeNothing(DataTypeFactory & factory);
 void registerDataTypeUUID(DataTypeFactory & factory);
 void registerDataTypeAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeNested(DataTypeFactory & factory);
@@ -131,7 +131,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
     registerDataTypeNullable(*this);
-    registerDataTypeNull(*this);
+    registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);

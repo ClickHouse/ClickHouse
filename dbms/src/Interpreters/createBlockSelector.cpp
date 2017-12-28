@@ -27,19 +27,19 @@ IColumn::Selector createBlockSelector(
       * This is not suitable for our task. So we will process signed numbers as unsigned.
       * It is not near like remainder of division, but is suitable for our task.
       */
-    using UnsignedT = typename std::make_unsigned<T>::type;
+    using UnsignedT = std::make_unsigned_t<T>;
 
     /// const columns contain only one value, therefore we do not need to read it at every iteration
-    if (column.isConst())
+    if (column.isColumnConst())
     {
-        const auto data = typeid_cast<const ColumnConst &>(column).getValue<T>();
+        const auto data = static_cast<const ColumnConst &>(column).getValue<T>();
         const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
         selector.assign(num_rows, shard_num);
     }
     else
     {
         /// libdivide support only UInt32 and UInt64.
-        using TUInt32Or64 = typename std::conditional<sizeof(UnsignedT) <= 4, UInt32, UInt64>::type;
+        using TUInt32Or64 = std::conditional_t<sizeof(UnsignedT) <= 4, UInt32, UInt64>;
 
         libdivide::divider<TUInt32Or64> divider(total_weight);
 

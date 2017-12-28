@@ -4,40 +4,40 @@
 #include <memory>
 
 
-/** Позволяет хранить некоторый объект, использовать его read-only в разных потоках,
-  *  и заменять его на другой в других потоках.
-  * Замена производится атомарно, при этом, читающие потоки могут работать с разными версиями объекта.
+/** Allow to store and read-only usage of an object in several threads,
+  *  and to atomically replace an object in another thread.
+  * The replacement is atomic and reading threads can work with different versions of an object.
   *
-  * Использование:
-  *        MultiVersion<T> x;
-  * - при обновлении данных:
-  *        x.set(new value);
-  * - при использовании данных для чтения в разных потоках:
-  *    {
-  *        MultiVersion<T>::Version current_version = x.get();
-  *        // используем для чего-нибудь *current_version
-  * }    // здесь перестаём владеть версией; если версия устарела, и её никто больше не использует - она будет уничтожена
+  * Usage:
+  *  MultiVersion<T> x;
+  * - on data update:
+  *  x.set(new value);
+  * - on read-only usage:
+  * {
+  *     MultiVersion<T>::Version current_version = x.get();
+  *     // use *current_version
+  * }   // now we finish own current version; if the version is outdated and no one else is using it - it will be destroyed.
   *
-  * Все методы thread-safe.
+  * All methods are thread-safe.
   */
-template <typename T, typename Ptr = std::shared_ptr<T>>
+template <typename T>
 class MultiVersion
 {
 public:
-    /// Конкретная версия объекта для использования. shared_ptr определяет время жизни версии.
-    using Version = Ptr;
+    /// Version of object for usage. shared_ptr manage lifetime of version.
+    using Version = std::shared_ptr<const T>;
 
-    /// Инициализация по-умолчанию (NULL-ом).
+    /// Default initialization - by nullptr.
     MultiVersion() = default;
 
-    /// Инициализация первой версией.
+    /// Initialization with first version.
     MultiVersion(const Version & value)
     {
         set(value);
     }
 
-    /// Захватить владение первой версией.
-    MultiVersion(T * value)
+    /// Take an ownership of first version.
+    MultiVersion(const T * value)
     {
         set(value);
     }
@@ -47,33 +47,33 @@ public:
         set(std::move(value));
     }
 
-    MultiVersion(std::unique_ptr<T> && value)
+    MultiVersion(std::unique_ptr<const T> && value)
     {
         set(std::move(value));
     }
 
-    /// Получить текущую версию для использования. Возвращает shared_ptr, который определяет время жизни версии.
+    /// Obtain current version for read-only usage. Returns shared_ptr, that manages lifetime of version.
     const Version get() const
     {
-        /// TODO: можно ли заменять shared_ptr lock-free? (Можно, если сделать свою реализацию с использованием cmpxchg16b.)
-        std::lock_guard<std::mutex> lock(mutex);
+        /// NOTE: is it possible to lock-free replace of shared_ptr?
+        std::lock_guard lock(mutex);
         return current_version;
     }
 
-    /// Обновить объект новой версией.
-    void set(Version value)
+    /// Update an object with new version.
+    void set(const Version & value)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         current_version = value;
     }
 
-    /// Обновить объект новой версией и захватить владение.
-    void set(T * value)
+    /// Update an object with new version and take an ownership of it.
+    void set(const T * value)
     {
         set(Version(value));
     }
 
-    void set(std::unique_ptr<T> && value)
+    void set(std::unique_ptr<const T> && value)
     {
         set(Version(value.release()));
     }

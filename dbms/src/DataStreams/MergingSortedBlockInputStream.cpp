@@ -46,7 +46,7 @@ String MergingSortedBlockInputStream::getID() const
     return res.str();
 }
 
-void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs & merged_columns)
+void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged_columns)
 {
     /// Read the first blocks, initialize the queue.
     if (first)
@@ -95,7 +95,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
             if (*shared_block_ptr)
             {
-                merged_block = shared_block_ptr->cloneEmpty();
+                header = shared_block_ptr->cloneEmpty();
                 break;
             }
         }
@@ -114,30 +114,25 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
             continue;
 
         size_t src_columns = shared_block_ptr->columns();
-        size_t dst_columns = merged_block.columns();
+        size_t dst_columns = header.columns();
 
         if (src_columns != dst_columns)
-            throw Exception("Merging blocks has different number of columns ("
+            throw Exception("Merging blocks have different number of columns ("
                 + toString(src_columns) + " and " + toString(dst_columns) + ")",
                 ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
         for (size_t i = 0; i < src_columns; ++i)
-        {
-            if (shared_block_ptr->safeGetByPosition(i).name != merged_block.safeGetByPosition(i).name
-                || shared_block_ptr->safeGetByPosition(i).type->getName() != merged_block.safeGetByPosition(i).type->getName()
-                || shared_block_ptr->safeGetByPosition(i).column->getName() != merged_block.safeGetByPosition(i).column->getName())
-            {
-                throw Exception("Merging blocks has different names or types of columns:\n"
-                    + shared_block_ptr->dumpStructure() + "\nand\n" + merged_block.dumpStructure(),
+            if (!blocksHaveEqualStructure(*shared_block_ptr, header))
+                throw Exception("Merging blocks have different names or types of columns:\n"
+                    + shared_block_ptr->dumpStructure() + "\nand\n" + header.dumpStructure(),
                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-            }
-        }
     }
 
+    merged_columns.resize(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
     {
-        merged_columns.emplace_back(merged_block.safeGetByPosition(i).column.get());
-        merged_columns.back()->reserve(expected_block_size);
+        merged_columns[i] = header.safeGetByPosition(i).column->cloneEmpty();
+        merged_columns[i]->reserve(expected_block_size);
     }
 }
 
@@ -154,24 +149,24 @@ void MergingSortedBlockInputStream::initQueue(std::priority_queue<TSortCursor> &
 Block MergingSortedBlockInputStream::readImpl()
 {
     if (finished)
-        return Block();
+        return {};
 
     if (children.size() == 1)
         return children[0]->read();
 
-    Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    Block header;
+    MutableColumns merged_columns;
 
-    init(merged_block, merged_columns);
+    init(header, merged_columns);
     if (merged_columns.empty())
-        return Block();
+        return {};
 
     if (has_collation)
-        merge(merged_block, merged_columns, queue_with_collation);
+        merge(merged_columns, queue_with_collation);
     else
-        merge(merged_block, merged_columns, queue);
+        merge(merged_columns, queue);
 
-    return merged_block;
+    return header.cloneWithColumns(std::move(merged_columns));
 }
 
 
@@ -207,7 +202,7 @@ void MergingSortedBlockInputStream::fetchNextBlock<SortCursorWithCollation>(cons
 
 
 template <typename TSortCursor>
-void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
 
@@ -235,7 +230,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
         return false;
     };
 
-    /// Take rows in required order and put them into `merged_block`, while the rows are no more than `max_block_size`
+    /// Take rows in required order and put them into `merged_columns`, while the rows are no more than `max_block_size`
     while (!queue.empty())
     {
         TSortCursor current = queue.top();
@@ -243,8 +238,8 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 
         while (true)
         {
-            /** And what if the block is smaller or equal than the rest for the current cursor?
-              * Or is there only one data source left in the queue? Then you can take the entire block of current cursor.
+            /** And what if the block is totally less or equal than the rest for the current cursor?
+              * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
               */
             if (current.impl->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
             {
@@ -265,18 +260,18 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
                     throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
                 for (size_t i = 0; i < num_columns; ++i)
-                    merged_block.getByPosition(i).column = source_blocks[source_num]->getByPosition(i).column;
+                    merged_columns[i] = source_blocks[source_num]->getByPosition(i).column->mutate();
 
     //            std::cerr << "copied columns\n";
 
-                size_t merged_rows = merged_block.rows();
+                size_t merged_rows = merged_columns.at(0)->size();
 
                 if (limit && total_merged_rows + merged_rows > limit)
                 {
                     merged_rows = limit - total_merged_rows;
                     for (size_t i = 0; i < num_columns; ++i)
                     {
-                        auto & column = merged_block.getByPosition(i).column;
+                        auto & column = merged_columns[i];
                         column = column->cut(0, merged_rows);
                     }
 

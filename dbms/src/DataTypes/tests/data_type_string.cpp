@@ -23,9 +23,9 @@ try
     DataTypeString data_type;
 
     {
-        std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
+        auto column = ColumnString::create();
         ColumnString::Chars_t & data = column->getChars();
-        ColumnString::Offsets_t & offsets = column->getOffsets();
+        ColumnString::Offsets & offsets = column->getOffsets();
 
         data.resize(n * size);
         offsets.resize(n);
@@ -45,7 +45,7 @@ try
     }
 
     {
-        std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
+        auto column = ColumnString::create();
 
         ReadBufferFromFile in_buf("test");
 

@@ -1,9 +1,10 @@
+#pragma once
+
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -49,6 +50,10 @@ private:
       */
     Queue queue;
 
+    /// If true, the queue in RAM is possibly out of sync with ZK and we need to reload it.
+    /// Protected by pull_logs_to_queue_mutex.
+    bool is_dirty = false;
+
     InsertsByTime inserts_by_time;
     time_t min_unprocessed_insert_time = 0;
     time_t max_processed_insert_time = 0;
@@ -80,7 +85,7 @@ private:
     void initVirtualParts(const MergeTreeData::DataParts & parts);
 
     /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
-    void load(zkutil::ZooKeeperPtr zookeeper);
+    bool load(zkutil::ZooKeeperPtr zookeeper);
 
     void insertUnlocked(LogEntryPtr & entry);
 
@@ -148,7 +153,7 @@ public:
       * If next_update_event != nullptr, will call this event when new entries appear in the log.
       * Returns true if new entries have been.
       */
-    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_event);
+    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.

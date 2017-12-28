@@ -120,9 +120,11 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 /** A template for columns that use a simple array to store.
   */
 template <typename T>
-class ColumnVector final : public IColumn
+class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
 {
 private:
+    friend class COWPtrHelper<IColumn, ColumnVector<T>>;
+
     using Self = ColumnVector<T>;
 
     struct less;
@@ -130,16 +132,19 @@ private:
 
 public:
     using value_type = T;
-    using Container_t = PaddedPODArray<value_type>;
+    using Container = PaddedPODArray<value_type>;
 
+private:
     ColumnVector() {}
-    ColumnVector(const size_t n) : data{n} {}
-    ColumnVector(const size_t n, const value_type x) : data{n, x} {}
+    ColumnVector(const size_t n) : data(n) {}
+    ColumnVector(const size_t n, const value_type x) : data(n, x) {}
+    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {};
 
-    bool isNumeric() const override { return IsNumber<T>::value; }
-    bool isFixed() const override { return IsNumber<T>::value; }
+    /// Sugar constructor.
+    ColumnVector(std::initializer_list<T> il) : data{il} {}
 
-    size_t sizeOfField() const override { return sizeof(T); }
+public:
+    bool isNumeric() const override { return IsNumber<T>; }
 
     size_t size() const override
     {
@@ -198,16 +203,16 @@ public:
         return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void reserve(size_t n) override
     {
         data.reserve(n);
     }
 
-    std::string getName() const override;
+    const char * getFamilyName() const override;
 
-    ColumnPtr cloneResized(size_t size) const override;
+    MutableColumnPtr cloneResized(size_t size) const override;
 
     Field operator[](size_t n) const override
     {
@@ -238,28 +243,35 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    MutableColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+    MutableColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
-    ColumnPtr replicate(const IColumn::Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
     void getExtremes(Field & min, Field & max) const override;
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
     {
-        return this->scatterImpl<Self>(num_columns, selector);
+        return this->template scatterImpl<Self>(num_columns, selector);
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+
+    bool canBeInsideNullable() const override { return true; }
+
+    bool isFixedAndContiguous() const override { return true; }
+    size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+
+
     /** More efficient methods of manipulation - to manipulate with data directly. */
-    Container_t & getData()
+    Container & getData()
     {
         return data;
     }
 
-    const Container_t & getData() const
+    const Container & getData() const
     {
         return data;
     }
@@ -275,7 +287,7 @@ public:
     }
 
 protected:
-    Container_t data;
+    Container data;
 };
 
 

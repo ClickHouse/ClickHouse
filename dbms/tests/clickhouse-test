@@ -87,12 +87,14 @@ def main(args):
             args.shard = True
 
     base_dir = os.path.abspath(args.queries)
+    tmp_dir = os.path.abspath(args.tmp)
 
     failures_total = 0
 
     # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
+    os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
@@ -102,6 +104,11 @@ def main(args):
         suite_re_obj = re.search('^[0-9]+_(.*)$', suite)
         if not suite_re_obj: #skip .gitignore and so on
             continue
+
+        suite_tmp_dir = os.path.join(tmp_dir, suite)
+        if not os.path.exists(suite_tmp_dir):
+            os.makedirs(suite_tmp_dir)
+
         suite = suite_re_obj.group(1)
         if os.path.isdir(suite_dir):
             print("\nRunning {} tests.\n".format(suite))
@@ -114,10 +121,21 @@ def main(args):
             # Reverse sort order: we want run newest test first.
             # And not reverse subtests
             def key_func(item):
-                if args.random:
+                if args.order == 'random':
                     return random()
+
+                reverse = 1 if args.order == 'asc' else -1
+
+                if -1 == item.find('_'):
+                    return 99998
+
                 prefix, suffix = item.split('_', 1)
-                return -int(prefix), suffix
+
+                try:
+                    return reverse * int(prefix), suffix
+                except ValueError:
+                    return 99997
+
             for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
                 if SERVER_DIED:
                     break
@@ -142,107 +160,114 @@ def main(args):
                             report_testcase.append(et.Element("skipped", attrib = {"message": "no shard"}))
                             print(MSG_SKIPPED + " - no shard")
                         else:
-                            reference_file = os.path.join(suite_dir, name) + '.reference'
-                            stdout_file = os.path.join(suite_dir, name) + '.stdout'
-                            stderr_file = os.path.join(suite_dir, name) + '.stderr'
+                            disabled_file = os.path.join(suite_dir, name) + '.disabled'
 
-                            if ext == '.sql':
-                                command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
+                            if os.path.exists(disabled_file) and not args.disabled:
+                                message = open(disabled_file, 'r').read()
+                                report_testcase.append(et.Element("skipped", attrib = {"message": message}))
+                                print(MSG_SKIPPED + " - " + message)
                             else:
-                                command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
+                                reference_file = os.path.join(suite_dir, name) + '.reference'
+                                stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
+                                stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
-                            proc = Popen(command, shell = True)
-                            start_time = datetime.now()
-                            while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
-                                sleep(0)
-
-                            if proc.returncode is None:
-                                try:
-                                    proc.kill()
-                                except OSError as e:
-                                    if e.errno != ESRCH:
-                                        raise
-
-                                failure = et.Element("failure", attrib = {"message": "Timeout"})
-                                report_testcase.append(failure)
-
-                                failures = failures + 1
-                                print("{0} - Timeout!".format(MSG_FAIL))
-                            else:
-                                stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
-                                stdout = unicode(stdout, errors='replace', encoding='utf-8')
-                                stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
-                                stderr = unicode(stderr, errors='replace', encoding='utf-8')
-
-                                if proc.returncode != 0:
-                                    failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
-                                    report_testcase.append(failure)
-
-                                    stdout_element = et.Element("system-out")
-                                    stdout_element.text = et.CDATA(stdout)
-                                    report_testcase.append(stdout_element)
-
-                                    failures = failures + 1
-                                    print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
-
-                                    if stderr:
-                                        stderr_element = et.Element("system-err")
-                                        stderr_element.text = et.CDATA(stderr)
-                                        report_testcase.append(stderr_element)
-                                        print(stderr)
-
-                                    if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
-                                        SERVER_DIED = True
-
-                                elif stderr:
-                                    failure = et.Element("failure", attrib = {"message": "having stderror"})
-                                    report_testcase.append(failure)
-
-                                    stderr_element = et.Element("system-err")
-                                    stderr_element.text = et.CDATA(stderr)
-                                    report_testcase.append(stderr_element)
-
-                                    failures = failures + 1
-                                    print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
-                                elif 'Exception' in stdout:
-                                    failure = et.Element("error", attrib = {"message": "having exception"})
-                                    report_testcase.append(failure)
-
-                                    stdout_element = et.Element("system-out")
-                                    stdout_element.text = et.CDATA(stdout)
-                                    report_testcase.append(stdout_element)
-
-                                    failures = failures + 1
-                                    print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
-                                elif not os.path.isfile(reference_file):
-                                    skipped = et.Element("skipped", attrib = {"message": "no reference file"})
-                                    report_testcase.append(skipped)
-                                    print("{0} - no reference file".format(MSG_UNKNOWN))
+                                if ext == '.sql':
+                                    command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
                                 else:
-                                    result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
+                                    command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
 
-                                    if result_is_different:
-                                        (diff, _) = Popen(['diff', '--side-by-side', reference_file, stdout_file], stdout = PIPE).communicate()
-                                        diff = unicode(diff, errors='replace', encoding='utf-8')
+                                proc = Popen(command, shell = True)
+                                start_time = datetime.now()
+                                while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
+                                    sleep(0)
 
-                                        failure = et.Element("failure", attrib = {"message": "result differs with reference"})
+                                if proc.returncode is None:
+                                    try:
+                                        proc.kill()
+                                    except OSError as e:
+                                        if e.errno != ESRCH:
+                                            raise
+
+                                    failure = et.Element("failure", attrib = {"message": "Timeout"})
+                                    report_testcase.append(failure)
+
+                                    failures = failures + 1
+                                    print("{0} - Timeout!".format(MSG_FAIL))
+                                else:
+                                    stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+                                    stdout = unicode(stdout, errors='replace', encoding='utf-8')
+                                    stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+                                    stderr = unicode(stderr, errors='replace', encoding='utf-8')
+
+                                    if proc.returncode != 0:
+                                        failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
                                         report_testcase.append(failure)
 
                                         stdout_element = et.Element("system-out")
-                                        try:
-                                            stdout_element.text = et.CDATA(diff)
-                                        except:
-                                            stdout_element.text = et.CDATA(remove_control_characters(diff))
-
+                                        stdout_element.text = et.CDATA(stdout)
                                         report_testcase.append(stdout_element)
+
                                         failures = failures + 1
-                                        print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
+                                        print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
+
+                                        if stderr:
+                                            stderr_element = et.Element("system-err")
+                                            stderr_element.text = et.CDATA(stderr)
+                                            report_testcase.append(stderr_element)
+                                            print(stderr)
+
+                                        if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
+                                            SERVER_DIED = True
+
+                                    elif stderr:
+                                        failure = et.Element("failure", attrib = {"message": "having stderror"})
+                                        report_testcase.append(failure)
+
+                                        stderr_element = et.Element("system-err")
+                                        stderr_element.text = et.CDATA(stderr)
+                                        report_testcase.append(stderr_element)
+
+                                        failures = failures + 1
+                                        print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
+                                    elif 'Exception' in stdout:
+                                        failure = et.Element("error", attrib = {"message": "having exception"})
+                                        report_testcase.append(failure)
+
+                                        stdout_element = et.Element("system-out")
+                                        stdout_element.text = et.CDATA(stdout)
+                                        report_testcase.append(stdout_element)
+
+                                        failures = failures + 1
+                                        print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
+                                    elif not os.path.isfile(reference_file):
+                                        skipped = et.Element("skipped", attrib = {"message": "no reference file"})
+                                        report_testcase.append(skipped)
+                                        print("{0} - no reference file".format(MSG_UNKNOWN))
                                     else:
-                                        print(MSG_OK)
-                                        if os.path.exists(stdout_file):
-                                            os.remove(stdout_file)
-                                        if os.path.exists(stderr_file):
-                                            os.remove(stderr_file)
+                                        result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
+
+                                        if result_is_different:
+                                            (diff, _) = Popen(['diff', '--side-by-side', reference_file, stdout_file], stdout = PIPE).communicate()
+                                            diff = unicode(diff, errors='replace', encoding='utf-8')
+
+                                            failure = et.Element("failure", attrib = {"message": "result differs with reference"})
+                                            report_testcase.append(failure)
+
+                                            stdout_element = et.Element("system-out")
+                                            try:
+                                                stdout_element.text = et.CDATA(diff)
+                                            except:
+                                                stdout_element.text = et.CDATA(remove_control_characters(diff))
+
+                                            report_testcase.append(stdout_element)
+                                            failures = failures + 1
+                                            print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
+                                        else:
+                                            print(MSG_OK)
+                                            if os.path.exists(stdout_file):
+                                                os.remove(stdout_file)
+                                            if os.path.exists(stderr_file):
+                                                os.remove(stderr_file)
                     except KeyboardInterrupt as e:
                         print(colored("Break tests execution", "red"))
                         raise e
@@ -269,13 +294,16 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser(description = 'ClickHouse functional tests')
     parser.add_argument('-q', '--queries', default = 'queries', help = 'Path to queries dir')
+    parser.add_argument('--tmp', default = 'queries', help = 'Path to tmp dir')
     parser.add_argument('-b', '--binary', default = 'clickhouse', help = 'Main clickhouse binary')
     parser.add_argument('-c', '--client', help = 'Client program')
+    parser.add_argument('--clientconfig', help = 'Client config (if you use not default ports)')
     parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
     parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
+    parser.add_argument('-d', '--disabled', action = 'store_true', default = False, help = 'Also run disabled tests')
     parser.add_argument('--stop', action = 'store_true', default = None, dest = 'stop', help = 'Stop on network errors')
-    parser.add_argument('--random', action = 'store_true', default = None, dest = 'random', help = 'Randomize tests order')
+    parser.add_argument('--order', default = 'desc', help = 'Run order (asc, desc, random)')
     parser.add_argument('--testname', action = 'store_true', default = None, dest = 'testname', help = 'Make query with test name before test run')
 
     group = parser.add_mutually_exclusive_group(required = False)
@@ -288,4 +316,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.client is None:
         args.client = args.binary + '-client'
+        if args.clientconfig:
+            args.client += ' -c' + args.clientconfig
     main(args)

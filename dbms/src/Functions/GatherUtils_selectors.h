@@ -42,7 +42,7 @@ struct ArraySourceSelector<Base>
         else if (auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<GenericArraySource>> *>(&source))
             Base::selectImpl(*const_nullable_array, args ...);
         else
-            throw Exception(std::string("Unknown ArraySource type: ") + typeid(source).name(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(std::string("Unknown ArraySource type: ") + demangle(typeid(source).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -79,7 +79,7 @@ struct ArraySinkSelector<Base>
         else if (auto generic_sink = typeid_cast<GenericArraySink *>(&sink))
             Base::selectImpl(*generic_sink, args ...);
         else
-            throw Exception(std::string("Unknown ArraySink type: ") + typeid(sink).name(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(std::string("Unknown ArraySink type: ") + demangle(typeid(sink).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
 

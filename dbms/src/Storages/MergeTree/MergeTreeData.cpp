@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
@@ -78,7 +78,7 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
-    const String & full_path_, NamesAndTypesListPtr columns_,
+    const String & full_path_, const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -89,7 +89,6 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & sampling_expression_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
-    const String & log_name_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
@@ -104,11 +103,11 @@ MergeTreeData::MergeTreeData(
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
     broken_part_callback(broken_part_callback_),
-    log_name(log_name_), log(&Logger::get(log_name + " (Data)")),
+    log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_name(data_parts_indexes.get<TagByName>()),
     data_parts_by_state_and_name(data_parts_indexes.get<TagByStateAndName>())
 {
-    merging_params.check(*columns);
+    merging_params.check(columns);
 
     if (primary_expr_ast && merging_params.mode == MergingParams::Unsorted)
         throw Exception("Primary key cannot be set for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
@@ -177,6 +176,17 @@ MergeTreeData::MergeTreeData(
 }
 
 
+static void checkForAllowedKeyColumns(const ColumnWithTypeAndName & element, const std::string & key_name)
+{
+    const ColumnPtr & column = element.column;
+    if (column && (column->isColumnConst() || column->isDummy()))
+        throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+
+    if (element.type->isNullable())
+        throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
+}
+
+
 void MergeTreeData::initPrimaryKey()
 {
     if (!primary_expr_ast)
@@ -202,16 +212,7 @@ void MergeTreeData::initPrimaryKey()
     ///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
     /// Also a primary key must not contain any nullable column.
     for (size_t i = 0; i < primary_key_size; ++i)
-    {
-        const auto & element = primary_key_sample.getByPosition(i);
-
-        const ColumnPtr & column = element.column;
-        if (column && column->isConst())
-                throw Exception{"Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
-
-        if (element.type->isNullable())
-            throw Exception{"Primary key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
-    }
+        checkForAllowedKeyColumns(primary_key_sample.getByPosition(i), "Primary");
 
     primary_key_data_types.resize(primary_key_size);
     for (size_t i = 0; i < primary_key_size; ++i)
@@ -231,11 +232,7 @@ void MergeTreeData::initPartitionKey()
         partition_expr_columns.emplace_back(col_name);
 
         const ColumnWithTypeAndName & element = partition_expr->getSampleBlock().getByName(col_name);
-
-        if (element.column && element.column->isConst())
-            throw Exception("Partition key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
-        if (element.type->isNullable())
-            throw Exception("Partition key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN);
+        checkForAllowedKeyColumns(element, "Partition");
 
         partition_expr_column_types.emplace_back(element.type);
     }
@@ -303,7 +300,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 
         for (const auto & column_to_sum : columns_to_sum)
             if (columns.end() == std::find_if(columns.begin(), columns.end(),
-                [&](const NameAndTypePair & name_and_type) { return column_to_sum == DataTypeNested::extractNestedTableName(name_and_type.name); }))
+                [&](const NameAndTypePair & name_and_type) { return column_to_sum == Nested::extractTableName(name_and_type.name); }))
                 throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
     }
 
@@ -772,7 +769,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    auto new_columns = *columns;
+    auto new_columns = columns;
     auto new_materialized_columns = materialized_columns;
     auto new_alias_columns = alias_columns;
     auto new_column_defaults = column_defaults;
@@ -810,10 +807,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
-    for (const auto & column : *columns)
-    {
+    for (const auto & column : columns)
         old_types.emplace(column.name, column.type.get());
-    }
 
     for (const AlterCommand & command : commands)
     {
@@ -918,7 +913,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 /// This is temporary name for expression. TODO Invent the name more safely.
                 const String new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createConstColumn(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
+                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
                 const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(
@@ -1083,7 +1078,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             else
             {
                 const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
-                new_index[i] = type.createConstColumn(part->marks_count, type.getDefault())->convertToFullColumnIfConst();
+                new_index[i] = type.createColumnConstWithDefaultValue(part->marks_count)->convertToFullColumnIfConst();
             }
         }
 
@@ -1339,14 +1334,9 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
             auto check_coverage = [&part_info, &part_name] (const DataPartPtr & part)
             {
                 if (part_info.contains(part->info))
-                {
                     throw Exception("Cannot add part " + part_name + " covering pre-committed part " + part->name, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
-                }
-                else
-                {
-                    if (part->info.contains(part_info))
-                        throw Exception("Cannot add part " + part_name + " covered by pre-committed part " + part->name + ". It is a bug", ErrorCodes::LOGICAL_ERROR);
-                }
+                else if (part->info.contains(part_info))
+                    throw Exception("Cannot add part " + part_name + " covered by pre-committed part " + part->name, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             };
 
             auto it_middle = data_parts_by_state_and_name.lower_bound(DataPartStateAndInfo(DataPartState::PreCommitted, part_info));
@@ -1725,7 +1715,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     for (auto state : valid_states)
     {
         if ((*it)->state == state)
-            return  *it;
+            return *it;
     }
 
     return nullptr;
@@ -1812,7 +1802,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : *columns)
+    for (const auto & column : columns)
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";
@@ -1962,18 +1952,20 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        ValuesRowInputStream input_stream(buf, context, /* interpret_expressions = */true);
-        Block block;
+        Block header;
         for (size_t i = 0; i < fields_count; ++i)
-            block.insert(ColumnWithTypeAndName(partition_expr_column_types[i], partition_expr_columns[i]));
+            header.insert(ColumnWithTypeAndName(partition_expr_column_types[i], partition_expr_columns[i]));
 
-        if (!input_stream.read(block))
+        ValuesRowInputStream input_stream(buf, header, context, /* interpret_expressions = */true);
+        MutableColumns columns = header.cloneEmptyColumns();
+
+        if (!input_stream.read(columns))
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
-            block.getByPosition(i).column->get(0, partition_row[i]);
+            columns[i]->get(0, partition_row[i]);
     }
 
     MergeTreePartition partition(std::move(partition_row));

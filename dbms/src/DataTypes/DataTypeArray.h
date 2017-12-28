@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/EnrichedDataTypePtr.h>
 
 
 namespace DB
@@ -11,18 +10,13 @@ namespace DB
 class DataTypeArray final : public IDataType
 {
 private:
-    /// Extended type of array elements.
-    DataTypeTraits::EnrichedDataTypePtr enriched_nested;
     /// The type of array elements.
     DataTypePtr nested;
-    /// Type of offsets.
-    DataTypePtr offsets;
 
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeArray(const DataTypePtr & nested_);
-    DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_);
 
     std::string getName() const override
     {
@@ -37,11 +31,6 @@ public:
     bool canBeInsideNullable() const override
     {
         return false;
-    }
-
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeArray>(enriched_nested);
     }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
@@ -90,13 +79,25 @@ public:
         bool position_independent_encoding,
         SubstreamPath path) const override;
 
-    ColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
 
+    bool equals(const IDataType & rhs) const override;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return true; }
+    bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
+    bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
+    bool isComparable() const override { return nested->isComparable(); };
+    bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
+
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
+    {
+        return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
+    }
+
     const DataTypePtr & getNestedType() const { return nested; }
-    const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
-    const DataTypePtr & getOffsetsType() const { return offsets; }
 };
 
 }

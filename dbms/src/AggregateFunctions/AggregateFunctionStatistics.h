@@ -3,8 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <cmath>
@@ -51,8 +50,6 @@ template <typename T, typename Op>
 class AggregateFunctionVarianceData
 {
 public:
-    AggregateFunctionVarianceData() = default;
-
     void update(const IColumn & column, size_t row_num)
     {
         T received = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
@@ -111,8 +108,7 @@ private:
   */
 template <typename T, typename Op>
 class AggregateFunctionVariance final
-    : public IUnaryAggregateFunction<AggregateFunctionVarianceData<T, Op>,
-        AggregateFunctionVariance<T, Op>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>
 {
 public:
     String getName() const override { return Op::name; }
@@ -122,16 +118,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (!argument->behavesAsNumber())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).update(column, row_num);
+        this->data(place).update(*columns[0], row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -367,7 +356,7 @@ private:
 
 template <typename T, typename U, typename Op, bool compute_marginal_moments = false>
 class AggregateFunctionCovariance final
-    : public IBinaryAggregateFunction<
+    : public IAggregateFunctionDataHelper<
         CovarianceData<T, U, Op, compute_marginal_moments>,
         AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>
 {
@@ -379,20 +368,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (!arguments[0]->behavesAsNumber())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument to function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!arguments[1]->behavesAsNumber())
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument to function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column_left, const IColumn & column_right, size_t row_num, Arena *) const
-    {
-        this->data(place).update(column_left, column_right, row_num);
+        this->data(place).update(*columns[0], *columns[1], row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -466,24 +444,24 @@ struct AggregateFunctionCorrImpl
 };
 
 template <typename T>
-using AggregateFunctionVarSamp = AggregateFunctionVariance<T, AggregateFunctionVarSampImpl>;
+using AggregateFunctionVarSampStable = AggregateFunctionVariance<T, AggregateFunctionVarSampImpl>;
 
 template <typename T>
-using AggregateFunctionStdDevSamp = AggregateFunctionVariance<T, AggregateFunctionStdDevSampImpl>;
+using AggregateFunctionStddevSampStable = AggregateFunctionVariance<T, AggregateFunctionStdDevSampImpl>;
 
 template <typename T>
-using AggregateFunctionVarPop = AggregateFunctionVariance<T, AggregateFunctionVarPopImpl>;
+using AggregateFunctionVarPopStable = AggregateFunctionVariance<T, AggregateFunctionVarPopImpl>;
 
 template <typename T>
-using AggregateFunctionStdDevPop = AggregateFunctionVariance<T, AggregateFunctionStdDevPopImpl>;
+using AggregateFunctionStddevPopStable = AggregateFunctionVariance<T, AggregateFunctionStdDevPopImpl>;
 
 template <typename T, typename U>
-using AggregateFunctionCovarSamp = AggregateFunctionCovariance<T, U, AggregateFunctionCovarSampImpl>;
+using AggregateFunctionCovarSampStable = AggregateFunctionCovariance<T, U, AggregateFunctionCovarSampImpl>;
 
 template <typename T, typename U>
-using AggregateFunctionCovarPop = AggregateFunctionCovariance<T, U, AggregateFunctionCovarPopImpl>;
+using AggregateFunctionCovarPopStable = AggregateFunctionCovariance<T, U, AggregateFunctionCovarPopImpl>;
 
 template <typename T, typename U>
-using AggregateFunctionCorr = AggregateFunctionCovariance<T, U, AggregateFunctionCorrImpl, true>;
+using AggregateFunctionCorrStable = AggregateFunctionCovariance<T, U, AggregateFunctionCorrImpl, true>;
 
 }

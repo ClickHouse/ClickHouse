@@ -51,7 +51,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
 {
 }
 
-void StorageSystemPartsColumns::processNextStorage(Block & block, const StoragesInfo & info, bool has_state_column)
+void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -60,12 +60,12 @@ void StorageSystemPartsColumns::processNextStorage(Block & block, const Storages
         String default_expression;
     };
 
-    NamesAndTypesList columns = info.storage->getColumnsList();
-    columns.insert(std::end(columns), std::begin(info.storage->alias_columns), std::end(info.storage->alias_columns));
+    NamesAndTypesList columns_list = info.storage->getColumnsList();
+    columns_list.insert(std::end(columns_list), std::begin(info.storage->alias_columns), std::end(info.storage->alias_columns));
     column_defaults = info.storage->column_defaults;
     std::unordered_map<String, ColumnInfo> columns_info;
 
-    for (const auto & column : columns)
+    for (const auto & column : columns_list)
     {
         ColumnInfo column_info;
 
@@ -101,52 +101,52 @@ void StorageSystemPartsColumns::processNextStorage(Block & block, const Storages
             {
                 WriteBufferFromOwnString out;
                 part->partition.serializeTextQuoted(*info.data, out);
-                block.getByPosition(j++).column->insert(out.str());
+                columns[j++]->insert(out.str());
             }
-            block.getByPosition(j++).column->insert(part->name);
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part_state == State::Committed));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->marks_count));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(total_mrk_size_in_bytes));
+            columns[j++]->insert(part->name);
+            columns[j++]->insert(static_cast<UInt64>(part_state == State::Committed));
+            columns[j++]->insert(static_cast<UInt64>(part->marks_count));
+            columns[j++]->insert(static_cast<UInt64>(total_mrk_size_in_bytes));
 
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->rows_count));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->size_in_bytes));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->modification_time));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->remove_time));
+            columns[j++]->insert(static_cast<UInt64>(part->rows_count));
+            columns[j++]->insert(static_cast<UInt64>(part->size_in_bytes));
+            columns[j++]->insert(static_cast<UInt64>(part->modification_time));
+            columns[j++]->insert(static_cast<UInt64>(part->remove_time));
 
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(use_count));
+            columns[j++]->insert(static_cast<UInt64>(use_count));
 
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(min_date));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(max_date));
-            block.getByPosition(j++).column->insert(part->info.min_block);
-            block.getByPosition(j++).column->insert(part->info.max_block);
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->info.level));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(index_size_in_bytes));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(index_size_in_allocated_bytes));
+            columns[j++]->insert(static_cast<UInt64>(min_date));
+            columns[j++]->insert(static_cast<UInt64>(max_date));
+            columns[j++]->insert(part->info.min_block);
+            columns[j++]->insert(part->info.max_block);
+            columns[j++]->insert(static_cast<UInt64>(part->info.level));
+            columns[j++]->insert(static_cast<UInt64>(index_size_in_bytes));
+            columns[j++]->insert(static_cast<UInt64>(index_size_in_allocated_bytes));
 
-            block.getByPosition(j++).column->insert(info.database);
-            block.getByPosition(j++).column->insert(info.table);
-            block.getByPosition(j++).column->insert(info.engine);
-            block.getByPosition(j++).column->insert(column.name);
-            block.getByPosition(j++).column->insert(column.type->getName());
+            columns[j++]->insert(info.database);
+            columns[j++]->insert(info.table);
+            columns[j++]->insert(info.engine);
+            columns[j++]->insert(column.name);
+            columns[j++]->insert(column.type->getName());
 
             auto column_info_it = columns_info.find(column.name);
             if (column_info_it != columns_info.end())
             {
-                block.getByPosition(j++).column->insert(column_info_it->second.default_kind);
-                block.getByPosition(j++).column->insert(column_info_it->second.default_expression);
+                columns[j++]->insert(column_info_it->second.default_kind);
+                columns[j++]->insert(column_info_it->second.default_expression);
             }
             else
             {
-                block.getByPosition(j++).column->insertDefault();
-                block.getByPosition(j++).column->insertDefault();
+                columns[j++]->insertDefault();
+                columns[j++]->insertDefault();
             }
 
-            block.getByPosition(j++).column->insert(part->getColumnCompressedSize(column.name));
-            block.getByPosition(j++).column->insert(part->getColumnUncompressedSize(column.name));
-            block.getByPosition(j++).column->insert(part->getColumnMrkSize(column.name));
+            columns[j++]->insert(part->getColumnCompressedSize(column.name));
+            columns[j++]->insert(part->getColumnUncompressedSize(column.name));
+            columns[j++]->insert(part->getColumnMrkSize(column.name));
 
             if (has_state_column)
-                block.getByPosition(j++).column->insert(part->stateString());
+                columns[j++]->insert(part->stateString());
         }
     }
 }
