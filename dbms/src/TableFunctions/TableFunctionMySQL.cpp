@@ -1,4 +1,6 @@
-#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Dictionaries/MySQLBlockInputStream.h>
@@ -9,64 +11,80 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionMySQL.h>
+#include <Core/Defines.h>
 #include <Common/Exception.h>
+#include <Common/parseAddress.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <mysqlxx/Pool.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void insertColumn(Block & sample_block, const char * name)
+
+DataTypePtr getDataType(const String & mysql_data_type, bool is_unsigned, size_t length)
 {
-    ColumnWithTypeAndName col;
-    col.name = name;
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    sample_block.insert(std::move(col));
+    if (mysql_data_type == "tinyint")
+    {
+        if (is_unsigned)
+            return std::make_shared<DataTypeUInt8>();
+        else
+            return std::make_shared<DataTypeInt8>();
+    }
+    if (mysql_data_type == "smallint")
+    {
+        if (is_unsigned)
+            return std::make_shared<DataTypeUInt16>();
+        else
+            return std::make_shared<DataTypeInt16>();
+    }
+    if (mysql_data_type == "int" || mysql_data_type == "mediumint")
+    {
+        if (is_unsigned)
+            return std::make_shared<DataTypeUInt32>();
+        else
+            return std::make_shared<DataTypeInt32>();
+    }
+    if (mysql_data_type == "bigint")
+    {
+        if (is_unsigned)
+            return std::make_shared<DataTypeUInt64>();
+        else
+            return std::make_shared<DataTypeInt64>();
+    }
+    if (mysql_data_type == "float")
+        return std::make_shared<DataTypeFloat32>();
+    if (mysql_data_type == "double")
+        return std::make_shared<DataTypeFloat64>();
+    if (mysql_data_type == "date")
+        return std::make_shared<DataTypeDate>();
+    if (mysql_data_type == "datetime" || mysql_data_type == "timestamp")
+        return std::make_shared<DataTypeDateTime>();
+    if (mysql_data_type == "binary")
+        return std::make_shared<DataTypeFixedString>(length);
+
+    /// Also String is fallback for all unknown types.
+    return std::make_shared<DataTypeString>();
 }
 
-DataTypePtr getDataType(const char * mysql_type)
-{
-    int len = strlen(mysql_type);
-    bool un_signed = (len >= 8) && (memcmp(mysql_type + len - 8, "unsigned", 8) == 0);
-    if (strncmp(mysql_type, "tinyint", 7) == 0)
-        return DataTypeFactory::instance().get(un_signed ? "UInt8" : "Int8");
-    if (strncmp(mysql_type, "smallint", 8) == 0)
-        return DataTypeFactory::instance().get(un_signed ? "UInt16" : "Int16");
-    if ((strncmp(mysql_type, "mediumint", 9) == 0) || (strncmp(mysql_type, "int", 3) == 0))
-        return DataTypeFactory::instance().get(un_signed ? "UInt32" : "Int32");
-    if (strncmp(mysql_type, "bigint", 6) == 0)
-        return DataTypeFactory::instance().get(un_signed ? "UInt64" : "Int64");
-    if (strncmp(mysql_type, "float", 5) == 0)
-        return DataTypeFactory::instance().get("Float32");
-    if (strncmp(mysql_type, "double", 6) == 0)
-        return DataTypeFactory::instance().get("Float64");
-    if (strcmp(mysql_type, "date") == 0)
-        return DataTypeFactory::instance().get("Date");
-    if (strcmp(mysql_type, "datetime") == 0)
-        return DataTypeFactory::instance().get("DateTime");
-    if (strncmp(mysql_type, "binary(", 7) == 0)
-    {
-        size_t size = 1;
-        sscanf(mysql_type + 7, "%li", &size);
-        return std::shared_ptr<IDataType>(new DataTypeFixedString(size));
-    }
-    return DataTypeFactory::instance().get("String");
-}
 
 StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Context & context) const
 {
-    const ASTs & args_func = typeid_cast<const ASTFunction &>(*ast_function).children;
+    const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
 
-    if (!args_func.arguments)
+    if (args_func.arguments)
         throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    const ASTs & args = typeid_cast<const ASTExpressionList &>(*args_func.arguments).children;
+    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
 
     if (args.size() != 5)
         throw Exception("Table function 'mysql' requires exactly 5 arguments: host:port, database name, table name, username and password",
@@ -81,35 +99,56 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
     std::string user_name = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
     std::string password = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
 
-    UInt16 port;
-    std::string server = splitHostPort(host_port.c_str(), port);
+    /// 3306 is the default MySQL port number
+    auto parsed_host_port = parseAddress(host_port, 3306);
 
-    mysqlxx::Pool pool(database_name, server, user_name, password, port);
-    Block sample_block;
-    insertColumn(sample_block, "Field");
-    insertColumn(sample_block, "Type");
-    insertColumn(sample_block, "Null");
-    insertColumn(sample_block, "Key");
-    insertColumn(sample_block, "Default");
-    insertColumn(sample_block, "Extra");
+    mysqlxx::Pool pool(database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
 
-    MySQLBlockInputStream result(pool.Get(), std::string("DESCRIBE ") + table_name, sample_block, 1 << 16);
-    Block result_block = result.read();
-    const IColumn & names = *result_block.getByPosition(0).column.get();
-    const IColumn & types = *result_block.getByPosition(1).column.get();
-    size_t field_count = names.size();
+    /// Determine table definition by running a query to INFORMATION_SCHEMA.
+
+    Block sample_block
+    {
+        { std::make_shared<DataTypeString>(), "name" },
+        { std::make_shared<DataTypeString>(), "type" },
+        { std::make_shared<DataTypeUInt8>(), "is_nullable" },
+        { std::make_shared<DataTypeUInt8>(), "is_unsigned" },
+        { std::make_shared<DataTypeUInt64>(), "length" },
+    };
+
+    WriteBufferFromOwnString query;
+    query << "SELECT"
+            " COLUMN_NAME AS name,"
+            " DATA_TYPE AS type,"
+            " IS_NULLABLE = 'YES' AS is_nullable,"
+            " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
+            " CHARACTER_MAXIMUM_LENGTH AS length"
+        " FROM INFORMATION_SCHEMA.COLUMNS"
+        " WHERE TABLE_SCHEMA = " << quote << database_name
+        << " AND TABLE_NAME = " << quote << table_name
+        << " ORDER BY ORDINAL_POSITION";
+
+    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
+
     NamesAndTypesList columns;
+    while (Block block = result.read())
+    {
+        size_t rows = block.rows();
+        for (size_t i = 0; i < rows; ++i)
+            columns.emplace_back(
+                (*block.getByPosition(0).column)[i].safeGet<String>(),
+                getDataType(
+                    (*block.getByPosition(1).column)[i].safeGet<String>(),
+                    (*block.getByPosition(3).column)[i].safeGet<UInt64>(),
+                    (*block.getByPosition(4).column)[i].safeGet<UInt64>()));
 
-    for (size_t i = 0; i < field_count; ++i)
-        columns->push_back(NameAndTypePair(names.getDataAt(i).data, getDataType(types.getDataAt(i).data)));
+        /// TODO is_nullable is ignored.
+    }
 
     auto res = StorageMySQL::create(
         table_name,
-        host_port,
+        std::move(pool),
         database_name,
         table_name,
-        user_name,
-        password,
         columns);
 
     res->startup();
@@ -119,6 +158,6 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
 
 void registerTableFunctionMySQL(TableFunctionFactory & factory)
 {
-    TableFunctionFactory::instance().registerFunction<TableFunctionMySQL>();
+    factory.registerFunction<TableFunctionMySQL>();
 }
 }

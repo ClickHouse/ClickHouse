@@ -228,6 +228,9 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeFixedString(DataTypeFactory & factory)
 {
     factory.registerDataType("FixedString", create);
+
+    /// Compatibility alias.
+    factory.registerDataType("BINARY", create, DataTypeFactory::CaseInsensitive);
 }
 
 }

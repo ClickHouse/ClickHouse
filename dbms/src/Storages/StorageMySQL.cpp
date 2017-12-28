@@ -8,18 +8,15 @@ namespace DB
 
 StorageMySQL::StorageMySQL(
     const std::string & name,
-    const std::string & host,
-    UInt16 port,
+    mysqlxx::Pool && pool,
     const std::string & remote_database_name,
     const std::string & remote_table_name,
-    const std::string & user,
-    const std::string & password,
     const NamesAndTypesList & columns)
     : name(name)
     , remote_database_name(remote_database_name)
     , remote_table_name(remote_table_name)
     , columns(columns)
-    , pool(remote_database_name, host, user, password, port)
+    , pool(std::move(pool))
 {
 }
 
