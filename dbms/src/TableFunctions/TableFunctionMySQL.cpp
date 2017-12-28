@@ -84,7 +84,7 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
 {
     const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
 
-    if (args_func.arguments)
+    if (!args_func.arguments)
         throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
