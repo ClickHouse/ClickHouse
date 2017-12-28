@@ -258,7 +258,7 @@ BlockInputStreams StorageSystemPartsBase::read(
     if (has_state_column)
         block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(columns))));
 }
 
 NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
