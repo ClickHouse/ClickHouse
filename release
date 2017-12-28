@@ -85,7 +85,7 @@ else
     export DIST=artful
     . $CURDIR/debian/.pbuilderrc
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
-        sudo --preserve-env pbuilder create --configfile debian/.pbuilderrc
+        sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc
     fi
-    pdebuild --configfile debian/.pbuilderrc
+    pdebuild --configfile $CURDIR/debian/.pbuilderrc
 fi
