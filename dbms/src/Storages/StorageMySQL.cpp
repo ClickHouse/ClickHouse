@@ -21,7 +21,8 @@ StorageMySQL::StorageMySQL(
 }
 
 
-BlockInputStreams StorageMySQL::read(const Names & column_names,
+BlockInputStreams StorageMySQL::read(
+    const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
@@ -31,7 +32,15 @@ BlockInputStreams StorageMySQL::read(const Names & column_names,
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
     String query = transformQueryForExternalDatabase(*query_info.query, columns, remote_database_name, remote_table_name, context);
-    return { std::make_shared<MySQLBlockInputStream>(pool.Get(), query, getSampleBlock(), max_block_size) };
+
+    Block sample_block;
+    for (const String & name : column_names)
+    {
+        auto column_data = getColumn(name);
+        sample_block.insert({ column_data.type, column_data.name });
+    }
+
+    return { std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size) };
 }
 
 }
