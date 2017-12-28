@@ -141,9 +141,15 @@ case "$DIST" in
 esac
 
 case "$DIST" in
-    "bionic" | "artful" | "experimental" | "unstable" )
+    "bionic" | "artful" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+        ;;
+esac
+
+case "$ARCH" in
+    "arm64")
+        EXTRAPACKAGES+=" libzookeeper-mt-dev "
         ;;
 esac
 
