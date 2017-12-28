@@ -66,13 +66,12 @@ if [ -z "$THREAD_COUNT" ] ; then
 fi
 
 CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1"
-export $CMAKE_FLAGS
+export CMAKE_FLAGS
 
 REVISION+=$VERSION_POSTFIX
 echo -e "\nCurrent revision is $REVISION"
 
 gen_changelog "$REVISION" "" "$AUTHOR" ""
-
 
 if [ -z "$USE_PBUILDER" ] ; then
     # Build (only binary packages).
@@ -81,6 +80,8 @@ if [ -z "$USE_PBUILDER" ] ; then
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
     export DIST=artful
-    sudo pbuilder create --configfile debian/.pbuilderrc
+    if [ -z "$NO_PBUILDER_CREATE" ] ; then
+        sudo --preserve-env pbuilder create --configfile debian/.pbuilderrc
+    fi
     pdebuild --configfile debian/.pbuilderrc
 fi
