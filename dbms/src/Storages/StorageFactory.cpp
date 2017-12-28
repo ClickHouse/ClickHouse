@@ -5,6 +5,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/parseAddress.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -590,26 +591,35 @@ StoragePtr StorageFactory::get(
     {
         if (!args_ptr || args_ptr->size() != 5)
             throw Exception(
-                "Storage MySQL requires exactly 5 parameters: MySQL('host:port', 'database', 'table', 'user', 'password').",
+                "Storage MySQL requires exactly 5 parameters: MySQL('host:port', database, table, 'user', 'password').",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         ASTs & args = *args_ptr;
         for (size_t i = 0; i < 5; ++i)
             args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], local_context);
 
-        return StorageMySQL::create(table_name,
-            static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>(),
-            static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>(),
-            static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>(),
-            static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>(),
-            static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>(),
+        /// 3306 is the default MySQL port.
+        auto parsed_host_port = parseAddress(static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>(), 3306);
+
+        const String & remote_database = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        const String & remote_table = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+        const String & username = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
+        const String & password = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+
+        mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
+
+        return StorageMySQL::create(
+            table_name,
+            std::move(pool),
+            remote_database,
+            remote_table,
             columns);
     }
     else if (name == "ODBC")
     {
-        if (!args_ptr || args_ptr->size() != 2)
+        if (!args_ptr || args_ptr->size() != 3)
             throw Exception(
-                "Storage ODBC requires exactly 2 parameters: ODBC('DSN', 'table').",
+                "Storage ODBC requires exactly 3 parameters: ODBC('DSN', database, table).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         ASTs & args = *args_ptr;
@@ -619,6 +629,7 @@ StoragePtr StorageFactory::get(
         return StorageODBC::create(table_name,
             static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>(),
             static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>(),
             columns);
     }
     else if (name == "Memory")

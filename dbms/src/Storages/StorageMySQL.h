@@ -18,12 +18,9 @@ class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorag
 public:
     StorageMySQL(
         const std::string & name,
-        const std::string & host,
-        UInt16 port,
+        mysqlxx::Pool && pool,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const std::string & user,
-        const std::string & password,
         const NamesAndTypesList & columns);
 
     std::string getName() const override { return "MySQL"; }
