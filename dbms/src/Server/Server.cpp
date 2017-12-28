@@ -385,7 +385,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     LOG_INFO(log, "Listening https://" + http_socket_address.toString());
 #else
-                    throw Exception{"https protocol disabled because poco library built without NetSSL support.",
+                    throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
@@ -422,7 +422,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                                                                   new Poco::Net::TCPServerParams));
                     LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
 #else
-                    throw Exception{"tcp_ssl protocol disabled because poco library built without NetSSL support.",
+                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
