@@ -20,7 +20,7 @@ class StorageSetOrJoinBase : public IStorage
 
 public:
     String getTableName() const override { return name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -30,14 +30,14 @@ protected:
     StorageSetOrJoinBase(
         const String & path_,
         const String & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);
 
     String path;
     String name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
 
     UInt64 increment = 0;    /// For the backup file names.
 
@@ -78,7 +78,7 @@ protected:
     StorageSet(
         const String & path_,
         const String & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);

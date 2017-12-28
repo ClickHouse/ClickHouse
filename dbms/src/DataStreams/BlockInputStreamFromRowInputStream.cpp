@@ -43,7 +43,8 @@ static bool isParseError(int code)
 
 Block BlockInputStreamFromRowInputStream::readImpl()
 {
-    Block res = sample.cloneEmpty();
+    size_t num_columns = sample.columns();
+    MutableColumns columns = sample.cloneEmptyColumns();
 
     try
     {
@@ -52,7 +53,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
             try
             {
                 ++total_rows;
-                if (!row_input->read(res))
+                if (!row_input->read(columns))
                     break;
             }
             catch (Exception & e)
@@ -87,14 +88,13 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
                 /// Truncate all columns in block to minimal size (remove values, that was appended to only part of columns).
 
-                size_t columns = res.columns();
                 size_t min_size = std::numeric_limits<size_t>::max();
-                for (size_t column_idx = 0; column_idx < columns; ++column_idx)
-                    min_size = std::min(min_size, res.getByPosition(column_idx).column->size());
+                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+                    min_size = std::min(min_size, columns[column_idx]->size());
 
-                for (size_t column_idx = 0; column_idx < columns; ++column_idx)
+                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
                 {
-                    auto & column = res.getByPosition(column_idx).column;
+                    auto & column = columns[column_idx];
                     if (column->size() > min_size)
                         column->popBack(column->size() - min_size);
                 }
@@ -120,10 +120,10 @@ Block BlockInputStreamFromRowInputStream::readImpl()
         throw;
     }
 
-    if (res.rows() == 0)
-        res.clear();
+    if (columns.empty() || columns[0]->empty())
+        return {};
 
-    return res;
+    return sample.cloneWithColumns(std::move(columns));
 }
 
 }

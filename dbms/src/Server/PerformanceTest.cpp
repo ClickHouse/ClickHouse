@@ -82,7 +82,7 @@ public:
     }
 
     template <typename T>
-    typename std::enable_if<std::is_arithmetic<T>::value>::type set(const String key, T value)
+    std::enable_if_t<std::is_arithmetic_v<T>> set(const String key, T value)
     {
         set(key, std::to_string(value), /*wrap= */ false);
     }
@@ -713,7 +713,7 @@ private:
 
                     if (packet.type == Protocol::Server::Data)
                     {
-                        for (const ColumnWithTypeAndName & column : packet.block.getColumns())
+                        for (const ColumnWithTypeAndName & column : packet.block)
                         {
                             if (column.name == "result" && column.column->size() > 0)
                             {
@@ -1218,7 +1218,7 @@ public:
         json_output.set("num_threads", std::thread::hardware_concurrency());
         json_output.set("ram", getMemoryAmount());
         json_output.set("server_version", server_version);
-        json_output.set("time", DateLUT::instance().timeToString(time(0)));
+        json_output.set("time", DateLUT::instance().timeToString(time(nullptr)));
         json_output.set("test_name", test_name);
         json_output.set("main_metric", main_metric);
 

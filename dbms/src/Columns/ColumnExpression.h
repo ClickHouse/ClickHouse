@@ -12,27 +12,28 @@ class ExpressionActions;
 /** A column containing a lambda expression.
   * Behaves like a constant-column. Contains an expression, but not input or output data.
   */
-class ColumnExpression final : public IColumnDummy
+class ColumnExpression final : public COWPtrHelper<IColumnDummy, ColumnExpression>
 {
 private:
+    friend class COWPtrHelper<IColumnDummy, ColumnExpression>;
+
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-public:
-    ColumnExpression(size_t s_, ExpressionActionsPtr expression_, const NamesAndTypes & arguments_, DataTypePtr return_type_, String return_name_);
-    ColumnExpression(size_t s_, ExpressionActionsPtr expression_, const NamesAndTypesList & arguments_, DataTypePtr return_type_, String return_name_);
+    ColumnExpression(size_t s_, const ExpressionActionsPtr & expression_, const NamesAndTypesList & arguments_, const DataTypePtr & return_type_, const String & return_name_);
+    ColumnExpression(const ColumnExpression &) = default;
 
+public:
     const char * getFamilyName() const override { return "Expression"; }
-    ColumnPtr cloneDummy(size_t s_) const override;
+    MutableColumnPtr cloneDummy(size_t s_) const override;
 
     const ExpressionActionsPtr & getExpression() const;
     const DataTypePtr & getReturnType() const;
     const std::string & getReturnName() const;
-    const NamesAndTypes & getArguments() const;
-    Names getArgumentNames() const;
+    const NamesAndTypesList & getArguments() const;
 
 private:
     ExpressionActionsPtr expression;
-    NamesAndTypes arguments;
+    NamesAndTypesList arguments;
     DataTypePtr return_type;
     std::string return_name;
 };

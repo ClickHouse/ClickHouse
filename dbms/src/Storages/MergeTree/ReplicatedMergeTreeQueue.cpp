@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
 #include <Common/StringUtils.h>
 
@@ -253,7 +254,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 }
 
 
-bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_event)
+bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
 {
     std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
 
@@ -403,7 +404,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, B
     if (next_update_event)
     {
         if (zookeeper->exists(zookeeper_path + "/log/log-" + padIndex(index), nullptr, next_update_event))
-            next_update_event->schedule();
+            next_update_event->set();
     }
 
     return dirty_entries_loaded || !log_entries.empty();
@@ -635,7 +636,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 return false;
             }
 
-            auto part = data.getPartIfExists(name);
+            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
                 sum_parts_size_in_bytes += part->size_in_bytes;
         }

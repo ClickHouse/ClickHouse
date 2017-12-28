@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
+#include <Poco/Semaphore.h>
 
 struct rd_kafka_s;
 struct rd_kafka_conf_s;
@@ -31,7 +32,7 @@ public:
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const { return database_name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     void startup() override;
     void shutdown() override;
@@ -53,21 +54,48 @@ public:
     void updateDependencies() override;
 
 private:
+    /// Each engine typically has one consumer (able to process 1..N partitions)
+    /// It is however possible to create multiple consumers per table, as long
+    /// as the total number of consumers is <= number of partitions.
+    struct Consumer
+    {
+        Consumer(struct rd_kafka_conf_s * conf);
+        ~Consumer();
+
+        void subscribe(const Names & topics);
+        void unsubscribe();
+
+        struct rd_kafka_s * stream = nullptr;
+    };
+    using ConsumerPtr = std::shared_ptr<Consumer>;
+
+    // Configuration and state
     String table_name;
     String database_name;
     Context & context;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
     Names topics;
+    const String brokers;
+    const String group;
     const String format_name;
     const String schema_name;
-    struct rd_kafka_conf_s * conf;
-    struct rd_kafka_s * consumer;
-
-    std::mutex mutex;
+    size_t num_consumers; /// Total number of created consumers
     Poco::Logger * log;
-    Poco::Event cancel_event;
-    std::atomic<bool> is_cancelled{false};
+
+    // Consumer list
+    Poco::Semaphore semaphore;
+    std::mutex mutex;
+    std::vector<ConsumerPtr> consumers; /// Available consumers
+
+    // Stream thread
+    Poco::Event event_update;
     std::thread stream_thread;
+    std::atomic<bool> stream_cancelled{false};
+
+    void consumerConfiguration(struct rd_kafka_conf_s * conf);
+    ConsumerPtr claimConsumer();
+    ConsumerPtr tryClaimConsumer(long wait_ms);
+    void pushConsumer(ConsumerPtr c);
 
     void streamThread();
     void streamToViews();
@@ -77,12 +105,12 @@ protected:
         const std::string & table_name_,
         const std::string & database_name_,
         Context & context_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         const String & brokers_, const String & group_, const Names & topics_,
-        const String & format_name_, const String & schema_name_);
+        const String & format_name_, const String & schema_name_, size_t num_consumers_);
 };
 
 }

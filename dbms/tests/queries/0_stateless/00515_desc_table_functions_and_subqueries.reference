@@ -1,0 +1,30 @@
+date	Date		
+val	UInt64		
+val2	UInt8	DEFAULT	42
+val3	UInt8	DEFAULT	CAST((val2 + 1) AS UInt8)
+val4	UInt64	ALIAS	val
+-
+date	Date		
+val	UInt64		
+val2	UInt8	DEFAULT	42
+val3	UInt8	DEFAULT	CAST((val2 + 1) AS UInt8)
+val4	UInt64	ALIAS	val
+-
+date	Date		
+val	UInt64		
+val2	UInt8		
+val3	UInt8		
+val4	UInt64		
+-
+date	Date		
+val	UInt64		
+val2	UInt8		
+val3	UInt8		
+val4	UInt64		
+-
+1	UInt8		
+-
+1	UInt8		
+-
+number	UInt64		
+-

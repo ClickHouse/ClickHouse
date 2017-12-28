@@ -27,14 +27,11 @@ BlockInputStreams StorageSystemOne::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Block block;
-    ColumnWithTypeAndName col;
-    col.name = "dummy";
-    col.type = std::make_shared<DataTypeUInt8>();
-    col.column = DataTypeUInt8().createColumnConst(1, UInt64(0))->convertToFullColumnIfConst();
-    block.insert(std::move(col));
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
+        Block{ColumnWithTypeAndName(
+            DataTypeUInt8().createColumnConst(1, UInt64(0))->convertToFullColumnIfConst(),
+            std::make_shared<DataTypeUInt8>(),
+            "dummy")}));
 }
 
 

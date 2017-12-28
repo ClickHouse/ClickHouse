@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
 
@@ -44,7 +45,7 @@ std::string DataTypeAggregateFunction::getName() const
         stream << ")";
     }
 
-    for (const auto & argument_type: argument_types)
+    for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
 
     stream << ")";
@@ -98,10 +99,10 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
-    const ColumnAggregateFunction::Container_t & vec = real_column.getData();
+    const ColumnAggregateFunction::Container & vec = real_column.getData();
 
-    ColumnAggregateFunction::Container_t::const_iterator it = vec.begin() + offset;
-    ColumnAggregateFunction::Container_t::const_iterator end = limit ? it + limit : vec.end();
+    ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
+    ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
 
     if (end > vec.end())
         end = vec.end();
@@ -113,7 +114,7 @@ void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, Writ
 void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
-    ColumnAggregateFunction::Container_t & vec = real_column.getData();
+    ColumnAggregateFunction::Container & vec = real_column.getData();
 
     Arena & arena = real_column.createOrGetArena();
     real_column.set(function);
@@ -243,9 +244,9 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 }
 
 
-ColumnPtr DataTypeAggregateFunction::createColumn() const
+MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    return std::make_shared<ColumnAggregateFunction>(function);
+    return ColumnAggregateFunction::create(function);
 }
 
 
@@ -276,6 +277,12 @@ Field DataTypeAggregateFunction::getDefault() const
 }
 
 
+bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     String function_name;
@@ -283,7 +290,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     DataTypes argument_types;
     Array params_row;
 
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Data type AggregateFunction requires parameters: "
             "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -326,9 +333,6 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
-    if (!params_row.empty())
-        function->setParameters(params_row);
-    function->setArguments(argument_types);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
 }
 

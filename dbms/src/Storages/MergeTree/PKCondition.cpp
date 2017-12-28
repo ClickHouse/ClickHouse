@@ -206,7 +206,7 @@ Block PKCondition::getBlockWithConstants(
 {
     Block result
     {
-        { DataTypeUInt8().createColumnConst(1, UInt64(0)), std::make_shared<DataTypeUInt8>(), "_dummy" }
+        { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
     const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}
@@ -864,7 +864,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
                         break;
                     }
 
-                    /// Compute the function.
+                    /// Apply the function.
                     DataTypePtr new_type;
                     if (!key_range_transformed.left.isNull())
                         applyFunction(func, current_type, key_range_transformed.left, new_type, key_range_transformed.left);

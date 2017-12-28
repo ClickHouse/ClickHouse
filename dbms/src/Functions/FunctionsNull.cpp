@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnNullable.h>
 
+
 namespace DB
 {
 
@@ -41,12 +42,11 @@ DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes &) const
 
 void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
+    const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
     if (elem.column->isColumnNullable())
     {
         /// Merely return the embedded null map.
-        ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*elem.column);
-        block.getByPosition(result).column = nullable_col.getNullMapColumn();
+        block.getByPosition(result).column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
     }
     else
     {
@@ -205,7 +205,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
     /// If all arguments appeared to be NULL.
     if (multi_if_args.empty())
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
         return;
     }
 
@@ -217,13 +217,13 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
     FunctionMultiIf{context}.execute(temp_block, multi_if_args, result);
 
-    auto res = std::move(temp_block.getByPosition(result).column);
+    ColumnPtr res = std::move(temp_block.getByPosition(result).column);
 
     /// if last argument is not nullable, result should be also not nullable
     if (!block.getByPosition(multi_if_args.back()).column->isColumnNullable() && res->isColumnNullable())
-        res = static_cast<ColumnNullable &>(*res).getNestedColumn();
+        res = static_cast<const ColumnNullable &>(*res).getNestedColumnPtr();
 
-    block.getByPosition(result).column = res;
+    block.getByPosition(result).column = std::move(res);
 }
 
 /// Implementation of ifNull.
@@ -277,11 +277,7 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     FunctionIsNotNull{}.execute(temp_block, {arguments[0]}, is_not_null_pos);
     FunctionAssumeNotNull{}.execute(temp_block, {arguments[0]}, assume_not_null_pos);
 
-    std::cerr << temp_block.dumpStructure() << "\n";
-
     FunctionIf{}.execute(temp_block, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result);
-
-    std::cerr << temp_block.dumpStructure() << "\n";
 
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
@@ -305,7 +301,7 @@ DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    /// nullIf(col1, col2) == multiIf(col1 == col2, NULL, col1)
+    /// nullIf(col1, col2) == if(col1 == col2, NULL, col1)
 
     Block temp_block = block;
 
@@ -320,7 +316,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
     /// Append a NULL column.
     ColumnWithTypeAndName null_elem;
     null_elem.type = block.getByPosition(result).type;
-    null_elem.column = null_elem.type->createColumnConst(temp_block.rows(), Null());
+    null_elem.column = null_elem.type->createColumnConstWithDefaultValue(temp_block.rows());
     null_elem.name = "NULL";
 
     temp_block.insert(null_elem);
@@ -355,7 +351,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
     if (col->isColumnNullable())
     {
         const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-        res_col = nullable_col.getNestedColumn();
+        res_col = nullable_col.getNestedColumnPtr();
     }
     else
         res_col = col;

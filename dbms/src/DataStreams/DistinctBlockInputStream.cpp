@@ -31,6 +31,9 @@ Block DistinctBlockInputStream::readImpl()
     /// a block with some new records will be gotten.
     while (1)
     {
+        if (no_more_rows)
+            return Block();
+
         /// Stop reading if we already reach the limit.
         if (limit_hint && data.getTotalRowCount() >= limit_hint)
             return Block();
@@ -39,9 +42,15 @@ Block DistinctBlockInputStream::readImpl()
         if (!block)
             return Block();
 
-        const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
+        const ColumnRawPtrs column_ptrs(getKeyColumns(block));
         if (column_ptrs.empty())
+        {
+            /// Only constants. We need to return single row.
+            no_more_rows = true;
+            for (auto & elem : block)
+                elem.column = elem.column->cut(0, 1);
             return block;
+        }
 
         if (data.empty())
             data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
@@ -54,12 +63,12 @@ Block DistinctBlockInputStream::readImpl()
         {
             case SetVariants::Type::EMPTY:
                 break;
-    #define M(NAME) \
+        #define M(NAME) \
             case SetVariants::Type::NAME: \
                 buildFilter(*data.NAME, column_ptrs, filter, rows, data); \
                 break;
-        APPLY_FOR_SET_VARIANTS(M)
-    #undef M
+            APPLY_FOR_SET_VARIANTS(M)
+        #undef M
         }
 
         /// Just go to the next block if there isn't any new record in the current one.
@@ -86,9 +95,8 @@ Block DistinctBlockInputStream::readImpl()
             }
         }
 
-        size_t all_columns = block.columns();
-        for (size_t i = 0; i < all_columns; ++i)
-            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(filter, -1);
+        for (auto & elem : block)
+            elem.column = elem.column->filter(filter, -1);
 
         return block;
     }
@@ -106,7 +114,7 @@ bool DistinctBlockInputStream::checkLimits() const
 template <typename Method>
 void DistinctBlockInputStream::buildFilter(
     Method & method,
-    const ConstColumnPlainPtrs & columns,
+    const ColumnRawPtrs & columns,
     IColumn::Filter & filter,
     size_t rows,
     SetVariants & variants) const
@@ -132,11 +140,11 @@ void DistinctBlockInputStream::buildFilter(
     }
 }
 
-ConstColumnPlainPtrs DistinctBlockInputStream::getKeyColumns(const Block & block) const
+ColumnRawPtrs DistinctBlockInputStream::getKeyColumns(const Block & block) const
 {
     size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
 
-    ConstColumnPlainPtrs column_ptrs;
+    ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(columns);
 
     for (size_t i = 0; i < columns; ++i)

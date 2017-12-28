@@ -23,10 +23,12 @@
 # sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
-# with embedded compiler (only artful have clang-5.0):
-# env EXTRAPACKAGES="liblld-5.0-dev libclang-5.0-dev liblld-5.0" CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1" DIST=artful pdebuild --configfile debian/.pbuilderrc
 # use only clang:
-# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="liblld-5.0 liblld-5.0-dev libclang-5.0-dev clang-5.0" CMAKE_FLAGS="-DNO_WERROR=1 -DUSE_EMBEDDED_COMPILER=1" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="clang-5.0" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# clang+asan:
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="clang-5.0" CMAKE_FLAGS="-DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# without sse for old systems and some VM:
+# env DH_VERBOSE=1 CMAKE_FLAGS="-DHAVE_SSE41=0 -DHAVE_SSE42=0 -DHAVE_POPCNT=0 -DHAVE_SSE2_INTRIN=0 -DSSE2FLAG=' ' -DHAVE_SSE42_INTRIN=0 -DSSE4FLAG=' ' -DHAVE_PCLMULQDQ_INTRIN=0 -DPCLMULFLAG=' '" DIST=artful pdebuild --configfile debian/.pbuilderrc
 
 # Your packages built here: /var/cache/pbuilder/*-*/result
 
@@ -50,8 +52,8 @@ UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
 DEBIAN_MIRROR="deb.debian.org"
 #UBUNTU_MIRROR="mirrors.kernel.org"
 
-UBUNTU_MIRROR="mirror.yandex.ru"
 #DEBIAN_MIRROR="mirror.yandex.ru"
+UBUNTU_MIRROR="mirror.yandex.ru"
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 : ${DIST:="$(lsb_release --short --codename)"}
@@ -79,9 +81,11 @@ if [ -n "${ARCH}" ]; then
     DEBOOTSTRAPOPTS=("--arch" "$ARCH" "${DEBOOTSTRAPOPTS[@]}")
 fi
 
-BASETGZ="/var/cache/pbuilder/$NAME-base.tgz"
+BASETGZ=${SET_BASETGZ}
+BASETGZ=${BASETGZ:="/var/cache/pbuilder/$NAME-base.tgz"}
 DISTRIBUTION="$DIST"
-BUILDRESULT="/var/cache/pbuilder/$NAME/result/"
+BUILDRESULT=${SET_BUILDRESULT}
+BUILDRESULT=${BUILDRESULT:="/var/cache/pbuilder/$NAME/result/"}
 APTCACHE="/var/cache/pbuilder/$NAME/aptcache/"
 BUILDPLACE="/var/cache/pbuilder/build/"
 
@@ -136,6 +140,20 @@ case "$DIST" in
         ;;
 esac
 
+case "$DIST" in
+    "bionic" | "artful" )
+        EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
+        export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+        ;;
+esac
+
+case "$ARCH" in
+    "arm64")
+        EXTRAPACKAGES+=" libzookeeper-mt-dev "
+        ;;
+esac
+
+
 export CCACHE_PREFIX=
 
 export DEB_BUILD_OPTIONS=parallel=`nproc`
@@ -143,6 +161,7 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 # Floating bug with permissions:
 sudo mkdir -p /var/cache/pbuilder/ccache
 sudo chmod -R a+rwx /var/cache/pbuilder/ccache
+# chown -R 1234:1234 /var/cache/pbuilder/ccache
 
 # echo "DEBOOTSTRAPOPTS = ${DEBOOTSTRAPOPTS[@]}"
 
@@ -152,3 +171,5 @@ sudo chmod -R a+rwx /var/cache/pbuilder/ccache
 # pdebuild --debbuildopts "--source-option=--format=\"3.0 (native)\""
 # OR
 DEBBUILDOPTS="--source-option=--format=\"3.0 (native)\""
+
+HOOKDIR="debian/pbuilder-hooks"

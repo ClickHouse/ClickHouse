@@ -109,13 +109,6 @@ DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.valu
 }
 
 template <typename Type>
-DataTypePtr DataTypeEnum<Type>::clone() const
-{
-    return std::make_shared<DataTypeEnum>(*this);
-}
-
-
-template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
@@ -250,6 +243,13 @@ void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 }
 
 template <typename Type>
+bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && name == static_cast<const DataTypeEnum<Type> &>(rhs).name;
+}
+
+
+template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
 {
     for (const auto & elem : values)
@@ -324,7 +324,7 @@ template class DataTypeEnum<Int16>;
 template <typename DataTypeEnum>
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     typename DataTypeEnum::Values values;

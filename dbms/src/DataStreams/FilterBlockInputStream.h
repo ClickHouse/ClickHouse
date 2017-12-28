@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <Columns/FilterDescription.h>
 
 
 namespace DB
@@ -36,8 +37,8 @@ private:
     String filter_column_name;
 
     bool is_first = true;
-    bool filter_always_true = false;
-    bool filter_always_false = false;
+
+    ConstantFilterDescription constant_filter_description;
 };
 
 }

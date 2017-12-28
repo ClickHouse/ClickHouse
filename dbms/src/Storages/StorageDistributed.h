@@ -35,7 +35,7 @@ public:
 
     static StoragePtr createWithOwnCluster(
         const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
+        const NamesAndTypesList & columns_,        /// List of columns.
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,
@@ -46,9 +46,8 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
-    bool supportsParallelReplicas() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
@@ -95,7 +94,7 @@ public:
 
 
     String name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
     String remote_database;
     String remote_table;
 
@@ -131,7 +130,7 @@ public:
 protected:
     StorageDistributed(
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
@@ -141,7 +140,7 @@ protected:
 
     StorageDistributed(
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,

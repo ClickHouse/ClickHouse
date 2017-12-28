@@ -33,11 +33,6 @@ public:
         return false;
     }
 
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeArray>(nested);
-    }
-
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -84,14 +79,17 @@ public:
         bool position_independent_encoding,
         SubstreamPath path) const override;
 
-    ColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
+
+    bool equals(const IDataType & rhs) const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
+    bool isComparable() const override { return nested->isComparable(); };
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override

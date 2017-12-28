@@ -412,9 +412,9 @@ struct ExtractWWW
 struct ExtractURLParameterImpl
 {
     static void vector(const ColumnString::Chars_t & data,
-                        const ColumnString::Offsets_t & offsets,
+                        const ColumnString::Offsets & offsets,
                         std::string pattern,
-                        ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+                        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size()  / 5);
         res_offsets.resize(offsets.size());
@@ -485,9 +485,9 @@ struct ExtractURLParameterImpl
 struct CutURLParameterImpl
 {
     static void vector(const ColumnString::Chars_t & data,
-                        const ColumnString::Offsets_t & offsets,
+                        const ColumnString::Offsets & offsets,
                         std::string pattern,
-                        ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+                        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size());
         res_offsets.resize(offsets.size());
@@ -905,8 +905,8 @@ public:
 template <typename Extractor>
 struct ExtractSubstringImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-        ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
     {
         size_t size = offsets.size();
         res_offsets.resize(size);
@@ -954,8 +954,8 @@ struct ExtractSubstringImpl
 template <typename Extractor>
 struct CutSubstringImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-        ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size());
         size_t size = offsets.size();
@@ -1007,8 +1007,8 @@ struct CutSubstringImpl
 /// Percent decode of url data.
 struct DecodeURLComponentImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-        ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets);
+    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets);
 
     static void constant(const std::string & data,
         std::string & res_data);

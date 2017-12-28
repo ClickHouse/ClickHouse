@@ -42,7 +42,7 @@ bool checkColumn(const IColumn * column)
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
-    if (!column->isColumnConst())
+    if (!column || !column->isColumnConst())
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);

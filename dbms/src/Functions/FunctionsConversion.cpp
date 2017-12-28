@@ -60,6 +60,17 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
 
+    factory.registerFunction<FunctionToUInt8OrNull>();
+    factory.registerFunction<FunctionToUInt16OrNull>();
+    factory.registerFunction<FunctionToUInt32OrNull>();
+    factory.registerFunction<FunctionToUInt64OrNull>();
+    factory.registerFunction<FunctionToInt8OrNull>();
+    factory.registerFunction<FunctionToInt16OrNull>();
+    factory.registerFunction<FunctionToInt32OrNull>();
+    factory.registerFunction<FunctionToInt64OrNull>();
+    factory.registerFunction<FunctionToFloat32OrNull>();
+    factory.registerFunction<FunctionToFloat64OrNull>();
+
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalHour, PositiveMonotonicity>>();

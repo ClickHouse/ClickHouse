@@ -59,7 +59,7 @@ StorageMaterializedView::StorageMaterializedView(
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -173,6 +173,14 @@ void StorageMaterializedView::drop()
 bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
+}
+
+void StorageMaterializedView::shutdown()
+{
+    /// Make sure the dependency is removed after DETACH TABLE
+    global_context.removeDependency(
+        DatabaseAndTableName(select_database_name, select_table_name),
+        DatabaseAndTableName(database_name, table_name));
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const

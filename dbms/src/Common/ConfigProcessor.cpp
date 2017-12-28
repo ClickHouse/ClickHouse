@@ -13,6 +13,9 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/StringUtils.h>
 
+#define PREPROCESSED_SUFFIX "-preprocessed"
+
+
 using namespace Poco::XML;
 
 
@@ -38,9 +41,15 @@ static std::string numberFromHost(const std::string & s)
 static std::string preprocessedConfigPath(const std::string & path)
 {
     Poco::Path preprocessed_path(path);
-    preprocessed_path.setBaseName(preprocessed_path.getBaseName() + "-preprocessed");
+    preprocessed_path.setBaseName(preprocessed_path.getBaseName() + PREPROCESSED_SUFFIX);
     return preprocessed_path.toString();
 }
+
+bool ConfigProcessor::isPreprocessedFile(const std::string & path)
+{
+    return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
+}
+
 
 ConfigProcessor::ConfigProcessor(
     const std::string & path_,

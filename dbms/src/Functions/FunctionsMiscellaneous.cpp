@@ -38,8 +38,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_INDEX;
     extern const int FUNCTION_IS_SPECIAL;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /** Helper functions
@@ -54,9 +54,6 @@ namespace ErrorCodes
   *
   * in(x, set) - function for evaluating the IN
   * notIn(x, set) - and NOT IN.
-  *
-  * tuple(x, y, ...) is a function that allows you to group several columns
-  * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   *
   * arrayJoin(arr) - a special function - it can not be executed directly;
   *                     is used only to get the result type of the corresponding expression.
@@ -367,12 +364,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return arguments[0]->clone();
+        return arguments[0];
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType & type = *block.getByPosition(arguments[0]).type;
+        const IDataType & type = *block.getByPosition(arguments[0]).type;
         block.getByPosition(result).column = type.createColumnConst(block.rows(), type.getDefault());
     }
 };
@@ -411,7 +408,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t size = block.rows();
-        block.getByPosition(result).column = std::make_shared<ColumnUInt64>(size, size);
+        block.getByPosition(result).column = ColumnUInt64::create(size, size);
     }
 };
 
@@ -449,13 +446,13 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t size = block.rows();
-        auto column = std::make_shared<ColumnUInt64>();
+        auto column = ColumnUInt64::create();
         auto & data = column->getData();
         data.resize(size);
         for (size_t i = 0; i < size; ++i)
             data[i] = i;
 
-        block.getByPosition(result).column = column;
+        block.getByPosition(result).column = std::move(column);
     }
 };
 
@@ -497,7 +494,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t current_block_number = block_number++;
-        block.getByPosition(result).column = std::make_shared<ColumnUInt64>(block.rows(), current_block_number);
+        block.getByPosition(result).column = ColumnUInt64::create(block.rows(), current_block_number);
     }
 };
 
@@ -541,13 +538,13 @@ public:
         size_t rows_in_block = block.rows();
         size_t current_row_number = rows.fetch_add(rows_in_block);
 
-        auto column = std::make_shared<ColumnUInt64>();
+        auto column = ColumnUInt64::create();
         auto & data = column->getData();
         data.resize(rows_in_block);
         for (size_t i = 0; i < rows_in_block; ++i)
             data[i] = current_row_number + i;
 
-        block.getByPosition(result).column = column;
+        block.getByPosition(result).column = std::move(column);
     }
 };
 
@@ -593,7 +590,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IColumn * col = block.getByPosition(arguments[0]).column.get();
+        const IColumn * col = block.getByPosition(arguments[0]).column.get();
         double seconds;
         size_t size = col->size();
 
@@ -656,7 +653,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const auto & src = block.getByPosition(arguments[0]).column;
-        if (auto converted = src->convertToFullColumnIfConst())
+        if (ColumnPtr converted = src->convertToFullColumnIfConst())
             block.getByPosition(result).column = converted;
         else
             block.getByPosition(result).column = src;
@@ -747,147 +744,6 @@ public:
             block_of_key_columns.insert(left_arg);
 
         block.getByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
-    }
-};
-
-
-class FunctionTuple : public IFunction
-{
-public:
-    static constexpr auto name = "tuple";
-
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionTuple>();
-    }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    bool isInjective(const Block &) override
-    {
-        return true;
-    }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 1)
-            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        return std::make_shared<DataTypeTuple>(arguments);
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-    {
-        size_t tuple_size = arguments.size();
-        Columns tuple_columns(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-        {
-            tuple_columns[i] = block.getByPosition(arguments[i]).column;
-
-            /** If tuple is mixed of constant and not constant columns,
-            *  convert all to non-constant columns,
-            *  because many places in code expect all non-constant columns in non-constant tuple.
-            */
-            if (auto converted = tuple_columns[i]->convertToFullColumnIfConst())
-                tuple_columns[i] = converted;
-        }
-        block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_columns);
-    }
-};
-
-
-/** Extract element of tuple by constant index. The operation is essentially free.
-  */
-class FunctionTupleElement : public IFunction
-{
-public:
-    static constexpr auto name = "tupleElement";
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionTupleElement>();
-    }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
-    {
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
-        if (!index_col)
-            throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        size_t index = index_col->getValue<UInt8>();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(&*arguments[0].type);
-        if (!tuple)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (index == 0)
-            throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
-
-        const DataTypes & elems = tuple->getElements();
-
-        if (index > elems.size())
-            throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-
-        out_return_type = elems[index - 1]->clone();
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-    {
-        const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
-        auto const_tuple_col = checkAndGetColumnConst<ColumnTuple>(block.getByPosition(arguments[0]).column.get());
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get());
-
-        if (!tuple_col && !const_tuple_col)
-            throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
-
-        if (!index_col)
-            throw Exception("Second argument for function " + getName() + " must be UInt8 constant literal.", ErrorCodes::ILLEGAL_COLUMN);
-
-        size_t index = index_col->getValue<UInt8>();
-        if (index == 0)
-            throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
-
-        if (tuple_col)
-        {
-            const Columns & tuple_columns = tuple_col->getColumns();
-
-            if (index > tuple_columns.size())
-                throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
-
-            block.getByPosition(result).column = tuple_columns[index - 1];
-        }
-        else
-        {
-            TupleBackend data = const_tuple_col->getValue<Tuple>();
-            block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
-                .getElements()[index - 1]->createColumnConst(block.rows(), data[index - 1]);
-        }
     }
 };
 
@@ -998,7 +854,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return arguments.front()->clone();
+        return arguments.front();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1041,7 +897,7 @@ public:
         if (!arr)
             throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return arr->getNestedType()->clone();
+        return arr->getNestedType();
     }
 
     void executeImpl(Block & /*block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) override
@@ -1068,7 +924,7 @@ DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) co
     if (!array_type)
         throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<DataTypeArray>(arguments[0]->clone());
+    return std::make_shared<DataTypeArray>(arguments[0]);
 }
 
 void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -1088,7 +944,7 @@ void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & argumen
     }
 
     block.getByPosition(result).column
-        = std::make_shared<ColumnArray>(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsColumn());
+        = ColumnArray::create(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsPtr());
 }
 
 /** Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.
@@ -1151,8 +1007,7 @@ public:
 
         const auto & src = *block.getByPosition(arguments[0]).column;
 
-        auto res_column = std::make_shared<ColumnString>();
-        block.getByPosition(result).column = res_column;
+        auto res_column = ColumnString::create();
 
         if (executeNumber<UInt8>(src, *res_column, min, max, max_width) || executeNumber<UInt16>(src, *res_column, min, max, max_width)
             || executeNumber<UInt32>(src, *res_column, min, max, max_width)
@@ -1164,6 +1019,7 @@ public:
             || executeNumber<Float32>(src, *res_column, min, max, max_width)
             || executeNumber<Float64>(src, *res_column, min, max, max_width))
         {
+            block.getByPosition(result).column = std::move(res_column);
         }
         else
             throw Exception(
@@ -1187,7 +1043,7 @@ private:
     template <typename T>
     static void fill(const PaddedPODArray<T> & src,
         ColumnString::Chars_t & dst_chars,
-        ColumnString::Offsets_t & dst_offsets,
+        ColumnString::Offsets & dst_offsets,
         Int64 min,
         Int64 max,
         Float64 max_width)
@@ -1283,8 +1139,7 @@ public:
         {
             const auto size = in->size();
 
-            const auto out = std::make_shared<ColumnUInt8>(size);
-            block.getByPosition(result).column = out;
+            auto out = ColumnUInt8::create(size);
 
             const auto & in_data = in->getData();
             auto & out_data = out->getData();
@@ -1292,6 +1147,7 @@ public:
             for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
+            block.getByPosition(result).column = std::move(out);
             return true;
         }
 
@@ -1309,11 +1165,11 @@ struct IsFiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        if constexpr (std::is_same<T, float>::value)
+        if constexpr (std::is_same_v<T, float>)
             return (ext::bit_cast<uint32_t>(t)
                  & 0b01111111100000000000000000000000)
                 != 0b01111111100000000000000000000000;
-        else if constexpr (std::is_same<T, double>::value)
+        else if constexpr (std::is_same_v<T, double>)
             return (ext::bit_cast<uint64_t>(t)
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
@@ -1331,11 +1187,11 @@ struct IsInfiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        if constexpr (std::is_same<T, float>::value)
+        if constexpr (std::is_same_v<T, float>)
             return (ext::bit_cast<uint32_t>(t)
                  & 0b01111111111111111111111111111111)
                 == 0b01111111100000000000000000000000;
-        else if constexpr (std::is_same<T, double>::value)
+        else if constexpr (std::is_same_v<T, double>)
             return (ext::bit_cast<uint64_t>(t)
                  & 0b0111111111111111111111111111111111111111111111111111111111111111)
                 == 0b0111111111110000000000000000000000000000000000000000000000000000;
@@ -1508,7 +1364,7 @@ public:
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return type->getReturnType()->clone();
+        return type->getReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1534,8 +1390,7 @@ public:
 
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
-        ColumnPtr result_column_ptr = agg_func.getReturnType()->createColumn();
-        block.getByPosition(result).column = result_column_ptr;
+        auto result_column_ptr = agg_func.getReturnType()->createColumn();
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 
@@ -1546,6 +1401,8 @@ public:
             agg_func.merge(place.get(), state_to_add, arena.get());
             agg_func.insertResultInto(place.get(), result_column);
         }
+
+        block.getByPosition(result).column = std::move(result_column_ptr);
     }
 };
 
@@ -1666,22 +1523,25 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         auto & src = block.getByPosition(arguments.at(0));
-        auto & res = block.getByPosition(result);
+        const auto & res_type = block.getByPosition(result).type;
 
         /// When column is constant, its difference is zero.
         if (src.column->isColumnConst())
         {
-            res.column = res.type->createColumnConst(block.rows(), res.type->getDefault());
+            block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(block.rows());
             return;
         }
 
-        res.column = res.type->createColumn();
+        auto res_column = res_type->createColumn();
 
-        dispatchForSourceType(*src.type, [&](auto field_type_tag) {
+        dispatchForSourceType(*src.type, [&](auto field_type_tag)
+        {
             using SrcFieldType = decltype(field_type_tag);
             process(static_cast<const ColumnVector<SrcFieldType> &>(*src.column).getData(),
-                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res.column).getData());
+                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData());
         });
+
+        block.getByPosition(result).column = std::move(res_column);
     }
 };
 
@@ -1717,13 +1577,13 @@ public:
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return type->getReturnType()->clone();
+        return type->getReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        ColumnAggregateFunction * column_with_states
-            = typeid_cast<ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
+        const ColumnAggregateFunction * column_with_states
+            = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
         if (!column_with_states)
             throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
@@ -1780,9 +1640,8 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
     auto & src = block.getByPosition(arguments[0]);
     size_t size = block.rows();
 
-    auto res_col = std::make_shared<ColumnUInt64>(size);
+    auto res_col = ColumnUInt64::create(size);
     auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
-    block.getByPosition(result).column = res_col;
 
     /// For simplicity reasons, function is implemented by serializing into temporary buffer.
 
@@ -1796,6 +1655,8 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 
         res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());
     }
+
+    block.getByPosition(result).column = std::move(res_col);
 }
 
 
@@ -1859,8 +1720,8 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
         auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort());
-        auto names_and_types_list = std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, database_name, table_name, global_context));
-        const auto & names = names_and_types_list->getNames();
+        auto names_and_types_list = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
+        const auto & names = names_and_types_list.getNames();
         has_column = std::find(names.begin(), names.end(), column_name) != names.end();
     }
 
@@ -1900,8 +1761,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionBar>();
     factory.registerFunction<FunctionHasColumnInTable>();
 
-    factory.registerFunction<FunctionTuple>();
-    factory.registerFunction<FunctionTupleElement>();
     factory.registerFunction<FunctionIn<false, false>>();
     factory.registerFunction<FunctionIn<false, true>>();
     factory.registerFunction<FunctionIn<true, false>>();

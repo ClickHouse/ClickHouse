@@ -9,7 +9,7 @@ namespace DB
 TSKVRowOutputStream::TSKVRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
     : TabSeparatedRowOutputStream(ostr_, sample_)
 {
-    NamesAndTypesList columns(sample_.getColumnsList());
+    NamesAndTypesList columns(sample_.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
 
     for (auto & field : fields)

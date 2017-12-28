@@ -21,7 +21,6 @@
 #include <Parsers/ASTWeightedZooKeeperPath.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/queryToString.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -39,6 +38,7 @@
 #include <memory>
 
 #include <boost/filesystem.hpp>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -71,6 +71,7 @@ ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, co
     auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
     actual_query.database = database;
     actual_query.table = table;
+    actual_query.table_function = nullptr;
     /// make sure query is not INSERT SELECT
     actual_query.select = nullptr;
 
@@ -125,7 +126,7 @@ StorageDistributed::~StorageDistributed() = default;
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -135,7 +136,7 @@ StorageDistributed::StorageDistributed(
     : name(name_), columns(columns_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
@@ -144,7 +145,7 @@ StorageDistributed::StorageDistributed(
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -158,7 +159,7 @@ StorageDistributed::StorageDistributed(
     name(name_), columns(columns_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
@@ -167,7 +168,7 @@ StorageDistributed::StorageDistributed(
 
 StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
@@ -219,10 +220,12 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = context.getCluster(cluster_name);
+    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
 
     /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    bool write_enabled = !path.empty() && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
+    bool write_enabled = (!path.empty() || owned_cluster)
+                         && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
 
     if (!write_enabled)
         throw Exception{
@@ -230,9 +233,12 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
             " with more than one shard and no sharding key provided",
             ErrorCodes::STORAGE_REQUIRES_PARAMETER};
 
+    bool insert_sync = settings.insert_distributed_sync || owned_cluster;
+    auto timeout = settings.insert_distributed_timeout;
+
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings.insert_distributed_sync, settings.insert_distributed_timeout);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, insert_sync, timeout);
 }
 
 
@@ -243,11 +249,11 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
-        *columns, materialized_columns, alias_columns, column_defaults, {});
+        columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 
@@ -269,16 +275,30 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
     /// Create DESCRIBE TABLE query.
     auto cluster = getCluster();
 
-    ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
-    auto & describe_query = static_cast<ASTDescribeQuery &>(*describe_query_ptr);
+    auto describe_query = std::make_shared<ASTDescribeQuery>();
 
-    describe_query.database = remote_database;
-    describe_query.table = remote_table;
+    std::string name = remote_database + '.' + remote_table;
+
+    auto id = std::make_shared<ASTIdentifier>();
+    id->name = name;
+
+    auto desc_database = std::make_shared<ASTIdentifier>();
+    auto desc_table = std::make_shared<ASTIdentifier>();
+    desc_database->name = remote_database;
+    desc_table->name = remote_table;
+
+    id->children.push_back(desc_database);
+    id->children.push_back(desc_table);
+
+    auto table_expression = std::make_shared<ASTTableExpression>();
+    table_expression->database_and_table_name = id;
+
+    describe_query->table_expression = table_expression;
 
     ClusterProxy::DescribeStreamFactory describe_stream_factory;
 
     return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query_ptr, context, settings);
+            describe_stream_factory, cluster, describe_query, context, settings);
 }
 
 

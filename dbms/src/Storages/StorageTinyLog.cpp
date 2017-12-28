@@ -18,7 +18,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -179,13 +179,8 @@ Block TinyLogBlockInputStream::readImpl()
 
     /// If the files are not open, then open them.
     if (streams.empty())
-    {
         for (size_t i = 0, size = column_names.size(); i < size; ++i)
-        {
-            const auto & name = column_names[i];
-            column_types[i] = storage.getDataTypeByName(name);
-        }
-    }
+            column_types[i] = storage.getDataTypeByName(column_names[i]);
 
     /// Pointers to offset columns, shared for columns from nested data structures
     using OffsetColumns = std::map<std::string, ColumnPtr>;
@@ -195,30 +190,28 @@ Block TinyLogBlockInputStream::readImpl()
     {
         const auto & name = column_names[i];
 
-        ColumnWithTypeAndName column;
-        column.name = name;
-        column.type = column_types[i];
+        MutableColumnPtr column;
 
         bool read_offsets = true;
 
         /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column.type.get()))
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
         {
-            String nested_name = DataTypeNested::extractNestedTableName(column.name);
+            String nested_name = Nested::extractTableName(name);
 
             if (offset_columns.count(nested_name) == 0)
-                offset_columns[nested_name] = std::make_shared<ColumnArray::ColumnOffsets_t>();
+                offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
             else
                 read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
 
-            column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
+            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
         }
         else
-            column.column = column.type->createColumn();
+            column = column_types[i]->createColumn();
 
         try
         {
-            readData(name, *column.type, *column.column, block_size, read_offsets);
+            readData(name, *column_types[i], *column, block_size, read_offsets);
         }
         catch (Exception & e)
         {
@@ -226,8 +219,8 @@ Block TinyLogBlockInputStream::readImpl()
             throw;
         }
 
-        if (column.column->size())
-            res.insert(std::move(column));
+        if (column->size())
+            res.insert(ColumnWithTypeAndName(std::move(column), column_types[i], name));
     }
 
     if (!res || streams.begin()->second->compressed.eof())
@@ -284,8 +277,8 @@ void TinyLogBlockOutputStream::writeSuffix()
     done = true;
 
     /// Finish write.
-    for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
-        it->second->finalize();
+    for (auto & stream : streams)
+        stream.second->finalize();
 
     std::vector<Poco::File> column_files;
     for (auto & pair : streams)
@@ -315,7 +308,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 StorageTinyLog::StorageTinyLog(
     const std::string & path_,
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -327,7 +320,7 @@ StorageTinyLog::StorageTinyLog(
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
-    if (columns->empty())
+    if (columns.empty())
         throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     String full_path = path + escapeForFileName(name) + '/';

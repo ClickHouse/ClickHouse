@@ -10,12 +10,12 @@ namespace DB
 template <typename T>
 class DataTypeNumber final : public DataTypeNumberBase<T>
 {
-    DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeUsedAsNonNegativeArrayIndex() const override { return isInteger() && std::is_unsigned_v<T>; }
+    bool isUnsignedInteger() const override { return isInteger() && std::is_unsigned_v<T>; }
     bool canBeUsedInBooleanContext() const override { return true; }
     bool isNumber() const override { return true; }
     bool isInteger() const override { return std::is_integral_v<T>; }

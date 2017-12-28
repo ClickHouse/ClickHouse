@@ -95,9 +95,6 @@ public:
     /** Returns true if the storage supports queries with the PREWHERE section. */
     virtual bool supportsPrewhere() const { return false; }
 
-    /** Returns true if the storage supports read from multiple replicas. Assumed isRemote. */
-    virtual bool supportsParallelReplicas() const { return false; }
-
     /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
     virtual bool supportsReplication() const { return false; }
 

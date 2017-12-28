@@ -2,7 +2,6 @@
 
 #include <array>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
@@ -27,8 +26,8 @@ namespace ErrorCodes
 /// If all rows had NULL, the behaviour is determined by "result_is_nullable" template parameter.
 ///  true - return NULL; false - return value from empty aggregation state of nested function.
 
-template <bool result_is_nullable>
-class AggregateFunctionNullBase : public IAggregateFunction
+template <bool result_is_nullable, typename Derived>
+class AggregateFunctionNullBase : public IAggregateFunctionHelper<Derived>
 {
 protected:
     AggregateFunctionPtr nested_function;
@@ -77,11 +76,6 @@ public:
         return nested_function->getName();
     }
 
-    void setParameters(const Array & params) override
-    {
-        nested_function->setParameters(params);
-    }
-
     DataTypePtr getReturnType() const override
     {
         return result_is_nullable
@@ -112,7 +106,7 @@ public:
 
     size_t alignOfData() const override
     {
-        return 1;    /// NOTE This works fine on x86_64 and ok on AArch64.
+        return 1;    /// NOTE This works fine on x86_64 and ok on AArch64. Doesn't work under UBSan.
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -151,8 +145,8 @@ public:
             ColumnNullable & to_concrete = static_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), *to_concrete.getNestedColumn());
-                to_concrete.getNullMap().push_back(0);
+                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
+                to_concrete.getNullMapData().push_back(0);
             }
             else
             {
@@ -183,20 +177,12 @@ public:
   * Code for single argument is much more efficient.
   */
 template <bool result_is_nullable>
-class AggregateFunctionNullUnary final : public AggregateFunctionNullBase<result_is_nullable>
+class AggregateFunctionNullUnary final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>
 {
 public:
-    using AggregateFunctionNullBase<result_is_nullable>::AggregateFunctionNullBase;
-
-    void setArguments(const DataTypes & arguments) override
+    AggregateFunctionNullUnary(AggregateFunctionPtr nested_function)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(nested_function)
     {
-        if (arguments.size() != 1)
-            throw Exception("Logical error: more than one argument is passed to AggregateFunctionNullUnary", ErrorCodes::LOGICAL_ERROR);
-
-        if (!arguments.front()->isNullable())
-            throw Exception("Logical error: not nullable data type is passed to AggregateFunctionNullUnary", ErrorCodes::LOGICAL_ERROR);
-
-        this->nested_function->setArguments({removeNullable(arguments.front())});
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -205,34 +191,21 @@ public:
         if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
-            const IColumn * nested_column = column->getNestedColumn().get();
+            const IColumn * nested_column = &column->getNestedColumn();
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
-    }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place,
-        const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        return static_cast<const AggregateFunctionNullUnary &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override
-    {
-        return &addFree;
     }
 };
 
 
 template <bool result_is_nullable>
-class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<result_is_nullable>
+class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>
 {
 public:
-    using AggregateFunctionNullBase<result_is_nullable>::AggregateFunctionNullBase;
-
-    void setArguments(const DataTypes & arguments) override
+    AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function, const DataTypes & arguments)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(nested_function),
+        number_of_arguments(arguments.size())
     {
-        number_of_arguments = arguments.size();
-
         if (number_of_arguments == 1)
             throw Exception("Logical error: single argument is passed to AggregateFunctionNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
@@ -240,16 +213,8 @@ public:
             throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        DataTypes nested_args;
-        nested_args.resize(number_of_arguments);
-
         for (size_t i = 0; i < number_of_arguments; ++i)
-        {
             is_nullable[i] = arguments[i]->isNullable();
-            nested_args[i] = removeNullable(arguments[i]);
-        }
-
-        this->nested_function->setArguments(nested_args);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -268,7 +233,7 @@ public:
                     /// we don't process this row.
                     return;
                 }
-                nested_columns[i] = nullable_col.getNestedColumn().get();
+                nested_columns[i] = &nullable_col.getNestedColumn();
             }
             else
                 nested_columns[i] = columns[i];
@@ -281,17 +246,6 @@ public:
     bool allocatesMemoryInArena() const override
     {
         return this->nested_function->allocatesMemoryInArena();
-    }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place,
-        const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        return static_cast<const AggregateFunctionNullVariadic &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override
-    {
-        return &addFree;
     }
 
 private:

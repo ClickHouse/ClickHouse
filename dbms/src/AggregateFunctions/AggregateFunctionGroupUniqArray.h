@@ -11,7 +11,7 @@
 
 #include <Common/HashTable/HashSet.h>
 
-#include <AggregateFunctions/AggregateFunctionGroupArray.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_UNIQ_MAX_SIZE 0xFFFFFF
 
@@ -38,7 +38,7 @@ struct AggregateFunctionGroupUniqArrayData
 /// Puts all values to the hash set. Returns an array of unique values. Implemented for numeric types.
 template <typename T>
 class AggregateFunctionGroupUniqArray
-    : public IUnaryAggregateFunction<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>
 {
 private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
@@ -51,14 +51,9 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & /*argument*/)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).value.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+        this->data(place).value.insert(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -83,14 +78,14 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         const typename State::Set & set = this->data(place).value;
         size_t size = set.size();
 
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 
-        typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
         data_to.resize(old_size + size);
 
@@ -117,7 +112,8 @@ struct AggreagteFunctionGroupUniqArrayGenericData
  *  For such columns groupUniqArray() can be implemented more efficently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
-class AggreagteFunctionGroupUniqArrayGeneric : public IUnaryAggregateFunction<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>
+class AggreagteFunctionGroupUniqArrayGeneric
+    : public IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>
 {
     DataTypePtr input_data_type;
 
@@ -128,17 +124,14 @@ class AggreagteFunctionGroupUniqArrayGeneric : public IUnaryAggregateFunction<Ag
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
 public:
+    AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type)
+        : input_data_type(input_data_type) {}
 
     String getName() const override { return "groupUniqArray"; }
 
-    void setArgument(const DataTypePtr & argument)
-    {
-        input_data_type = argument;
-    }
-
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(input_data_type->clone());
+        return std::make_shared<DataTypeArray>(input_data_type);
     }
 
     bool allocatesMemoryInArena() const override
@@ -164,23 +157,23 @@ public:
         readVarUInt(size, buf);
         //TODO: set.reserve(size);
 
-        for (size_t i = 0; i < size; i++)
+        for (size_t i = 0; i < size; ++i)
         {
             set.insert(readStringBinaryInto(*arena, buf));
         }
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & set = this->data(place).value;
 
         bool inserted;
         State::Set::iterator it;
 
-        StringRef str_serialized = getSerialization(column, row_num, *arena);
+        StringRef str_serialized = getSerialization(*columns[0], row_num, *arena);
         set.emplace(str_serialized, it, inserted);
 
-        if (!is_plain_column)
+        if constexpr (!is_plain_column)
         {
             if (!inserted)
                 arena->rollback(str_serialized.size);
@@ -210,7 +203,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
 
         auto & set = this->data(place).value;

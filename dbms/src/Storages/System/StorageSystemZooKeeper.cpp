@@ -118,21 +118,6 @@ BlockInputStreams StorageSystemZooKeeper::read(
     if (path.empty())
         throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.");
 
-    ColumnWithTypeAndName col_name           { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(),   "name" };
-    ColumnWithTypeAndName col_value          { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(),   "value" };
-    ColumnWithTypeAndName col_czxid          { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "czxid" };
-    ColumnWithTypeAndName col_mzxid          { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "mzxid" };
-    ColumnWithTypeAndName col_ctime          { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "ctime" };
-    ColumnWithTypeAndName col_mtime          { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "mtime" };
-    ColumnWithTypeAndName col_version        { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "version" };
-    ColumnWithTypeAndName col_cversion       { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "cversion" };
-    ColumnWithTypeAndName col_aversion       { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "aversion" };
-    ColumnWithTypeAndName col_ephemeralOwner { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "ephemeralOwner" };
-    ColumnWithTypeAndName col_dataLength     { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "dataLength" };
-    ColumnWithTypeAndName col_numChildren    { std::make_shared<ColumnInt32>(),  std::make_shared<DataTypeInt32>(),    "numChildren" };
-    ColumnWithTypeAndName col_pzxid          { std::make_shared<ColumnInt64>(),  std::make_shared<DataTypeInt64>(),    "pzxid" };
-    ColumnWithTypeAndName col_path           { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(),   "path" };
-
     zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
     /// In all cases except the root, path must not end with a slash.
@@ -151,6 +136,8 @@ BlockInputStreams StorageSystemZooKeeper::read(
     for (const String & node : nodes)
         futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
 
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+
     for (size_t i = 0, size = nodes.size(); i < size; ++i)
     {
         auto res = futures[i].get();
@@ -159,41 +146,24 @@ BlockInputStreams StorageSystemZooKeeper::read(
 
         const zkutil::Stat & stat = res.stat;
 
-        col_name.column->insert(nodes[i]);
-        col_value.column->insert(res.value);
-        col_czxid.column->insert(Int64(stat.czxid));
-        col_mzxid.column->insert(Int64(stat.mzxid));
-        col_ctime.column->insert(UInt64(stat.ctime / 1000));
-        col_mtime.column->insert(UInt64(stat.mtime / 1000));
-        col_version.column->insert(Int64(stat.version));
-        col_cversion.column->insert(Int64(stat.cversion));
-        col_aversion.column->insert(Int64(stat.aversion));
-        col_ephemeralOwner.column->insert(Int64(stat.ephemeralOwner));
-        col_dataLength.column->insert(Int64(stat.dataLength));
-        col_numChildren.column->insert(Int64(stat.numChildren));
-        col_pzxid.column->insert(Int64(stat.pzxid));
-        col_path.column->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
+        size_t col_num = 0;
+        res_columns[col_num++]->insert(nodes[i]);
+        res_columns[col_num++]->insert(res.value);
+        res_columns[col_num++]->insert(Int64(stat.czxid));
+        res_columns[col_num++]->insert(Int64(stat.mzxid));
+        res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
+        res_columns[col_num++]->insert(UInt64(stat.mtime / 1000));
+        res_columns[col_num++]->insert(Int64(stat.version));
+        res_columns[col_num++]->insert(Int64(stat.cversion));
+        res_columns[col_num++]->insert(Int64(stat.aversion));
+        res_columns[col_num++]->insert(Int64(stat.ephemeralOwner));
+        res_columns[col_num++]->insert(Int64(stat.dataLength));
+        res_columns[col_num++]->insert(Int64(stat.numChildren));
+        res_columns[col_num++]->insert(Int64(stat.pzxid));
+        res_columns[col_num++]->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
     }
 
-    Block block
-    {
-        col_name,
-        col_value,
-        col_czxid,
-        col_mzxid,
-        col_ctime,
-        col_mtime,
-        col_version,
-        col_cversion,
-        col_aversion,
-        col_ephemeralOwner,
-        col_dataLength,
-        col_numChildren,
-        col_pzxid,
-        col_path,
-    };
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 

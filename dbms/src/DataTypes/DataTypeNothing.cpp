@@ -9,9 +9,9 @@
 namespace DB
 {
 
-ColumnPtr DataTypeNothing::createColumn() const
+MutableColumnPtr DataTypeNothing::createColumn() const
 {
-    return std::make_shared<ColumnNothing>(0);
+    return ColumnNothing::create(0);
 }
 
 void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -29,6 +29,12 @@ void DataTypeNothing::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr,
 {
     typeid_cast<ColumnNothing &>(column).addSize(istr.tryIgnore(limit));
 }
+
+bool DataTypeNothing::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this);
+}
+
 
 void registerDataTypeNothing(DataTypeFactory & factory)
 {

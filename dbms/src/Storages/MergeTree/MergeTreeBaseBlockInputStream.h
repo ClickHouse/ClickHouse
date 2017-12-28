@@ -50,7 +50,7 @@ protected:
     MergeTreeData & storage;
 
     ExpressionActionsPtr prewhere_actions;
-    String prewhere_column;
+    String prewhere_column_name;
 
     size_t max_block_size_rows;
     size_t preferred_block_size_bytes;
