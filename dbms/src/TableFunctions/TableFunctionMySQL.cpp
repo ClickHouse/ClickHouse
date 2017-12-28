@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_MYSQL
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -161,3 +164,5 @@ void registerTableFunctionMySQL(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionMySQL>();
 }
 }
+
+#endif

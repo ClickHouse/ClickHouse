@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -10,8 +11,11 @@ void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionShardByHash(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionCatBoostPool(TableFunctionFactory & factory);
-void registerTableFunctionMySQL(TableFunctionFactory & factory);
 void registerTableFunctionODBC(TableFunctionFactory & factory);
+
+#if USE_MYSQL
+void registerTableFunctionMySQL(TableFunctionFactory & factory);
+#endif
 
 
 void registerTableFunctions()
@@ -23,8 +27,11 @@ void registerTableFunctions()
     registerTableFunctionShardByHash(factory);
     registerTableFunctionNumbers(factory);
     registerTableFunctionCatBoostPool(factory);
-    registerTableFunctionMySQL(factory);
     registerTableFunctionODBC(factory);
+
+#if USE_MYSQL
+    registerTableFunctionMySQL(factory);
+#endif
 }
 
 }
