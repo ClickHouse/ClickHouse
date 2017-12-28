@@ -67,7 +67,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 База данных по умолчанию.
 
-Перечень баз данных можно получить запросом [SHOW DATABASES](../query_language/queries.md#query_language_queries_show_databases).
+Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases).
 
 **Пример**
 
@@ -593,21 +593,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../configuration_files.md#configuration_files)".
 
-<a name="server_settings-resharding"></a>
-
-## resharding
-
-Путь в ZooKeeper к очереди задач.
-
-Подробнее читайте в разделе "[Перешардирование](../../table_engines/resharding.md#table_engines-resharding)".
-
-**Пример**
-
-```xml
-<resharding>
-    <task_queue_path>/clickhouse/task_queue</task_queue_path>
-</resharding>
-```
 
 <a name="server_settings-timezone"></a>
 
