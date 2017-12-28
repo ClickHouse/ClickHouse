@@ -743,8 +743,10 @@ public:
             const ExpressionActions & expression = *column_expression->getExpression();
             const NamesAndTypesList & required_columns = expression.getRequiredColumnsWithTypes();
 
-            Names argument_name_vector = column_expression->getArgumentNames();
-            NameSet argument_names(argument_name_vector.begin(), argument_name_vector.end());
+            const NamesAndTypesList expression_arguments = column_expression->getArguments();
+            NameSet argument_names;
+            for (const auto & expression_argument : expression_arguments)
+                argument_names.emplace(expression_argument.name);
 
             for (const auto & required_column : required_columns)
             {
@@ -804,7 +806,7 @@ public:
 
             Block temp_block;
             const ExpressionActions & expression = *column_expression->getExpression();
-            NamesAndTypes expression_arguments = column_expression->getArguments();
+            const NamesAndTypesList & expression_arguments = column_expression->getArguments();
             NameSet argument_names;
 
             ColumnPtr column_first_array_ptr;
@@ -812,11 +814,9 @@ public:
 
             /// Put the expression arguments in the block.
 
-            for (size_t i = 0; i < expression_arguments.size(); ++i)
+            size_t i = 0;
+            for (const auto expression_argument : expression_arguments)
             {
-                const std::string & argument_name = expression_arguments[i].name;
-                DataTypePtr argument_type = expression_arguments[i].type;
-
                 ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
                 const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
@@ -847,12 +847,13 @@ public:
                     column_first_array = column_array;
                 }
 
-                temp_block.insert(ColumnWithTypeAndName(
+                temp_block.insert({
                     column_array->getDataPtr(),
-                    argument_type,
-                    argument_name));
+                    expression_argument.type,
+                    expression_argument.name});
 
-                argument_names.insert(argument_name);
+                argument_names.insert(expression_argument.name);
+                ++i;
             }
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the block.
