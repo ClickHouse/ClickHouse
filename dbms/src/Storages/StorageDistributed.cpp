@@ -21,7 +21,6 @@
 #include <Parsers/ASTWeightedZooKeeperPath.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/queryToString.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>

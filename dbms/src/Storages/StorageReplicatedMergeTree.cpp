@@ -17,7 +17,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/queryToString.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>

@@ -157,7 +157,7 @@ public:
         readVarUInt(size, buf);
         //TODO: set.reserve(size);
 
-        for (size_t i = 0; i < size; i++)
+        for (size_t i = 0; i < size; ++i)
         {
             set.insert(readStringBinaryInto(*arena, buf));
         }

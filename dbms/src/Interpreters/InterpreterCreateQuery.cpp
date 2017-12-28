@@ -24,7 +24,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLog.h>

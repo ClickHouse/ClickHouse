@@ -134,7 +134,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
 #if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
 #else
-        throw Exception{"Dictionary source of type `mysql` disabled because ClickHouse built without mysql support.",
+        throw Exception{"Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.",
             ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     }
@@ -148,7 +148,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
 #if Poco_MongoDB_FOUND
         return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
 #else
-        throw Exception{"Dictionary source of type `mongodb` disabled because poco library built without mongodb support.",
+        throw Exception{"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
             ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     }
@@ -157,7 +157,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
 #if Poco_DataODBC_FOUND
         return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block);
 #else
-        throw Exception{"Dictionary source of type `odbc` disabled because poco library built without ODBC support.",
+        throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
             ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     }
