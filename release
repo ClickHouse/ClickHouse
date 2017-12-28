@@ -82,7 +82,7 @@ if [ -z "$USE_PBUILDER" ] ; then
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
-    export DIST=artful
+    export DIST=${DIST:=artful}
     . $CURDIR/debian/.pbuilderrc
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
         sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc

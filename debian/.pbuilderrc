@@ -133,20 +133,22 @@ case "$DIST" in
         ;;
 esac
 
+# old systems with default gcc <= 6
 case "$DIST" in
-    "trusty" | "xenial" | "experimental" | "unstable" )
+    "trusty" | "xenial" | "stable" )
         export DEB_CC=gcc-7
         export DEB_CXX=g++-7
         ;;
 esac
 
 case "$DIST" in
-    "bionic" | "artful" )
+    "bionic" | "artful" | "experimental" | "unstable" | "testing" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
         ;;
 esac
 
+# bundled zookeepeer have broken asm
 case "$ARCH" in
     "arm64")
         EXTRAPACKAGES+=" libzookeeper-mt-dev "
