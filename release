@@ -80,8 +80,9 @@ if [ -z "$USE_PBUILDER" ] ; then
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
     export DIST=artful
-    if [ -z "$NO_PBUILDER_CREATE" ] ; then
-        sudo --preserve-env pbuilder create --configfile debian/.pbuilderrc
+    . $CURDIR/debian/.pbuilderrc
+    if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
+        sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc
     fi
-    pdebuild --configfile debian/.pbuilderrc
+    pdebuild --configfile $CURDIR/debian/.pbuilderrc
 fi
