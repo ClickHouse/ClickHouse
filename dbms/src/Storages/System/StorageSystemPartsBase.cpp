@@ -48,36 +48,36 @@ public:
 
         Block block_to_filter;
 
-        ColumnPtr table_column_to_filter = std::make_shared<ColumnString>();
-        ColumnPtr engine_column_to_filter = std::make_shared<ColumnString>();
-        ColumnPtr active_column_to_filter = std::make_shared<ColumnUInt8>();
+        MutableColumnPtr table_column_mut = ColumnString::create();
+        MutableColumnPtr engine_column_mut = ColumnString::create();
+        MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
         {
             Databases databases = context.getDatabases();
 
             /// Add column 'database'.
-            ColumnPtr database_column_to_filter = std::make_shared<ColumnString>();
+            MutableColumnPtr database_column_mut = ColumnString::create();
             for (const auto & database : databases)
-                database_column_to_filter->insert(database.first);
+                database_column_mut->insert(database.first);
             block_to_filter.insert(ColumnWithTypeAndName(
-                    database_column_to_filter, std::make_shared<DataTypeString>(), "database"));
+                    std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
             /// Filter block_to_filter with column 'database'.
             VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
             rows = block_to_filter.rows();
 
             /// Block contains new columns, update database_column.
-            database_column_to_filter = block_to_filter.getByName("database").column;
+            ColumnPtr database_column = block_to_filter.getByName("database").column;
 
             if (rows)
             {
                 /// Add columns 'table', 'engine', 'active'
 
-                IColumn::Offsets_t offsets(rows);
+                IColumn::Offsets offsets(rows);
 
                 for (size_t i = 0; i < rows; ++i)
                 {
-                    String database_name = (*database_column_to_filter)[i].get<String>();
+                    String database_name = (*database_column)[i].get<String>();
                     const DatabasePtr database = databases.at(database_name);
 
                     offsets[i] = i ? offsets[i - 1] : 0;
@@ -96,9 +96,9 @@ public:
                         /// Add all combinations of flag 'active'.
                         for (UInt64 active : {0, 1})
                         {
-                            table_column_to_filter->insert(table_name);
-                            engine_column_to_filter->insert(engine_name);
-                            active_column_to_filter->insert(active);
+                            table_column_mut->insert(table_name);
+                            engine_column_mut->insert(engine_name);
+                            active_column_mut->insert(active);
                         }
 
                         offsets[i] += 2;
@@ -115,9 +115,9 @@ public:
 
         if (rows)
         {
-            block_to_filter.insert(ColumnWithTypeAndName(table_column_to_filter, std::make_shared<DataTypeString>(), "table"));
-            block_to_filter.insert(ColumnWithTypeAndName(engine_column_to_filter, std::make_shared<DataTypeString>(), "engine"));
-            block_to_filter.insert(ColumnWithTypeAndName(active_column_to_filter, std::make_shared<DataTypeUInt8>(), "active"));
+            block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
+            block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
+            block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
 
             /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
             VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
@@ -126,7 +126,6 @@ public:
 
         database_column = block_to_filter.getByName("database").column;
         table_column = block_to_filter.getByName("table").column;
-        engine_column = block_to_filter.getByName("engine").column;
         active_column = block_to_filter.getByName("active").column;
 
         next_row = 0;
@@ -220,7 +219,6 @@ private:
 
     ColumnPtr database_column;
     ColumnPtr table_column;
-    ColumnPtr engine_column;
     ColumnPtr active_column;
 
     size_t next_row;
@@ -245,18 +243,22 @@ BlockInputStreams StorageSystemPartsBase::read(
 
     StoragesInfoStream stream(query_info, context, has_state_column);
 
-    /// Finally, create the result.
+    /// Create the result.
+
+    MutableColumns columns = getSampleBlock().cloneEmptyColumns();
+    if (has_state_column)
+        columns.push_back(ColumnString::create());
+
+    while (StoragesInfo info = stream.next())
+    {
+        processNextStorage(columns, info, has_state_column);
+    }
 
     Block block = getSampleBlock();
     if (has_state_column)
         block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
-    while (StoragesInfo info = stream.next())
-    {
-        processNextStorage(block, info, has_state_column);
-    }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
 }
 
 NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const

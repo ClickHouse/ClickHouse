@@ -34,7 +34,6 @@ public:
     bool supportsSampling() const override { return data.supportsSampling(); }
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
-    bool supportsParallelReplicas() const override { return true; }
 
     const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
 
@@ -132,7 +131,7 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,

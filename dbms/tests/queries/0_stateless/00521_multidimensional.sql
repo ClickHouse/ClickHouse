@@ -1,5 +1,3 @@
-SET experimental_allow_extended_storage_definition_syntax = 1;
-
 DROP TABLE IF EXISTS test.multidimensional;
 CREATE TABLE test.multidimensional (x UInt64, arr Array(Array(String))) ENGINE = MergeTree ORDER BY x;
 

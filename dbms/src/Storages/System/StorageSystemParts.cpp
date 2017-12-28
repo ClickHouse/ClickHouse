@@ -43,7 +43,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
 {
 }
 
-void StorageSystemParts::processNextStorage(Block & block, const StoragesInfo & info, bool has_state_column)
+void StorageSystemParts::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPart::State;
 
@@ -56,34 +56,34 @@ void StorageSystemParts::processNextStorage(Block & block, const StoragesInfo & 
         {
             WriteBufferFromOwnString out;
             part->partition.serializeTextQuoted(*info.data, out);
-            block.getByPosition(i++).column->insert(out.str());
+            columns[i++]->insert(out.str());
         }
-        block.getByPosition(i++).column->insert(part->name);
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part_state == State::Committed));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->marks_count));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getTotalMrkSizeInBytes()));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->rows_count));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size_in_bytes));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->modification_time));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->remove_time));
+        columns[i++]->insert(part->name);
+        columns[i++]->insert(static_cast<UInt64>(part_state == State::Committed));
+        columns[i++]->insert(static_cast<UInt64>(part->marks_count));
+        columns[i++]->insert(static_cast<UInt64>(part->getTotalMrkSizeInBytes()));
+        columns[i++]->insert(static_cast<UInt64>(part->rows_count));
+        columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
+        columns[i++]->insert(static_cast<UInt64>(part->modification_time));
+        columns[i++]->insert(static_cast<UInt64>(part->remove_time));
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part.use_count() - 1));
+        columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
 
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getMinDate()));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getMaxDate()));
-        block.getByPosition(i++).column->insert(part->info.min_block);
-        block.getByPosition(i++).column->insert(part->info.max_block);
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->info.level));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
-        block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
+        columns[i++]->insert(static_cast<UInt64>(part->getMinDate()));
+        columns[i++]->insert(static_cast<UInt64>(part->getMaxDate()));
+        columns[i++]->insert(part->info.min_block);
+        columns[i++]->insert(part->info.max_block);
+        columns[i++]->insert(static_cast<UInt64>(part->info.level));
+        columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
+        columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
 
-        block.getByPosition(i++).column->insert(info.database);
-        block.getByPosition(i++).column->insert(info.table);
-        block.getByPosition(i++).column->insert(info.engine);
+        columns[i++]->insert(info.database);
+        columns[i++]->insert(info.table);
+        columns[i++]->insert(info.engine);
 
         if (has_state_column)
-            block.getByPosition(i++).column->insert(part->stateString());
+            columns[i++]->insert(part->stateString());
     }
 }
 

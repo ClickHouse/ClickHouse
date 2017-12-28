@@ -1,5 +1,4 @@
-SummingMergeTree
-================
+# SummingMergeTree
 
 Отличается от `MergeTree` тем, что суммирует данные при слиянии.
 

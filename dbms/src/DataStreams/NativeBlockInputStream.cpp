@@ -4,12 +4,6 @@
 #include <IO/VarInt.h>
 #include <IO/CompressedReadBufferFromFile.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
@@ -120,11 +114,13 @@ Block NativeBlockInputStream::readImpl()
         }
 
         /// Data
-        column.column = column.type->createColumn();
+        MutableColumnPtr read_column = column.type->createColumn();
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, *column.column, istr, rows, avg_value_size_hint);
+            readData(*column.type, *read_column, istr, rows, avg_value_size_hint);
+
+        column.column = std::move(read_column);
 
         res.insert(std::move(column));
 

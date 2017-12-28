@@ -57,7 +57,7 @@ private:
 protected:
     StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns) : name(std::move(name_)), columns(columns) {}
 
-    virtual void processNextStorage(Block & block, const StoragesInfo & info, bool has_state_column) = 0;
+    virtual void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) = 0;
 };
 
 }

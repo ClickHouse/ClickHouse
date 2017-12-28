@@ -10,7 +10,7 @@
 #include <Parsers/formatAST.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <ext/scope_guard.h>
 #include <ext/map.h>
 #include <memory>
@@ -345,7 +345,7 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
     const auto column_name = expr->getColumnName();
 
     if (typeid_cast<const ASTLiteral *>(expr.get()) ||
-        (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst()))
+        (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst()))
         return true;
 
     return false;
@@ -384,7 +384,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (identifier_ptr->kind == ASTIdentifier::Column)
             if (array_joined_names.count(identifier_ptr->name) ||
-                array_joined_names.count(DataTypeNested::extractNestedTableName(identifier_ptr->name)))
+                array_joined_names.count(Nested::extractTableName(identifier_ptr->name)))
                 return true;
     }
 

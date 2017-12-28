@@ -9,22 +9,43 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
 }
 
 
-ColumnTuple::ColumnTuple(Block data_) : data(data_)
+std::string ColumnTuple::getName() const
 {
-    size_t size = data.columns();
-    columns.resize(size);
-    for (size_t i = 0; i < size; ++i)
-        columns[i] = data.getByPosition(i).column;
+    std::stringstream res;
+    res << "Tuple(";
+    bool is_first = true;
+    for (const auto & column : columns)
+    {
+        if (!is_first)
+            res << ", ";
+        is_first = false;
+        res << column->getName();
+    }
+    res << ")";
+    return res.str();
 }
 
-ColumnPtr ColumnTuple::cloneEmpty() const
+ColumnTuple::ColumnTuple(const Columns & columns) : columns(columns)
 {
-    return std::make_shared<ColumnTuple>(data.cloneEmpty());
+    for (const auto & column : columns)
+        if (column->isColumnConst())
+            throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
+}
+
+MutableColumnPtr ColumnTuple::cloneEmpty() const
+{
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->cloneEmpty();
+
+    return ColumnTuple::create(new_columns);
 }
 
 Field ColumnTuple::operator[](size_t n) const
@@ -34,10 +55,10 @@ Field ColumnTuple::operator[](size_t n) const
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
-    const size_t size = columns.size();
-    res = Tuple(TupleBackend(size));
+    const size_t tuple_size = columns.size();
+    res = Tuple(TupleBackend(tuple_size));
     TupleBackend & res_arr = DB::get<Tuple &>(res).t;
-    for (const auto i : ext::range(0, size))
+    for (const auto i : ext::range(0, tuple_size))
         columns[i]->get(n, res_arr[i]);
 }
 
@@ -55,36 +76,36 @@ void ColumnTuple::insert(const Field & x)
 {
     const TupleBackend & tuple = DB::get<const Tuple &>(x).t;
 
-    const size_t size = columns.size();
-    if (tuple.size() != size)
+    const size_t tuple_size = columns.size();
+    if (tuple.size() != tuple_size)
         throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
 
-    for (size_t i = 0; i < size; ++i)
-        columns[i]->insert(tuple[i]);
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->assumeMutable()->insert(tuple[i]);
 }
 
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 {
     const ColumnTuple & src = static_cast<const ColumnTuple &>(src_);
 
-    size_t size = columns.size();
-    if (src.columns.size() != size)
+    const size_t tuple_size = columns.size();
+    if (src.columns.size() != tuple_size)
         throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
 
-    for (size_t i = 0; i < size; ++i)
-        columns[i]->insertFrom(*src.columns[i], n);
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->assumeMutable()->insertFrom(*src.columns[i], n);
 }
 
 void ColumnTuple::insertDefault()
 {
     for (auto & column : columns)
-        column->insertDefault();
+        column->assumeMutable()->insertDefault();
 }
 
 void ColumnTuple::popBack(size_t n)
 {
     for (auto & column : columns)
-        column->popBack(n);
+        column->assumeMutable()->popBack(n);
 }
 
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -99,7 +120,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 {
     for (auto & column : columns)
-        pos = column->deserializeAndInsertFromArena(pos);
+        pos = column->assumeMutable()->deserializeAndInsertFromArena(pos);
 
     return pos;
 }
@@ -112,58 +133,62 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    for (size_t i = 0; i < columns.size(); ++i)
-        data.getByPosition(i).column->insertRangeFrom(
-            *static_cast<const ColumnTuple &>(src).data.getByPosition(i).column.get(),
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->assumeMutable()->insertRangeFrom(
+            *static_cast<const ColumnTuple &>(src).columns[i],
             start, length);
 }
 
-ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
+MutableColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    Block res_block = data.cloneEmpty();
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
 
-    for (size_t i = 0; i < columns.size(); ++i)
-        res_block.getByPosition(i).column = data.getByPosition(i).column->filter(filt, result_size_hint);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
-    return std::make_shared<ColumnTuple>(res_block);
+    return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
+MutableColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
-    Block res_block = data.cloneEmpty();
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
 
-    for (size_t i = 0; i < columns.size(); ++i)
-        res_block.getByPosition(i).column = data.getByPosition(i).column->permute(perm, limit);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->permute(perm, limit);
 
-    return std::make_shared<ColumnTuple>(res_block);
+    return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::replicate(const Offsets_t & offsets) const
+MutableColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 {
-    Block res_block = data.cloneEmpty();
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
 
-    for (size_t i = 0; i < columns.size(); ++i)
-        res_block.getByPosition(i).column = data.getByPosition(i).column->replicate(offsets);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->replicate(offsets);
 
-    return std::make_shared<ColumnTuple>(res_block);
+    return ColumnTuple::create(new_columns);
 }
 
-Columns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
-    size_t num_tuple_elements = columns.size();
-    std::vector<Columns> scattered_tuple_elements(num_tuple_elements);
+    const size_t tuple_size = columns.size();
+    std::vector<MutableColumns> scattered_tuple_elements(tuple_size);
 
-    for (size_t tuple_element_idx = 0; tuple_element_idx < num_tuple_elements; ++tuple_element_idx)
-        scattered_tuple_elements[tuple_element_idx] = data.getByPosition(tuple_element_idx).column->scatter(num_columns, selector);
+    for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
+        scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
 
-    Columns res(num_columns);
+    MutableColumns res(num_columns);
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {
-        Block res_block = data.cloneEmpty();
-        for (size_t tuple_element_idx = 0; tuple_element_idx < num_tuple_elements; ++tuple_element_idx)
-            res_block.getByPosition(tuple_element_idx).column = scattered_tuple_elements[tuple_element_idx][scattered_idx];
-        res[scattered_idx] = std::make_shared<ColumnTuple>(res_block);
+        Columns new_columns(tuple_size);
+        for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
+            new_columns[tuple_element_idx] = std::move(scattered_tuple_elements[tuple_element_idx][scattered_idx]);
+        res[scattered_idx] = ColumnTuple::create(new_columns);
     }
 
     return res;
@@ -171,8 +196,8 @@ Columns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector)
 
 int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
-    size_t size = columns.size();
-    for (size_t i = 0; i < size; ++i)
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
         if (int res = columns[i]->compareAt(n, m, *static_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
             return res;
 
@@ -182,7 +207,7 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
 template <bool positive>
 struct ColumnTuple::Less
 {
-    ConstColumnPlainPtrs plain_columns;
+    ColumnRawPtrs plain_columns;
     int nan_direction_hint;
 
     Less(const Columns & columns, int nan_direction_hint_)
@@ -194,7 +219,7 @@ struct ColumnTuple::Less
 
     bool operator() (size_t a, size_t b) const
     {
-        for (ConstColumnPlainPtrs::const_iterator it = plain_columns.begin(); it != plain_columns.end(); ++it)
+        for (ColumnRawPtrs::const_iterator it = plain_columns.begin(); it != plain_columns.end(); ++it)
         {
             int res = (*it)->compareAt(a, b, **it, nan_direction_hint);
             if (res < 0)
@@ -239,8 +264,9 @@ void ColumnTuple::gather(ColumnGathererStream & gatherer)
 
 void ColumnTuple::reserve(size_t n)
 {
-    for (auto & column : columns)
-        column->reserve(n);
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        getColumn(i).reserve(n);
 }
 
 size_t ColumnTuple::byteSize() const
@@ -259,16 +285,6 @@ size_t ColumnTuple::allocatedBytes() const
     return res;
 }
 
-ColumnPtr ColumnTuple::convertToFullColumnIfConst() const
-{
-    Block materialized = data;
-    for (size_t i = 0, size = materialized.columns(); i < size; ++i)
-        if (auto converted = materialized.getByPosition(i).column->convertToFullColumnIfConst())
-            materialized.getByPosition(i).column = converted;
-
-    return std::make_shared<ColumnTuple>(materialized);
-}
-
 void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
@@ -282,6 +298,13 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     for (const auto i : ext::range(0, tuple_size))
         columns[i]->getExtremes(min_backend[i], max_backend[i]);
 }
+
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
+{
+    for (auto & column : columns)
+        callback(column);
+}
+
 
 
 }

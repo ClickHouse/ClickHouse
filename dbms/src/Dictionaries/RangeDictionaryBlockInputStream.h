@@ -8,6 +8,7 @@
 #include <Dictionaries/DictionaryBlockInputStreamBase.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
+#include <Dictionaries/RangeHashedDictionary.h>
 #include <ext/range.h>
 
 namespace DB
@@ -57,6 +58,9 @@ private:
     Block fillBlock(const PaddedPODArray<Key> & ids,
                     const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const;
 
+    PaddedPODArray<UInt16> makeDateKey(
+        const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const;
+
     DictionatyPtr dictionary;
     Names column_names;
     PaddedPODArray<Key> ids;
@@ -88,8 +92,8 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t star
     for (auto idx : ext::range(start, start + length))
     {
         block_ids.push_back(ids[idx]);
-        block_start_dates.push_back(block_start_dates[idx]);
-        block_end_dates.push_back(block_end_dates[idx]);
+        block_start_dates.push_back(start_dates[idx]);
+        block_end_dates.push_back(end_dates[idx]);
     }
 
     return fillBlock(block_ids, block_start_dates, block_end_dates);
@@ -101,9 +105,9 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
     DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key>& ids,
     const PaddedPODArray<UInt16> & dates, const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
 {
-    auto column_vector = std::make_unique<ColumnVector<AttributeType>>(ids.size());
+    auto column_vector = ColumnVector<AttributeType>::create(ids.size());
     (dictionary.*getter)(attribute.name, ids, dates, column_vector->getData());
-    return ColumnPtr(std::move(column_vector));
+    return std::move(column_vector);
 }
 
 template <typename DictionaryType, typename Key>
@@ -111,22 +115,20 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
     const PaddedPODArray<Key>& ids, const PaddedPODArray<UInt16> & dates,
     const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
 {
-    auto column_string = std::make_unique<ColumnString>();
+    auto column_string = ColumnString::create();
     dictionary.getString(attribute.name, ids, dates, column_string.get());
-    return ColumnPtr(std::move(column_string));
+    return std::move(column_string);
 }
 
 template <typename DictionaryType, typename Key>
 template <typename T>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromPODArray(const PaddedPODArray<T>& array) const
 {
-    auto column_vector = std::make_unique<ColumnVector<T>>();
+    auto column_vector = ColumnVector<T>::create();
     column_vector->getData().reserve(array.size());
     for (T value : array)
-    {
         column_vector->insert(value);
-    }
-    return ColumnPtr(std::move(column_vector));
+    return std::move(column_vector);
 }
 
 
@@ -147,6 +149,23 @@ void RangeDictionaryBlockInputStream<DictionaryType, Key>::addSpecialColumn(
 }
 
 template <typename DictionaryType, typename Key>
+PaddedPODArray<UInt16> RangeDictionaryBlockInputStream<DictionaryType, Key>::makeDateKey(
+        const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const
+{
+    PaddedPODArray<UInt16> key(start_dates.size());
+    for (size_t i = 0; i < key.size(); ++i)
+    {
+        if (RangeHashedDictionary::Range::isCorrectDate(start_dates[i]))
+            key[i] = start_dates[i];
+        else
+            key[i] = end_dates[i];
+    }
+
+    return key;
+}
+
+
+template <typename DictionaryType, typename Key>
 Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     const PaddedPODArray<Key>& ids,
     const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const
@@ -160,6 +179,8 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     addSpecialColumn(structure.range_min, std::make_shared<DataTypeDate>(), "Range Start", names, start_dates, columns);
     addSpecialColumn(structure.range_max, std::make_shared<DataTypeDate>(), "Range End", names, end_dates, columns);
 
+    auto date_key = makeDateKey(start_dates, end_dates);
+
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
         const DictionaryAttribute& attribute = structure.attributes[idx];
@@ -167,7 +188,7 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
         {
             ColumnPtr column;
 #define GET_COLUMN_FORM_ATTRIBUTE(TYPE)\
-            column = getColumnFromAttribute<TYPE>(&DictionaryType::get##TYPE, ids, start_dates, attribute, *dictionary)
+            column = getColumnFromAttribute<TYPE>(&DictionaryType::get##TYPE, ids, date_key, attribute, *dictionary)
             switch (attribute.underlying_type)
             {
             case AttributeUnderlyingType::UInt8:
@@ -204,7 +225,7 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
                 GET_COLUMN_FORM_ATTRIBUTE(Float64);
                 break;
             case AttributeUnderlyingType::String:
-                column = getColumnFromAttributeString(ids, start_dates, attribute, *dictionary);
+                column = getColumnFromAttributeString(ids, date_key, attribute, *dictionary);
                 break;
             }
 

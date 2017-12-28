@@ -514,10 +514,10 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
 
     if (impl.hasEmptyBound())
     {
-        return std::make_shared<ColumnVector<UInt8>>(size, 0);
+        return ColumnVector<UInt8>::create(size, 0);
     }
 
-    auto result = std::make_shared<ColumnVector<UInt8>>(size);
+    auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();
 
     const auto & x_data = x.getData();
@@ -528,7 +528,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
         data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
     }
 
-    return result;
+    return std::move(result);
 }
 
 template <typename ... Types>
@@ -561,13 +561,13 @@ struct CallPointInPolygon<>
     template <typename T, typename PointInPolygonImpl>
     static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + typeid(y).name(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + typeid(x).name(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -582,7 +582,7 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 template <typename Linestring>
 float calcLinestringRotation(const Linestring & points)
 {
-    using Point = typename std::decay<decltype(*points.begin())>::type;
+    using Point = std::decay_t<decltype(*points.begin())>;
     float rotation = 0;
 
     auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
@@ -639,7 +639,7 @@ std::string serialize(Polygon && polygon)
     {
         WriteBufferFromString buffer(result);
 
-        using RingType = typename std::decay<Polygon>::type::ring_type;
+        using RingType = typename std::decay_t<Polygon>::ring_type;
 
         auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
         auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };

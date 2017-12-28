@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-
+#include <Common/COWPtr.h>
 #include <Core/Field.h>
 
 
@@ -15,9 +15,10 @@ class IDataType;
 struct FormatSettingsJSON;
 
 class IColumn;
-using ColumnPtr = std::shared_ptr<IColumn>;
+using ColumnPtr = COWPtr<IColumn>::Ptr;
+using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
 
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 
@@ -25,6 +26,8 @@ using DataTypes = std::vector<DataTypePtr>;
   * Contains methods for serialization/deserialization.
   * Implementations of this interface represent a data type (example: UInt8)
   *  or parapetric family of data types (example: Array(...)).
+  *
+  * DataType is totally immutable object. You can always share them.
   */
 class IDataType
 {
@@ -36,34 +39,10 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    virtual String getName() const = 0;
+    virtual String getName() const { return getFamilyName(); };
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
-
-    /// Is this type the null type? TODO Move this method to separate "traits" classes.
-    virtual bool isNull() const { return false; }
-
-    /// Is this type nullable?
-    virtual bool isNullable() const { return false; }
-
-    /// Is this type numeric? Date and DateTime types are considered as such.
-    virtual bool isNumeric() const { return false; }
-
-    /// Is this type numeric and not nullable?
-    virtual bool isNumericNotNullable() const { return isNumeric(); }
-
-    /// If this type is numeric, are all the arithmetic operations and type casting
-    /// relevant for it? True for numbers. False for Date and DateTime types.
-    virtual bool behavesAsNumber() const { return false; }
-
-    /// If this data type cannot appear in table declaration - only for intermediate values of calculations.
-    virtual bool notForTables() const { return false; }
-
-    /// If this data type cannot be wrapped in Nullable data type.
-    virtual bool canBeInsideNullable() const { return true; }
-
-    virtual DataTypePtr clone() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -103,7 +82,7 @@ public:
         Type type;
 
         /// Index of tuple element, starting at 1.
-        size_t tuple_element = 0;
+        String tuple_element_name;
 
         Substream(Type type) : type(type) {}
     };
@@ -220,13 +199,14 @@ public:
         serializeText(column, row_num, ostr);
     }
 
-    /** Create empty (non-constant) column for corresponding type.
+    /** Create empty column for corresponding type.
       */
-    virtual ColumnPtr createColumn() const = 0;
+    virtual MutableColumnPtr createColumn() const = 0;
 
-    /** Create constant column for corresponding type, with specified size and value.
+    /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createConstColumn(size_t size, const Field & field) const;
+    ColumnPtr createColumnConst(size_t size, const Field & field) const;
+    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
@@ -238,19 +218,140 @@ public:
       */
     virtual void insertDefaultInto(IColumn & column) const;
 
-    /// For fixed-size types, return size of value in bytes. For other data types, return some approximate size just for estimation.
-    virtual size_t getSizeOfField() const
-    {
-        throw Exception("getSizeOfField() method is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     /// Checks that two instances belong to the same type
-    inline bool equals(const IDataType & rhs) const
-    {
-        return getName() == rhs.getName();
-    }
+    virtual bool equals(const IDataType & rhs) const = 0;
 
     virtual ~IDataType() {}
+
+
+    /// Various properties on behaviour of data type.
+
+    /** The data type is dependent on parameters and types with different parameters are different.
+      * Examples: FixedString(N), Tuple(T1, T2), Nullable(T).
+      * Otherwise all instances of the same class are the same types.
+      */
+    virtual bool isParametric() const = 0;
+
+    /** The data type is dependent on parameters and at least one of them is another type.
+      * Examples: Tuple(T1, T2), Nullable(T). But FixedString(N) is not.
+      */
+    virtual bool haveSubtypes() const = 0;
+
+    /** Can appear in table definition.
+      * Counterexamples: Interval, Nothing.
+      */
+    virtual bool cannotBeStoredInTables() const { return false; };
+
+    /** In text formats that render "pretty" tables,
+      *  is it better to align value right in table cell.
+      * Examples: numbers, even nullable.
+      */
+    virtual bool shouldAlignRightInPrettyFormats() const { return false; };
+
+    /** Does formatted value in any text format can contain anything but valid UTF8 sequences.
+      * Example: String (because it can contain arbitary bytes).
+      * Counterexamples: numbers, Date, DateTime.
+      * For Enum, it depends.
+      */
+    virtual bool textCanContainOnlyValidUTF8() const { return false; };
+
+    /** Is it possible to compare for less/greater, to calculate min/max?
+      * Not necessarily totally comparable. For example, floats are comparable despite the fact that NaNs compares to nothing.
+      * The same for nullable of comparable types: they are comparable (but not totally-comparable).
+      */
+    virtual bool isComparable() const { return false; };
+
+    /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
+      * Example: String, but not FixedString.
+      */
+    virtual bool canBeComparedWithCollation() const { return false; };
+
+    /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
+      *  and "simple" enough (not String, FixedString) to be used as version number
+      *  (to select rows with maximum version).
+      */
+    virtual bool canBeUsedAsVersion() const { return false; };
+
+    /** Values of data type can be summed. Example: numbers, even nullable. Not Date/DateTime.
+      */
+    virtual bool isSummable() const { return false; };
+
+    /** Can be used in operations like bit and, bit shift, bit not, etc.
+      */
+    virtual bool canBeUsedInBitOperations() const { return false; };
+
+    /** Can be used in boolean context (WHERE, HAVING).
+      * UInt8, maybe nullable.
+      */
+    virtual bool canBeUsedInBooleanContext() const { return false; };
+
+    /** Integers, floats, not Nullable. Not Enums. Not Date/DateTime.
+      */
+    virtual bool isNumber() const { return false; };
+
+    /** Integers. Not Nullable. Not Enums. Not Date/DateTime.
+      */
+    virtual bool isInteger() const { return false; };
+    virtual bool isUnsignedInteger() const { return false; };
+
+    virtual bool isDateOrDateTime() const { return false; };
+
+    /** Numbers, Enums, Date, DateTime. Not nullable.
+      */
+    virtual bool isValueRepresentedByNumber() const { return false; };
+
+    /** Integers, Enums, Date, DateTime. Not nullable.
+      */
+    virtual bool isValueRepresentedByInteger() const { return false; };
+
+    /** Values are unambiguously identified by contents of contiguous memory region,
+      *  that can be obtained by IColumn::getDataAt method.
+      * Examples: numbers, Date, DateTime, String, FixedString,
+      *  and Arrays of numbers, Date, DateTime, FixedString, Enum, but not String.
+      *  (because Array(String) values became ambiguous if you concatenate Strings).
+      * Counterexamples: Nullable, Tuple.
+      */
+    virtual bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const { return false; };
+
+    virtual bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const
+    {
+        return isValueRepresentedByNumber() || isFixedString();
+    };
+
+    virtual bool isString() const { return false; };
+    virtual bool isFixedString() const { return false; };
+    virtual bool isStringOrFixedString() const { return isString() || isFixedString(); };
+
+    /** Example: numbers, Date, DateTime, FixedString, Enum... Nullable and Tuple of such types.
+      * Counterexamples: String, Array.
+      * It's Ok to return false for AggregateFunction despite the fact that some of them have fixed size state.
+      */
+    virtual bool haveMaximumSizeOfValue() const { return false; };
+
+    /** Size in amount of bytes in memory. Throws an exception if not haveMaximumSizeOfValue.
+      */
+    virtual size_t getMaximumSizeOfValueInMemory() const { return getSizeOfValueInMemory(); }
+
+    /** Throws an exception if value is not of fixed size.
+      */
+    virtual size_t getSizeOfValueInMemory() const;
+
+    /** Integers (not floats), Enum, String, FixedString.
+      */
+    virtual bool isCategorial() const { return false; };
+
+    virtual bool isEnum() const { return false; };
+
+    virtual bool isNullable() const { return false; }
+
+    /** Is this type can represent only NULL value? (It also implies isNullable)
+      */
+    virtual bool onlyNull() const { return false; }
+
+    /** If this data type cannot be wrapped in Nullable data type.
+      */
+    virtual bool canBeInsideNullable() const { return false; };
+
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);

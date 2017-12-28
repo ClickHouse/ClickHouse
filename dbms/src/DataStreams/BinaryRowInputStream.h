@@ -1,12 +1,12 @@
 #pragma once
 
 #include <DataStreams/IRowInputStream.h>
+#include <Core/Block.h>
 
 
 namespace DB
 {
 
-class Block;
 class ReadBuffer;
 
 
@@ -15,12 +15,13 @@ class ReadBuffer;
 class BinaryRowInputStream : public IRowInputStream
 {
 public:
-    BinaryRowInputStream(ReadBuffer & istr_);
+    BinaryRowInputStream(ReadBuffer & istr_, const Block & header_);
 
-    bool read(Block & block) override;
+    bool read(MutableColumns & columns) override;
 
 private:
     ReadBuffer & istr;
+    Block header;
 };
 
 }

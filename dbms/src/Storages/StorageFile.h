@@ -33,7 +33,7 @@ public:
 
     const NamesAndTypesList & getColumnsListImpl() const override
     {
-        return *columns;
+        return columns;
     }
 
     BlockInputStreams read(
@@ -67,7 +67,7 @@ protected:
         const std::string & db_dir_path,
         const std::string & table_name_,
         const std::string & format_name_,
-        const NamesAndTypesListPtr & columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
@@ -77,7 +77,7 @@ private:
 
     std::string table_name;
     std::string format_name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
     Context & context_global;
 
     std::string path;

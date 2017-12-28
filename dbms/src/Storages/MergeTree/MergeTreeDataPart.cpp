@@ -13,7 +13,6 @@
 #include <Common/StringUtils.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Columns/ColumnNullable.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
@@ -649,13 +648,13 @@ void MergeTreeDataPart::loadIndex()
 
     if (key_size)
     {
-        index.clear();
-        index.resize(key_size);
+        MutableColumns loaded_index;
+        loaded_index.resize(key_size);
 
         for (size_t i = 0; i < key_size; ++i)
         {
-            index[i] = storage.primary_key_data_types[i]->createColumn();
-            index[i]->reserve(marks_count);
+            loaded_index[i] = storage.primary_key_data_types[i]->createColumn();
+            loaded_index[i]->reserve(marks_count);
         }
 
         String index_path = getFullPath() + "primary.idx";
@@ -663,16 +662,18 @@ void MergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i)
             for (size_t j = 0; j < key_size; ++j)
-                storage.primary_key_data_types[j]->deserializeBinary(*index[j].get(), index_file);
+                storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j].get(), index_file);
 
         for (size_t i = 0; i < key_size; ++i)
-            if (index[i]->size() != marks_count)
+            if (loaded_index[i]->size() != marks_count)
                 throw Exception("Cannot read all data from index file " + index_path
-                    + "(expected size: " + toString(marks_count) + ", read: " + toString(index[i]->size()) + ")",
+                    + "(expected size: " + toString(marks_count) + ", read: " + toString(loaded_index[i]->size()) + ")",
                     ErrorCodes::CANNOT_READ_ALL_DATA);
 
         if (!index_file.eof())
             throw Exception("Index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+
+        index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 
     size_in_bytes = calculateTotalSize(getFullPath());
@@ -742,10 +743,10 @@ void MergeTreeDataPart::loadRowsCount()
             const auto checksum = tryGetBinChecksum(column.name);
 
             /// Should be fixed non-nullable column
-            if (!checksum || !column_col->isFixed() || column_col->isNullable())
+            if (!checksum || !column_col->isFixedAndContiguous())
                 continue;
 
-            size_t sizeof_field = column_col->sizeOfField();
+            size_t sizeof_field = column_col->sizeOfValueIfFixed();
             rows_count = checksum->uncompressed_size / sizeof_field;
 
             if (checksum->uncompressed_size % sizeof_field != 0)
@@ -772,7 +773,7 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 {
     std::shared_lock<std::shared_mutex> part_lock(columns_lock);
 
-    for (const NameAndTypePair & name_type : *storage.columns)
+    for (const NameAndTypePair & name_type : storage.columns)
     {
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {

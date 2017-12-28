@@ -17,6 +17,13 @@ import collections
 import os
 import sys
 
+from recommonmark.parser import CommonMarkParser
+from recommonmark.transform import AutoStructify
+
+source_parsers = {
+    '.md': CommonMarkParser,
+}
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
@@ -41,7 +48,7 @@ templates_path = [
 ]
 
 # The suffix of source filenames.
-source_suffix = '.rst'
+source_suffix = [ '.rst', '.md' ]
 
 # The encoding of source files.
 #source_encoding = 'utf-8-sig'
@@ -299,3 +306,5 @@ def add_filters(app):
 def setup(app):
     app.add_javascript('custom.js')
     app.connect(str('builder-inited'), add_filters)
+    app.add_config_value('recommonmark_config', {'enable_eval_rst': True}, True)
+    app.add_transform(AutoStructify)

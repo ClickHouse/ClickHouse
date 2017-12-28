@@ -44,7 +44,7 @@ namespace
 
 Field getValueFromConstantColumn(const ColumnPtr & column)
 {
-    if (!column->isConst())
+    if (!column->isColumnConst())
         throw Exception("Logical error: expected that column is constant", ErrorCodes::LOGICAL_ERROR);
     if (column->size() != 1)
         throw Exception("Logical error: expected that column with constant has single element", ErrorCodes::LOGICAL_ERROR);
@@ -173,8 +173,6 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     {
         /// Note that aggregate function could never be constant expression.
 
-        aggregate_function_ptr->setArguments(argument_types);
-
         /// (?) Replace function name to canonical one. Because same function could be referenced by different names.
         // function->name = aggregate_function_ptr->getName();
 
@@ -221,7 +219,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
             String child_name = child->getColumnName();
             const TypeAndConstantInference::ExpressionInfo & child_info = info.at(child_name);
             columns_for_analysis.emplace_back(
-                child_info.is_constant_expression ? child_info.data_type->createConstColumn(1, child_info.value) : nullptr,
+                child_info.is_constant_expression ? child_info.data_type->createColumnConst(1, child_info.value) : nullptr,
                 child_info.data_type,
                 child_name);
 
@@ -249,7 +247,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         function_ptr->execute(block_with_constants, argument_numbers, result_position);
 
         const auto & result_column = block_with_constants.getByPosition(result_position).column;
-        if (result_column->isConst())
+        if (result_column->isColumnConst())
         {
             expression_info.is_constant_expression = true;
             expression_info.value = (*result_column)[0];

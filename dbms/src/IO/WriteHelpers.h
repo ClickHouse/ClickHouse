@@ -638,7 +638,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 
 /// Methods for output in binary format.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -651,11 +651,11 @@ inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBi
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value, void>::type
+inline std::enable_if_t<std::is_integral_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
-inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
@@ -681,7 +681,7 @@ inline void writeText(const UInt128 &, WriteBuffer &)
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
@@ -703,7 +703,7 @@ inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
@@ -732,7 +732,7 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }

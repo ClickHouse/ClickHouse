@@ -200,15 +200,21 @@ void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 }
 
 
-ColumnPtr DataTypeFixedString::createColumn() const
+MutableColumnPtr DataTypeFixedString::createColumn() const
 {
-    return std::make_shared<ColumnFixedString>(n);
+    return ColumnFixedString::create(n);
+}
+
+
+bool DataTypeFixedString::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
 }
 
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.size() != 1)
+    if (!arguments || arguments->children.size() != 1)
         throw Exception("FixedString data type family must have exactly one argument - size in bytes", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const ASTLiteral * argument = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
@@ -222,6 +228,9 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeFixedString(DataTypeFactory & factory)
 {
     factory.registerDataType("FixedString", create);
+
+    /// Compatibility alias.
+    factory.registerDataType("BINARY", create, DataTypeFactory::CaseInsensitive);
 }
 
 }
