@@ -149,6 +149,7 @@ target_link_libraries (clickhouse_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
+    ${Poco_Data_LIBRARY}
     ${EXECINFO_LIBRARY}
 )
 
@@ -163,7 +164,6 @@ target_link_libraries (dbms
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
-    ${Poco_Data_LIBRARY}
     ${BTRIE_LIBRARIES}
 )
 

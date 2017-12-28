@@ -1,9 +1,11 @@
+#include <sparsehash/dense_hash_map>
 #include <unistd.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FieldVisitors.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/parseAddress.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -29,13 +31,19 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageODBC.h>
 #include <Storages/StorageDictionary.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Common/config.h>
+
 #if USE_RDKAFKA
 #include <Storages/StorageKafka.h>
+#endif
+
+#if USE_MYSQL
+#include <Storages/StorageMySQL.h>
 #endif
 
 
@@ -583,6 +591,55 @@ StoragePtr StorageFactory::get(
             key_names, kind, strictness,
             columns, materialized_columns, alias_columns, column_defaults);
     }
+    else if (name == "MySQL")
+    {
+#if USE_MYSQL
+        if (!args_ptr || args_ptr->size() != 5)
+            throw Exception(
+                "Storage MySQL requires exactly 5 parameters: MySQL('host:port', database, table, 'user', 'password').",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        ASTs & args = *args_ptr;
+        for (size_t i = 0; i < 5; ++i)
+            args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], local_context);
+
+        /// 3306 is the default MySQL port.
+        auto parsed_host_port = parseAddress(static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>(), 3306);
+
+        const String & remote_database = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        const String & remote_table = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+        const String & username = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
+        const String & password = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+
+        mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
+
+        return StorageMySQL::create(
+            table_name,
+            std::move(pool),
+            remote_database,
+            remote_table,
+            columns);
+#else
+        throw Exception("Storage `MySQL` is disabled because ClickHouse was built without Kafka support.", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+    }
+    else if (name == "ODBC")
+    {
+        if (!args_ptr || args_ptr->size() != 3)
+            throw Exception(
+                "Storage ODBC requires exactly 3 parameters: ODBC('DSN', database, table).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        ASTs & args = *args_ptr;
+        for (size_t i = 0; i < 2; ++i)
+            args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], local_context);
+
+        return StorageODBC::create(table_name,
+            static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>(),
+            columns);
+    }
     else if (name == "Memory")
     {
         check_arguments_empty();
@@ -777,7 +834,7 @@ StoragePtr StorageFactory::get(
             materialized_columns, alias_columns, column_defaults,
             brokers, group, topics, format, schema, num_consumers);
 #else
-            throw Exception("Storage `Kafka` disabled because ClickHouse built without Kafka support.", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception("Storage `Kafka` is disabled because ClickHouse was built without Kafka support.", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else if (endsWith(name, "MergeTree"))
