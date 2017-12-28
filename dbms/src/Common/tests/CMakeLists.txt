@@ -65,3 +65,6 @@ target_link_libraries (integer_hash_tables_and_hashes clickhouse_common_io)
 
 add_executable (allocator allocator.cpp)
 target_link_libraries (allocator clickhouse_common_io)
+
+add_executable (cow_columns cow_columns.cpp)
+target_link_libraries (cow_columns clickhouse_common_io)

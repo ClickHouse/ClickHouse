@@ -1,11 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-    #include <Poco/Data/SessionPool.h>
-#pragma GCC diagnostic pop
-
+#include <Common/PocoSessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
@@ -33,9 +28,11 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     load_all_query{query_builder.composeLoadAllQuery()},
     invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
-    pool = createAndCheckResizePocoSessionPool([&] () { return std::make_shared<Poco::Data::SessionPool>(
-        config.getString(config_prefix + ".connector", "ODBC"),
-        config.getString(config_prefix + ".connection_string"));
+    pool = createAndCheckResizePocoSessionPool([&]
+    {
+        return std::make_shared<Poco::Data::SessionPool>(
+            config.getString(config_prefix + ".connector", "ODBC"),
+            config.getString(config_prefix + ".connection_string"));
     });
 }
 
@@ -52,21 +49,6 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     load_all_query{other.load_all_query},
     invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
 {
-}
-
-std::shared_ptr<Poco::Data::SessionPool> ODBCDictionarySource::createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
-{
-    static std::mutex mutex;
-
-    Poco::ThreadPool & pool = Poco::ThreadPool::defaultPool();
-
-    /// NOTE: The lock don't guarantee that external users of the pool don't change its capacity
-    std::unique_lock<std::mutex> lock(mutex);
-
-    if (pool.available() == 0)
-        pool.addCapacity(2 * std::max(pool.capacity(), 1));
-
-    return pool_constr();
 }
 
 BlockInputStreamPtr ODBCDictionarySource::loadAll()
@@ -119,7 +101,7 @@ bool ODBCDictionarySource::isModified() const
 std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     Block sample_block;
-    ColumnPtr column(std::make_shared<ColumnString>());
+    ColumnPtr column(ColumnString::create());
     sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
     ODBCBlockInputStream block_input_stream(pool->get(), request, sample_block, 1);
     return readInvalidateQuery(block_input_stream);

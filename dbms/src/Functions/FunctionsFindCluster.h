@@ -140,7 +140,7 @@ public:
 
         executeImplTyped(in_untyped, out_untyped, centroids_array_untyped);
 
-        block.getByPosition(result).column = column_result;
+        block.getByPosition(result).column = std::move(column_result);
     }
 
 protected:

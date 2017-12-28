@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 StorageMerge::StorageMerge(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -302,14 +302,12 @@ BlockInputStreams StorageMerge::read(
 /// Construct a block consisting only of possible values of virtual columns
 Block StorageMerge::getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const
 {
-    Block res;
-    ColumnWithTypeAndName _table(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_table");
+    auto column = ColumnString::create();
 
     for (const auto & elem : selected_tables)
-        _table.column->insert(elem.first->getTableName());
+        column->insert(elem.first->getTableName());
 
-    res.insert(_table);
-    return res;
+    return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_table")};
 }
 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
@@ -341,11 +339,11 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
-        *columns, materialized_columns, alias_columns, column_defaults, {});
+        columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 }

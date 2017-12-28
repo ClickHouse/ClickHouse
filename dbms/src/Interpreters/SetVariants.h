@@ -33,16 +33,16 @@ struct SetMethodOneNumber
         const FieldType * vec;
 
         /** Called at the start of each block processing.
-          * Sets the variables required for the other methods called in internal loops.
+          * Sets the variables required for the other methods called in inner loops.
           */
-        void init(const ConstColumnPlainPtrs & key_columns)
+        void init(const ColumnRawPtrs & key_columns)
         {
             vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
         }
 
         /// Get key from key columns for insertion into hash table.
         Key getKey(
-            const ConstColumnPlainPtrs & /*key_columns*/,
+            const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,                 /// Number of key columns.
             size_t i,                             /// From what row of the block I get the key.
             const Sizes & /*key_sizes*/) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
@@ -67,10 +67,10 @@ struct SetMethodString
 
     struct State
     {
-        const ColumnString::Offsets_t * offsets;
+        const ColumnString::Offsets * offsets;
         const ColumnString::Chars_t * chars;
 
-        void init(const ConstColumnPlainPtrs & key_columns)
+        void init(const ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnString & column_string = static_cast<const ColumnString &>(column);
@@ -79,7 +79,7 @@ struct SetMethodString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs &,
+            const ColumnRawPtrs &,
             size_t,
             size_t i,
             const Sizes &) const
@@ -110,7 +110,7 @@ struct SetMethodFixedString
         size_t n;
         const ColumnFixedString::Chars_t * chars;
 
-        void init(const ConstColumnPlainPtrs & key_columns)
+        void init(const ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
@@ -119,7 +119,7 @@ struct SetMethodFixedString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs &,
+            const ColumnRawPtrs &,
             size_t,
             size_t i,
             const Sizes &) const
@@ -148,7 +148,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, true>
 {
 protected:
-    void init(const ConstColumnPlainPtrs & key_columns)
+    void init(const ColumnRawPtrs & key_columns)
     {
         null_maps.reserve(key_columns.size());
         actual_columns.reserve(key_columns.size());
@@ -158,8 +158,8 @@ protected:
             if (col->isColumnNullable())
             {
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                actual_columns.push_back(nullable_col.getNestedColumn().get());
-                null_maps.push_back(nullable_col.getNullMapColumn().get());
+                actual_columns.push_back(&nullable_col.getNestedColumn());
+                null_maps.push_back(&nullable_col.getNullMapColumn());
             }
             else
             {
@@ -172,7 +172,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    inline const ConstColumnPlainPtrs & getActualColumns() const
+    inline const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }
@@ -201,8 +201,8 @@ protected:
     }
 
 private:
-    ConstColumnPlainPtrs actual_columns;
-    ConstColumnPlainPtrs null_maps;
+    ColumnRawPtrs actual_columns;
+    ColumnRawPtrs null_maps;
 };
 
 /// Case where nullable keys are not supported.
@@ -210,13 +210,13 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    void init(const ConstColumnPlainPtrs &)
+    void init(const ColumnRawPtrs &)
     {
         throw Exception{"Internal error: calling init() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
-    const ConstColumnPlainPtrs & getActualColumns() const
+    const ColumnRawPtrs & getActualColumns() const
     {
         throw Exception{"Internal error: calling getActualColumns() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
@@ -246,14 +246,14 @@ struct SetMethodKeysFixed
     public:
         using Base = set_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
 
-        void init(const ConstColumnPlainPtrs & key_columns)
+        void init(const ColumnRawPtrs & key_columns)
         {
             if (has_nullable_keys)
                 Base::init(key_columns);
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
+            const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
             const Sizes & key_sizes) const
@@ -282,12 +282,12 @@ struct SetMethodHashed
 
     struct State
     {
-        void init(const ConstColumnPlainPtrs &)
+        void init(const ColumnRawPtrs &)
         {
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
+            const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
             const Sizes &) const
@@ -387,7 +387,7 @@ struct SetVariantsTemplate: public Variant
 
     bool empty() const { return type == Type::EMPTY; }
 
-    static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     void init(Type type_);
 

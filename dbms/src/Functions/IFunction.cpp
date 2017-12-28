@@ -28,13 +28,17 @@ namespace
 ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
 {
     ColumnPtr result_null_map_column;
-    bool shared_result_map_column = true;
 
     /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
     if (src->onlyNull())
         return src;
     else if (src->isColumnNullable())
-        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumn();
+    {
+        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr();
+        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
+    }
 
     for (const auto & arg : args)
     {
@@ -51,23 +55,23 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
 
         if (elem.column->isColumnNullable())
         {
-            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumn();
+            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
             if (!result_null_map_column)
+            {
                 result_null_map_column = null_map_column;
+            }
             else
             {
-                if (shared_result_map_column)
-                {
-                    result_null_map_column = result_null_map_column->clone();
-                    shared_result_map_column = false;
-                }
+                MutableColumnPtr mutable_result_null_map_column = result_null_map_column->mutate();
 
-                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
                     if (src_null_map[i])
                         result_null_map[i] = 1;
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
             }
         }
     }
@@ -75,10 +79,10 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
     if (!result_null_map_column)
         return makeNullable(src);
 
-    if (src->isColumnConst())
-        return std::make_shared<ColumnNullable>(src->convertToFullColumnIfConst(), result_null_map_column);
+    if (src_not_nullable->isColumnConst())
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
     else
-        return std::make_shared<ColumnNullable>(src, result_null_map_column);
+        return ColumnNullable::create(src_not_nullable, result_null_map_column);
 }
 
 
@@ -174,6 +178,7 @@ bool defaultImplementationForConstantArguments(
     ColumnNumbers arguments_to_remain_constants = func.getArgumentsThatAreAlwaysConstant();
 
     Block temporary_block;
+    bool have_converted_columns = false;
 
     size_t arguments_size = args.size();
     for (size_t arg_num = 0; arg_num < arguments_size; ++arg_num)
@@ -183,8 +188,18 @@ bool defaultImplementationForConstantArguments(
         if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
             temporary_block.insert(column);
         else
+        {
+            have_converted_columns = true;
             temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
+        }
     }
+
+    /** When using default implementation for constants, the function requires at least one argument
+      *  not in "arguments_to_remain_constants" set. Otherwise we get infinite recursion.
+      */
+    if (!have_converted_columns)
+        throw Exception("Number of arguments for function " + func.getName() + " doesn't match: the function requires more arguments",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     temporary_block.insert(block.getByPosition(result));
 
@@ -194,7 +209,7 @@ bool defaultImplementationForConstantArguments(
 
     func.execute(temporary_block, temporary_argument_numbers, arguments_size);
 
-    block.getByPosition(result).column = std::make_shared<ColumnConst>(temporary_block.getByPosition(arguments_size).column, block.rows());
+    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, block.rows());
     return true;
 }
 

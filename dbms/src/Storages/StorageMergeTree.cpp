@@ -34,7 +34,7 @@ StorageMergeTree::StorageMergeTree(
     const String & path_,
     const String & database_name_,
     const String & table_name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -55,7 +55,7 @@ StorageMergeTree::StorageMergeTree(
          materialized_columns_, alias_columns_, column_defaults_,
          context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
          sampling_expression_, merging_params_,
-         settings_, database_name_ + "." + table_name, false, attach),
+         settings_, false, attach),
     reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -109,7 +109,7 @@ BlockInputStreams StorageMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, nullptr, 0);
+    return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)

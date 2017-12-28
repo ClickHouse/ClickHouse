@@ -227,7 +227,18 @@ void ExpressionAction::prepare(Block & sample_block)
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
                 if (!col.column->isColumnConst())
+                {
                     col.column = nullptr;
+                }
+                else
+                {
+                    /// All constant (literal) columns in block are added with size 1.
+                    /// But if there was no columns in block before executing a function, the result has size 0.
+                    /// Change the size to 1.
+
+                    if (col.column->empty())
+                        col.column = col.column->cloneResized(1);
+                }
             }
             else
             {
@@ -355,7 +366,7 @@ void ExpressionAction::execute(Block & block) const
                 throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 
             ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
-            if (auto converted = any_array_ptr->convertToFullColumnIfConst())
+            if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
                 any_array_ptr = converted;
 
             const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
@@ -377,7 +388,7 @@ void ExpressionAction::execute(Block & block) const
                 }
 
                 any_array_ptr = non_empty_array_columns.begin()->second;
-                if (auto converted = any_array_ptr->convertToFullColumnIfConst())
+                if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
                     any_array_ptr = converted;
 
                 any_array = &typeid_cast<const ColumnArray &>(*any_array_ptr);
@@ -395,7 +406,7 @@ void ExpressionAction::execute(Block & block) const
 
                     ColumnPtr array_ptr = array_join_is_left ? non_empty_array_columns[current.name] : current.column;
 
-                    if (auto converted = array_ptr->convertToFullColumnIfConst())
+                    if (ColumnPtr converted = array_ptr->convertToFullColumnIfConst())
                         array_ptr = converted;
 
                     const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
@@ -676,7 +687,7 @@ void ExpressionActions::execute(Block & block) const
 
 void ExpressionActions::executeOnTotals(Block & block) const
 {
-    /// If there is `totals` in the subquery for JOIN, but we do not, then take the block with the default values instead of `totals`.
+    /// If there is `totals` in the subquery for JOIN, but we do not have totals, then take the block with the default values instead of `totals`.
     if (!block)
     {
         bool has_totals_in_join = false;
@@ -693,9 +704,9 @@ void ExpressionActions::executeOnTotals(Block & block) const
         {
             for (const auto & name_and_type : input_columns)
             {
-                ColumnWithTypeAndName elem(name_and_type.type->createColumn(), name_and_type.type, name_and_type.name);
-                elem.column->insertDefault();
-                block.insert(std::move(elem));
+                auto column = name_and_type.type->createColumn();
+                column->insertDefault();
+                block.insert(ColumnWithTypeAndName(std::move(column), name_and_type.type, name_and_type.name));
             }
         }
         else
@@ -747,7 +758,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     NameSet unmodified_columns;
 
     {
-        NamesAndTypesList sample_columns = sample_block.getColumnsList();
+        NamesAndTypesList sample_columns = sample_block.getNamesAndTypesList();
         for (NamesAndTypesList::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
             unmodified_columns.insert(it->name);
     }
@@ -954,7 +965,7 @@ std::string ExpressionActions::getID() const
     }
 
     ss << ": {";
-    NamesAndTypesList output_columns = sample_block.getColumnsList();
+    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
     for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
     {
         if (it != output_columns.begin())
@@ -979,7 +990,7 @@ std::string ExpressionActions::dumpActions() const
         ss << actions[i].toString() << '\n';
 
     ss << "\noutput:\n";
-    NamesAndTypesList output_columns = sample_block.getColumnsList();
+    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
     for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
         ss << it->name << " " << it->type->getName() << "\n";
 
@@ -1096,7 +1107,7 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-    ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumns();
+    ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumnsWithTypeAndName();
     steps.push_back(Step(std::make_shared<ExpressionActions>(columns, settings)));
 }
 

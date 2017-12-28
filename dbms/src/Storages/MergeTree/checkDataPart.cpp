@@ -182,7 +182,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         if (!primary_key_data_types.empty())
         {
             size_t key_size = primary_key_data_types.size();
-            Columns tmp_columns(key_size);
+            MutableColumns tmp_columns(key_size);
 
             for (size_t j = 0; j < key_size; ++j)
                 tmp_columns[j] = primary_key_data_types[j]->createColumn();
@@ -277,7 +277,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             /// Read index_granularity rows from column.
             /// NOTE Shared array sizes of Nested columns are read more than once. That's Ok.
 
-            ColumnPtr tmp_column = name_type.type->createColumn();
+            MutableColumnPtr tmp_column = name_type.type->createColumn();
             name_type.type->deserializeBinaryBulkWithMultipleStreams(
                 *tmp_column,
                 [&](const IDataType::SubstreamPath & substream_path)

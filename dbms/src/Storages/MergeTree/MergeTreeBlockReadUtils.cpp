@@ -97,7 +97,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
     if (!from_update)
         names_set.insert(columns.begin(), columns.end());
 
-    for (const auto & column_with_type_and_name : sample_block.getColumns())
+    for (const auto & column_with_type_and_name : sample_block)
     {
         const String & column_name = column_with_type_and_name.name;
         const ColumnPtr & column_data = column_with_type_and_name.column;

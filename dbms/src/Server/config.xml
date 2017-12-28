@@ -180,6 +180,7 @@
     <!--
         interval - send every X second
         root_path - prefix for keys
+        hostname_in_path - append hostname to root_path (default = true)
         metrics - send data from table system.metrics
         events - send data from table system.events
         asynchronous_metrics - send data from table system.asynchronous_metrics
@@ -191,6 +192,7 @@
         <timeout>0.1</timeout>
         <interval>60</interval>
         <root_path>one_min</root_path>
+        <hostname_in_path>true<hostname_in_path>
 
         <metrics>true</metrics>
         <events>true</events>
@@ -260,10 +262,10 @@
 
             <!- - Conditions. All must be satisfied. Some conditions may be omitted. - ->
             <min_part_size>10000000000</min_part_size>        <!- - Min part size in bytes. - ->
-            <min_part_size_ratio>0.01</min_part_size_ratio>    <!- - Min size of part relative to whole table size. - ->
+            <min_part_size_ratio>0.01</min_part_size_ratio>   <!- - Min size of part relative to whole table size. - ->
 
             <!- - What compression method to use. - ->
-            <method>zstd</method>    <!- - Keep in mind that zstd compression library is highly experimental. - ->
+            <method>zstd</method>
         </case>
     -->
     </compression>

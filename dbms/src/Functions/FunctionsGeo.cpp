@@ -169,7 +169,7 @@ public:
             result_column = executeForType<Float32>(*tuple_columns[0], *tuple_columns[1], block, arguments);
 
         if (const_tuple_col)
-            result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
+            result_column = ColumnConst::create(result_column, const_tuple_col->size());
     }
 
 private:

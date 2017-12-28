@@ -1,7 +1,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -80,7 +80,7 @@ void AlterCommand::apply(
             column_defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
 
         /// Slow, because each time a list is copied
-        columns = *DataTypeNested::expandNestedColumns(columns);
+        columns = Nested::flatten(columns);
     }
     else if (type == DROP_COLUMN)
     {
@@ -325,7 +325,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
             const auto & deduced_type = tmp_column.type;
 
             // column not specified explicitly in the ALTER query may require default_expression modification
-            if (explicit_type->getName() != deduced_type->getName())
+            if (!explicit_type->equals(*deduced_type))
             {
                 const auto default_it = defaults.find(column_name);
 

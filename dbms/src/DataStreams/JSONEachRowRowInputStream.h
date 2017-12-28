@@ -18,15 +18,15 @@ class ReadBuffer;
 class JSONEachRowRowInputStream : public IRowInputStream
 {
 public:
-    JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_);
+    JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, bool skip_unknown_);
 
-    bool read(Block & block) override;
+    bool read(MutableColumns & columns) override;
     bool allowSyncAfterError() const override { return true; };
     void syncAfterError() override;
 
 private:
     ReadBuffer & istr;
-    const Block sample;
+    Block header;
     bool skip_unknown;
 
     /// Buffer for the read from the stream field name. Used when you have to copy it.

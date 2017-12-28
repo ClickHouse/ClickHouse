@@ -140,7 +140,7 @@ static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res) { return res
 template <typename Arg, typename... Args>
 static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res, const Arg & arg, const Args &... args)
 {
-    static_assert(std::is_same<Arg, NamesAndTypesList>::value, "getColumnsMap requires arguments of type NamesAndTypesList");
+    static_assert(std::is_same_v<Arg, NamesAndTypesList>, "getColumnsMap requires arguments of type NamesAndTypesList");
 
     for (const auto & column : arg)
         res.insert({column.name, column.type.get()});
@@ -202,7 +202,7 @@ void ITableDeclaration::check(const NamesAndTypesList & columns) const
             throw Exception("There is no column with name " + column.name + ". There are columns: "
                 + listOfColumns(available_columns), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-        if (column.type->getName() != it->second->getName())
+        if (!column.type->equals(*it->second))
             throw Exception("Type mismatch for column " + column.name + ". Column has type "
                 + it->second->getName() + ", got type " + column.type->getName(), ErrorCodes::TYPE_MISMATCH);
 
@@ -274,7 +274,7 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
             throw Exception("There is no column with name " + column.name + ". There are columns: "
                 + listOfColumns(available_columns), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-        if (column.type->getName() != it->second->getName())
+        if (!column.type->equals(*it->second))
             throw Exception("Type mismatch for column " + column.name + ". Column has type "
                 + it->second->getName() + ", got type " + column.type->getName(), ErrorCodes::TYPE_MISMATCH);
     }

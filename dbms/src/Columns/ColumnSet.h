@@ -14,13 +14,17 @@ using ConstSetPtr = std::shared_ptr<const Set>;
   * Behaves like a constant-column (because the set is one, not its own for each line).
   * This column has a nonstandard value, so it can not be obtained via a normal interface.
   */
-class ColumnSet final : public IColumnDummy
+class ColumnSet final : public COWPtrHelper<IColumnDummy, ColumnSet>
 {
-public:
-    ColumnSet(size_t s_, const ConstSetPtr & data_) : IColumnDummy(s_), data(data_) {}
+private:
+    friend class COWPtrHelper<IColumnDummy, ColumnSet>;
 
+    ColumnSet(size_t s_, const ConstSetPtr & data_) : data(data_) { s = s_; }
+    ColumnSet(const ColumnSet &) = default;
+
+public:
     const char * getFamilyName() const override { return "Set"; }
-    ColumnPtr cloneDummy(size_t s_) const override { return std::make_shared<ColumnSet>(s_, data); }
+    MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
     ConstSetPtr getData() const { return data; }
 

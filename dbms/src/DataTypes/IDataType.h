@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-
+#include <Common/COWPtr.h>
 #include <Core/Field.h>
 
 
@@ -15,9 +15,10 @@ class IDataType;
 struct FormatSettingsJSON;
 
 class IColumn;
-using ColumnPtr = std::shared_ptr<IColumn>;
+using ColumnPtr = COWPtr<IColumn>::Ptr;
+using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
 
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 
@@ -25,6 +26,8 @@ using DataTypes = std::vector<DataTypePtr>;
   * Contains methods for serialization/deserialization.
   * Implementations of this interface represent a data type (example: UInt8)
   *  or parapetric family of data types (example: Array(...)).
+  *
+  * DataType is totally immutable object. You can always share them.
   */
 class IDataType
 {
@@ -40,8 +43,6 @@ public:
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
-
-    virtual DataTypePtr clone() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -81,7 +82,7 @@ public:
         Type type;
 
         /// Index of tuple element, starting at 1.
-        size_t tuple_element = 0;
+        String tuple_element_name;
 
         Substream(Type type) : type(type) {}
     };
@@ -200,11 +201,12 @@ public:
 
     /** Create empty column for corresponding type.
       */
-    virtual ColumnPtr createColumn() const = 0;
+    virtual MutableColumnPtr createColumn() const = 0;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
     ColumnPtr createColumnConst(size_t size, const Field & field) const;
+    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
@@ -217,10 +219,7 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     /// Checks that two instances belong to the same type
-    inline bool equals(const IDataType & rhs) const
-    {
-        return getName() == rhs.getName();
-    }
+    virtual bool equals(const IDataType & rhs) const = 0;
 
     virtual ~IDataType() {}
 
@@ -256,6 +255,12 @@ public:
       */
     virtual bool textCanContainOnlyValidUTF8() const { return false; };
 
+    /** Is it possible to compare for less/greater, to calculate min/max?
+      * Not necessarily totally comparable. For example, floats are comparable despite the fact that NaNs compares to nothing.
+      * The same for nullable of comparable types: they are comparable (but not totally-comparable).
+      */
+    virtual bool isComparable() const { return false; };
+
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */
@@ -275,10 +280,6 @@ public:
       */
     virtual bool canBeUsedInBitOperations() const { return false; };
 
-    /** Unsigned integer.
-      */
-    virtual bool canBeUsedAsNonNegativeArrayIndex() const { return false; };
-
     /** Can be used in boolean context (WHERE, HAVING).
       * UInt8, maybe nullable.
       */
@@ -291,6 +292,7 @@ public:
     /** Integers. Not Nullable. Not Enums. Not Date/DateTime.
       */
     virtual bool isInteger() const { return false; };
+    virtual bool isUnsignedInteger() const { return false; };
 
     virtual bool isDateOrDateTime() const { return false; };
 

@@ -101,6 +101,13 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
+bool DataTypeDateTime::equals(const IDataType & rhs) const
+{
+    /// DateTime with different timezones are equal, because:
+    /// "all types with different time zones are equivalent and may be used interchangingly."
+    return typeid(rhs) == typeid(*this);
+}
+
 
 namespace ErrorCodes
 {

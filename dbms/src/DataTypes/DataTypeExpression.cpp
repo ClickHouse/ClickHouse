@@ -24,4 +24,9 @@ std::string DataTypeExpression::getName() const
     return res;
 }
 
+bool DataTypeExpression::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+}
+
 }

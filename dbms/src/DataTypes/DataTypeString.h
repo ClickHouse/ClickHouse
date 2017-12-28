@@ -19,11 +19,6 @@ public:
         return "String";
     }
 
-    DataTypePtr clone() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -48,15 +43,18 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-    ColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override
     {
         return String();
     }
 
+    bool equals(const IDataType & rhs) const override;
+
     bool isParametric() const override { return false; }
     bool haveSubtypes() const override { return false; }
+    bool isComparable() const override { return true; };
     bool canBeComparedWithCollation() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool isString() const override { return true; };

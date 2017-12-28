@@ -83,6 +83,10 @@ toStartOfFiveMinute
 ~~~~~~~~~~~~~~~~~~~
 Rounds down a date with time to the start of the 5 minute (00:00, 00:05, 00:10...).
 
+toStartOfFifteenMinutes
+~~~~~~~~~~~~~~~~~~~
+Rounds down a date with time to the start of the 15 minutes (00:00, 00:15, 00:30...).
+
 toStartOfHour
 ~~~~~~~~~~~~~
 Rounds down a date with time to the start of the hour.

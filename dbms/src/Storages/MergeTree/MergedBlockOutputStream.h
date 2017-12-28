@@ -140,7 +140,7 @@ private:
 
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
-    MergeTreeData::DataPart::Index index_columns;
+    MutableColumns index_columns;
 };
 
 

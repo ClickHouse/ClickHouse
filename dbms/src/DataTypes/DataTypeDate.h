@@ -10,7 +10,6 @@ class DataTypeDate final : public DataTypeNumberBase<UInt16>
 {
 public:
     const char * getFamilyName() const override { return "Date"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeDate>(); }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -25,6 +24,8 @@ public:
     bool canBeUsedAsVersion() const override { return true; }
     bool isDateOrDateTime() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+
+    bool equals(const IDataType & rhs) const override;
 };
 
 }

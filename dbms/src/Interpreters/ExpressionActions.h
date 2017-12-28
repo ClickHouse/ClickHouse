@@ -26,7 +26,7 @@ class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
 class IDataType;
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -51,7 +51,6 @@ public:
             */
         ARRAY_JOIN,
 
-        /// INNER|LEFT JOIN.
         JOIN,
 
         /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.

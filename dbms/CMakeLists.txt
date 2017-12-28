@@ -71,27 +71,18 @@ list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactor
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
+    src/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     src/AggregateFunctions/AggregateFunctionState.cpp
-    src/AggregateFunctions/AggregateFunctionArray.cpp
-    src/AggregateFunctions/AggregateFunctionNull.cpp
-    src/AggregateFunctions/AggregateFunctionNothing.cpp
-    src/AggregateFunctions/AggregateFunctionForEach.cpp
-    src/AggregateFunctions/AggregateFunctionIf.cpp
-    src/AggregateFunctions/AggregateFunctionMerge.cpp
-    src/AggregateFunctions/AggregateFunctionCount.cpp
+    src/AggregateFunctions/FactoryHelpers.cpp
     src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
     src/AggregateFunctions/IAggregateFunction.h
+    src/AggregateFunctions/IAggregateFunctionCombinator.h
     src/AggregateFunctions/AggregateFunctionFactory.h
+    src/AggregateFunctions/AggregateFunctionCombinatorFactory.h
     src/AggregateFunctions/AggregateFunctionState.h
-    src/AggregateFunctions/AggregateFunctionArray.h
-    src/AggregateFunctions/AggregateFunctionNull.h
-    src/AggregateFunctions/AggregateFunctionNothing.h
-    src/AggregateFunctions/AggregateFunctionForEach.h
-    src/AggregateFunctions/AggregateFunctionIf.h
-    src/AggregateFunctions/AggregateFunctionMerge.h
-    src/AggregateFunctions/AggregateFunctionCount.h
+    src/AggregateFunctions/FactoryHelpers.h
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
@@ -149,12 +140,6 @@ if (NOT ARCH_ARM)
     set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
-    set(PLATFORM_LIBS "execinfo")
-else()
-    set(PLATFORM_LIBS "")
-endif()
-
 target_link_libraries (clickhouse_common_io
     common
     string_utils
@@ -164,7 +149,8 @@ target_link_libraries (clickhouse_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
-    ${PLATFORM_LIBS}
+    ${Poco_Data_LIBRARY}
+    ${EXECINFO_LIBRARY}
 )
 
 target_link_libraries (dbms
@@ -178,7 +164,6 @@ target_link_libraries (dbms
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
-    ${Poco_Data_LIBRARY}
     ${BTRIE_LIBRARIES}
 )
 
@@ -231,8 +216,9 @@ endif ()
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
+add_subdirectory (tests)
+
 if (ENABLE_TESTS)
-    add_subdirectory (tests)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})

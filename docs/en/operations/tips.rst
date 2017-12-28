@@ -132,7 +132,7 @@ ZooKeeper
 Probably you already have ZooKeeper for other purposes.
 It's Ok to use existing ZooKeeper installation if it is not overloaded.
 
-Use recent version of ZooKeeper. At least 3.5 is Ok. Version in your Linux package repository might be outdated.
+Use recent version of ZooKeeper. At least 3.4.9 is Ok. Version in your Linux package repository might be outdated.
 
 With default settings, ZooKeeper have time bomb:
 

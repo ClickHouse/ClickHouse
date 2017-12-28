@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
 #include <Core/Types.h>
+#include <Core/Defines.h>
 #include <common/strong_typedef.h>
 
 
@@ -107,8 +108,7 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs,
-        [[maybe_unused]] typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, void>::type * unused = nullptr)
+    Field(T && rhs, std::integral_constant<int, Field::TypeToEnum<std::decay_t<T>>::value> * = nullptr)
     {
         createConcrete(std::forward<T>(rhs));
     }
@@ -168,10 +168,10 @@ public:
     }
 
     template <typename T>
-    typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, Field &>::type
+    std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
     operator= (T && rhs)
     {
-        if (which != TypeToEnum<typename std::decay<T>::type>::value)
+        if (which != TypeToEnum<std::decay_t<T>>::value)
         {
             destroy();
             createConcrete(std::forward<T>(rhs));
@@ -196,21 +196,21 @@ public:
 
     template <typename T> T & get()
     {
-        using TWithoutRef = typename std::remove_reference<T>::type;
-        TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(storage);
+        using TWithoutRef = std::remove_reference_t<T>;
+        TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(&storage);
         return *ptr;
     };
 
     template <typename T> const T & get() const
     {
-        using TWithoutRef = typename std::remove_reference<T>::type;
-        const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(storage);
+        using TWithoutRef = std::remove_reference_t<T>;
+        const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(&storage);
         return *ptr;
     };
 
     template <typename T> bool tryGet(T & result)
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             return false;
         result = get<T>();
@@ -219,7 +219,7 @@ public:
 
     template <typename T> bool tryGet(T & result) const
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             return false;
         result = get<T>();
@@ -228,7 +228,7 @@ public:
 
     template <typename T> T & safeGet()
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
         return get<T>();
@@ -236,7 +236,7 @@ public:
 
     template <typename T> const T & safeGet() const
     {
-        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
         if (which != requested)
             throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
         return get<T>();
@@ -327,11 +327,10 @@ public:
     }
 
 private:
-    static const size_t storage_size = std::max({
-        DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        sizeof(Null), sizeof(UInt64), sizeof(UInt128), sizeof(Int64), sizeof(Float64), sizeof(String), sizeof(Array), sizeof(Tuple)});
+    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+        Null, UInt64, UInt128, Int64, Float64, String, Array, Tuple
+        > storage;
 
-    char storage[storage_size] __attribute__((aligned(8)));
     Types::Which which;
 
 
@@ -339,8 +338,8 @@ private:
     template <typename T>
     void createConcrete(T && x)
     {
-        using JustT = typename std::decay<T>::type;
-        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+        using JustT = std::decay_t<T>;
+        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
         new (ptr) JustT(std::forward<T>(x));
         which = TypeToEnum<JustT>::value;
     }
@@ -349,8 +348,8 @@ private:
     template <typename T>
     void assignConcrete(T && x)
     {
-        using JustT = typename std::decay<T>::type;
-        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+        using JustT = std::decay_t<T>;
+        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
 
@@ -398,7 +397,7 @@ private:
 
     void create(const char * data, size_t size)
     {
-        String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
+        String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(&storage);
         new (ptr) String(data, size);
         which = Types::String;
     }
@@ -408,7 +407,7 @@ private:
         create(reinterpret_cast<const char *>(data), size);
     }
 
-    __attribute__((__always_inline__)) void destroy()
+    ALWAYS_INLINE void destroy()
     {
         if (which < Types::MIN_NON_POD)
             return;
@@ -434,7 +433,7 @@ private:
     template <typename T>
     void destroy()
     {
-        T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
+        T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
     }
 };
