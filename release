@@ -52,6 +52,9 @@ then
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
+    export DEB_CC=clang-5.0
+    export DEB_CXX=clang++-5.0
+    export EXTRAPACKAGES=clang-5.0
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
