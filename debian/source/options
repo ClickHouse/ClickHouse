@@ -1,0 +1,2 @@
+tar-ignore
+tar-ignore="contrib/poco/openssl/*"
