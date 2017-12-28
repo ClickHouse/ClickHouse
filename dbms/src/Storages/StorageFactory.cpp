@@ -31,15 +31,19 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
-#include <Storages/StorageMySQL.h>
 #include <Storages/StorageODBC.h>
 #include <Storages/StorageDictionary.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Common/config.h>
+
 #if USE_RDKAFKA
 #include <Storages/StorageKafka.h>
+#endif
+
+#if USE_MYSQL
+#include <Storages/StorageMySQL.h>
 #endif
 
 
@@ -589,6 +593,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "MySQL")
     {
+#if USE_MYSQL
         if (!args_ptr || args_ptr->size() != 5)
             throw Exception(
                 "Storage MySQL requires exactly 5 parameters: MySQL('host:port', database, table, 'user', 'password').",
@@ -614,6 +619,9 @@ StoragePtr StorageFactory::get(
             remote_database,
             remote_table,
             columns);
+#else
+        throw Exception("Storage `MySQL` is disabled because ClickHouse was built without Kafka support.", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
     }
     else if (name == "ODBC")
     {
@@ -826,7 +834,7 @@ StoragePtr StorageFactory::get(
             materialized_columns, alias_columns, column_defaults,
             brokers, group, topics, format, schema, num_consumers);
 #else
-            throw Exception("Storage `Kafka` disabled because ClickHouse built without Kafka support.", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception("Storage `Kafka` is disabled because ClickHouse was built without Kafka support.", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else if (endsWith(name, "MergeTree"))
