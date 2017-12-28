@@ -147,6 +147,12 @@ case "$DIST" in
         ;;
 esac
 
+case "$ARCH" in
+    "arm64")
+        EXTRAPACKAGES+=" libzookeeper-mt-dev "
+        ;;
+esac
+
 
 export CCACHE_PREFIX=
 
