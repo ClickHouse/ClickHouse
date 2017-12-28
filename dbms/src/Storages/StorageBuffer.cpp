@@ -4,6 +4,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -601,6 +602,61 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         columns, materialized_columns, alias_columns, column_defaults, {});
+}
+
+
+void registerStorageBuffer(StorageFactory & factory)
+{
+    /** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
+      *
+      * db, table - in which table to put data from buffer.
+      * num_buckets - level of parallelism.
+      * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
+      */
+
+    factory.registerStorage("Buffer", [](
+        ASTs & args,
+        const String &,
+        const String & table_name,
+        const String &,
+        Context & local_context,
+        Context & context,
+        const NamesAndTypesList & columns,
+        const NamesAndTypesList & materialized_columns,
+        const NamesAndTypesList & alias_columns,
+        const ColumnDefaults & column_defaults,
+        bool,
+        bool)
+    {
+        if (args.size() != 9)
+            throw Exception("Storage Buffer requires 9 parameters: "
+                " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
+        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
+
+        String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+        String destination_table = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+
+        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*args[3]).value);
+        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*args[4]).value);
+        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[5]).value);
+        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[6]).value);
+        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[7]).value);
+        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[8]).value);
+
+        return StorageBuffer::create(
+            table_name, columns,
+            materialized_columns, alias_columns, column_defaults,
+            context,
+            num_buckets,
+            StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
+            destination_database, destination_table);
+    });
 }
 
 }

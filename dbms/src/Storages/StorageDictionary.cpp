@@ -1,57 +1,25 @@
 #include <sstream>
-#include <Parsers/ASTCreateQuery.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/CacheDictionary.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
+#include <Parsers/ASTLiteral.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB
 {
 
-StoragePtr StorageDictionary::create(
-    const String & table_name,
-    Context & context,
-    const ASTCreateQuery & query,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
-    const ColumnDefaults & column_defaults)
+namespace ErrorCodes
 {
-    const ASTFunction & engine = *query.storage->engine;
-    String dictionary_name;
-    if (engine.arguments)
-    {
-        std::stringstream iss;
-        engine.arguments->format(IAST::FormatSettings(iss, false, false));
-        dictionary_name = iss.str();
-    }
-
-    const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
-    const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-    return ext::shared_ptr_helper<StorageDictionary>::create(
-        table_name, columns, materialized_columns, alias_columns,
-        column_defaults, dictionary_structure, dictionary_name);
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr StorageDictionary::create(
-    const String & table_name,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
-    const ColumnDefaults & column_defaults,
-    const DictionaryStructure & dictionary_structure,
-    const String & dictionary_name)
-{
-    return ext::shared_ptr_helper<StorageDictionary>::create(
-        table_name, columns, materialized_columns, alias_columns,
-        column_defaults, dictionary_structure, dictionary_name);
-}
 
 StorageDictionary::StorageDictionary(
     const String & table_name_,
@@ -118,6 +86,38 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
             throw Exception(message);
         }
     }
+}
+
+
+void registerStorageDictionary(StorageFactory & factory)
+{
+    factory.registerStorage("Dictionary", [](
+        ASTs & args,
+        const String &,
+        const String & table_name,
+        const String &,
+        Context &,
+        Context & context,
+        const NamesAndTypesList & columns,
+        const NamesAndTypesList & materialized_columns,
+        const NamesAndTypesList & alias_columns,
+        const ColumnDefaults & column_defaults,
+        bool,
+        bool)
+    {
+        if (args.size() != 1)
+            throw Exception("Storage Dictionary requires single parameter: name of dictionary",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        String dictionary_name = typeid_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+
+        const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+        const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+
+        return StorageDictionary::create(
+            table_name, columns, materialized_columns, alias_columns,
+            column_defaults, dictionary_structure, dictionary_name);
+    });
 }
 
 }
