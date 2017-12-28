@@ -4,7 +4,7 @@ $(function() {
         var pathname = window.location.pathname;
         var url;
         if (pathname.indexOf('html') >= 0) {
-            url = pathname.replace('/docs/', 'https://github.com/yandex/ClickHouse/edit/master/docs/').replace('html', 'rst');
+            url = pathname.replace('/docs/', 'https://github.com/yandex/ClickHouse/edit/master/docs/').replace('html', 'md');
         } else {
             if (pathname.indexOf('/single/') >= 0) {
                 if (pathname.indexOf('ru') >= 0) {
@@ -14,9 +14,9 @@ $(function() {
                 }
             } else {
                 if (pathname.indexOf('ru') >= 0) {
-                    url = 'https://github.com/yandex/ClickHouse/edit/master/docs/ru/index.rst';
+                    url = 'https://github.com/yandex/ClickHouse/edit/master/docs/ru/index.md';
                 } else {
-                    url = 'https://github.com/yandex/ClickHouse/edit/master/docs/en/index.rst';
+                    url = 'https://github.com/yandex/ClickHouse/edit/master/docs/en/index.md';
                 }
             }
         }
