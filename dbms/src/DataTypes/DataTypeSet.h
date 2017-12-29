@@ -12,9 +12,10 @@ namespace DB
 class DataTypeSet final : public IDataTypeDummy
 {
 public:
-    std::string getName() const override { return "Set"; }
+    static constexpr bool is_parametric = true;
     const char * getFamilyName() const override { return "Set"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeSet>(); }
+    bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+    bool isParametric() const override { return true; }
 };
 
 }

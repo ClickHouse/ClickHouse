@@ -1,11 +1,18 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <common/StringRef.h>
+#include <DataTypes/IDataType.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionMinMaxAny.h> // SingleValueDataString used in embedded compiler
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 
 /// For possible values for template parameters, see AggregateFunctionMinMaxAny.h
@@ -21,33 +28,35 @@ struct AggregateFunctionArgMinMaxData
 
 /// Returns the first arg value found for the minimum/maximum value. Example: argMax(arg, value).
 template <typename Data>
-class AggregateFunctionArgMinMax final : public IBinaryAggregateFunction<Data, AggregateFunctionArgMinMax<Data>>
+class AggregateFunctionArgMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data>>
 {
 private:
     DataTypePtr type_res;
     DataTypePtr type_val;
 
 public:
-    String getName() const override { return (0 == strcmp(Data::ValueData_t::name(), "min")) ? "argMin" : "argMax"; }
+    AggregateFunctionArgMinMax(const DataTypePtr & type_res, const DataTypePtr & type_val)
+        : type_res(type_res), type_val(type_val)
+    {
+        if (!type_val->isComparable())
+            throw Exception("Illegal type " + type_val->getName() + " of second argument of aggregate function " + getName()
+                + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    String getName() const override { return StringRef(Data::ValueData_t::name()) == StringRef("min") ? "argMin" : "argMax"; }
 
     DataTypePtr getReturnType() const override
     {
         return type_res;
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        type_res = arguments[0];
-        type_val = arguments[1];
+        if (this->data(place).value.changeIfBetter(*columns[1], row_num))
+            this->data(place).result.change(*columns[0], row_num);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column_arg, const IColumn & column_max, size_t row_num, Arena *) const
-    {
-        if (this->data(place).value.changeIfBetter(column_max, row_num))
-            this->data(place).result.change(column_arg, row_num);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (this->data(place).value.changeIfBetter(this->data(rhs).value))
             this->data(place).result.change(this->data(rhs).result);
@@ -55,14 +64,14 @@ public:
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        this->data(place).result.write(buf, *type_res.get());
-        this->data(place).value.write(buf, *type_val.get());
+        this->data(place).result.write(buf, *type_res);
+        this->data(place).value.write(buf, *type_val);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
-        this->data(place).result.read(buf, *type_res.get());
-        this->data(place).value.read(buf, *type_val.get());
+        this->data(place).result.read(buf, *type_res);
+        this->data(place).value.read(buf, *type_val);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

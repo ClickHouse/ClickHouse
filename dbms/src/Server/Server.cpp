@@ -9,7 +9,6 @@
 
 #include <ext/scope_guard.h>
 
-#include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 
@@ -31,7 +30,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 
-#include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 
@@ -63,6 +61,7 @@ namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -81,7 +80,7 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path")) + "cores";
 }
 
-int Server::main(const std::vector<std::string> & args)
+int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
 
@@ -109,8 +108,10 @@ int Server::main(const std::vector<std::string> & args)
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
-        loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
-            config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        ConfigProcessor config_processor(config_path);
+        loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
+            main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        config_processor.savePreprocessedConfig(loaded_config);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -152,9 +153,9 @@ int Server::main(const std::vector<std::string> & args)
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
                 LOG_WARNING(log,
-                    std::string("Cannot set max number of file descriptors to ") + std::to_string(rlim.rlim_cur)
-                        + ". Try to specify max_open_files according to your system limits. error: "
-                        + strerror(errno));
+                    "Cannot set max number of file descriptors to " << rlim.rlim_cur
+                        << ". Try to specify max_open_files according to your system limits. error: "
+                        << strerror(errno));
             else
                 LOG_DEBUG(log, "Set max number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
         }
@@ -253,16 +254,21 @@ int Server::main(const std::vector<std::string> & args)
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
-    size_t mark_cache_size = config().getUInt64("mark_cache_size");
-    if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
-
     /// Load global settings from default profile.
     Settings & settings = global_context->getSettingsRef();
     String default_profile_name = config().getString("default_profile", "default");
     global_context->setDefaultProfileName(default_profile_name);
     global_context->setSetting("profile", default_profile_name);
+
+    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
+    size_t mark_cache_size = config().getUInt64("mark_cache_size");
+    if (mark_cache_size)
+        global_context->setMarkCache(mark_cache_size);
+
+    /// Set path for format schema files
+    auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
+    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata.");
     loadMetadataSystem(*global_context);
@@ -284,15 +290,6 @@ int Server::main(const std::vector<std::string> & args)
         global_context->shutdown();
         LOG_DEBUG(log, "Shutted down storages.");
     });
-
-    bool has_resharding_worker = false;
-    if (has_zookeeper && config().has("resharding"))
-    {
-        auto resharding_worker = std::make_shared<ReshardingWorker>(config(), "resharding", *global_context);
-        global_context->setReshardingWorker(resharding_worker);
-        resharding_worker->start();
-        has_resharding_worker = true;
-    }
 
     if (has_zookeeper && config().has("distributed_ddl"))
     {
@@ -388,7 +385,7 @@ int Server::main(const std::vector<std::string> & args)
 
                     LOG_INFO(log, "Listening https://" + http_socket_address.toString());
 #else
-                    throw Exception{"https protocol disabled because poco library built without NetSSL support.",
+                    throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
@@ -425,7 +422,7 @@ int Server::main(const std::vector<std::string> & args)
                                                                   new Poco::Net::TCPServerParams));
                     LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
 #else
-                    throw Exception{"tcp_ssl protocol disabled because poco library built without NetSSL support.",
+                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
@@ -482,16 +479,6 @@ int Server::main(const std::vector<std::string> & args)
 
         SCOPE_EXIT({
             LOG_DEBUG(log, "Received termination signal.");
-
-            if (has_resharding_worker)
-            {
-                LOG_INFO(log, "Shutting down resharding thread");
-                auto & resharding_worker = global_context->getReshardingWorker();
-                if (resharding_worker.isStarted())
-                    resharding_worker.shutdown();
-                LOG_DEBUG(log, "Shut down resharding thread");
-            }
-
             LOG_DEBUG(log, "Waiting for current connections to close.");
 
             is_cancelled = true;
@@ -505,7 +492,7 @@ int Server::main(const std::vector<std::string> & args)
 
             LOG_DEBUG(log,
                 "Closed all listening sockets."
-                    << (current_connections ? " Waiting for " + std::to_string(current_connections) + " outstanding connections." : ""));
+                    << (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
 
             if (current_connections)
             {
@@ -525,7 +512,7 @@ int Server::main(const std::vector<std::string> & args)
             }
 
             LOG_DEBUG(
-                log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains."
+                log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             main_config_reloader.reset();
@@ -567,4 +554,17 @@ int Server::main(const std::vector<std::string> & args)
 }
 }
 
-YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, mainEntryClickHouseServer);
+int mainEntryClickHouseServer(int argc, char ** argv)
+{
+    DB::Server app;
+    try
+    {
+        return app.run(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+}

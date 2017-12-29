@@ -85,6 +85,9 @@ class PartitionManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.heal_all()
 
+    def __del__(self):
+        self.heal_all()
+
 
 class PartitionManagerDisbaler:
     def __init__(self, manager):

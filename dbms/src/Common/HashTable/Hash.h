@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Common/UInt128.h>
 
 
 /** Hash functions that are better than the trivial function std::hash.
@@ -115,6 +116,7 @@ DEFINE_HASH(DB::UInt8)
 DEFINE_HASH(DB::UInt16)
 DEFINE_HASH(DB::UInt32)
 DEFINE_HASH(DB::UInt64)
+DEFINE_HASH(DB::UInt128)
 DEFINE_HASH(DB::Int8)
 DEFINE_HASH(DB::Int16)
 DEFINE_HASH(DB::Int32)

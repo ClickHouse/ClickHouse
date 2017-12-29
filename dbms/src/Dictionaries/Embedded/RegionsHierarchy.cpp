@@ -1,21 +1,18 @@
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
+#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
-#include <Poco/File.h>
 
 #include <common/logger_useful.h>
 #include <ext/singleton.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 
-
-RegionsHierarchy::RegionsHierarchy(const std::string & path_)
+RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_)
+    : data_source(data_source_)
 {
-    path = path_;
 }
 
 
@@ -23,10 +20,8 @@ void RegionsHierarchy::reload()
 {
     Logger * log = &Logger::get("RegionsHierarchy");
 
-    time_t new_modification_time = Poco::File(path).getLastModified().epochTime();
-    if (new_modification_time <= file_modification_time)
+    if (!data_source->isModified())
         return;
-    file_modification_time = new_modification_time;
 
     LOG_DEBUG(log, "Reloading regions hierarchy");
 
@@ -44,58 +39,22 @@ void RegionsHierarchy::reload()
     RegionDepths  new_depths(initial_size);
     RegionTypes types(initial_size);
 
-    DB::ReadBufferFromFile in(path);
-
     RegionID max_region_id = 0;
-    while (!in.eof())
+
+
+    auto regions_reader = data_source->createReader(); 
+
+    RegionEntry region_entry;
+    while (regions_reader->readNext(region_entry))
     {
-        /** Our internal geobase has negative numbers,
-            *  that means "this is garbage, ignore this row".
-            */
-        Int32 read_region_id = 0;
-        Int32 read_parent_id = 0;
-        Int8 read_type = 0;
-
-        DB::readIntText(read_region_id, in);
-        DB::assertChar('\t', in);
-        DB::readIntText(read_parent_id, in);
-        DB::assertChar('\t', in);
-        DB::readIntText(read_type, in);
-
-        /** Then there can be a newline (old version)
-            *  or tab, the region's population, line feed (new version).
-            */
-        RegionPopulation population = 0;
-        if (!in.eof() && *in.position() == '\t')
+        if (region_entry.id > max_region_id)
         {
-            ++in.position();
-            UInt64 population_big = 0;
-            DB::readIntText(population_big, in);
-            population = population_big > std::numeric_limits<RegionPopulation>::max()
-                ? std::numeric_limits<RegionPopulation>::max()
-                : population_big;
-        }
-        DB::assertChar('\n', in);
+            if (region_entry.id > max_size)
+                throw DB::Exception("Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size));
 
-        if (read_region_id <= 0 || read_type < 0)
-            continue;
+            max_region_id = region_entry.id;
 
-        RegionID region_id = read_region_id;
-        RegionID parent_id = 0;
-
-        if (read_parent_id >= 0)
-            parent_id = read_parent_id;
-
-        RegionType type = read_type;
-
-        if (region_id > max_region_id)
-        {
-            if (region_id > max_size)
-                throw DB::Exception("Region id is too large: " + DB::toString(region_id) + ", should be not more than " + DB::toString(max_size));
-
-            max_region_id = region_id;
-
-            while (region_id >= new_parents.size())
+            while (region_entry.id >= new_parents.size())
             {
                 new_parents.resize(new_parents.size() * 2);
                 new_populations.resize(new_parents.size());
@@ -103,38 +62,38 @@ void RegionsHierarchy::reload()
             }
         }
 
-        new_parents[region_id] = parent_id;
-        new_populations[region_id] = population;
-        types[region_id] = type;
+        new_parents[region_entry.id] = region_entry.parent_id;
+        new_populations[region_entry.id] = region_entry.population;
+        types[region_entry.id] = region_entry.type;
     }
 
-    new_parents        .resize(max_region_id + 1);
-    new_city        .resize(max_region_id + 1);
-    new_country        .resize(max_region_id + 1);
-    new_area        .resize(max_region_id + 1);
-    new_district    .resize(max_region_id + 1);
+    new_parents      .resize(max_region_id + 1);
+    new_city         .resize(max_region_id + 1);
+    new_country      .resize(max_region_id + 1);
+    new_area         .resize(max_region_id + 1);
+    new_district     .resize(max_region_id + 1);
     new_continent    .resize(max_region_id + 1);
     new_top_continent.resize(max_region_id + 1);
-    new_populations .resize(max_region_id + 1);
-    new_depths        .resize(max_region_id + 1);
+    new_populations  .resize(max_region_id + 1);
+    new_depths       .resize(max_region_id + 1);
     types            .resize(max_region_id + 1);
 
     /// prescribe the cities and countries for the regions
     for (RegionID i = 0; i <= max_region_id; ++i)
     {
-        if (types[i] == REGION_TYPE_CITY)
+        if (types[i] == RegionType::City)
             new_city[i] = i;
 
-        if (types[i] == REGION_TYPE_AREA)
+        if (types[i] == RegionType::Area)
             new_area[i] = i;
 
-        if (types[i] == REGION_TYPE_DISTRICT)
+        if (types[i] == RegionType::District)
             new_district[i] = i;
 
-        if (types[i] == REGION_TYPE_COUNTRY)
+        if (types[i] == RegionType::Country)
             new_country[i] = i;
 
-        if (types[i] == REGION_TYPE_CONTINENT)
+        if (types[i] == RegionType::Continent)
         {
             new_continent[i] = i;
             new_top_continent[i] = i;
@@ -156,19 +115,19 @@ void RegionsHierarchy::reload()
             if (current > max_region_id)
                 throw Poco::Exception("Logical error in regions hierarchy: region " + DB::toString(current) + " (specified as parent) doesn't exist");
 
-            if (types[current] == REGION_TYPE_CITY)
+            if (types[current] == RegionType::City)
                 new_city[i] = current;
 
-            if (types[current] == REGION_TYPE_AREA)
+            if (types[current] == RegionType::Area)
                 new_area[i] = current;
 
-            if (types[current] == REGION_TYPE_DISTRICT)
+            if (types[current] == RegionType::District)
                 new_district[i] = current;
 
-            if (types[current] == REGION_TYPE_COUNTRY)
+            if (types[current] == RegionType::Country)
                 new_country[i] = current;
 
-            if (types[current] == REGION_TYPE_CONTINENT)
+            if (types[current] == RegionType::Continent)
             {
                 if (!new_continent[i])
                     new_continent[i] = current;

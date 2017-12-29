@@ -18,7 +18,6 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:
@@ -35,7 +34,6 @@ public:
     bool supportsSampling() const override { return data.supportsSampling(); }
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
-    bool supportsParallelReplicas() const override { return true; }
 
     const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
 
@@ -112,6 +110,15 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
+    /** Determines what parts should be merged and merges it.
+      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * Returns true if merge is finished successfully.
+      */
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
+
+    bool mergeTask();
+
+protected:
     /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
@@ -119,13 +126,12 @@ private:
       * primary_expr_ast      - expression for sorting;
       * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
           otherwise, partition_expr_ast is used as the partitioning expression;
-      * index_granularity     - fow how many rows one index value is written.
       */
     StorageMergeTree(
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
@@ -135,18 +141,9 @@ private:
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
-
-    /** Determines what parts should be merged and merges it.
-      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
-      * Returns true if merge is finished successfully.
-      */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
-
-    bool mergeTask();
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 };
 
 }

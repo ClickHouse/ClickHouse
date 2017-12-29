@@ -14,32 +14,11 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-}
-
-
-/** Offsets to every single set of values.
-  * These sets are the same size in different columns.
-  * They are needed so that you can read the data in several threads.
-  */
-struct Mark
-{
-    size_t rows;    /// How many lines are contained in this set and all previous ones.
-    size_t offset;  /// The offset to the set in the compressed file.
-};
-
-using Marks = std::vector<Mark>;
-
-
-/** Implements a table engine that is suitable for logs.
-  * Keys are not supported.
+/** Implements simple table engine without support of indices.
   * The data is stored in a compressed form.
   */
 class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageLog>;
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
 
@@ -47,7 +26,7 @@ public:
     std::string getName() const override { return "Log"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -61,6 +40,40 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
+    bool checkData() const override;
+
+protected:
+    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
+      *  (the correctness of names and paths is not verified)
+      *  consisting of the specified columns; Create files if they do not exist.
+      */
+    StorageLog(
+        const std::string & path_,
+        const std::string & name_,
+        const NamesAndTypesList & columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        size_t max_compress_block_size_);
+
+private:
+    String path;
+    String name;
+    NamesAndTypesList columns;
+
+    mutable std::shared_mutex rwlock;
+
+    /** Offsets to some row number in a file for column in table.
+      * They are needed so that you can read the data in several threads.
+      */
+    struct Mark
+    {
+        size_t rows;    /// How many rows are before this offset including the block at this offset.
+        size_t offset;  /// The offset in compressed file.
+    };
+
+    using Marks = std::vector<Mark>;
+
     /// Column data
     struct ColumnData
     {
@@ -73,71 +86,40 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    bool checkData() const override;
+    Files_t files; /// name -> data
 
-protected:
-    String path;
-    String name;
-    NamesAndTypesListPtr columns;
+    Names column_names; /// column_index -> name
 
-    mutable std::shared_mutex rwlock;
+    Poco::File marks_file;
 
-    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
-      *  (the correctness of names and paths is not verified)
-      *  consisting of the specified columns; Create files if they do not exist.
-      */
-    StorageLog(
-        const std::string & path_,
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        size_t max_compress_block_size_);
+    /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
+    void addFiles(const String & column_name, const IDataType & type);
+
+    bool loaded_marks = false;
+
+    size_t max_compress_block_size;
+    size_t file_count = 0;
+
+    FileChecker file_checker;
 
     /// Read marks files if they are not already read.
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
     /// You can not call with a write locked `rwlock`.
     void loadMarks();
 
-    /// Can be called with any state of `rwlock`.
-    size_t marksCount();
-
-private:
-    Files_t files; /// name -> data
-
-    Names column_names; /// column_index -> name
-    Names null_map_filenames;
-
-    Poco::File marks_file;
-    Poco::File null_marks_file;
-
-    void loadMarksImpl(bool load_null_marks);
-
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
     void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
-    bool loaded_marks;
-    bool has_nullable_columns = false;
-
-    size_t max_compress_block_size;
-    size_t file_count = 0;
-    size_t null_file_count = 0;
-
-protected:
-    FileChecker file_checker;
-
-private:
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files
-      *  - for insides (file name.bin) - the total number of array elements in the block is specified,
+      *  - for elements (file name.bin) - the total number of array elements in the block is specified,
       *  - for array sizes (file name.size0.bin) - the number of rows (the whole arrays themselves) in the block is specified.
       *
       * Return the first group of marks that contain the number of rows, but not the internals of the arrays.
       */
     const Marks & getMarksWithRealRowCount() const;
 
-    std::string getFullPath() const { return path + escapeForFileName(name) + '/';}
+    std::string getFullPath() const { return path + escapeForFileName(name) + '/'; }
 };
 
 }

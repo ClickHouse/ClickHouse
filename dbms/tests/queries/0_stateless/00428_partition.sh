@@ -1,11 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 set -e
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 # Not found column date in block. There are only columns: x.
 
 # Test 1. Complex test checking columns.txt
 
-chl="clickhouse-client -q"
-ch_dir=`clickhouse extract-from-config -c /etc/clickhouse-server/config.xml -k path`
+chl="$CLICKHOUSE_CLIENT -q"
+ch_dir=`${CLICKHOUSE_EXTRACT_CONFIG} -k path`
 
 $chl "DROP TABLE IF EXISTS test.partition_428"
 $chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree(p, k, 1)"
@@ -13,14 +18,14 @@ $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(31), 1)"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(1), 2)"
 
 for part in `$chl "SELECT name FROM system.parts WHERE database='test' AND table='partition_428'"`; do
-    sudo cat $ch_dir/data/test/partition_428/$part/columns.txt | wc -l # 2 header lines + 3 columns
+    sudo --non-interactive cat $ch_dir/data/test/partition_428/$part/columns.txt | wc -l # 2 header lines + 3 columns
 done
 
 $chl "ALTER TABLE test.partition_428 DETACH PARTITION 197001"
 $chl "ALTER TABLE test.partition_428 ATTACH PARTITION 197001"
 
 for part in `$chl "SELECT name FROM system.parts WHERE database='test' AND table='partition_428'"`; do
-    sudo cat $ch_dir/data/test/partition_428/$part/columns.txt | wc -l # 2 header lines + 3 columns
+    sudo --non-interactive cat $ch_dir/data/test/partition_428/$part/columns.txt | wc -l # 2 header lines + 3 columns
 done
 
 $chl "ALTER TABLE test.partition_428 MODIFY COLUMN v1 Int8"

@@ -144,7 +144,7 @@ BlockIO InterpreterCheckQuery::execute()
 
     StoragePtr table = context.getTable(database_name, table_name);
 
-    auto distributed_table = typeid_cast<StorageDistributed *>(&*table);
+    auto distributed_table = dynamic_cast<StorageDistributed *>(&*table);
     if (distributed_table != nullptr)
     {
         /// For tables with the Distributed engine, the CHECK TABLE query sends a DESCRIBE TABLE request to all replicas.
@@ -210,13 +210,13 @@ BlockIO InterpreterCheckQuery::execute()
 
         /// Construct the result.
 
-        ColumnPtr status_column = std::make_shared<ColumnUInt8>();
-        ColumnPtr host_name_column = std::make_shared<ColumnString>();
-        ColumnPtr host_address_column = std::make_shared<ColumnString>();
-        ColumnPtr port_column = std::make_shared<ColumnUInt16>();
-        ColumnPtr user_column = std::make_shared<ColumnString>();
-        ColumnPtr structure_class_column = std::make_shared<ColumnUInt32>();
-        ColumnPtr structure_column = std::make_shared<ColumnString>();
+        MutableColumnPtr status_column = ColumnUInt8::create();
+        MutableColumnPtr host_name_column = ColumnString::create();
+        MutableColumnPtr host_address_column = ColumnString::create();
+        MutableColumnPtr port_column = ColumnUInt16::create();
+        MutableColumnPtr user_column = ColumnString::create();
+        MutableColumnPtr structure_class_column = ColumnUInt32::create();
+        MutableColumnPtr structure_column = ColumnString::create();
 
         /// This value is 1 if the structure is not disposed of anywhere, but 0 otherwise.
         UInt8 status_value = (structure_class == 0) ? 1 : 0;
@@ -234,13 +234,13 @@ BlockIO InterpreterCheckQuery::execute()
 
         Block block;
 
-        block.insert(ColumnWithTypeAndName(status_column, std::make_shared<DataTypeUInt8>(), "status"));
-        block.insert(ColumnWithTypeAndName(host_name_column, std::make_shared<DataTypeString>(), "host_name"));
-        block.insert(ColumnWithTypeAndName(host_address_column, std::make_shared<DataTypeString>(), "host_address"));
-        block.insert(ColumnWithTypeAndName(port_column, std::make_shared<DataTypeUInt16>(), "port"));
-        block.insert(ColumnWithTypeAndName(user_column, std::make_shared<DataTypeString>(), "user"));
-        block.insert(ColumnWithTypeAndName(structure_class_column, std::make_shared<DataTypeUInt32>(), "structure_class"));
-        block.insert(ColumnWithTypeAndName(structure_column, std::make_shared<DataTypeString>(), "structure"));
+        block.insert(ColumnWithTypeAndName(std::move(status_column), std::make_shared<DataTypeUInt8>(), "status"));
+        block.insert(ColumnWithTypeAndName(std::move(host_name_column), std::make_shared<DataTypeString>(), "host_name"));
+        block.insert(ColumnWithTypeAndName(std::move(host_address_column), std::make_shared<DataTypeString>(), "host_address"));
+        block.insert(ColumnWithTypeAndName(std::move(port_column), std::make_shared<DataTypeUInt16>(), "port"));
+        block.insert(ColumnWithTypeAndName(std::move(user_column), std::make_shared<DataTypeString>(), "user"));
+        block.insert(ColumnWithTypeAndName(std::move(structure_class_column), std::make_shared<DataTypeUInt32>(), "structure_class"));
+        block.insert(ColumnWithTypeAndName(std::move(structure_column), std::make_shared<DataTypeString>(), "structure"));
 
         BlockIO res;
         res.in = std::make_shared<OneBlockInputStream>(block);
@@ -250,8 +250,9 @@ BlockIO InterpreterCheckQuery::execute()
     }
     else
     {
-        result = Block{{ std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "result" }};
-        result.safeGetByPosition(0).column->insert(Field(UInt64(table->checkData())));
+        auto column = ColumnUInt8::create();
+        column->insert(UInt64(table->checkData()));
+        result = Block{{ std::move(column), std::make_shared<DataTypeUInt8>(), "result" }};
 
         BlockIO res;
         res.in = std::make_shared<OneBlockInputStream>(result);

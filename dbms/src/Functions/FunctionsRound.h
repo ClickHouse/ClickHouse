@@ -46,28 +46,28 @@ namespace ErrorCodes
     */
 
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && (sizeof(T) <= sizeof(UInt32)), T>::type
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && (sizeof(T) == sizeof(UInt64)), T>::type
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_same<T, Float32>::value, T>::type
+inline std::enable_if_t<std::is_same_v<T, Float32>, T>
 roundDownToPowerOfTwo(T x)
 {
     return ext::bit_cast<T>(ext::bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_same<T, Float64>::value, T>::type
+inline std::enable_if_t<std::is_same_v<T, Float64>, T>
 roundDownToPowerOfTwo(T x)
 {
     return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
@@ -371,7 +371,7 @@ private:
     using Data = std::array<T, Op::data_count>;
 
 public:
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         auto mm_scale = Op::prepare(scale);
 
@@ -413,7 +413,7 @@ private:
 
 public:
     template <size_t scale>
-    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
     {
         const T* end_in = in.data() + in.size();
 
@@ -428,7 +428,7 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
         switch (scale)
@@ -461,9 +461,9 @@ public:
 };
 
 template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
-using FunctionRoundingImpl = typename std::conditional<std::is_floating_point<T>::value,
+using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
     FloatRoundingImpl<T, rounding_mode, scale_mode>,
-    IntegerRoundingImpl<T, rounding_mode, scale_mode>>::type;
+    IntegerRoundingImpl<T, rounding_mode, scale_mode>>;
 
 
 /** Select the appropriate processing algorithm depending on the scale.
@@ -479,7 +479,7 @@ struct Dispatcher
         if (arguments.size() == 2)
         {
             const IColumn & scale_column = *block.getByPosition(arguments[1]).column;
-            if (!scale_column.isConst())
+            if (!scale_column.isColumnConst())
                 throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
             Field scale_field = static_cast<const ColumnConst &>(scale_column).getField();
@@ -490,14 +490,16 @@ struct Dispatcher
             scale_arg = scale_field.get<Int64>();
         }
 
-        auto col_res = std::make_shared<ColumnVector<T>>();
-        block.getByPosition(result).column = col_res;
+        auto col_res = ColumnVector<T>::create();
 
-        typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
+        typename ColumnVector<T>::Container & vec_res = col_res->getData();
         vec_res.resize(col->getData().size());
 
         if (vec_res.empty())
+        {
+            block.getByPosition(result).column = std::move(col_res);
             return;
+        }
 
         if (scale_arg == 0)
         {
@@ -514,6 +516,8 @@ struct Dispatcher
             scale = pow(10, -scale_arg);
             FunctionRoundingImpl<T, rounding_mode, ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
         }
+
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -526,7 +530,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
 
 private:
     template <typename T>
@@ -558,7 +562,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto & type : arguments)
-            if (!type->behavesAsNumber())
+            if (!type->isNumber())
                 throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -592,7 +596,7 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         return { true, true, true };
     }
@@ -621,7 +625,7 @@ using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc>;
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { true };
     }

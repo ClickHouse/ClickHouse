@@ -18,7 +18,7 @@ StorageJoin::StorageJoin(
     const String & name_,
     const Names & key_names_,
     ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
@@ -35,7 +35,7 @@ StorageJoin::StorageJoin(
     };
 
     for (const auto & key : key_names)
-        if (!check_key_exists(*columns, key) && !check_key_exists(materialized_columns, key))
+        if (!check_key_exists(columns, key) && !check_key_exists(materialized_columns, key))
             throw Exception{
                 "Key column (" + key + ") does not exist in table declaration.",
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
@@ -43,7 +43,7 @@ StorageJoin::StorageJoin(
     /// NOTE StorageJoin doesn't use join_use_nulls setting.
 
     join = std::make_shared<Join>(key_names, key_names, false /* use_nulls */, Limits(), kind, strictness);
-    join->setSampleBlock(getSampleBlock());
+    join->setSampleBlock(getSampleBlock().sortColumns());
     restore();
 }
 

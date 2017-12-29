@@ -41,7 +41,7 @@ public:
 
     bool isCached() const override { return false; }
 
-    DictionaryPtr clone() const override { return std::make_unique<RangeHashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<RangeHashedDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -67,6 +67,7 @@ public:
     DECLARE_MULTIPLE_GETTER(UInt16)
     DECLARE_MULTIPLE_GETTER(UInt32)
     DECLARE_MULTIPLE_GETTER(UInt64)
+    DECLARE_MULTIPLE_GETTER(UInt128)
     DECLARE_MULTIPLE_GETTER(Int8)
     DECLARE_MULTIPLE_GETTER(Int16)
     DECLARE_MULTIPLE_GETTER(Int32)
@@ -81,10 +82,11 @@ public:
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
-private:
     struct Range : std::pair<UInt16, UInt16>
     {
         using std::pair<UInt16, UInt16>::pair;
+
+        static bool isCorrectDate(const UInt16 date) { return 0 < date && date <= DATE_LUT_MAX_DAY_NUM; }
 
         bool contains(const UInt16 date) const
         {
@@ -94,8 +96,8 @@ private:
             if (left <= date && date <= right)
                 return true;
 
-            const auto has_left_bound = 0 < left && left <= DATE_LUT_MAX_DAY_NUM;
-            const auto has_right_bound = 0 < right && right <= DATE_LUT_MAX_DAY_NUM;
+            const auto has_left_bound = isCorrectDate(left);
+            const auto has_right_bound = isCorrectDate(right);
 
             if ((!has_left_bound || left <= date) && (!has_right_bound || date <= right))
                 return true;
@@ -104,6 +106,7 @@ private:
         }
     };
 
+private:
     template <typename T>
     struct Value final
     {
@@ -120,10 +123,12 @@ private:
     public:
         AttributeUnderlyingType type;
         std::tuple<UInt8, UInt16, UInt32, UInt64,
+                   UInt128,
                    Int8, Int16, Int32, Int64,
                    Float32, Float64,
                    String> null_values;
         std::tuple<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
+                   Ptr<UInt128>,
                    Ptr<Int8>, Ptr<Int16>, Ptr<Int32>, Ptr<Int64>,
                    Ptr<Float32>, Ptr<Float64>, Ptr<StringRef>> maps;
         std::unique_ptr<Arena> string_arena;

@@ -3,16 +3,21 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
+#include <common/intExp.h>
+#include <boost/math/common_factor.hpp>
 
 
 namespace DB
@@ -153,20 +158,17 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
         throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(std::is_signed<A>::value && std::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
+    if (unlikely(std::is_signed_v<A> && std::is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    /// Is it better to use siglongjmp instead of checks?
-
     if (unlikely(b == 0))
         return true;
 
-    /// http://avva.livejournal.com/2548306.html
-    if (unlikely(std::is_signed<A>::value && std::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
+    if (unlikely(std::is_signed_v<A> && std::is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         return true;
 
     return false;
@@ -209,9 +211,9 @@ struct ModuloImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         return typename NumberTraits::ToInteger<A>::Type(a)
-            % typename NumberTraits::ToInteger<A>::Type(b);
+            % typename NumberTraits::ToInteger<B>::Type(b);
     }
 };
 
@@ -308,10 +310,10 @@ struct BitRotateRightImpl
 
 
 template <typename T>
-std::enable_if_t<std::is_integral<T>::value, T> toInteger(T x) { return x; }
+std::enable_if_t<std::is_integral_v<T>, T> toInteger(T x) { return x; }
 
 template <typename T>
-std::enable_if_t<std::is_floating_point<T>::value, Int64> toInteger(T x) { return Int64(x); }
+std::enable_if_t<std::is_floating_point_v<T>, Int64> toInteger(T x) { return Int64(x); }
 
 template <typename A, typename B>
 struct BitTestImpl
@@ -344,13 +346,13 @@ struct LeastSpecialImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        static_assert(std::is_same<Result, ResultType>::value, "ResultType != Result");
+        static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::lessOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
 };
 
 template <typename A, typename B>
-using LeastImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>::value, LeastBaseImpl<A, B>, LeastSpecialImpl<A, B>>;
+using LeastImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>, LeastBaseImpl<A, B>, LeastSpecialImpl<A, B>>;
 
 
 template <typename A, typename B>
@@ -373,13 +375,13 @@ struct GreatestSpecialImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        static_assert(std::is_same<Result, ResultType>::value, "ResultType != Result");
+        static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::greaterOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
 };
 
 template <typename A, typename B>
-using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>::value, GreatestBaseImpl<A, B>, GreatestSpecialImpl<A, B>>;
+using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>, GreatestBaseImpl<A, B>, GreatestSpecialImpl<A, B>>;
 
 
 template <typename A>
@@ -409,29 +411,74 @@ struct AbsImpl
 {
     using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
 
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, void>::type * = nullptr)
+    static inline ResultType apply(A a)
     {
-        return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
-    }
-
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type * = nullptr)
-    {
-        return static_cast<ResultType>(a);
-    }
-
-    template <typename T = A>
-    static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
-    {
-        return static_cast<ResultType>(std::abs(a));
+        if constexpr (std::is_integral_v<A> && std::is_signed_v<A>)
+            return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+        else if constexpr (std::is_integral_v<A> && std::is_unsigned_v<A>)
+            return static_cast<ResultType>(a);
+        else if constexpr (std::is_floating_point_v<A>)
+            return static_cast<ResultType>(std::abs(a));
     }
 };
 
+template <typename A, typename B>
+struct GCDImpl
+{
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
+    {
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::gcd(
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
+    }
+};
+
+template <typename A, typename B>
+struct LCMImpl
+{
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
+    {
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::lcm(
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
+    }
+};
+
+template <typename A>
+struct IntExp2Impl
+{
+    using ResultType = UInt64;
+
+    static inline ResultType apply(A a)
+    {
+        return intExp2(a);
+    }
+};
+
+template <typename A>
+struct IntExp10Impl
+{
+    using ResultType = UInt64;
+
+    static inline ResultType apply(A a)
+    {
+        return intExp10(a);
+    }
+};
+
+
 /// this one is just for convenience
-template <bool B, typename T1, typename T2> using If = typename std::conditional<B, T1, T2>::type;
+template <bool B, typename T1, typename T2> using If = std::conditional_t<B, T1, T2>;
 /// these ones for better semantics
 template <typename T> using Then = T;
 template <typename T> using Else = T;
@@ -451,28 +498,19 @@ struct DataTypeFromFieldType<NumberTraits::Error>
     using Type = InvalidType;
 };
 
-template <typename DataType> struct IsIntegral { static constexpr auto value = false; };
-template <> struct IsIntegral<DataTypeUInt8> { static constexpr auto value = true; };
-template <> struct IsIntegral<DataTypeUInt16> { static constexpr auto value = true; };
-template <> struct IsIntegral<DataTypeUInt32> { static constexpr auto value = true; };
-template <> struct IsIntegral<DataTypeUInt64> { static constexpr auto value = true; };
-template <> struct IsIntegral<DataTypeInt8> { static constexpr auto value = true; };
-template <> struct IsIntegral<DataTypeInt16> { static constexpr auto value = true; };
-template <> struct IsIntegral<DataTypeInt32> { static constexpr auto value = true; };
-template <> struct IsIntegral<DataTypeInt64> { static constexpr auto value = true; };
+template <typename DataType> constexpr bool IsIntegral = false;
+template <> constexpr bool IsIntegral<DataTypeUInt8> = true;
+template <> constexpr bool IsIntegral<DataTypeUInt16> = true;
+template <> constexpr bool IsIntegral<DataTypeUInt32> = true;
+template <> constexpr bool IsIntegral<DataTypeUInt64> = true;
+template <> constexpr bool IsIntegral<DataTypeInt8> = true;
+template <> constexpr bool IsIntegral<DataTypeInt16> = true;
+template <> constexpr bool IsIntegral<DataTypeInt32> = true;
+template <> constexpr bool IsIntegral<DataTypeInt64> = true;
 
-template <typename DataType> struct IsFloating { static constexpr auto value = false; };
-template <> struct IsFloating<DataTypeFloat32> { static constexpr auto value = true; };
-template <> struct IsFloating<DataTypeFloat64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsNumeric
-{
-    static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
-};
-
-template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
-template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
-template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto value = true; };
+template <typename DataType> constexpr bool IsDateOrDateTime = false;
+template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
+template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 /** Returns appropriate result type for binary operator on dates (or datetimes):
  *  Date + Integral -> Date
@@ -492,29 +530,29 @@ struct DateBinaryOperationTraits
     using Op = Operation<T0, T1>;
 
     using ResultDataType =
-        If<std::is_same<Op, PlusImpl<T0, T1>>::value,
+        If<std::is_same_v<Op, PlusImpl<T0, T1>>,
             Then<
-                If<IsDateOrDateTime<LeftDataType>::value && IsIntegral<RightDataType>::value,
+                If<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>,
                     Then<LeftDataType>,
                     Else<
-                        If<IsIntegral<LeftDataType>::value && IsDateOrDateTime<RightDataType>::value,
+                        If<IsIntegral<LeftDataType> && IsDateOrDateTime<RightDataType>,
                             Then<RightDataType>,
                             Else<InvalidType>>>>>,
             Else<
-                If<std::is_same<Op, MinusImpl<T0, T1>>::value,
+                If<std::is_same_v<Op, MinusImpl<T0, T1>>,
                     Then<
-                        If<IsDateOrDateTime<LeftDataType>::value,
+                        If<IsDateOrDateTime<LeftDataType>,
                             Then<
-                                If<std::is_same<LeftDataType, RightDataType>::value,
+                                If<std::is_same_v<LeftDataType, RightDataType>,
                                     Then<DataTypeInt32>,
                                     Else<
-                                        If<IsIntegral<RightDataType>::value,
+                                        If<IsIntegral<RightDataType>,
                                             Then<LeftDataType>,
                                             Else<InvalidType>>>>>,
                             Else<InvalidType>>>,
                     Else<
-                        If<std::is_same<T0, T1>::value
-                            && (std::is_same<Op, LeastImpl<T0, T1>>::value || std::is_same<Op, GreatestImpl<T0, T1>>::value),
+                        If<std::is_same_v<T0, T1>
+                            && (std::is_same_v<Op, LeastImpl<T0, T1>> || std::is_same_v<Op, GreatestImpl<T0, T1>>),
                             Then<LeftDataType>,
                             Else<InvalidType>>>>>>;
 };
@@ -525,7 +563,7 @@ template <template <typename, typename> class Operation, typename LeftDataType, 
 struct BinaryOperationTraits
 {
     using ResultDataType =
-        If<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value,
+        If<IsDateOrDateTime<LeftDataType> || IsDateOrDateTime<RightDataType>,
             Then<
                 typename DateBinaryOperationTraits<
                     Operation, LeftDataType, RightDataType>::ResultDataType>,
@@ -542,24 +580,24 @@ class FunctionBinaryArithmetic : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+
+    FunctionBinaryArithmetic(const Context & context) : context(context) {}
 
 private:
-    /// Overload for InvalidType
-    template <typename ResultDataType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool checkRightTypeImpl(DataTypePtr & type_res) const
-    {
-        return false;
-    }
+    const Context & context;
 
-    /// Overload for well-defined operations
-    template <typename ResultDataType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+    template <typename ResultDataType>
     bool checkRightTypeImpl(DataTypePtr & type_res) const
     {
-        type_res = std::make_shared<ResultDataType>();
-        return true;
+        /// Overload for InvalidType
+        if constexpr (std::is_same_v<ResultDataType, InvalidType>)
+            return false;
+        else
+        {
+            type_res = std::make_shared<ResultDataType>();
+            return true;
+        }
     }
 
     template <typename LeftDataType, typename RightDataType>
@@ -609,27 +647,22 @@ private:
     }
 
     /// Overload for InvalidType
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
+    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType>
+    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments,
+        [[maybe_unused]] const size_t result, [[maybe_unused]] const ColumnType * col_left)
     {
-        throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+        if constexpr (std::is_same_v<ResultDataType, InvalidType>)
+            throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        else
+        {
+            using T0 = typename LeftDataType::FieldType;
+            using T1 = typename RightDataType::FieldType;
+            using ResultType = typename ResultDataType::FieldType;
 
-    /// Overload for well-defined operations
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
-    {
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
-
-        return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+            return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+        }
     }
 
     /// ColumnVector overload
@@ -638,24 +671,24 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -668,20 +701,20 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createColumnConst(col_left->size(), toField(res));
 
             return true;
         }
@@ -745,6 +778,47 @@ private:
         return false;
     }
 
+    FunctionPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        /// We construct another function (example: addMonths) and call it.
+
+        bool function_is_plus = std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>;
+        bool function_is_minus = std::is_same_v<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>;
+
+        if (!function_is_plus && !function_is_minus)
+            return {};
+
+        int interval_arg = 1;
+        const DataTypeInterval * interval_data_type = checkAndGetDataType<DataTypeInterval>(type1.get());
+        if (!interval_data_type)
+        {
+            interval_arg = 0;
+            interval_data_type = checkAndGetDataType<DataTypeInterval>(type0.get());
+        }
+        if (!interval_data_type)
+            return {};
+
+        if (interval_arg == 0 && function_is_minus)
+            throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const DataTypeDate * date_data_type = checkAndGetDataType<DataTypeDate>(interval_arg == 0 ? type1.get() : type0.get());
+        const DataTypeDateTime * date_time_data_type = nullptr;
+        if (!date_data_type)
+        {
+            date_time_data_type = checkAndGetDataType<DataTypeDateTime>(interval_arg == 0 ? type1.get() : type0.get());
+            if (!date_time_data_type)
+                throw Exception("Wrong argument types for function " + getName() + ": if one argument is Interval, then another must be Date or DateTime.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        std::stringstream function_name;
+        function_name << (function_is_plus ? "add" : "subtract") << interval_data_type->kindToString() << 's';
+
+        return FunctionFactory::instance().get(function_name.str(), context);
+    }
+
 public:
     String getName() const override
     {
@@ -755,6 +829,27 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        if (FunctionPtr function = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            /// Interval argument must be second.
+            if (checkDataType<DataTypeInterval>(new_arguments[0].type.get()))
+                std::swap(new_arguments[0], new_arguments[1]);
+
+            /// Change interval argument to its representation
+            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+            DataTypePtr res;
+            std::vector<ExpressionAction> unused_prerequisites;
+            function->getReturnTypeAndPrerequisites(new_arguments, res, unused_prerequisites);
+            return res;
+        }
+
         DataTypePtr type_res;
 
         if (!( checkLeftType<DataTypeDate>(arguments, type_res)
@@ -769,7 +864,7 @@ public:
             || checkLeftType<DataTypeInt64>(arguments, type_res)
             || checkLeftType<DataTypeFloat32>(arguments, type_res)
             || checkLeftType<DataTypeFloat64>(arguments, type_res)))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type_res;
@@ -777,6 +872,25 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        if (FunctionPtr function = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        {
+            ColumnNumbers new_arguments = arguments;
+
+            /// Interval argument must be second.
+            if (checkDataType<DataTypeInterval>(block.getByPosition(arguments[0]).type.get()))
+                std::swap(new_arguments[0], new_arguments[1]);
+
+            /// Change interval argument type to its representation
+            Block new_block = block;
+            new_block.getByPosition(new_arguments[1]).type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+            function->executeImpl(new_block, new_arguments, result);
+            block.getByPosition(result).column = new_block.getByPosition(result).column;
+
+            return;
+        }
+
         if (!( executeLeftType<DataTypeDate>(block, arguments, result)
             || executeLeftType<DataTypeDateTime>(block, arguments, result)
             || executeLeftType<DataTypeUInt8>(block, arguments, result)
@@ -805,7 +919,7 @@ class FunctionUnaryArithmetic : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryArithmetic>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
 private:
     template <typename T0>
@@ -826,13 +940,13 @@ private:
         {
             using ResultType = typename Op<T0>::ResultType;
 
-            std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
-            typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
             UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -892,7 +1006,7 @@ public:
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
     }
@@ -921,6 +1035,10 @@ struct NameBitTestAny           { static constexpr auto name = "bitTestAny"; };
 struct NameBitTestAll           { static constexpr auto name = "bitTestAll"; };
 struct NameLeast                { static constexpr auto name = "least"; };
 struct NameGreatest             { static constexpr auto name = "greatest"; };
+struct NameGCD                  { static constexpr auto name = "gcd"; };
+struct NameLCM                  { static constexpr auto name = "lcm"; };
+struct NameIntExp2              { static constexpr auto name = "intExp2"; };
+struct NameIntExp10             { static constexpr auto name = "intExp10"; };
 
 using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
@@ -942,13 +1060,19 @@ using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, Name
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
+using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD>;
+using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
+/// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
+using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, true>;
+using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, true>;
+
 
 /// Monotonicity properties for some functions.
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { true, false };
     }
@@ -972,9 +1096,39 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return {};
+    }
+};
+
+template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
+{
+    static bool has() { return true; }
+    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    {
+        Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+        Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+
+        if (left_float < 0 || right_float > 63)
+            return {};
+
+        return { true };
+    }
+};
+
+template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
+{
+    static bool has() { return true; }
+    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    {
+        Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+        Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+
+        if (left_float < 0 || right_float > 19)
+            return {};
+
+        return { true };
     }
 };
 
@@ -1005,7 +1159,7 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
-        if (unlikely(std::is_signed<B>::value && b == -1))
+        if (unlikely(std::is_signed_v<B> && b == -1))
         {
             size_t size = a.size();
             for (size_t i = 0; i < size; ++i)
@@ -1059,7 +1213,7 @@ struct ModuloByConstantImpl
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
-        if (unlikely((std::is_signed<B>::value && b == -1) || b == 1))
+        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
             size_t size = a.size();
             for (size_t i = 0; i < size; ++i)
@@ -1147,14 +1301,7 @@ public:
 
         const auto first_arg = arguments.front().get();
 
-        if (!checkDataType<DataTypeUInt8>(first_arg)
-            && !checkDataType<DataTypeUInt16>(first_arg)
-            && !checkDataType<DataTypeUInt32>(first_arg)
-            && !checkDataType<DataTypeUInt64>(first_arg)
-            && !checkDataType<DataTypeInt8>(first_arg)
-            && !checkDataType<DataTypeInt16>(first_arg)
-            && !checkDataType<DataTypeInt32>(first_arg)
-            && !checkDataType<DataTypeInt64>(first_arg))
+        if (!first_arg->isInteger())
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1164,10 +1311,7 @@ public:
         {
             const auto pos_arg = arguments[i].get();
 
-            if (!checkDataType<DataTypeUInt8>(pos_arg)
-                && !checkDataType<DataTypeUInt16>(pos_arg)
-                && !checkDataType<DataTypeUInt32>(pos_arg)
-                && !checkDataType<DataTypeUInt64>(pos_arg))
+            if (!pos_arg->isUnsignedInteger())
                 throw Exception{
                     "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1203,10 +1347,10 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
-            const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+            auto out_col = ColumnVector<UInt8>::create(size);
             auto & out = out_col->getData();
 
             if (is_const)
@@ -1222,31 +1366,31 @@ private:
                     out[i] = Impl::apply(val[i], mask[i]);
             }
 
-            block.getByPosition(result).column = out_col;
+            block.getByPosition(result).column = std::move(out_col);
             return true;
         }
         else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto val = value_col->template getValue<T>();
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
             }
             else
             {
                 const auto mask = createMask<T>(size, block, arguments);
-                const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+                auto out_col = ColumnVector<UInt8>::create(size);
 
                 auto & out = out_col->getData();
 
                 for (const auto i : ext::range(0, size))
                     out[i] = Impl::apply(val, mask[i]);
 
-                block.getByPosition(result).column = out_col;
+                block.getByPosition(result).column = std::move(out_col);
             }
 
             return true;
@@ -1256,7 +1400,7 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMask(const size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    ValueType createConstMask(const Block & block, const ColumnNumbers & arguments, bool & is_const)
     {
         is_const = true;
         ValueType mask = 0;

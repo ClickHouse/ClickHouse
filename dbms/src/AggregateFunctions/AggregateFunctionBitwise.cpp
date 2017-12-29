@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionBitwise.h>
 #include <AggregateFunctions/Helpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+
 
 namespace DB
 {
@@ -11,8 +13,13 @@ namespace
 template <template <typename> class Data>
 AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (argument_types.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    if (!argument_types[0]->canBeUsedInBitOperations())
+        throw Exception("The type " + argument_types[0]->getName() + " of argument for aggregate function " + name
+            + " is illegal, because it cannot be used in bitwise operations",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionBitwise, Data>(*argument_types[0]));
 

@@ -1,8 +1,7 @@
 #pragma once
 
 #include <mutex>
-
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -16,7 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/EnrichedDataTypePtr.h>
+#include <DataTypes/getLeastCommonType.h>
 
 
 namespace DB
@@ -32,8 +31,6 @@ namespace ErrorCodes
 
 /** transform(x, from_array, to_array[, default]) - convert x according to an explicitly passed match.
   */
-
-DataTypeTraits::EnrichedDataTypePtr getSmallestCommonNumericType(const DataTypeTraits::EnrichedDataTypePtr & type1, const IDataType & type2);
 
 /** transform(x, [from...], [to...], default)
   * - converts the values according to the explicitly specified mapping.
@@ -78,9 +75,9 @@ public:
                     toString(args_size) + ", should be 3 or 4",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const IDataType * type_x = arguments[0].get();
+        const DataTypePtr & type_x = arguments[0];
 
-        if (!type_x->isNumeric() && !checkDataType<DataTypeString>(type_x))
+        if (!type_x->isValueRepresentedByNumber() && !type_x->isString())
             throw Exception{"Unsupported type " + type_x->getName()
                 + " of first argument of function " + getName()
                 + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -93,8 +90,8 @@ public:
 
         const auto type_arr_from_nested = type_arr_from->getNestedType();
 
-        if ((type_x->isNumeric() != type_arr_from_nested->isNumeric())
-            || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_from_nested.get())))
+        if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
+            || (!!type_x->isString() != !!type_arr_from_nested->isString()))
         {
             throw Exception{"First argument and elements of array of second argument of function " + getName()
                 + " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -106,43 +103,41 @@ public:
             throw Exception{"Third argument of function " + getName()
                 + ", must be array of destination values to transform to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        const auto enriched_type_arr_to_nested = type_arr_to->getEnrichedNestedType();
-        const auto & type_arr_to_nested = enriched_type_arr_to_nested.first;
+        const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
 
         if (args_size == 3)
         {
-            if ((type_x->isNumeric() != type_arr_to_nested->isNumeric())
-                || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
+            if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                || (!!type_x->isString() != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return type_x->clone();
+            return type_x;
         }
         else
         {
-            const IDataType * type_default = arguments[3].get();
+            const DataTypePtr & type_default = arguments[3];
 
-            if (!type_default->isNumeric() && !checkDataType<DataTypeString>(type_default))
+            if (!type_default->isValueRepresentedByNumber() && !type_default->isString())
                 throw Exception{"Unsupported type " + type_default->getName()
                     + " of fourth argument (default value) of function " + getName()
                     + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            if ((type_default->isNumeric() != type_arr_to_nested->isNumeric())
-                || (!!checkDataType<DataTypeString>(type_default) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
+            if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                || (!!checkDataType<DataTypeString>(type_default.get()) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            if (type_arr_to_nested->behavesAsNumber() && type_default->behavesAsNumber())
+            if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                DataTypeTraits::EnrichedDataTypePtr res = getSmallestCommonNumericType(enriched_type_arr_to_nested, *type_default);
-                return res.first;
+                return getLeastCommonType({type_arr_to_nested, type_default});
             }
 
             /// TODO More checks.
-            return type_arr_to_nested->clone();
+            return type_arr_to_nested;
         }
     }
 
@@ -158,7 +153,7 @@ public:
 
         const auto in = block.getByPosition(arguments.front()).column.get();
 
-        if (in->isConst())
+        if (in->isColumnConst())
         {
             executeConst(block, arguments, result);
             return;
@@ -188,7 +183,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.getByPosition(result).column = column_result;
+        block.getByPosition(result).column = std::move(column_result);
     }
 
 private:
@@ -214,7 +209,7 @@ private:
 
         execute(tmp_block, tmp_arguments, tmp_result);
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
             block.rows(),
             (*tmp_block.getByPosition(tmp_result).column)[0]);
     }
@@ -237,7 +232,7 @@ private:
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
             }
-            else if (default_untyped->isConst())
+            else if (default_untyped->isColumnConst())
             {
                 if (!executeNumToNumWithConstDefault<T, UInt8>(in, out_untyped)
                     && !executeNumToNumWithConstDefault<T, UInt16>(in, out_untyped)
@@ -295,7 +290,7 @@ private:
                         ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
-            else if (default_untyped->isConst())
+            else if (default_untyped->isColumnConst())
             {
                 if (!executeStringToNumWithConstDefault<UInt8>(in, out_untyped)
                     && !executeStringToNumWithConstDefault<UInt16>(in, out_untyped)
@@ -564,12 +559,12 @@ private:
 
     template <typename T>
     void executeImplNumToStringWithConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets, StringRef dst_default)
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         const auto & table = *table_num_to_string;
         size_t size = src.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_dst_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
@@ -583,14 +578,14 @@ private:
 
     template <typename T>
     void executeImplNumToStringWithNonConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets,
-        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets_t & dst_default_offsets)
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets,
+        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
     {
         const auto & table = *table_num_to_string;
         size_t size = src.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_dst_offset = 0;
-        ColumnString::Offset_t current_dst_default_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
+        ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
@@ -614,13 +609,13 @@ private:
 
     template <typename U>
     void executeImplStringToNumWithConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
         PaddedPODArray<U> & dst, U dst_default)
     {
         const auto & table = *table_string_to_num;
         size_t size = src_offsets.size();
         dst.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
@@ -635,13 +630,13 @@ private:
 
     template <typename U, typename V>
     void executeImplStringToNumWithNonConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
         PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default)
     {
         const auto & table = *table_string_to_num;
         size_t size = src_offsets.size();
         dst.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
@@ -656,14 +651,14 @@ private:
 
     template <bool with_default>
     void executeImplStringToStringWithOrWithoutConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets, StringRef dst_default)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         const auto & table = *table_string_to_string;
         size_t size = src_offsets.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
-        ColumnString::Offset_t current_dst_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
@@ -680,30 +675,30 @@ private:
     }
 
     void executeImplStringToString(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets)
     {
         executeImplStringToStringWithOrWithoutConstDefault<false>(src_data, src_offsets, dst_data, dst_offsets, {});
     }
 
     void executeImplStringToStringWithConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets, StringRef dst_default)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         executeImplStringToStringWithOrWithoutConstDefault<true>(src_data, src_offsets, dst_data, dst_offsets, dst_default);
     }
 
     void executeImplStringToStringWithNonConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets_t & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets_t & dst_offsets,
-        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets_t & dst_default_offsets)
+        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets,
+        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
     {
         const auto & table = *table_string_to_string;
         size_t size = src_offsets.size();
         dst_offsets.resize(size);
-        ColumnString::Offset_t current_src_offset = 0;
-        ColumnString::Offset_t current_dst_offset = 0;
-        ColumnString::Offset_t current_dst_default_offset = 0;
+        ColumnString::Offset current_src_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
+        ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};

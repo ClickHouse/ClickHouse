@@ -14,12 +14,15 @@ class Context;
   */
 class StorageSystemParts : public ext::shared_ptr_helper<StorageSystemParts>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemParts>;
 public:
     std::string getName() const override { return "SystemParts"; }
     std::string getTableName() const override { return name; }
 
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+
+    NameAndTypePair getColumn(const String & column_name) const override;
+
+    bool hasColumn(const String & column_name) const override;
 
     BlockInputStreams read(
         const Names & column_names,
@@ -33,6 +36,7 @@ private:
     const std::string name;
     NamesAndTypesList columns;
 
+protected:
     StorageSystemParts(const std::string & name_);
 };
 

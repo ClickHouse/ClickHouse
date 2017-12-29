@@ -76,15 +76,7 @@ private:
 
 StorageMemory::StorageMemory(
     const std::string & name_,
-    NamesAndTypesListPtr columns_)
-    : name(name_), columns(columns_)
-{
-}
-
-
-StorageMemory::StorageMemory(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
@@ -96,10 +88,10 @@ StorageMemory::StorageMemory(
 
 BlockInputStreams StorageMemory::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & /*context*/,
     QueryProcessingStage::Enum & processed_stage,
-    size_t max_block_size,
+    size_t /*max_block_size*/,
     unsigned num_streams)
 {
     check(column_names);
@@ -130,7 +122,7 @@ BlockInputStreams StorageMemory::read(
 
 
 BlockOutputStreamPtr StorageMemory::write(
-    const ASTPtr & query, const Settings & settings)
+    const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<MemoryBlockOutputStream>(*this);
 }

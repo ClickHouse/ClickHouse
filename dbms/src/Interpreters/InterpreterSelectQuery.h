@@ -22,7 +22,12 @@ struct SubqueryForSet;
 class InterpreterSelectQuery : public IInterpreter
 {
 public:
-    /** `to_stage`
+    /**
+     * query_ptr
+     * - A query AST to interpret.
+     *   NOTE: The interpreter can modify the query during the execution. If this is undesirable, clone the query.
+     *
+     * to_stage
      * - the stage to which the query is to be executed. By default - till to the end.
      *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
      *

@@ -24,6 +24,10 @@ generate_function_register(Arithmetic
   FunctionBitTest
   FunctionBitTestAny
   FunctionBitTestAll
+  FunctionGCD
+  FunctionLCM
+  FunctionIntExp2
+  FunctionIntExp10
 )
 
 generate_function_register(Array
@@ -65,14 +69,19 @@ add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./Conditional)
 add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
 
-list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp DataTypeTraits.cpp FunctionHelpers.cpp)
-list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h DataTypeTraits.h FunctionHelpers.h)
+list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
+list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 target_link_libraries(clickhouse_functions dbms)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+    target_compile_options(clickhouse_functions PRIVATE "-g0")
+endif ()
 
 if (USE_VECTORCLASS)
     target_include_directories (clickhouse_functions BEFORE PUBLIC ${VECTORCLASS_INCLUDE_DIR})

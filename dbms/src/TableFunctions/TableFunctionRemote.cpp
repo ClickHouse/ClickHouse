@@ -278,7 +278,7 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
 
     auto res = StorageDistributed::createWithOwnCluster(
         getName(),
-        std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, remote_database, remote_table, context)),
+        getStructureOfRemoteTable(*cluster, remote_database, remote_table, context),
         remote_database,
         remote_table,
         cluster,
@@ -290,7 +290,7 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
 
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
-    TableFunctionFactory::instance().registerFunction<TableFunctionRemote>();
+    factory.registerFunction<TableFunctionRemote>();
 }
 
 }

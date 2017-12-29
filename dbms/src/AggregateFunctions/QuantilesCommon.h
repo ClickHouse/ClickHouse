@@ -3,7 +3,7 @@
 #include <vector>
 
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB
@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
 
 /** Parameters of different functions quantiles*.
   * - list of levels of quantiles.
@@ -33,10 +34,19 @@ struct QuantileLevels
 
     size_t size() const { return levels.size(); }
 
-    void set(const Array & params)
+    QuantileLevels(const Array & params, bool require_at_least_one_param)
     {
         if (params.empty())
-            throw Exception("Aggregate function quantiles requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        {
+            if (require_at_least_one_param)
+                throw Exception("Aggregate function for calculation of multiple quantiles require at least one parameter",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+            /// If levels are not specified, default is 0.5 (median).
+            levels.push_back(0.5);
+            permutation.push_back(0);
+            return;
+        }
 
         size_t size = params.size();
         levels.resize(size);

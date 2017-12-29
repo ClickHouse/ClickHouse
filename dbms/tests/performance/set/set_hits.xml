@@ -1,0 +1,29 @@
+<test>
+    <name>set_lookup_hits</name>
+    <type>once</type>
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <stop_conditions>
+        <all_of>
+            <total_time_ms>10000</total_time_ms>
+        </all_of>
+        <any_of>
+            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
+            <total_time_ms>20000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <avg_rows_per_second/>
+    </main_metric>
+
+    <query>SELECT count() FROM hits_100m_single WHERE UserID IN (SELECT UserID FROM hits_100m_single WHERE AdvEngineID != 0)</query>
+    <query>SELECT count() FROM hits_100m_single WHERE UserID IN (SELECT UserID FROM hits_100m_single)</query>
+    <query>SELECT count() FROM hits_100m_single WHERE SearchPhrase IN (SELECT SearchPhrase FROM hits_100m_single)</query>
+    <query>SELECT count() FROM hits_100m_single WHERE URL IN (SELECT URL FROM hits_100m_single WHERE AdvEngineID != 0)</query>
+    <query>SELECT count() FROM hits_100m_single WHERE URL IN (SELECT URL FROM hits_100m_single WHERE SearchEngineID != 0)</query>
+    <query>SELECT count() FROM hits_100m_single WHERE RegionID IN (SELECT RegionID FROM hits_100m_single)</query>
+</test>

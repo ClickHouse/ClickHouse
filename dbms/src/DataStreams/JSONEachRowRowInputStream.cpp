@@ -12,15 +12,15 @@ namespace ErrorCodes
 }
 
 
-JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & sample_, bool skip_unknown_)
-    : istr(istr_), sample(sample_), skip_unknown(skip_unknown_), name_map(sample.columns())
+JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, bool skip_unknown_)
+    : istr(istr_), header(header_), skip_unknown(skip_unknown_), name_map(header.columns())
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
 
-    size_t columns = sample.columns();
-    for (size_t i = 0; i < columns; ++i)
-        name_map[sample.safeGetByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
+    size_t num_columns = header.columns();
+    for (size_t i = 0; i < num_columns; ++i)
+        name_map[header.safeGetByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
 }
 
 
@@ -58,20 +58,31 @@ static void skipColonDelimeter(ReadBuffer & istr)
 }
 
 
-bool JSONEachRowRowInputStream::read(Block & block)
+bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 {
+    skipWhitespaceIfAny(istr);
+
+    /// We consume ;, or \n before scanning a new row, instead scanning to next row at the end.
+    /// The reason is that if we want an exact number of rows read with LIMIT x
+    /// from a streaming table engine with text data format, like File or Kafka
+    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
+
+    /// Semicolon is added for convenience as it could be used at end of INSERT query.
+    if (!istr.eof() && (*istr.position() == ',' || *istr.position() == ';'))
+        ++istr.position();
+
     skipWhitespaceIfAny(istr);
     if (istr.eof())
         return false;
 
     assertChar('{', istr);
 
-    size_t columns = block.columns();
+    size_t num_columns = columns.size();
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     /// TODO Ability to provide your DEFAULTs.
-    bool read_columns[columns];
-    memset(read_columns, 0, columns);
+    bool read_columns[num_columns];
+    memset(read_columns, 0, num_columns);
 
     bool first = true;
     while (true)
@@ -119,23 +130,13 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
         read_columns[index] = true;
 
-        auto & col = block.getByPosition(index);
-        col.type->deserializeTextJSON(*col.column, istr);
+        header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr);
     }
-
-    skipWhitespaceIfAny(istr);
-    if (!istr.eof() && (*istr.position() == ',' || *istr.position() == ';'))    /// Semicolon is added for convenience as it could be used at end of INSERT query.
-        ++istr.position();
 
     /// Fill non-visited columns with the default values.
-    for (size_t i = 0; i < columns; ++i)
-    {
+    for (size_t i = 0; i < num_columns; ++i)
         if (!read_columns[i])
-        {
-            ColumnWithTypeAndName & elem = block.getByPosition(i);
-            elem.type->insertDefaultInto(*elem.column);
-        }
-    }
+            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     return true;
 }

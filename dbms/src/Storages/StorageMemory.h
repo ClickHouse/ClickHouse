@@ -12,9 +12,6 @@
 namespace DB
 {
 
-class StorageMemory;
-
-
 /** Implements storage in the RAM.
   * Suitable for temporary data.
   * It does not support keys.
@@ -22,7 +19,6 @@ class StorageMemory;
   */
 class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMemory>;
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 
@@ -30,7 +26,7 @@ public:
     std::string getName() const override { return "Memory"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     size_t getSize() const { return data.size(); }
 
@@ -45,24 +41,21 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     void drop() override;
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
 
 private:
     String name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
 
     /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
     BlocksList data;
 
     std::mutex mutex;
 
+protected:
     StorageMemory(
         const std::string & name_,
-        NamesAndTypesListPtr columns_);
-
-    StorageMemory(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);

@@ -4,21 +4,22 @@
 #include <memory>
 #include <string>
 
+#include <Columns/IColumn.h>
+
 
 namespace DB
 {
 
-class Block;
 
 /** Interface of stream, that allows to read data by rows.
   */
 class IRowInputStream : private boost::noncopyable
 {
 public:
-    /** Read next row and append it to block.
+    /** Read next row and append it to the columns.
       * If no more rows - return false.
       */
-    virtual bool read(Block & block) = 0;
+    virtual bool read(MutableColumns & columns) = 0;
 
     virtual void readPrefix() {};                /// delimiter before begin of result
     virtual void readSuffix() {};                /// delimiter after end of result

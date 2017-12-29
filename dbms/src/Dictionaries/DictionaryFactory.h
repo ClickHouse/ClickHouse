@@ -13,7 +13,7 @@ class Context;
 class DictionaryFactory : public ext::singleton<DictionaryFactory>
 {
 public:
-    DictionaryPtr create(const std::string & name, Poco::Util::AbstractConfiguration & config,
+    DictionaryPtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix, Context & context) const;
 };
 

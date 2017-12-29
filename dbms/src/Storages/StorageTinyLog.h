@@ -20,7 +20,6 @@ namespace DB
   */
 class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageTinyLog>;
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 
@@ -28,7 +27,7 @@ public:
     std::string getName() const override { return "TinyLog"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -39,8 +38,6 @@ public:
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
-
-    void drop() override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -58,7 +55,7 @@ public:
 private:
     String path;
     String name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
 
     size_t max_compress_block_size;
 
@@ -68,17 +65,19 @@ private:
 
     Logger * log;
 
+    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+    void addFiles(const String & column_name, const IDataType & type);
+
+protected:
     StorageTinyLog(
         const std::string & path_,
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         bool attach,
         size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-
-    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 };
 
 }

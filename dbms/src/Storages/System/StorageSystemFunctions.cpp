@@ -16,8 +16,8 @@ namespace DB
 StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
     : name(name_)
     , columns{
-        { "name",           std::make_shared<DataTypeString>() },
-        { "is_aggregate",   std::make_shared<DataTypeUInt8>()  }
+        { "name",         std::make_shared<DataTypeString>() },
+        { "is_aggregate", std::make_shared<DataTypeUInt8>()  }
     }
 {
 }
@@ -25,33 +25,32 @@ StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
 
 BlockInputStreams StorageSystemFunctions::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const SelectQueryInfo &,
+    const Context &,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ColumnWithTypeAndName column_name{ std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name" };
-    ColumnWithTypeAndName column_is_aggregate{ std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "is_aggregate" };
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     const auto & functions = FunctionFactory::instance().functions;
     for (const auto & it : functions)
     {
-        column_name.column->insert(it.first);
-        column_is_aggregate.column->insert(UInt64(0));
+        res_columns[0]->insert(it.first);
+        res_columns[1]->insert(UInt64(0));
     }
 
     const auto & aggregate_functions = AggregateFunctionFactory::instance().aggregate_functions;
     for (const auto & it : aggregate_functions)
     {
-        column_name.column->insert(it.first);
-        column_is_aggregate.column->insert(UInt64(1));
+        res_columns[0]->insert(it.first);
+        res_columns[1]->insert(UInt64(1));
     }
 
-    return BlockInputStreams{ std::make_shared<OneBlockInputStream>(Block{ column_name, column_is_aggregate }) };
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

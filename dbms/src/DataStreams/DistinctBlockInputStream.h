@@ -30,12 +30,12 @@ protected:
 private:
     bool checkLimits() const;
 
-    ConstColumnPlainPtrs getKeyColumns(const Block & block) const;
+    ColumnRawPtrs getKeyColumns(const Block & block) const;
 
     template <typename Method>
     void buildFilter(
         Method & method,
-        const ConstColumnPlainPtrs & key_columns,
+        const ColumnRawPtrs & key_columns,
         IColumn::Filter & filter,
         size_t rows,
         SetVariants & variants) const;
@@ -45,6 +45,8 @@ private:
     SetVariants data;
     Sizes key_sizes;
     size_t limit_hint;
+
+    bool no_more_rows = false;
 
     /// Restrictions on the maximum size of the output data.
     size_t max_rows;

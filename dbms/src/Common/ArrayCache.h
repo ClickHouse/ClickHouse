@@ -15,6 +15,7 @@
 
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+#include <Common/formatReadable.h>
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
@@ -172,13 +173,13 @@ private:
         {
             ptr = mmap(address_hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (MAP_FAILED == ptr)
-                DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
 
         ~Chunk()
         {
             if (ptr && 0 != munmap(ptr, size))
-                DB::throwFromErrno("Allocator: Cannot munmap.", DB::ErrorCodes::CANNOT_MUNMAP);
+                DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
         }
 
         Chunk(Chunk && other) : ptr(other.ptr), size(other.size)
@@ -278,14 +279,14 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<std::mutex> & cache_lock)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             key = key_;
             token = token_;
             ++token->refcount;
         }
 
-        void cleanup(std::lock_guard<std::mutex> & token_lock, std::lock_guard<std::mutex> & cache_lock)
+        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;

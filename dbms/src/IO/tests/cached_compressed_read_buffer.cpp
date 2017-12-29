@@ -13,6 +13,12 @@ int main(int argc, char ** argv)
 {
     using namespace DB;
 
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program path\n";
+        return 1;
+    }
+
     try
     {
         UncompressedCache cache(1024);

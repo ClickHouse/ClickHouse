@@ -9,7 +9,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/AggregationCommon.h>
@@ -18,11 +17,9 @@
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/MemoryTracker.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqCombinedBiasData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
@@ -63,6 +60,15 @@ struct AggregateFunctionUniqHLL12Data
 
 template <>
 struct AggregateFunctionUniqHLL12Data<String>
+{
+    using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
+    Set set;
+
+    static String getName() { return "uniqHLL12"; }
+};
+
+template <>
+struct AggregateFunctionUniqHLL12Data<UInt128>
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
     Set set;
@@ -196,6 +202,16 @@ template <typename T> struct AggregateFunctionUniqTraits
     static UInt64 hash(T x) { return x; }
 };
 
+template <> struct AggregateFunctionUniqTraits<UInt128>
+{
+    static UInt64 hash(UInt128 x)
+    {
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+        return hash.get64();
+    }
+};
+
 template <> struct AggregateFunctionUniqTraits<Float32>
 {
     static UInt64 hash(Float32 x)
@@ -223,6 +239,16 @@ template <typename T> struct AggregateFunctionUniqCombinedTraits
     static UInt32 hash(T x) { return static_cast<UInt32>(intHash64(x)); }
 };
 
+template <> struct AggregateFunctionUniqCombinedTraits<UInt128>
+{
+    static UInt32 hash(UInt128 x)
+    {
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+        return static_cast<UInt32>(hash.get64());
+    }
+};
+
 template <> struct AggregateFunctionUniqCombinedTraits<Float32>
 {
     static UInt32 hash(Float32 x)
@@ -243,81 +269,63 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float64>
     }
 };
 
+
 /** The structure for the delegation work to add one element to the `uniq` aggregate functions.
   * Used for partial specialization to add strings.
   */
-template <typename T, typename Data, typename Enable = void>
-struct OneAdder;
-
 template <typename T, typename Data>
-struct OneAdder<T, Data, typename std::enable_if<
-    std::is_same<Data, AggregateFunctionUniqUniquesHashSetData>::value ||
-    std::is_same<Data, AggregateFunctionUniqHLL12Data<T>>::value>::type>
+struct OneAdder
 {
-    template <typename T2 = T>
-    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
-        typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
+    static void ALWAYS_INLINE add(Data & data, const IColumn & column, size_t row_num)
     {
-        const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
-        data.set.insert(AggregateFunctionUniqTraits<T2>::hash(value));
-    }
+        if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>
+            || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<T>>)
+        {
+            if constexpr (!std::is_same_v<T, String>)
+            {
+                const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+                data.set.insert(AggregateFunctionUniqTraits<T>::hash(value));
+            }
+            else
+            {
+                StringRef value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+            }
+        }
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqCombinedRawData<T>>
+            || std::is_same_v<Data, AggregateFunctionUniqCombinedLinearCountingData<T>>
+            || std::is_same_v<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T>>
+            || std::is_same_v<Data, AggregateFunctionUniqCombinedData<T>>)
+        {
+            if constexpr (!std::is_same_v<T, String>)
+            {
+                const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+                data.set.insert(AggregateFunctionUniqCombinedTraits<T>::hash(value));
+            }
+            else
+            {
+                StringRef value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+            }
+        }
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T>>)
+        {
+            if constexpr (!std::is_same_v<T, String>)
+            {
+                data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+            }
+            else
+            {
+                StringRef value = column.getDataAt(row_num);
 
-    template <typename T2 = T>
-    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column,    size_t row_num,
-        typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
-    {
-        StringRef value = column.getDataAt(row_num);
-        data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
-    }
-};
+                UInt128 key;
+                SipHash hash;
+                hash.update(value.data, value.size);
+                hash.get128(key.low, key.high);
 
-template <typename T, typename Data>
-struct OneAdder<T, Data, typename std::enable_if<
-    std::is_same<Data, AggregateFunctionUniqCombinedRawData<T>>::value ||
-    std::is_same<Data, AggregateFunctionUniqCombinedLinearCountingData<T>>::value ||
-    std::is_same<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T>>::value ||
-    std::is_same<Data, AggregateFunctionUniqCombinedData<T>>::value>::type>
-{
-    template <typename T2 = T>
-    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
-        typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
-    {
-        const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
-        data.set.insert(AggregateFunctionUniqCombinedTraits<T2>::hash(value));
-    }
-
-    template <typename T2 = T>
-    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column,    size_t row_num,
-        typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
-    {
-        StringRef value = column.getDataAt(row_num);
-        data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
-    }
-};
-
-template <typename T, typename Data>
-struct OneAdder<T, Data, typename std::enable_if<
-    std::is_same<Data, AggregateFunctionUniqExactData<T>>::value>::type>
-{
-    template <typename T2 = T>
-    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
-        typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
-    {
-        data.set.insert(static_cast<const ColumnVector<T2> &>(column).getData()[row_num]);
-    }
-
-    template <typename T2 = T>
-    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
-        typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
-    {
-        StringRef value = column.getDataAt(row_num);
-
-        UInt128 key;
-        SipHash hash;
-        hash.update(value.data, value.size);
-        hash.get128(key.low, key.high);
-
-        data.set.insert(key);
+                data.set.insert(key);
+            }
+        }
     }
 };
 
@@ -326,7 +334,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 
 /// Calculates the number of different values approximately or exactly.
 template <typename T, typename Data>
-class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data>>
+class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
 public:
     String getName() const override { return Data::getName(); }
@@ -336,16 +344,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
+        detail::OneAdder<T, Data>::add(this->data(place), *columns[0], row_num);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        detail::OneAdder<T, Data>::addImpl(this->data(place), column, row_num);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
@@ -374,22 +378,15 @@ public:
   * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
 template <typename Data, bool argument_is_tuple>
-class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, argument_is_tuple>>
 {
 private:
-    static constexpr bool is_exact = std::is_same<Data, AggregateFunctionUniqExactData<String>>::value;
+    static constexpr bool is_exact = std::is_same_v<Data, AggregateFunctionUniqExactData<String>>;
 
     size_t num_args = 0;
 
 public:
-    String getName() const override { return Data::getName(); }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
-
-    void setArguments(const DataTypes & arguments) override
+    AggregateFunctionUniqVariadic(const DataTypes & arguments)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -397,12 +394,19 @@ public:
             num_args = arguments.size();
     }
 
+    String getName() const override { return Data::getName(); }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).set.insert(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
@@ -421,13 +425,6 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionUniqVariadic &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

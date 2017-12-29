@@ -24,7 +24,6 @@ SquashingTransform::Result SquashingTransform::add(Block && block)
 
         /// Return accumulated data (may be it has small size) and place new block to accumulated data.
         accumulated_block.swap(block);
-        accumulated_block.unshareColumns();
         return Result(std::move(block));
     }
 
@@ -33,7 +32,6 @@ SquashingTransform::Result SquashingTransform::add(Block && block)
     {
         /// Return accumulated data and place new block to accumulated data.
         accumulated_block.swap(block);
-        accumulated_block.unshareColumns();
         return Result(std::move(block));
     }
 
@@ -56,7 +54,6 @@ void SquashingTransform::append(Block && block)
     if (!accumulated_block)
     {
         accumulated_block = std::move(block);
-        accumulated_block.unshareColumns();
         return;
     }
 
@@ -64,8 +61,11 @@ void SquashingTransform::append(Block && block)
     size_t rows = block.rows();
 
     for (size_t i = 0; i < columns; ++i)
-        accumulated_block.getByPosition(i).column->insertRangeFrom(
-            *block.getByPosition(i).column, 0, rows);
+    {
+        MutableColumnPtr mutable_column = accumulated_block.getByPosition(i).column->mutate();
+        mutable_column->insertRangeFrom(*block.getByPosition(i).column, 0, rows);
+        accumulated_block.getByPosition(i).column = std::move(mutable_column);
+    }
 }
 
 

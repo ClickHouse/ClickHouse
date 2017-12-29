@@ -7,11 +7,12 @@ cd $CURDIR
 
 source "./release_lib.sh"
 
-DEB_CC=gcc-6
-DEB_CXX=g++-6
+DEB_CC=${DEB_CC:=gcc-7}
+DEB_CXX=${DEB_CXX:=g++-7}
 
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
+DEBUILD_NODEPS_OPTIONS="-d"
 
 if [ -z "$REVISION" ] ; then
     get_revision_author
@@ -23,8 +24,8 @@ do
         TEST='yes'
         VERSION_POSTFIX+=-test
         shift
-    elif [[ $1 == '--ignore-deps' ]]; then
-        DEBUILD_NODEPS_OPTIONS="-d"
+    elif [[ $1 == '--check-build-dependencies' ]]; then
+        DEBUILD_NODEPS_OPTIONS=""
         shift
     elif [[ $1 == '--version' ]]; then
         gen_revision_author
@@ -32,6 +33,9 @@ do
         exit 0
     elif [[ $1 == '--head' ]]; then
         REVISION=`git rev-parse HEAD`
+        shift
+    elif [[ $1 == '--pbuilder' ]]; then
+        USE_PBUILDER=1
         shift
     else
         echo "Unknown option $1"
@@ -46,14 +50,17 @@ then
     CMAKE_BUILD_TYPE=$SANITIZER
     VERSION_POSTFIX+=-${SANITIZER,,}
     # todo: нужно ли отключить libtcmalloc?
-    LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
+    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
+    export DEB_CC=clang-5.0
+    export DEB_CXX=clang++-5.0
+    export EXTRAPACKAGES=clang-5.0
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
-    LIBTCMALLOC_OPTS="-DENABLE_LIBTCMALLOC=0"
+    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
-    LIBTCMALLOC_OPTS="-DDEBUG_LIBTCMALLOC=1"
+    LIBTCMALLOC_OPTS="-DDEBUG_TCMALLOC=1"
     VERSION_POSTFIX+=-$BUILD_TYPE
 fi
 
@@ -61,12 +68,24 @@ if [ -z "$THREAD_COUNT" ] ; then
     THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 fi
 
-CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
+CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1"
+export CMAKE_FLAGS
 
 REVISION+=$VERSION_POSTFIX
 echo -e "\nCurrent revision is $REVISION"
 
 gen_changelog "$REVISION" "" "$AUTHOR" ""
 
-# Build (only binary packages).
-debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e USE_INTERNAL_COMPILER=1 -e CMAKE_FLAGS="$CMAKE_FLAGS" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+if [ -z "$USE_PBUILDER" ] ; then
+    # Build (only binary packages).
+    debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
+    -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
+    -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+else
+    export DIST=${DIST:=artful}
+    . $CURDIR/debian/.pbuilderrc
+    if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
+        sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc
+    fi
+    pdebuild --configfile $CURDIR/debian/.pbuilderrc
+fi

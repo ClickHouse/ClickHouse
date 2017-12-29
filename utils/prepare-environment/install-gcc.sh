@@ -17,8 +17,8 @@ cd ~
 mkdir gcc
 cd gcc
 
-wget https://ftpmirror.gnu.org/gcc/${VERSION}/${VERSION}.tar.bz2
-tar xf ${VERSION}.tar.bz2
+wget https://ftpmirror.gnu.org/gcc/${VERSION}/${VERSION}.tar.xz
+tar xf ${VERSION}.tar.xz
 cd ${VERSION}
 ./contrib/download_prerequisites
 cd ..
@@ -33,7 +33,8 @@ sudo ln -sf /usr/local/bin/g++ /usr/local/bin/g++-${VERSION_SHORT}
 sudo ln -sf /usr/local/bin/gcc /usr/local/bin/cc
 sudo ln -sf /usr/local/bin/g++ /usr/local/bin/c++
 
-echo "/usr/local/lib64" | sudo tee /etc/ld.so.conf.d/local-lib64.conf
+echo "/usr/local/lib64" | sudo tee /etc/ld.so.conf.d/10_local-lib64.conf
+sudo ldconfig
 
 hash gcc g++
 gcc --version

@@ -96,7 +96,7 @@ private:
         IColumn::Filter filter;
 
         /// Point to `block`.
-        ConstColumnPlainPtrs sort_columns;
+        ColumnRawPtrs sort_columns;
         const ColumnInt8 * sign_column;
 
         /// When it reaches zero, the block can be outputted in response.

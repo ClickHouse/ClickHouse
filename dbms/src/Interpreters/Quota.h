@@ -153,7 +153,7 @@ struct QuotaForInterval
 private:
     /// Reset counters of used resources, if interval for quota is expired.
     void updateTime(time_t current_time);
-    void check(size_t max_amount, size_t used_amount, time_t current_time,
+    void check(size_t max_amount, size_t used_amount,
         const String & quota_name, const String & user_name, const char * resource_name);
 };
 

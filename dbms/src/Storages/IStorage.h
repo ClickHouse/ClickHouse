@@ -8,7 +8,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <shared_mutex>
 #include <memory>
-#include <experimental/optional>
+#include <optional>
 
 
 namespace DB
@@ -30,6 +30,7 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
+class ASTCreateQuery;
 
 class IStorage;
 
@@ -38,11 +39,6 @@ using StoragePtr = std::shared_ptr<IStorage>;
 struct Settings;
 
 class AlterCommands;
-
-/// For RESHARD PARTITION.
-using WeightedZooKeeperPath = std::pair<String, UInt64>;
-using WeightedZooKeeperPaths = std::vector<WeightedZooKeeperPath>;
-
 
 
 /** Does not allow changing the table description (including rename and delete the table).
@@ -98,9 +94,6 @@ public:
 
     /** Returns true if the storage supports queries with the PREWHERE section. */
     virtual bool supportsPrewhere() const { return false; }
-
-    /** Returns true if the storage supports read from multiple replicas. Assumed isRemote. */
-    virtual bool supportsParallelReplicas() const { return false; }
 
     /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
     virtual bool supportsReplication() const { return false; }
@@ -173,12 +166,12 @@ public:
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
     virtual BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams)
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum & /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/)
     {
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -190,8 +183,8 @@ public:
       * It is guaranteed that the table structure will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
     virtual BlockOutputStreamPtr write(
-        const ASTPtr & query,
-        const Settings & settings)
+        const ASTPtr & /*query*/,
+        const Settings & /*settings*/)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -206,7 +199,7 @@ public:
       * In this function, you need to rename the directory with the data, if any.
       * Called when the table structure is locked for write.
       */
-    virtual void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+    virtual void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/)
     {
         throw Exception("Method rename is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -215,61 +208,49 @@ public:
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
-    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+    virtual void alter(const AlterCommands & /*params*/, const String & /*database_name*/, const String & /*table_name*/, const Context & /*context*/)
     {
         throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
-    virtual void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
+    virtual void clearColumnInPartition(const ASTPtr & /*partition*/, const Field & /*column_name*/, const Context & /*context*/)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the query (DROP|DETACH) PARTITION.
       */
-    virtual void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+    virtual void dropPartition(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*detach*/, const Context & /*context*/)
     {
         throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the ATTACH request (PART|PARTITION).
       */
-    virtual void attachPartition(const ASTPtr & partition, bool part, const Context & context)
+    virtual void attachPartition(const ASTPtr & /*partition*/, bool /*part*/, const Context & /*context*/)
     {
         throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the FETCH PARTITION query.
       */
-    virtual void fetchPartition(const ASTPtr & partition, const String & from, const Context & context)
+    virtual void fetchPartition(const ASTPtr & /*partition*/, const String & /*from*/, const Context & /*context*/)
     {
         throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the FREEZE PARTITION request. That is, create a local backup (snapshot) of data using the `localBackup` function (see localBackup.h)
       */
-    virtual void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
+    virtual void freezePartition(const ASTPtr & /*partition*/, const String & /*with_name*/, const Context & /*context*/)
     {
         throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the RESHARD PARTITION query.
-      */
-    virtual void reshardPartitions(
-        const ASTPtr & query, const String & database_name,
-        const ASTPtr & partition,
-        const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-        const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Context & context)
-    {
-        throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+    virtual bool optimize(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*final*/, bool /*deduplicate*/, const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

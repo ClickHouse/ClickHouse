@@ -22,16 +22,17 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
 
 template <bool negative = false>
 struct EmptyImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
+    static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
-        ColumnString::Offset_t prev_offset = 1;
+        ColumnString::Offset prev_offset = 1;
         for (size_t i = 0; i < size; ++i)
         {
             res[i] = negative ^ (offsets[i] == prev_offset);
@@ -39,19 +40,19 @@ struct EmptyImpl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt8 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt8 & res)
     {
         res = negative ^ (n == 0);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt8> & /*res*/)
     {
     }
 
-    static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
+    static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
-        ColumnString::Offset_t prev_offset = 0;
+        ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             res[i] = negative ^ (offsets[i] == prev_offset);
@@ -65,23 +66,23 @@ struct EmptyImpl
   */
 struct LengthImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
         for (size_t i = 0; i < size; ++i)
             res[i] = i == 0 ? (offsets[i] - 1) : (offsets[i] - 1 - offsets[i - 1]);
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt64 & res)
     {
         res = n;
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/)
     {
     }
 
-    static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
         for (size_t i = 0; i < size; ++i)
@@ -97,11 +98,11 @@ struct LengthImpl
   */
 struct LengthUTF8Impl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
 
-        ColumnString::Offset_t prev_offset = 0;
+        ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             res[i] = UTF8::countCodePoints(&data[prev_offset], offsets[i] - prev_offset - 1);
@@ -109,7 +110,7 @@ struct LengthUTF8Impl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt64 & /*res*/)
     {
     }
 
@@ -123,7 +124,7 @@ struct LengthUTF8Impl
         }
     }
 
-    static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void array(const ColumnString::Offsets &, PaddedPODArray<UInt64> &)
     {
         throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -134,16 +135,16 @@ template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImpl
 {
     static void vector(const ColumnString::Chars_t & data,
-        const ColumnString::Offsets_t & offsets,
+        const ColumnString::Offsets & offsets,
         ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets)
+        ColumnString::Offsets & res_offsets)
     {
         res_data.resize(data.size());
         res_offsets.assign(offsets);
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
     {
         res_data.resize(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
@@ -195,15 +196,15 @@ private:
 struct ReverseImpl
 {
     static void vector(const ColumnString::Chars_t & data,
-        const ColumnString::Offsets_t & offsets,
+        const ColumnString::Offsets & offsets,
         ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets)
+        ColumnString::Offsets & res_offsets)
     {
         res_data.resize(data.size());
         res_offsets.assign(offsets);
         size_t size = offsets.size();
 
-        ColumnString::Offset_t prev_offset = 0;
+        ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
@@ -232,18 +233,18 @@ struct ReverseImpl
 struct ReverseUTF8Impl
 {
     static void vector(const ColumnString::Chars_t & data,
-        const ColumnString::Offsets_t & offsets,
+        const ColumnString::Offsets & offsets,
         ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets)
+        ColumnString::Offsets & res_offsets)
     {
         res_data.resize(data.size());
         res_offsets.assign(offsets);
         size_t size = offsets.size();
 
-        ColumnString::Offset_t prev_offset = 0;
+        ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            ColumnString::Offset_t j = prev_offset;
+            ColumnString::Offset j = prev_offset;
             while (j < offsets[i] - 1)
             {
                 if (data[j] < 0xBF)
@@ -273,7 +274,7 @@ struct ReverseUTF8Impl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
     {
         throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -283,11 +284,11 @@ struct ReverseUTF8Impl
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector(const ColumnString::Chars_t & data,
-    const IColumn::Offsets_t & offsets,
+    const IColumn::Offsets & offsets,
     ColumnString::Chars_t & res_data,
-    IColumn::Offsets_t & res_offsets)
+    IColumn::Offsets & res_offsets)
 {
     res_data.resize(data.size());
     res_offsets.assign(offsets);
@@ -297,9 +298,9 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector_fixed(
-    const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
 {
     res_data.resize(data.size());
     array(data.data(), data.data() + data.size(), res_data.data());
@@ -308,7 +309,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::constant(
     const std::string & data, std::string & res_data)
 {
@@ -321,7 +322,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::toCase(
     const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
 {
@@ -335,7 +336,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
     else if (src + 1 < src_end
         && ((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) || (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
     {
-        cyrillic_to_case(src, src_end, dst);
+        cyrillic_to_case(src, dst);
     }
     else if (src + 1 < src_end && src[0] == 0xC2u)
     {
@@ -364,7 +365,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::array(
     const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
@@ -443,24 +444,24 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 struct SubstringUTF8Impl
 {
     static void vector(const ColumnString::Chars_t & data,
-        const ColumnString::Offsets_t & offsets,
+        const ColumnString::Offsets & offsets,
         size_t start,
         size_t length,
         ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets)
+        ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size());
         size_t size = offsets.size();
         res_offsets.resize(size);
 
-        ColumnString::Offset_t prev_offset = 0;
-        ColumnString::Offset_t res_offset = 0;
+        ColumnString::Offset prev_offset = 0;
+        ColumnString::Offset res_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            ColumnString::Offset_t j = prev_offset;
-            ColumnString::Offset_t pos = 1;
-            ColumnString::Offset_t bytes_start = 0;
-            ColumnString::Offset_t bytes_length = 0;
+            ColumnString::Offset j = prev_offset;
+            ColumnString::Offset pos = 1;
+            ColumnString::Offset bytes_start = 0;
+            ColumnString::Offset bytes_length = 0;
             while (j < offsets[i] - 1)
             {
                 if (pos == start)
@@ -509,7 +510,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionStringOrArrayToT>();
     }
@@ -526,7 +527,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0])
+        if (!arguments[0]->isStringOrFixedString()
             && !checkDataType<DataTypeArray>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -541,12 +542,13 @@ public:
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
-            typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
             Impl::vector(col->getChars(), col->getOffsets(), vec_res);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -556,26 +558,28 @@ public:
                 ResultType res = 0;
                 Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), toField(res));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col->size(), toField(res));
             }
             else
             {
-                auto col_res = std::make_shared<ColumnVector<ResultType>>();
-                block.getByPosition(result).column = col_res;
+                auto col_res = ColumnVector<ResultType>::create();
 
-                typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+                typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
                 vec_res.resize(col->size());
                 Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
+
+                block.getByPosition(result).column = std::move(col_res);
             }
         }
         else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
-            typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
             Impl::array(col->getOffsets(), vec_res);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(
@@ -590,7 +594,7 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionReverse>();
     }
@@ -612,12 +616,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0])
+        if (!arguments[0]->isStringOrFixedString()
             && !checkDataType<DataTypeArray>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return arguments[0]->clone();
+        return arguments[0];
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -627,15 +631,15 @@ public:
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
             ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnFixedString>(col->getN());
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnFixedString::create(col->getN());
             ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (checkColumn<ColumnArray>(column.get()))
         {
@@ -654,9 +658,10 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+    ConcatImpl(const Context & context) : context(context) {}
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<ConcatImpl>();
+        return std::make_shared<ConcatImpl>(context);
     }
 
     String getName() const override
@@ -684,7 +689,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(arguments[0].get()))
-            return FunctionArrayConcat().getReturnTypeImpl(arguments);
+            return FunctionArrayConcat(context).getReturnTypeImpl(arguments);
 
         if (arguments.size() < 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
@@ -694,7 +699,7 @@ public:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeString>(arg) && !checkDataType<DataTypeFixedString>(arg))
+            if (!arg->isStringOrFixedString())
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -706,7 +711,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(block.getByPosition(arguments[0]).type.get()))
-            return FunctionArrayConcat().executeImpl(block, arguments, result);
+            return FunctionArrayConcat(context).executeImpl(block, arguments, result);
 
         if (arguments.size() == 2)
             executeBinary(block, arguments, result);
@@ -715,6 +720,8 @@ public:
     }
 
 private:
+    const Context & context;
+
     void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result)
     {
         const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
@@ -725,7 +732,7 @@ private:
         const ColumnConst * c0_const_string = checkAndGetColumnConst<ColumnString>(c0);
         const ColumnConst * c1_const_string = checkAndGetColumnConst<ColumnString>(c1);
 
-        auto c_res = std::make_shared<ColumnString>();
+        auto c_res = ColumnString::create();
 
         if (c0_string && c1_string)
             concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
@@ -740,7 +747,7 @@ private:
             return;
         }
 
-        block.getByPosition(result).column = c_res;
+        block.getByPosition(result).column = std::move(c_res);
     }
 
     void executeNAry(Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -751,9 +758,9 @@ private:
         for (size_t i = 0; i < num_sources; ++i)
             sources[i] = createDynamicStringSource(*block.getByPosition(arguments[i]).column);
 
-        auto c_res = std::make_shared<ColumnString>();
+        auto c_res = ColumnString::create();
         concat(sources, StringSink(*c_res, block.rows()));
-        block.getByPosition(result).column = c_res;
+        block.getByPosition(result).column = std::move(c_res);
     }
 };
 
@@ -762,7 +769,7 @@ class FunctionSubstring : public IFunction
 {
 public:
     static constexpr auto name = "substring";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSubstring>();
     }
@@ -786,16 +793,16 @@ public:
                 + toString(number_of_arguments) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
+        if (!arguments[0]->isStringOrFixedString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber())
             throw Exception("Illegal type " + arguments[1]->getName()
                     + " of second argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (number_of_arguments == 3 && !arguments[2]->isNumeric())
+        if (number_of_arguments == 3 && !arguments[2]->isNumber())
             throw Exception("Illegal type " + arguments[2]->getName()
                     + " of second argument of function "
                     + getName(),
@@ -812,7 +819,7 @@ public:
         Block & block, size_t result,
         Source && source)
     {
-        std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+       auto col_res = ColumnString::create();
 
         if (!column_length)
         {
@@ -843,7 +850,7 @@ public:
                 sliceDynamicOffsetBounded(source, StringSink(*col_res, block.rows()), *column_start, *column_length);
         }
 
-        block.getByPosition(result).column = col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -901,7 +908,7 @@ class FunctionSubstringUTF8 : public IFunction
 {
 public:
     static constexpr auto name = "substringUTF8";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSubstringUTF8>();
     }
@@ -921,12 +928,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumeric() || !arguments[2]->isNumeric())
-            throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName())
+        if (!arguments[1]->isNumber() || !arguments[2]->isNumber())
+            throw Exception("Illegal type " + (arguments[1]->isNumber() ? arguments[2]->getName() : arguments[1]->getName())
                     + " of argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -940,7 +947,7 @@ public:
         const ColumnPtr column_start = block.getByPosition(arguments[1]).column;
         const ColumnPtr column_length = block.getByPosition(arguments[2]).column;
 
-        if (!column_start->isConst() || !column_length->isConst())
+        if (!column_start->isColumnConst() || !column_length->isColumnConst())
             throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
         Field start_field = (*block.getByPosition(arguments[1]).column)[0];
@@ -961,9 +968,9 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
             SubstringUTF8Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(
@@ -977,7 +984,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }
@@ -996,11 +1003,11 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -1025,8 +1032,7 @@ private:
 
         if (const auto col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             const auto & src_data = col->getChars();
             const auto & src_offsets = col->getOffsets();
@@ -1038,8 +1044,8 @@ private:
             dst_data.resize(src_data.size() + size);
             dst_offsets.resize(size);
 
-            ColumnString::Offset_t src_offset{};
-            ColumnString::Offset_t dst_offset{};
+            ColumnString::Offset src_offset{};
+            ColumnString::Offset dst_offset{};
 
             for (const auto i : ext::range(0, size))
             {
@@ -1059,6 +1065,7 @@ private:
             }
 
             dst_data.resize_assume_reserved(dst_offset);
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception{

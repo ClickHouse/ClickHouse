@@ -12,6 +12,7 @@
 
 #include <fcntl.h>
 
+
 namespace DB
 {
 
@@ -41,7 +42,7 @@ StorageFile::StorageFile(
         const std::string & db_dir_path,
         const std::string & table_name_,
         const std::string & format_name_,
-        const NamesAndTypesListPtr & columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
@@ -165,12 +166,12 @@ private:
 
 
 BlockInputStreams StorageFile::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const Names & /*column_names*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum & /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    unsigned /*num_streams*/)
 {
     return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
 }
@@ -228,8 +229,8 @@ private:
 };
 
 BlockOutputStreamPtr StorageFile::write(
-    const ASTPtr & query,
-    const Settings & settings)
+    const ASTPtr & /*query*/,
+    const Settings & /*settings*/)
 {
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
@@ -241,7 +242,7 @@ void StorageFile::drop()
 }
 
 
-void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageFile::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);

@@ -50,7 +50,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     }
 }
 
-IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings, bool force_connected)
+IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings, bool /*force_connected*/)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {

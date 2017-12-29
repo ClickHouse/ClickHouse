@@ -9,7 +9,7 @@ endif ()
 
 
 # Google Test from sources
-add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
 # avoid problems with <regexp.h>
 target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 target_include_directories (gtest INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
@@ -19,5 +19,15 @@ macro(grep_gtest_sources BASE_DIR DST_VAR)
     # Cold match files that are not in tests/ directories
     file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
 endmacro()
+
+install (PROGRAMS clickhouse-test DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+install (
+    DIRECTORY queries performance external_dictionaries
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse-test
+    USE_SOURCE_PERMISSIONS
+    COMPONENT clickhouse
+    PATTERN "CMakeLists.txt" EXCLUDE
+    PATTERN ".gitignore" EXCLUDE
+)
 
 add_subdirectory (external_dictionaries)

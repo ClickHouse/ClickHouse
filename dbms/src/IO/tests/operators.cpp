@@ -3,7 +3,7 @@
 #include <IO/WriteBufferFromString.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     {
         DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);
@@ -13,8 +13,8 @@ int main(int argc, char ** argv)
             << DB::quote << "Hello, world!" << '\n'
             << DB::double_quote << "Hello, world!" << '\n'
             << DB::binary << "Hello, world!" << '\n'
-            << LocalDateTime(time(0)) << '\n'
-            << LocalDate(time(0)) << '\n'
+            << LocalDateTime(time(nullptr)) << '\n'
+            << LocalDate(time(nullptr)) << '\n'
             << 1234567890123456789UL << '\n'
             << DB::flush;
     }

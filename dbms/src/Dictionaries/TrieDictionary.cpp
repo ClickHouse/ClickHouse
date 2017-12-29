@@ -82,6 +82,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -105,7 +106,7 @@ void TrieDictionary::getString(
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return null_value; });
 }
 
@@ -130,6 +131,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -151,7 +153,7 @@ void TrieDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t row) { return def->getDataAt(row); });
 }
 
@@ -176,6 +178,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -197,7 +200,7 @@ void TrieDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return StringRef{def}; });
 }
 
@@ -213,6 +216,7 @@ void TrieDictionary::has(const Columns & key_columns, const DataTypes & key_type
         case AttributeUnderlyingType::UInt16: has<UInt16>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::UInt32: has<UInt32>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::UInt64: has<UInt64>(attribute, key_columns, out); break;
+        case AttributeUnderlyingType::UInt128: has<UInt128>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int8: has<Int8>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int16: has<Int16>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int32: has<Int32>(attribute, key_columns, out); break;
@@ -311,6 +315,7 @@ void TrieDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::UInt16: addAttributeSize<UInt16>(attribute); break;
             case AttributeUnderlyingType::UInt32: addAttributeSize<UInt32>(attribute); break;
             case AttributeUnderlyingType::UInt64: addAttributeSize<UInt64>(attribute); break;
+            case AttributeUnderlyingType::UInt128: addAttributeSize<UInt128>(attribute); break;
             case AttributeUnderlyingType::Int8: addAttributeSize<Int8>(attribute); break;
             case AttributeUnderlyingType::Int16: addAttributeSize<Int16>(attribute); break;
             case AttributeUnderlyingType::Int32: addAttributeSize<Int32>(attribute); break;
@@ -355,7 +360,7 @@ void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & nu
 
 TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}, {}};
 
     switch (type)
     {
@@ -363,6 +368,7 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
         case AttributeUnderlyingType::UInt16: createAttributeImpl<UInt16>(attr, null_value); break;
         case AttributeUnderlyingType::UInt32: createAttributeImpl<UInt32>(attr, null_value); break;
         case AttributeUnderlyingType::UInt64: createAttributeImpl<UInt64>(attr, null_value); break;
+        case AttributeUnderlyingType::UInt128: createAttributeImpl<UInt128>(attr, null_value); break;
         case AttributeUnderlyingType::Int8: createAttributeImpl<Int8>(attr, null_value); break;
         case AttributeUnderlyingType::Int16: createAttributeImpl<Int16>(attr, null_value); break;
         case AttributeUnderlyingType::Int32: createAttributeImpl<Int32>(attr, null_value); break;
@@ -397,6 +403,7 @@ void TrieDictionary::getItemsNumber(
     DISPATCH(UInt16)
     DISPATCH(UInt32)
     DISPATCH(UInt64)
+    DISPATCH(UInt128)
     DISPATCH(Int8)
     DISPATCH(Int16)
     DISPATCH(Int32)
@@ -425,7 +432,7 @@ void TrieDictionary::getItemsImpl(
         {
             auto addr = Int32(first_column->get64(i));
             uintptr_t slot = btrie_find(trie, addr);
-            set_value(i, slot != BTRIE_NULL ? vec[slot] : get_default(i));
+            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
         }
     }
     else
@@ -437,7 +444,7 @@ void TrieDictionary::getItemsImpl(
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
             uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8*>(addr.data));
-            set_value(i, slot != BTRIE_NULL ? vec[slot] : get_default(i));
+            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
         }
     }
 
@@ -496,6 +503,7 @@ bool TrieDictionary::setAttributeValue(Attribute & attribute, const StringRef ke
         case AttributeUnderlyingType::UInt16: return setAttributeValueImpl<UInt16>(attribute, key, value.get<UInt64>());
         case AttributeUnderlyingType::UInt32: return setAttributeValueImpl<UInt32>(attribute, key, value.get<UInt64>());
         case AttributeUnderlyingType::UInt64: return setAttributeValueImpl<UInt64>(attribute, key, value.get<UInt64>());
+        case AttributeUnderlyingType::UInt128: return setAttributeValueImpl<UInt128>(attribute, key, value.get<UInt128>());
         case AttributeUnderlyingType::Int8: return setAttributeValueImpl<Int8>(attribute, key, value.get<Int64>());
         case AttributeUnderlyingType::Int16: return setAttributeValueImpl<Int16>(attribute, key, value.get<Int64>());
         case AttributeUnderlyingType::Int32: return setAttributeValueImpl<Int32>(attribute, key, value.get<Int64>());
@@ -526,7 +534,7 @@ const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string
 }
 
 template <typename T>
-void TrieDictionary::has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
+void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -596,8 +604,8 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
 
 Columns TrieDictionary::getKeyColumns() const
 {
-    auto ip_column = std::make_shared<ColumnFixedString>(IPV6_BINARY_LENGTH);
-    auto mask_column = std::make_shared<ColumnVector<UInt8>>();
+    auto ip_column = ColumnFixedString::create(IPV6_BINARY_LENGTH);
+    auto mask_column = ColumnVector<UInt8>::create();
 
 #if defined(__SIZEOF_INT128__)
     auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask) {
@@ -613,35 +621,35 @@ Columns TrieDictionary::getKeyColumns() const
 #else
     throw Exception("TrieDictionary::getKeyColumns is not implemented for 32bit arch", ErrorCodes::NOT_IMPLEMENTED);
 #endif
-    return {ip_column, mask_column};
+    return {std::move(ip_column), std::move(mask_column)};
 }
 
 BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
+    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
     {
         const auto & attr = attributes.front();
         return ColumnsWithTypeAndName({ColumnWithTypeAndName(columns.front(),
             std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
+    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
     {
-        auto column = std::make_shared<ColumnString>();
-        auto ip_column = std::static_pointer_cast<ColumnFixedString>(columns.front());
-        auto mask_column = std::static_pointer_cast<ColumnVector<UInt8>>(columns.back());
+        auto column = ColumnString::create();
+        const auto & ip_column = static_cast<const ColumnFixedString &>(*columns.front());
+        const auto & mask_column = static_cast<const ColumnVector<UInt8> &>(*columns.back());
         char buffer[48];
-        for (size_t row : ext::range(0, ip_column->size()))
+        for (size_t row : ext::range(0, ip_column.size()))
         {
-            UInt8 mask = mask_column->getElement(row);
+            UInt8 mask = mask_column.getElement(row);
             char * ptr = buffer;
-            formatIPv6(reinterpret_cast<const unsigned char *>(ip_column->getDataAt(row).data), ptr);
+            formatIPv6(reinterpret_cast<const unsigned char *>(ip_column.getDataAt(row).data), ptr);
             *(ptr - 1) = '/';
             auto size = detail::writeUIntText(mask, ptr);
             column->insertData(buffer, size + (ptr - buffer));
         }
-        return ColumnsWithTypeAndName{ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), attributes.front().name)};
+        return ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeyColumns(), column_names,
         std::move(getKeys), std::move(getView));

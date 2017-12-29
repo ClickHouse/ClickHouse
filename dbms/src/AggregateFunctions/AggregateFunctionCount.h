@@ -4,10 +4,9 @@
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <AggregateFunctions/INullaryAggregateFunction.h>
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -21,31 +20,27 @@ struct AggregateFunctionCountData
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
 /// Simply count number of calls.
-class AggregateFunctionCount final : public INullaryAggregateFunction<AggregateFunctionCountData, AggregateFunctionCount>
+class AggregateFunctionCount final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCount>
 {
 public:
     String getName() const override { return "count"; }
-
-    void setArguments(const DataTypes & arguments) override
-    {
-        /// You may pass some arguments. All of them are ignored.
-    }
 
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void addImpl(AggregateDataPtr place) const
+    void add(AggregateDataPtr place, const IColumn **, size_t, Arena *) const override
     {
         ++data(place).count;
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
@@ -76,9 +71,15 @@ public:
 
 
 /// Simply count number of not-NULL values.
-class AggregateFunctionCountNotNullUnary final : public IUnaryAggregateFunction<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
+class AggregateFunctionCountNotNullUnary final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
 {
 public:
+    AggregateFunctionCountNotNullUnary(const DataTypePtr & argument)
+    {
+        if (!argument->isNullable())
+            throw Exception("Logical error: not Nullable data type passed to AggregateFunctionCountNotNullUnary", ErrorCodes::LOGICAL_ERROR);
+    }
+
     String getName() const override { return "count"; }
 
     DataTypePtr getReturnType() const override
@@ -86,18 +87,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        data(place).count += !static_cast<const ColumnNullable &>(column).isNullAt(row_num);
+        data(place).count += !static_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
     }
 
-    void setArgument(const DataTypePtr & argument)
-    {
-        if (!argument->isNullable() && !argument->isNull())
-            throw Exception("Not Nullable argument passed to aggregate function count", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
@@ -122,17 +117,10 @@ public:
 
 
 /// Count number of calls where all arguments are not NULL.
-class AggregateFunctionCountNotNullVariadic final : public IAggregateFunctionHelper<AggregateFunctionCountData>
+class AggregateFunctionCountNotNullVariadic final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullVariadic>
 {
 public:
-    String getName() const override { return "count"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
-
-    void setArguments(const DataTypes & arguments) override
+    AggregateFunctionCountNotNullVariadic(const DataTypes & arguments)
     {
         number_of_arguments = arguments.size();
 
@@ -144,10 +132,17 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
-            is_nullable[i] = arguments[i]->isNullable() || arguments[i]->isNull();
+            is_nullable[i] = arguments[i]->isNullable();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    String getName() const override { return "count"; }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         for (size_t i = 0; i < number_of_arguments; ++i)
             if (is_nullable[i] && static_cast<const ColumnNullable &>(*columns[i]).isNullAt(row_num))
@@ -156,18 +151,7 @@ public:
         ++data(place).count;
     }
 
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place,
-        const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        return static_cast<const AggregateFunctionCountNotNullVariadic &>(*that).add(place, columns, row_num, arena);
-    }
-
-    AddFunc getAddressOfAddFunction() const override
-    {
-        return &addFree;
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }

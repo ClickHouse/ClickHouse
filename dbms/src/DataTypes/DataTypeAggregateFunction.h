@@ -8,13 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int THERE_IS_NO_DEFAULT_VALUE;
-    extern const int NOT_IMPLEMENTED;
-}
-
-
 /** Type - the state of the aggregate function.
   * Type parameters is an aggregate function, the types of its arguments, and its parameters (for parametric aggregate functions).
   */
@@ -26,6 +19,8 @@ private:
     Array parameters;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
         : function(function_), argument_types(argument_types_), parameters(parameters_)
     {
@@ -38,10 +33,10 @@ public:
 
     const char * getFamilyName() const override { return "AggregateFunction"; }
 
+    bool canBeInsideNullable() const override { return false; }
+
     DataTypePtr getReturnType() const { return function->getReturnType(); };
     DataTypes getArgumentsDataTypes() const { return argument_types; }
-
-    DataTypePtr clone() const override { return std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters); }
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
@@ -62,9 +57,15 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-    ColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
+
+    bool equals(const IDataType & rhs) const override;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
+    bool shouldAlignRightInPrettyFormats() const override { return false; }
 };
 
 

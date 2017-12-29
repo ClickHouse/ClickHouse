@@ -12,7 +12,7 @@
 #include <Common/typeid_cast.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -21,9 +21,9 @@ try
 
     /// create table with a pair of columns
 
-    NamesAndTypesListPtr names_and_types = std::make_shared<NamesAndTypesList>();
-    names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeUInt64>()));
-    names_and_types->push_back(NameAndTypePair("b", std::make_shared<DataTypeUInt8>()));
+    NamesAndTypesList names_and_types;
+    names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
+    names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
     StoragePtr table = StorageLog::create("./", "test", names_and_types,
         NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
@@ -33,29 +33,35 @@ try
     {
         Block block;
 
-        ColumnWithTypeAndName column1;
-        column1.name = "a";
-        column1.type = table->getDataTypeByName("a");
-        column1.column = column1.type->createColumn();
-        ColumnUInt64::Container_t & vec1 = typeid_cast<ColumnUInt64&>(*column1.column).getData();
+        {
+            ColumnWithTypeAndName column;
+            column.name = "a";
+            column.type = table->getDataTypeByName("a");
+            auto col = column.type->createColumn();
+            ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
-        vec1.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
-            vec1[i] = i;
+            vec.resize(rows);
+            for (size_t i = 0; i < rows; ++i)
+                vec[i] = i;
 
-        block.insert(column1);
+            column.column = std::move(col);
+            block.insert(column);
+        }
 
-        ColumnWithTypeAndName column2;
-        column2.name = "b";
-        column2.type = table->getDataTypeByName("b");
-        column2.column = column2.type->createColumn();
-        ColumnUInt8::Container_t & vec2 = typeid_cast<ColumnUInt8&>(*column2.column).getData();
+        {
+            ColumnWithTypeAndName column;
+            column.name = "b";
+            column.type = table->getDataTypeByName("b");
+            auto col = column.type->createColumn();
+            ColumnUInt8::Container & vec = typeid_cast<ColumnUInt8 &>(*col).getData();
 
-        vec2.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
-            vec2[i] = i * 2;
+            vec.resize(rows);
+            for (size_t i = 0; i < rows; ++i)
+                vec[i] = i * 2;
 
-        block.insert(column2);
+            column.column = std::move(col);
+            block.insert(column);
+        }
 
         BlockOutputStreamPtr out = table->write({}, {});
         out->write(block);

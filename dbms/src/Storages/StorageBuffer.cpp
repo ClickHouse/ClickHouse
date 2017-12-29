@@ -43,7 +43,7 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -97,10 +97,7 @@ protected:
             return res;
 
         for (const auto & name : column_names)
-        {
-            auto & col = buffer.data.getByName(name);
-            res.insert(ColumnWithTypeAndName(col.column->clone(), col.type, name));
-        }
+            res.insert(buffer.data.getByName(name));
 
         return res;
     }
@@ -156,6 +153,10 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
+    if (!blocksHaveEqualStructure(from, to))
+        throw Exception("Cannot append block to buffer: block has different structure. "
+            "Block: " + from.dumpStructure() + ", Buffer: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
     from.checkNumberOfRows();
     to.checkNumberOfRows();
 
@@ -171,14 +172,12 @@ static void appendBlock(const Block & from, Block & to)
     {
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
-            const IColumn & col_from = *from.safeGetByPosition(column_no).column.get();
-            IColumn & col_to = *to.safeGetByPosition(column_no).column.get();
+            const IColumn & col_from = *from.getByPosition(column_no).column.get();
+            MutableColumnPtr col_to = to.getByPosition(column_no).column->mutate();
 
-            if (col_from.getName() != col_to.getName())
-                throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
-                    + ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            col_to->insertRangeFrom(col_from, 0, rows);
 
-            col_to.insertRangeFrom(col_from, 0, rows);
+            to.getByPosition(column_no).column = std::move(col_to);
         }
     }
     catch (...)
@@ -191,9 +190,9 @@ static void appendBlock(const Block & from, Block & to)
 
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
-                ColumnPtr & col_to = to.safeGetByPosition(column_no).column;
+                ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = col_to->cut(0, old_rows);
+                    col_to = col_to->mutate()->cut(0, old_rows);
             }
         }
         catch (...)
@@ -325,7 +324,7 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
 }
@@ -365,7 +364,7 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageBuffer::optimize(const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & /*context*/)
 {
     if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
@@ -474,7 +473,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
         return;
 
     /** For simplicity, buffer is locked during write.
-        * We could unlock buffer temporary, but it would lead to too much difficulties:
+        * We could unlock buffer temporary, but it would lead to too many difficulties:
         * - data, that is written, will not be visible for SELECTs;
         * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
         * - this could lead to infinite memory growth.
@@ -530,10 +529,12 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         auto dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
         {
-            if (block.getByName(dst_col.name).type->getName() != dst_col.type->getName())
+            if (!block.getByName(dst_col.name).type->equals(*dst_col.type))
             {
                 LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
-                    << " have different type of column " << dst_col.name << ". Block of data is discarded.");
+                    << " have different type of column " << dst_col.name << " ("
+                    << block.getByName(dst_col.name).type->getName() << " != " << dst_col.type->getName()
+                    << "). Block of data is discarded.");
                 return;
             }
 
@@ -595,11 +596,11 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
-        *columns, materialized_columns, alias_columns, column_defaults, {});
+        columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 }

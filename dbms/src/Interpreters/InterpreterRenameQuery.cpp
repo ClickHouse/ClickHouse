@@ -19,7 +19,7 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 
 struct RenameDescription
 {
-    RenameDescription(const ASTRenameQuery::Element & elem, const String & path, const String & current_database) :
+    RenameDescription(const ASTRenameQuery::Element & elem, const String & current_database) :
         from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
         from_table_name(elem.from.table),
         to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
@@ -73,7 +73,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     for (const auto & elem : rename.elements)
     {
-        descriptions.emplace_back(elem, path, current_database);
+        descriptions.emplace_back(elem, current_database);
 
         UniqueTableName from(descriptions.back().from_database_name, descriptions.back().from_table_name);
         UniqueTableName to(descriptions.back().to_database_name, descriptions.back().to_table_name);

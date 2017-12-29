@@ -195,15 +195,13 @@ private:
     UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
 
 
-    template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Insert the values into the resulting columns, which will not be changed in the future.
-    template <typename TSortCursor>
-    void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern);
+    void startNextRow(MutableColumns & merged_columns, SortCursor & cursor, const Graphite::Pattern * next_pattern);
 
     /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
-    void finishCurrentRow(ColumnPlainPtrs & merged_columns);
+    void finishCurrentRow(MutableColumns & merged_columns);
 
     /// Update the state of the aggregate function with the new `value`.
     void accumulateRow(RowRef & row);

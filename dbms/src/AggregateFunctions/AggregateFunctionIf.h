@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 /** Not an aggregate function, but an adapter of aggregate functions,
   * which any aggregate function `agg(x)` makes an aggregate function of the form `aggIf(x, cond)`.
@@ -16,14 +21,22 @@ namespace DB
   * and calculates the nested aggregate function for the values when the condition is satisfied.
   * For example, avgIf(x, cond) calculates the average x if `cond`.
   */
-class AggregateFunctionIf final : public IAggregateFunction
+class AggregateFunctionIf final : public IAggregateFunctionHelper<AggregateFunctionIf>
 {
 private:
-    AggregateFunctionPtr nested_func_owner;
-    IAggregateFunction * nested_func;
-    size_t num_agruments;
+    AggregateFunctionPtr nested_func;
+    size_t num_arguments;
+
 public:
-    AggregateFunctionIf(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
+    AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types)
+        : nested_func(nested), num_arguments(types.size())
+    {
+        if (num_arguments == 0)
+            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (!typeid_cast<const DataTypeUInt8 *>(types.back().get()))
+            throw Exception("Last argument for aggregate function " + getName() + " must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 
     String getName() const override
     {
@@ -33,25 +46,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
-    }
-
-    void setArguments(const DataTypes & arguments) override
-    {
-        num_agruments = arguments.size();
-
-        if (!typeid_cast<const DataTypeUInt8 *>(&*arguments[num_agruments - 1]))
-            throw Exception("Illegal type " + arguments[num_agruments - 1]->getName() + " of second argument for aggregate function " + getName() + ". Must be UInt8.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        DataTypes nested_arguments;
-        for (size_t i = 0; i < num_agruments - 1; i ++)
-            nested_arguments.push_back(arguments[i]);
-        nested_func->setArguments(nested_arguments);
-    }
-
-    void setParameters(const Array & params) override
-    {
-        nested_func->setParameters(params);
     }
 
     void create(AggregateDataPtr place) const override
@@ -81,7 +75,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (static_cast<const ColumnUInt8 &>(*columns[num_agruments - 1]).getData()[row_num])
+        if (static_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num])
             nested_func->add(place, columns, row_num, arena);
     }
 
@@ -114,13 +108,6 @@ public:
     {
         return nested_func->isState();
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionIf &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

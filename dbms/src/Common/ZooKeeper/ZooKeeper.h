@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unistd.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -54,7 +55,8 @@ class ZooKeeper
 public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    ZooKeeper(const std::string & hosts, const std::string & identity = "", int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
+    ZooKeeper(const std::string & hosts, const std::string & identity = "",
+              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT, bool check_root_exists = false);
 
     /** Config of the form:
         <zookeeper>
@@ -324,8 +326,14 @@ public:
 
 
     using RemoveFuture = Future<void, int>;
-    RemoveFuture asyncRemove(const std::string & path);
+    RemoveFuture asyncRemove(const std::string & path, int32_t version = -1);
 
+    /// Doesn't throw in the following cases:
+    /// * The node doesn't exist
+    /// * The versions do not match
+    /// * The node has children
+    using TryRemoveFuture = Future<int32_t, int>;
+    TryRemoveFuture asyncTryRemove(const std::string & path, int32_t version = -1);
 
     struct OpResultsAndCode
     {
@@ -357,7 +365,8 @@ private:
     friend struct WatchContext;
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms);
+    void init(const std::string & hosts, const std::string & identity,
+              int32_t session_timeout_ms, bool check_root_exists);
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
 

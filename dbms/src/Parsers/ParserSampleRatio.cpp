@@ -1,4 +1,4 @@
-#include <common/exp10.h>
+#include <common/intExp.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSampleRatio.h>
@@ -48,13 +48,13 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
             return false;
     }
 
-    res.numerator = num_before * exp10(number_of_digits_after_point) + num_after;
-    res.denominator = exp10(number_of_digits_after_point);
+    res.numerator = num_before * intExp10(number_of_digits_after_point) + num_after;
+    res.denominator = intExp10(number_of_digits_after_point);
 
     if (exponent > 0)
-        res.numerator *= exp10(exponent);
+        res.numerator *= intExp10(exponent);
     if (exponent < 0)
-        res.denominator *= exp10(-exponent);
+        res.denominator *= intExp10(-exponent);
 
     /// NOTE You do not need to remove the common power of ten from the numerator and denominator.
     return true;
@@ -81,7 +81,7 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
   * Example:
   * 123.0 / 456e0
   */
-bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
     auto begin = pos;
 

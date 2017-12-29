@@ -50,7 +50,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     constexpr auto retry_period_ms = 10 * 1000;
 
     /// The frequency of checking expiration of session in ZK.
-    Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period * 1000;
+    Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     /// Periodicity of checking lag of replica.
     if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
@@ -76,9 +76,10 @@ void ReplicatedMergeTreeRestartingThread::run()
                 {
                     LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-                    if (!storage.is_readonly)
+                    bool old_val = false;
+                    if (storage.is_readonly.compare_exchange_strong(old_val, true))
                         CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-                    storage.is_readonly = true;
+
                     partialShutdown();
                 }
 
@@ -109,9 +110,10 @@ void ReplicatedMergeTreeRestartingThread::run()
                 if (need_stop)
                     break;
 
-                if (storage.is_readonly)
+                bool old_val = true;
+                if (storage.is_readonly.compare_exchange_strong(old_val, false))
                     CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-                storage.is_readonly = false;
+
                 first_time = false;
             }
 
@@ -129,7 +131,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                 prev_time_of_check_delay = current_time;
 
-                /// We give up leadership if the relative gap is greater than threshold.
+                /// We give up leadership if the relative lag is greater than threshold.
                 if (storage.is_leader_node
                     && relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
                 {
@@ -138,15 +140,11 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                     ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
-                    if (storage.is_leader_node)
-                    {
-                        storage.is_leader_node = false;
-                        CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-                        if (storage.merge_selecting_thread.joinable())
-                            storage.merge_selecting_thread.join();
-
-                        storage.leader_election->yield();
-                    }
+                    storage.is_leader_node = false;
+                    CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
+                    if (storage.merge_selecting_thread.joinable())
+                        storage.merge_selecting_thread.join();
+                    storage.leader_election->yield();
                 }
             }
         }
@@ -162,18 +160,6 @@ void ReplicatedMergeTreeRestartingThread::run()
     {
         storage.data_parts_exchange_endpoint_holder->cancelForever();
         storage.data_parts_exchange_endpoint_holder = nullptr;
-
-        storage.disk_space_monitor_endpoint_holder->cancelForever();
-        storage.disk_space_monitor_endpoint_holder = nullptr;
-
-        storage.sharded_partition_uploader_endpoint_holder->cancelForever();
-        storage.sharded_partition_uploader_endpoint_holder = nullptr;
-
-        storage.remote_query_executor_endpoint_holder->cancelForever();
-        storage.remote_query_executor_endpoint_holder = nullptr;
-
-        storage.remote_part_checker_endpoint_holder->cancelForever();
-        storage.remote_part_checker_endpoint_holder = nullptr;
 
         storage.merger.merges_blocker.cancelForever();
 
@@ -261,7 +247,8 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
 
     for (auto part_name : failed_parts)
     {
-        auto part = storage.data.getPartIfExists(part_name);
+        auto part = storage.data.getPartIfExists(
+            part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
         if (part)
         {
             LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
@@ -367,15 +354,16 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.merge_selecting_event.set();
     storage.queue_updating_event->set();
     storage.alter_query_event->set();
+    storage.cleanup_thread_event.set();
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
     {
         std::lock_guard<std::mutex> lock(storage.leader_node_mutex);
 
-        if (storage.is_leader_node)
+        bool old_val = true;
+        if (storage.is_leader_node.compare_exchange_strong(old_val, false))
         {
-            storage.is_leader_node = false;
             CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
             if (storage.merge_selecting_thread.joinable())
                 storage.merge_selecting_thread.join();

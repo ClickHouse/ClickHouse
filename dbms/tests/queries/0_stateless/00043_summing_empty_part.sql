@@ -10,6 +10,7 @@ SELECT * FROM test.empty_summing;
 
 INSERT INTO test.empty_summing VALUES ('2015-01-01', 1, 4),('2015-01-01', 2, -9),('2015-01-01', 3, -14);
 INSERT INTO test.empty_summing VALUES ('2015-01-01', 1, -2),('2015-01-01', 1, -2),('2015-01-01', 3, 14);
+INSERT INTO test.empty_summing VALUES ('2015-01-01', 1, 0),('2015-01-01', 3, 0);
 
 OPTIMIZE TABLE test.empty_summing;
 SELECT * FROM test.empty_summing;
