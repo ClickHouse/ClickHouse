@@ -1,7 +1,9 @@
 #include <Storages/NextGenReplication/StorageNextGenReplicatedMergeTree.h>
 #include <Storages/NextGenReplication/NextGenReplicatedBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
+
 
 namespace DB
 {
@@ -43,9 +45,9 @@ StorageNextGenReplicatedMergeTree::StorageNextGenReplicatedMergeTree(
         merging_params_, settings_, true, attach,
         [this] (const String & /* part_name */) { /* TODO: enqueue part for check */; })
     , reader(data), writer(data), merger(data, context.getBackgroundPool())
+    , parts_fetcher(data)
     , zookeeper_path(context.getMacros().expand(zookeeper_path_))
     , replica_name(context.getMacros().expand(replica_name_))
-    , fetcher(data)
 {
     /// TODO: unify with StorageReplicatedMergeTree and move to common place
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
@@ -106,12 +108,37 @@ void StorageNextGenReplicatedMergeTree::startup()
     if (is_readonly)
         return;
 
-    /// TODO: activate replica.
+    {
+        StoragePtr ptr = shared_from_this();
+        InterserverIOEndpointPtr endpoint = std::make_shared<DataPartsExchange::Service>(data, ptr);
+        parts_exchange_service = std::make_shared<InterserverIOEndpointHolder>(
+            endpoint->getId(replica_path), endpoint, context.getInterserverIOHandler());
+    }
 
-    StoragePtr ptr = shared_from_this();
-    InterserverIOEndpointPtr data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(data, ptr);
-    data_parts_exchange_endpoint_holder = std::make_shared<InterserverIOEndpointHolder>(
-        data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, context.getInterserverIOHandler());
+    {
+        auto host_port = context.getInterserverIOAddress();
+
+        /// How other replicas can find us.
+        ReplicatedMergeTreeAddress address;
+        address.host = host_port.first;
+        address.replication_port = host_port.second;
+        address.queries_port = context.getTCPPort();
+        address.database = database_name;
+        address.table = table_name;
+
+        auto zookeeper = getZooKeeper();
+        is_active_node = zkutil::EphemeralNodeHolder::create(
+            replica_path + "/is_active", *zookeeper, address.toString());
+
+        /// TODO: do something if the node already exists.
+    }
+
+    /// TODO initialize the part set from disk.
+    part_set_updating_thread = std::thread([this] { runPartSetUpdatingThread(); });
+
+    parts_producing_task = context.getBackgroundPool().addTask([this] { return runPartsProducingTask(); });
+
+    merge_selecting_thread = std::thread([this] { runMergeSelectingThread(); });
 }
 
 void StorageNextGenReplicatedMergeTree::createTableOrReplica(zkutil::ZooKeeper & zookeeper)
@@ -125,6 +152,7 @@ void StorageNextGenReplicatedMergeTree::createTableOrReplica(zkutil::ZooKeeper &
         zookeeper.createAncestors(zookeeper_path);
 
         /// TODO: save metadata.
+        /// TODO: split parts node by partitions.
 
         zkutil::Ops ops;
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
@@ -159,16 +187,38 @@ void StorageNextGenReplicatedMergeTree::createTableOrReplica(zkutil::ZooKeeper &
 
 void StorageNextGenReplicatedMergeTree::shutdown()
 {
-    /** This must be done before waiting for restarting_thread.
-      * Because restarting_thread will wait for finishing of tasks in background pool,
-      *  and parts are fetched in that tasks.
-      */
-    fetcher.blocker.cancelForever();
+    shutdown_called = true;
 
-    if (data_parts_exchange_endpoint_holder)
+    if (merge_selecting_thread.joinable())
     {
-        data_parts_exchange_endpoint_holder->cancelForever();
-        data_parts_exchange_endpoint_holder = nullptr;
+        /// TODO: needs protection from concurrent drops.
+        merge_selecting_event->set();
+        merge_selecting_thread.join();
+    }
+
+    parts_fetcher.blocker.cancelForever();
+
+    merger.merges_blocker.cancelForever();
+
+    if (parts_producing_task)
+    {
+        context.getBackgroundPool().removeTask(parts_producing_task);
+        parts_producing_task.reset();
+    }
+
+    if (part_set_updating_thread.joinable())
+    {
+        /// TODO: needs protection from concurrent drops.
+        part_set_updating_event->set();
+        part_set_updating_thread.join();
+    }
+
+    is_active_node.reset();
+
+    if (parts_exchange_service)
+    {
+        parts_exchange_service->cancelForever();
+        parts_exchange_service.reset();
     }
 }
 
@@ -231,6 +281,88 @@ zkutil::ZooKeeperPtr StorageNextGenReplicatedMergeTree::getZooKeeper()
     if (res->expired())
         throw Exception("ZooKeeper session expired", ErrorCodes::NO_ZOOKEEPER);
     return res;
+}
+
+void StorageNextGenReplicatedMergeTree::runPartSetUpdatingThread()
+{
+    while (!shutdown_called)
+    {
+        try
+        {
+            auto zookeeper = getZooKeeper();
+            Strings part_nodes = zookeeper->getChildren(zookeeper_path + "/parts", nullptr, part_set_updating_event);
+
+            bool have_new_parts = false;
+            {
+                std::lock_guard<std::mutex> lock(parts_mutex);
+                /// TODO maybe not the best idea to lock the mutex for so long.
+
+                for (auto it = parts.begin(); it != parts.end(); )
+                {
+                    if (it->second.state == Part::State::Ephemeral)
+                        it = parts.erase(it);
+                    else
+                        ++it;
+                }
+
+                for (const String & part_name : part_nodes)
+                {
+                    if (startsWith(part_name, "insert_"))
+                    {
+                        /// TODO extract ephemeral part name creation/parsing code.
+                        const char * begin = part_name.data() + strlen("insert_");
+                        const char * end = part_name.data() + part_name.length();
+
+                        String partition_id;
+                        for (; begin != end && *begin != '_'; ++begin)
+                            partition_id.push_back(*begin);
+
+                        if (begin == end)
+                            throw Exception("Bad ephemeral insert node name: " + part_name, ErrorCodes::LOGICAL_ERROR);
+
+                        ++begin;
+                        UInt64 block_num = parse<UInt64>(begin, end - begin);
+
+                        MergeTreePartInfo part_info(partition_id, block_num, block_num, 0);
+                        parts.emplace(part_info, Part{part_info, Part::State::Ephemeral});
+                    }
+                    else
+                    {
+                        auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+                        auto insertion = parts.emplace(part_info, Part{part_info, Part::State::Virtual});
+                        if (insertion.second)
+                        {
+                            LOG_TRACE(log, "New part: " << part_name);
+                            have_new_parts = true;
+                        }
+                    }
+                }
+            }
+
+            if (have_new_parts)
+                parts_producing_task->wake();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            part_set_updating_event->tryWait(1000);
+        }
+
+        part_set_updating_event->wait();
+    }
+}
+
+bool StorageNextGenReplicatedMergeTree::runPartsProducingTask()
+{
+    return false;
+}
+
+void StorageNextGenReplicatedMergeTree::runMergeSelectingThread()
+{
+    while (!shutdown_called)
+    {
+        merge_selecting_event->tryWait(1000);
+    }
 }
 
 }

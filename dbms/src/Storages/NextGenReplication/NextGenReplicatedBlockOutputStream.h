@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
+#include <Storages/NextGenReplication/StorageNextGenReplicatedMergeTree.h>
 
 #include <common/logger_useful.h>
 
@@ -22,6 +23,8 @@ public:
 private:
     StorageNextGenReplicatedMergeTree & storage;
     Logger * log;
+
+    using Part = StorageNextGenReplicatedMergeTree::Part;
 };
 
 }

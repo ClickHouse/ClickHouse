@@ -1,5 +1,4 @@
 #include <Storages/NextGenReplication/NextGenReplicatedBlockOutputStream.h>
-#include <Storages/NextGenReplication/StorageNextGenReplicatedMergeTree.h>
 #include <Interpreters/PartLog.h>
 #include <Common/hex.h>
 
@@ -39,9 +38,9 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
         /// Generate a unique seqnum and ensure that the ephemeral part node is created before any other
         /// part node with the higher seqnum.
 
-        String ephemeral_node_prefix = parts_path + "/tmp_insert_";
+        String ephemeral_node_prefix = parts_path + "/insert_" + part->info.partition_id + "_";
         String ephemeral_node_path = zookeeper->create(
-            ephemeral_node_prefix, String(), zkutil::CreateMode::EphemeralSequential);
+            ephemeral_node_prefix, "replica: " + storage.replica_name, zkutil::CreateMode::EphemeralSequential);
         SCOPE_EXIT(
         {
             if (!ephemeral_node_path.empty())
@@ -60,6 +59,16 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
         else
             part->name = part->info.getPartName();
 
+        Part * inserted_part = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(storage.parts_mutex);
+            auto insertion = storage.parts.emplace(part->info, Part{part->info, Part::State::Ephemeral});
+            inserted_part = &insertion.first->second;
+            if (!insertion.second && inserted_part->state != Part::State::Ephemeral)
+                throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+            /// TODO check covering and covered parts;
+        }
+
         String part_path = parts_path + "/" + part->name;
 
         String hash_string;
@@ -73,18 +82,24 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
                 writeHexByteLowercase(hash_data[i], &hash_string[2 * i]);
         }
 
+        MergeTreeData::Transaction transaction;
+        {
+            std::lock_guard<std::mutex> lock(storage.parts_mutex);
+            storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
+            inserted_part->state = Part::State::Prepared;
+        }
+
         zkutil::Ops ops;
         auto acl = zookeeper->getDefaultACL();
-
         ops.emplace_back(std::make_unique<zkutil::Op::Remove>(ephemeral_node_path, -1));
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-            part_path, storage.replica_name, acl, zkutil::CreateMode::Persistent));
+            part_path, String(), acl, zkutil::CreateMode::Persistent));
         ops.emplace_back(std::make_unique<zkutil::Op::Create>(
             part_path + "/checksum", hash_string, acl, zkutil::CreateMode::Persistent));
-
-        MergeTreeData::Transaction transaction;
-        storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
-
+        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+            part_path + "/replicas", String(), acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+            part_path + "/replicas/" + storage.replica_name, String(), acl, zkutil::CreateMode::Persistent));
         try
         {
             zookeeper->multi(ops);
@@ -94,17 +109,34 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
         {
             if (e.code == ZOPERATIONTIMEOUT || e.code == ZCONNECTIONLOSS)
             {
-                transaction.commit();
-                /// TODO: mark that the status is unknown.
+                {
+                    std::lock_guard<std::mutex> lock(storage.parts_mutex);
+                    inserted_part->state = Part::State::MaybeCommitted;
+                    transaction.commit();
+                }
+
                 throw Exception("Unknown status, client must retry. Reason: " + e.displayText(),
                     ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(storage.parts_mutex);
+                inserted_part->state = Part::State::Outdated;
             }
 
             throw;
         }
 
-        transaction.commit();
-        storage.merge_selecting_event.set();
+        {
+            std::lock_guard<std::mutex> lock(storage.parts_mutex);
+            inserted_part->state = Part::State::Committed;
+            transaction.commit();
+        }
+        /// TODO: here we have no guarantee that there isn't any ephemeral part between the part that was
+        /// just inserted and the other parts. So we can schedule an incorrect merge.
+        /// Solution: store the max LSN seen by the part_set_updating_thread and don't schedule merges with
+        /// parts that are more recent than that LSN.
+        storage.merge_selecting_event->set();
 
         PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed());
     }

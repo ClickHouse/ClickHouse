@@ -85,6 +85,9 @@ private:
     MergeTreeDataWriter writer;
     MergeTreeDataMerger merger;
 
+    InterserverIOEndpointHolderPtr parts_exchange_service;
+    DataPartsExchange::Fetcher parts_fetcher;
+
     String zookeeper_path;
     String replica_name;
     String replica_path;
@@ -94,21 +97,45 @@ private:
     zkutil::ZooKeeperPtr tryGetZooKeeper();
     zkutil::ZooKeeperPtr getZooKeeper();
 
-    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
-    DataPartsExchange::Fetcher fetcher;
+    std::atomic<bool> is_readonly {false};
+    std::atomic<bool> shutdown_called {false};
 
-    std::atomic_bool is_readonly {false};
+    zkutil::EphemeralNodeHolderPtr is_active_node;
 
-    /// A thread that keeps track of the updates in the part set.
+    struct Part
+    {
+        enum class State
+        {
+            Ephemeral,
+            Virtual,
+            Preparing,
+            Prepared,
+            MaybeCommitted,
+            Committed,
+            Outdated,
+            Deleting,
+        };
+
+        MergeTreePartInfo info;
+        State state;
+    };
+
+    mutable std::mutex parts_mutex;
+    std::map<MergeTreePartInfo, Part> parts;
+
+    /// A thread that updates the part set based on ZooKeeper notifications.
     std::thread part_set_updating_thread;
-    Poco::Event part_set_updating_event;
+    zkutil::EventPtr part_set_updating_event = std::make_shared<Poco::Event>();
+    void runPartSetUpdatingThread();
 
     /// A task that performs actions to get needed parts.
-    BackgroundProcessingPool::TaskHandle task_execution_thread;
+    BackgroundProcessingPool::TaskHandle parts_producing_task;
+    bool runPartsProducingTask();
 
     /// A thread that selects parts to merge.
     std::thread merge_selecting_thread;
-    Poco::Event merge_selecting_event;
+    zkutil::EventPtr merge_selecting_event = std::make_shared<Poco::Event>();
+    void runMergeSelectingThread();
 
     friend class NextGenReplicatedBlockOutputStream;
 };
