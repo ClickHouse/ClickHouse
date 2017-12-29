@@ -1,4 +1,5 @@
 #include <Storages/StorageMySQL.h>
+#if USE_MYSQL
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Dictionaries/MySQLBlockInputStream.h>
 
@@ -44,3 +45,5 @@ BlockInputStreams StorageMySQL::read(
 }
 
 }
+
+#endif

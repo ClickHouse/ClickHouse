@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/config.h>
+#if USE_MYSQL
+
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
@@ -46,3 +49,5 @@ private:
 };
 
 }
+
+#endif

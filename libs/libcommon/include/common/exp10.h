@@ -8,6 +8,11 @@
 
 #include <stdlib.h> /// for __THROW
 
+// freebsd have no __THROW
+#if !defined(__THROW)
+#define __THROW
+#endif
+
 extern "C"
 {
 
