@@ -70,6 +70,7 @@ Description: Various utilities for clickhouse analytics db
  .
    - compressor
    - zookeeper client
+   - extract-from-config tool
 
 Package: clickhouse-test
 Section: Database
