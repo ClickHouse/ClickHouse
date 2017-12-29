@@ -1,0 +1,35 @@
+site_name: Документация ClickHouse
+
+docs_dir: ru_single_page
+site_dir: build/docs/ru/single_page
+use_directory_urls: false
+
+repo_name: 'yandex/ClickHouse'
+
+theme:
+  name: null
+  custom_dir: 'mkdocs-material-theme'
+  language: 'ru'
+  feature:
+    tabs: false
+  palette:
+    primary: 'white'
+    accent: 'white'
+  font:
+    text: Roboto
+    code: Roboto Mono
+  logo: 'images/logo.svg'
+  favicon: 'assets/images/logo_ch.ico'
+  include_search_page: false
+  search_index_only: true
+  static_templates:
+    - 404.html
+
+extra:
+  search:
+    language: 'en, ru'
+
+
+
+pages:
+- 'Документация': 'index.md'

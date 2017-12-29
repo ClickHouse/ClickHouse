@@ -1,0 +1,200 @@
+{% import "partials/language.html" as lang with context %}
+{% set feature = config.theme.feature %}
+{% set palette = config.theme.palette %}
+{% set font = config.theme.font %}
+<!DOCTYPE html>
+<html lang="{{ lang.t('language') }}" class="no-js">
+  <head>
+    {% block site_meta %}
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <meta http-equiv="x-ua-compatible" content="ie=edge">
+      {% if page and page.meta and page.meta.description %}
+        <meta name="description" content="{{ page.meta.description }}">
+      {% elif config.site_description %}
+        <meta name="description" content="{{ config.site_description }}">
+      {% endif %}
+      {% if page.canonical_url %}
+        <link rel="canonical" href="{{ page.canonical_url }}">
+      {% endif %}
+      {% if page and page.meta and page.meta.author %}
+        <meta name="author" content="{{ page.meta.author | first }}">
+      {% elif config.site_author %}
+        <meta name="author" content="{{ config.site_author }}">
+      {% endif %}
+      {% for key in [
+        "clipboard.copy",
+        "clipboard.copied",
+        "search.language",
+        "search.result.none",
+        "search.result.one",
+        "search.result.other",
+        "search.tokenizer"
+      ] %}
+        <meta name="lang:{{ key }}" content="{{ lang.t(key) }}">
+      {% endfor %}
+      <link rel="shortcut icon" href="{{ base_url }}/{{ config.theme.favicon }}">
+      <meta name="generator" content="mkdocs-{{ mkdocs_version }}, mkdocs-material-2.2.1">
+    {% endblock %}
+    {% block htmltitle %}
+      {% if page and page.meta and page.meta.title %}
+        <title>{{ page.meta.title }}</title>
+      {% elif page and page.title and not page.is_homepage %}
+        <title>{{ page.title }} - {{ config.site_name }}</title>
+      {% else %}
+        <title>{{ config.site_name }}</title>
+      {% endif %}
+    {% endblock %}
+    {% block styles %}
+      <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application.ac64251e.css">
+      {% if palette.primary or palette.accent %}
+        <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application-palette.792431c1.css">
+      {% endif %}
+    {% endblock %}
+    {% block libs %}
+      <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
+    {% endblock %}
+    {% block fonts %}
+      {% if font != false %}
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family={{
+              font.text | replace(' ', '+')  + ':300,400,400i,700|' +
+              font.code | replace(' ', '+')
+            }}">
+        <style>body,input{font-family:"{{ font.text }}","Helvetica Neue",Helvetica,Arial,sans-serif}code,kbd,pre{font-family:"{{ font.code }}","Courier New",Courier,monospace}</style>
+      {% endif %}
+      <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    {% endblock %}
+    {% for path in extra_css %}
+      <link rel="stylesheet" href="{{ path }}">
+    {% endfor %}
+    {% block extrahead %}{% endblock %}
+  </head>
+  {% if palette.primary or palette.accent %}
+    {% set primary = palette.primary | replace(" ", "-") | lower %}
+    {% set accent  = palette.accent  | replace(" ", "-") | lower %}
+    {% if palette.primary and palette.accent %}
+      <body data-md-color-primary="{{ primary }}" data-md-color-accent="{{ accent }}">
+    {% elif palette.primary %}
+      <body data-md-color-primary="{{ primary }}">
+    {% elif palette.accent %}
+      <body data-md-color-accent="{{ accent }}">
+    {% endif %}
+  {% else %}
+    <body>
+  {% endif %}
+    <svg class="md-svg">
+      <defs>
+        {% set platform = config.extra.repo_icon or config.repo_url %}
+        {% if "github" in platform %}
+          {% include "assets/images/icons/github.a4034fb1.svg" %}
+        {% elif "gitlab" in platform %}
+          {% include "assets/images/icons/gitlab.d80e5efc.svg" %}
+        {% elif "bitbucket" in platform %}
+          {% include "assets/images/icons/bitbucket.4ebea66e.svg" %}
+        {% endif %}
+      </defs>
+    </svg>
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="drawer">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="search">
+    <label class="md-overlay" data-md-component="overlay" for="drawer"></label>
+    {% block header %}
+      {% include "partials/header.html" %}
+    {% endblock %}
+    <div class="md-container">
+      {% block hero %}
+        {% if page and page.meta and page.meta.hero %}
+          {% include "partials/hero.html" with context %}
+        {% endif %}
+      {% endblock %}
+      {% if feature.tabs %}
+        {% include "partials/tabs.html" %}
+      {% endif %}
+      <main class="md-main">
+        <div class="md-main__inner md-grid" data-md-component="container">
+          {% block site_nav %}
+            {% if nav %}
+              <div class="md-sidebar md-sidebar--primary" data-md-component="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    {% include "partials/nav.html" %}
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+            {% if page.toc %}
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    {% include "partials/toc.html" %}
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+          {% endblock %}
+          <div class="md-content">
+            <article class="md-content__inner md-typeset">
+              {% block content %}
+                {% if page.edit_url %}
+                  <a href="{{ page.edit_url }}" title="{{ lang.t('edit.link.title') }}" class="md-icon md-content__icon">&#xE3C9;</a>
+                {% endif %}
+                {% if not "\x3ch1" in page.content %}
+                  <h1>{{ page.title | default(config.site_name, true)}}</h1>
+                {% endif %}
+                {{ page.content }}
+                {% block source %}
+                  {% if page and page.meta and page.meta.source %}
+                    <h2 id="__source">{{ lang.t("meta.source") }}</h2>
+                    {% set path = page.meta.path | default([""]) %}
+                    {% set file = page.meta.source %}
+                    <a href="{{ [config.repo_url, path, file] | join('/') }}" title="{{ file }}" class="md-source-file">
+                      {{ file }}
+                    </a>
+                  {% endif %}
+                {% endblock %}
+              {% endblock %}
+              {% block disqus %}
+                {% if config.extra.disqus and not page.is_homepage %}
+                  <h2 id="__comments">{{ lang.t("meta.comments") }}</h2>
+                  {% include "partials/integrations/disqus.html" %}
+                {% endif %}
+              {% endblock %}
+            </article>
+          </div>
+        </div>
+      </main>
+      {% block footer %}
+        {% include "partials/footer.html" %}
+      {% endblock %}
+    </div>
+    {% block scripts %}
+      <script src="{{ base_url }}/assets/javascripts/application.5165553b.js"></script>
+      {% if lang.t("search.language") != "en" %}
+        {% set languages = lang.t("search.language").split(",") %}
+        {% if languages | length and languages[0] != "" %}
+          {% set path = base_url + "/assets/javascripts/lunr" %}
+          <script src="{{ path }}/lunr.stemmer.support.js"></script>
+          {% for language in languages | map("trim") %}
+            {% if language != "en" %}
+              {% if language == "jp" %}
+                <script src="{{ path }}/tinyseg.js"></script>
+              {% endif %}
+              <script src="{{ path }}/lunr.{{ language }}.js"></script>
+            {% endif %}
+          {% endfor %}
+          {% if languages | length > 1 %}
+            <script src="{{ path }}/lunr.multi.js"></script>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+      <script>app.initialize({version:"{{ mkdocs_version }}",url:{base:"{{ base_url }}"}})</script>
+      {% for path in extra_javascript %}
+        <script src="{{ path }}"></script>
+      {% endfor %}
+    {% endblock %}
+    {% block analytics %}
+      {% if config.google_analytics %}
+        {% include "partials/integrations/analytics.html" %}
+      {% endif %}
+    {% endblock %}
+  </body>
+</html>
