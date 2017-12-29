@@ -11,6 +11,10 @@ if (NOT ZLIB_FOUND)
     if (CMAKE_SYSTEM MATCHES "FreeBSD" OR ARCH_I386)
         set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
     endif ()
+    if (ARCH_AARCH64)
+        set(WITH_NEON 1 CACHE INTERNAL "")
+        set(WITH_ACLE 1 CACHE INTERNAL "")
+    endif ()
     set (ZLIB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/zlib-ng" "${ClickHouse_BINARY_DIR}/contrib/zlib-ng") # generated zconf.h
     set (ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR}) # for poco
     set (ZLIB_FOUND 1) # for poco
