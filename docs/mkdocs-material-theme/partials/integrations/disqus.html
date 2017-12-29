@@ -1,0 +1,14 @@
+<div id="disqus_thread"></div>
+<script>
+  var disqus_config = function () {
+    this.page.url = "{{ page.canonical_url }}";
+    this.page.identifier =
+      "{{ page.canonical_url | replace(config.site_url, "") }}";
+  };
+  (function() {
+    var d = document, s = d.createElement("script");
+    s.src = "//{{ config.extra.disqus }}.disqus.com/embed.js";
+    s.setAttribute("data-timestamp", +new Date());
+    (d.head || d.body).appendChild(s);
+  })();
+</script>

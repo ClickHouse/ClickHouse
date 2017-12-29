@@ -1,4 +1,4 @@
-#Queries
+# Queries
 
 ## CREATE DATABASE
 

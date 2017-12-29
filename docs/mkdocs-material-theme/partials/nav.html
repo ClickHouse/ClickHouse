@@ -1,0 +1,33 @@
+<nav class="md-nav md-nav--primary" data-md-level="0">
+  <label class="md-nav__title md-nav__title--site" for="drawer">
+    {{ config.site_name }}
+  </label>
+
+  <ul class="md-nav__list" data-md-scrollfix>
+    <li class="md-nav__item md-nav__item--active">
+      <script type="text/javascript">
+        if (window.location.pathname.indexOf('/ru/') >= 0) {
+          if (window.location.pathname.indexOf('/single_page/') >= 0){
+            document.write("<a href=\"{{ base_url }}/../index.html\" class=\"md-nav__link md-nav__link--active\">Многостраничная версия документации</a>")
+          }else{
+            document.write("<a href=\"{{ base_url }}/single_page/index.html\" class=\"md-nav__link md-nav__link--active\">Одностраничная версия документации</a>")
+          }
+        }else{
+          if (window.location.pathname.indexOf('/single_page/') >= 0){
+            document.write("<a href=\"{{ base_url }}/../index.html\" class=\"md-nav__link md-nav__link--active\">Multi page version of the document</a>")
+          }else{
+            document.write("<a href=\"{{ base_url }}/single_page/index.html\" class=\"md-nav__link md-nav__link--active\">Single page version of the document</a>")
+          }
+        }
+     </script>
+    </li>
+  </ul>
+
+  <ul class="md-nav__list" data-md-scrollfix>
+    {% for nav_item in nav %}
+      {% set path = "nav-" + loop.index | string %}
+      {% set level = 1 %}
+      {% include "partials/nav-item.html" %}
+    {% endfor %}
+  </ul>
+</nav>

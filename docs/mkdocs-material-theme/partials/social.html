@@ -1,0 +1,9 @@
+{% if config.extra.social %}
+  <div class="md-footer-social">
+    {% set path = "ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/{{ path }}">
+    {% for social in config.extra.social %}
+      <a href="{{ social.link }}" class="md-footer-social__link fa fa-{{ social.type }}"></a>
+    {% endfor %}
+  </div>
+{% endif %}
