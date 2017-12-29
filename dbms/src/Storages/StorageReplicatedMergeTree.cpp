@@ -210,6 +210,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
+    initMergeSelectSession();
+    merge_selecting_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree", [this] { mergeSelectingThread(); });
+
     bool skip_sanity_checks = false;
 
     try
@@ -950,7 +953,7 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
 }
 
 
-void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
+void StorageReplicatedMergeTree::pullLogsToQueue(BackgroundSchedulePool::TaskHandle next_update_event)
 {
     if (queue.pullLogsToQueue(getZooKeeper(), next_update_event))
     {
@@ -1225,7 +1228,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
           * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
           */
-        merge_selecting_event.set();
+        merge_selecting_handle->schedule();
         ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
         write_part_log({});
@@ -1543,39 +1546,34 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
 void StorageReplicatedMergeTree::queueUpdatingThread()
 {
-    setThreadName("ReplMTQueueUpd");
+    //most probably this check is not relevant
+    if (shutdown_called)
+        return;
 
-    bool update_in_progress = false;
-    while (!shutdown_called)
+    if (!queue_update_in_progress)
     {
-        if (!update_in_progress)
-        {
-            last_queue_update_start_time.store(time(nullptr));
-            update_in_progress = true;
-        }
-        try
-        {
-            pullLogsToQueue(queue_updating_event);
-            last_queue_update_finish_time.store(time(nullptr));
-            update_in_progress = false;
-            queue_updating_event->wait();
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (e.code == ZINVALIDSTATE)
-                restarting_thread->wakeup();
-
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
-        }
+        last_queue_update_start_time.store(time(nullptr));
+        queue_update_in_progress = true;
     }
+    try
+    {
+        pullLogsToQueue(queue_updating_task_handle);
+        last_queue_update_finish_time.store(time(nullptr));
+        queue_update_in_progress = false;
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (e.code == ZINVALIDSTATE)
+            restarting_thread->wakeup();
 
-    LOG_DEBUG(log, "Queue updating thread finished");
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        queue_updating_task_handle->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        queue_updating_task_handle->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
+    }
 }
 
 
@@ -1713,7 +1711,7 @@ namespace
 
         return true;
     }
-
+}
 
     /// If any of the parts is already going to be merged into a larger one, do not agree to merge it.
     bool partsWillNotBeMergedOrDisabled(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
@@ -1816,94 +1814,93 @@ namespace
     template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::min_delay;
     template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::max_delay;
     template <typename Key> constexpr double CachedMergingPredicate<Key>::Expiration::exponent_base;
-}
 
 
-void StorageReplicatedMergeTree::mergeSelectingThread()
+void StorageReplicatedMergeTree::initMergeSelectSession()
 {
-    setThreadName("ReplMTMergeSel");
-    LOG_DEBUG(log, "Merge selecting thread started");
+    merge_sel_deduplicate = false;  /// TODO: read deduplicate option from table config
 
-    bool deduplicate = false; /// TODO: read deduplicate option from table config
-
-    auto uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    merge_sel_uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
         return canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data);
     };
 
-    auto merging_predicate_args_to_key = [](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    merge_sel_merging_predicate_args_to_key = [](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
         return std::make_pair(left->name, right->name);
     };
 
-    CachedMergingPredicate<std::pair<std::string, std::string>> cached_merging_predicate;
+    merge_sel_cached_merging_predicate.reset(new CachedMergingPredicate<std::pair<std::string, std::string>>());
 
     /// Will be updated below.
-    std::chrono::steady_clock::time_point now;
+    merge_sel_now = std::chrono::steady_clock::time_point();
 
-    auto can_merge = [&] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
+    merge_sel_can_merge = [&] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
     {
         return partsWillNotBeMergedOrDisabled(left, right, queue)
-               && cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
+               && merge_sel_cached_merging_predicate->get(merge_sel_now, merge_sel_uncached_merging_predicate, merge_sel_merging_predicate_args_to_key, left, right);
     };
+}
 
-    while (!shutdown_called && is_leader_node)
+void StorageReplicatedMergeTree::mergeSelectingThread()
+{
+    if (shutdown_called || !is_leader_node)
+        return;
+
+    bool success = false;
+
+    try
     {
-        bool success = false;
+        std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-        try
+        /// You need to load new entries into the queue before you select parts to merge.
+        ///  (so we know which parts are already going to be merged).
+        /// We must select parts for merge under the mutex because other threads (OPTIMIZE queries) could push new merges.
+        if (merge_selecting_logs_pulling_is_required)
         {
-            std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-
-            /// You need to load new entries into the queue before you select parts to merge.
-            ///  (so we know which parts are already going to be merged).
-            /// We must select parts for merge under the mutex because other threads (OPTIMIZE queries) could push new merges.
-            if (merge_selecting_logs_pulling_is_required)
-            {
-                pullLogsToQueue();
-                merge_selecting_logs_pulling_is_required = false;
-            }
-
-            /// If many merges is already queued, then will queue only small enough merges.
-            /// Otherwise merge queue could be filled with only large merges,
-            /// and in the same time, many small parts could be created and won't be merged.
-            size_t merges_queued = queue.countMerges();
-
-            if (merges_queued >= data.settings.max_replicated_merges_in_queue)
-            {
-                LOG_TRACE(log, "Number of queued merges (" << merges_queued
-                    << ") is greater than max_replicated_merges_in_queue ("
-                    << data.settings.max_replicated_merges_in_queue << "), so won't select new parts to merge.");
-            }
-            else
-            {
-                MergeTreeDataMerger::FuturePart future_merged_part;
-
-                size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
-
-                now = std::chrono::steady_clock::now();
-
-                if (max_parts_size_for_merge > 0
-                    && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge))
-                {
-                    merge_selecting_logs_pulling_is_required = true;
-                    success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate);
-                }
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            pullLogsToQueue();
+            merge_selecting_logs_pulling_is_required = false;
         }
 
-        if (shutdown_called || !is_leader_node)
-            break;
+        /// If many merges is already queued, then will queue only small enough merges.
+        /// Otherwise merge queue could be filled with only large merges,
+        /// and in the same time, many small parts could be created and won't be merged.
+        size_t merges_queued = queue.countMerges();
 
-        if (!success)
-            merge_selecting_event.tryWait(MERGE_SELECTING_SLEEP_MS);
+        if (merges_queued >= data.settings.max_replicated_merges_in_queue)
+        {
+            LOG_TRACE(log, "Number of queued merges (" << merges_queued
+                << ") is greater than max_replicated_merges_in_queue ("
+                << data.settings.max_replicated_merges_in_queue << "), so won't select new parts to merge.");
+        }
+        else
+        {
+            MergeTreeDataMerger::FuturePart future_merged_part;
+
+            size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
+
+            merge_sel_now = std::chrono::steady_clock::now();
+
+            if (max_parts_size_for_merge > 0
+                && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, merge_sel_can_merge))
+            {
+                merge_selecting_logs_pulling_is_required = true;
+                success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, merge_sel_deduplicate);
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    LOG_DEBUG(log, "Merge selecting thread finished");
+    if (shutdown_called || !is_leader_node)
+        return;
+
+    if (!success)
+        merge_selecting_handle->scheduleAfter(MERGE_SELECTING_SLEEP_MS);
+    else
+        merge_selecting_handle->schedule();
 }
 
 
@@ -2008,16 +2005,12 @@ void StorageReplicatedMergeTree::becomeLeader()
     if (shutdown_called)
         return;
 
-    if (merge_selecting_thread.joinable())
-    {
-        LOG_INFO(log, "Deleting old leader");
-        is_leader_node = false; /// exit trigger inside thread
-        merge_selecting_thread.join();
-    }
-
     LOG_INFO(log, "Became leader");
+    is_leader_node = false;
+    merge_selecting_handle->activate();
+    initMergeSelectSession();
     is_leader_node = true;
-    merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
+    merge_selecting_handle->schedule();
 }
 
 
@@ -2190,7 +2183,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
-        cleanup_thread_event.set();
+        cleanup_thread->schedule();
         return false;
     }
 
@@ -2294,7 +2287,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             if (quorum)
                 updateQuorum(part_name);
 
-            merge_selecting_event.set();
+            merge_selecting_handle->schedule();
 
             for (const auto & replaced_part : replaced_parts)
             {
@@ -2381,6 +2374,8 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    context.getSchedulePool().removeTask(merge_selecting_handle);
 }
 
 

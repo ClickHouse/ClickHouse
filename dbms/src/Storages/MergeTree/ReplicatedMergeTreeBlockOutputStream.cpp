@@ -369,7 +369,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     if (info.code == ZOK)
     {
         transaction.commit();
-        storage.merge_selecting_event.set();
+        storage.merge_selecting_handle->schedule();
 
         /// Lock nodes have been already deleted, do not delete them in destructor
         block_number_lock.assumeUnlocked();
