@@ -98,7 +98,7 @@ gulp.task('scripts', ['docs'], function () {
 
 gulp.task('styles', ['docs'], function () {
     return gulp.src(paths.styles)
-        .pipe(cleanCss({inline: ['none']}))
+        .pipe(cleanCss())
         .pipe(gulp.dest(outputDir))
 });
 
