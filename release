@@ -34,6 +34,9 @@ do
     elif [[ $1 == '--head' ]]; then
         REVISION=`git rev-parse HEAD`
         shift
+    elif [[ $1 == '--pbuilder' ]]; then
+        USE_PBUILDER=1
+        shift
     else
         echo "Unknown option $1"
         exit 2
@@ -49,6 +52,9 @@ then
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
+    export DEB_CC=clang-5.0
+    export DEB_CXX=clang++-5.0
+    export EXTRAPACKAGES=clang-5.0
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
@@ -63,13 +69,23 @@ if [ -z "$THREAD_COUNT" ] ; then
 fi
 
 CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1"
+export CMAKE_FLAGS
 
 REVISION+=$VERSION_POSTFIX
 echo -e "\nCurrent revision is $REVISION"
 
 gen_changelog "$REVISION" "" "$AUTHOR" ""
 
-# Build (only binary packages).
-debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
+if [ -z "$USE_PBUILDER" ] ; then
+    # Build (only binary packages).
+    debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+else
+    export DIST=${DIST:=artful}
+    . $CURDIR/debian/.pbuilderrc
+    if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
+        sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc
+    fi
+    pdebuild --configfile $CURDIR/debian/.pbuilderrc
+fi

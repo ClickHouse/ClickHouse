@@ -70,3 +70,10 @@ Description: Various utilities for clickhouse analytics db
  .
    - compressor
    - zookeeper client
+
+Package: clickhouse-test
+Section: Database
+Priority: extra
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, clickhouse-utils, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo
+Description: Clickhouse tests

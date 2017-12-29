@@ -149,6 +149,7 @@ target_link_libraries (clickhouse_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
+    ${Poco_Data_LIBRARY}
     ${EXECINFO_LIBRARY}
 )
 
@@ -163,7 +164,6 @@ target_link_libraries (dbms
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
-    ${Poco_Data_LIBRARY}
     ${BTRIE_LIBRARIES}
 )
 
@@ -216,8 +216,9 @@ endif ()
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
+add_subdirectory (tests)
+
 if (ENABLE_TESTS)
-    add_subdirectory (tests)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})

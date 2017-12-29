@@ -50,7 +50,7 @@ void verbosePrintString(const char * begin, const char * end, WriteBuffer & out)
 
             default:
             {
-                if (*pos >= 0 && *pos < 32)
+                if (static_cast<unsigned char>(*pos) < 32)  /// ASCII control characters
                     out << "<0x" << hexDigitUppercase(*pos / 16) << hexDigitUppercase(*pos % 16) << ">";
                 else
                     out << *pos;

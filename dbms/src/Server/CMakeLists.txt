@@ -85,6 +85,11 @@ if (CLICKHOUSE_SPLIT_BINARY)
 else ()
     add_executable (clickhouse main.cpp)
     target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+
+    if (USE_EMBEDDED_COMPILER)
+        target_link_libraries (clickhouse clickhouse-compiler-lib)
+    endif ()
+
     target_link_libraries (clickhouse
         clickhouse-server-lib
         clickhouse-client-lib
@@ -96,10 +101,6 @@ else ()
         clickhouse-format-lib
         dbms
     )
-
-    if (USE_EMBEDDED_COMPILER)
-        target_link_libraries (clickhouse clickhouse-compiler-lib)
-    endif ()
 
     add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
     add_custom_target (clickhouse-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-client DEPENDS clickhouse)
