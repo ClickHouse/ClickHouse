@@ -25,9 +25,8 @@ default:
 	$(SPHINXBUILD) -b html $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru
 	$(SPHINXBUILD) -b html $(SPHINXOPTS) en $(BUILDDIR)/docs/en
 	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru/single
-	sed -i "s|external\\\\\" href=\\\\\"[\.a-z_-\/]*#|external\\\\\" href=\\\\\"#|g" 'build/docs/ru/single/index.html'
 	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) en $(BUILDDIR)/docs/en/single
-	sed -i "s|external\\\\\" href=\\\\\"[\.a-z_-\/]*#|external\\\\\" href=\\\\\"#|g" 'build/docs/en/single/index.html'
+	perl -pi -e 's|external\\" href=\\"[^#]+#|external\\" href=\\"#|g' $(BUILDDIR)/docs/ru/single/index.html $(BUILDDIR)/docs/en/single/index.html
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
