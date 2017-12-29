@@ -592,7 +592,7 @@ def run_tests(args):
         proc = Popen(command, shell = True)
         start_time = datetime.now()
         while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
-            sleep(0)
+            sleep(0.01)
 
         if proc.returncode is None:
             try:
