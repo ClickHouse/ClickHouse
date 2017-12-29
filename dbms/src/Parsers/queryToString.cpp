@@ -7,7 +7,7 @@ namespace DB
     String queryToString(const ASTPtr & query)
     {
         std::ostringstream out;
-        formatAST(*query, out, 0, false, true);
+        formatAST(*query, out, false, true);
 
         return out.str();
     }

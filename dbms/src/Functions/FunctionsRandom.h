@@ -129,7 +129,7 @@ private:
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandom>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandom>(); }
 
     String getName() const override
     {
@@ -150,16 +150,16 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        auto col_to = std::make_shared<ColumnVector<ToType>>();
-        block.getByPosition(result).column = col_to;
-
-        typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
+        auto col_to = ColumnVector<ToType>::create();
+        typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
         size_t size = block.rows();
         vec_to.resize(size);
         Impl::execute(&vec_to[0], vec_to.size());
+
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 
@@ -176,7 +176,7 @@ private:
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandomConstant>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomConstant>(); }
 
     String getName() const override
     {
@@ -196,17 +196,17 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         if (!is_initialized)
         {
             is_initialized = true;
-            typename ColumnVector<ToType>::Container_t vec_to(1);
+            typename ColumnVector<ToType>::Container vec_to(1);
             Impl::execute(&vec_to[0], vec_to.size());
             value = vec_to[0];
         }
 
-        block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(block.rows(), toField(value));
+        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(block.rows(), toField(value));
     }
 };
 

@@ -1,8 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/ReservoirSampler.h>
-
-#include <Core/FieldVisitors.h>
+#include <type_traits>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -10,7 +8,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/QuantilesCommon.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -19,179 +18,139 @@
 namespace DB
 {
 
-template <typename ArgumentFieldType>
-struct AggregateFunctionQuantileData
+namespace ErrorCodes
 {
-    using Sample = ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
-    Sample sample;  /// TODO Add MemoryTracker
-};
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 
-/** Approximately calculates the quantile.
-  * The argument type can only be a numeric type (including date and date-time).
-  * If returns_float = true, the result type is Float64, otherwise - the result type is the same as the argument type.
-  * For dates and date-time, returns_float should be set to false.
+/** Generic aggregate function for calculation of quantiles.
+  * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
   */
-template <typename ArgumentFieldType, bool returns_float = true>
-class AggregateFunctionQuantile final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantile<ArgumentFieldType, returns_float>>
+
+template <
+    /// Type of first argument.
+    typename Value,
+    /// Data structure and implementation of calculation. Look at QuantileExact.h for example.
+    typename Data,
+    /// Structure with static member "name", containing the name of the aggregate function.
+    typename Name,
+    /// If true, the function accept second argument
+    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
+    /// Second argument is always obtained through 'getUInt' method.
+    bool have_second_arg,
+    /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
+    /// Otherwise it will return Value type and default value if there was no values.
+    /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
+    typename FloatReturnType,
+    /// If true, the function will accept multiple parameters with quantile levels
+    ///  and return an Array filled with many values of that quantiles.
+    bool returns_many
+>
+class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
+    AggregateFunctionQuantile<Value, Data, Name, have_second_arg, FloatReturnType, returns_many>>
 {
 private:
-    using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
+    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
 
-    double level;
-    DataTypePtr type;
+    QuantileLevels<Float64> levels;
+
+    /// Used when there are single level to get.
+    Float64 level = 0.5;
+
+    DataTypePtr argument_type;
 
 public:
-    AggregateFunctionQuantile(double level_ = 0.5) : level(level_) {}
+    AggregateFunctionQuantile(const DataTypePtr & argument_type, const Array & params)
+        : levels(params, returns_many), level(levels.levels[0]), argument_type(argument_type)
+    {
+        if (!returns_many && levels.size() > 1)
+            throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
 
-    String getName() const override { return "quantile"; }
+    String getName() const override { return Name::name; }
 
     DataTypePtr getReturnType() const override
     {
-        return type;
-    }
+        DataTypePtr res;
 
-    void setArgument(const DataTypePtr & argument)
-    {
-        if (returns_float)
-            type = std::make_shared<DataTypeFloat64>();
+        if constexpr (returns_float)
+            res = std::make_shared<DataTypeNumber<FloatReturnType>>();
         else
-            type = argument;
+            res = argument_type;
+
+        if constexpr (returns_many)
+            return std::make_shared<DataTypeArray>(res);
+        else
+            return res;
     }
 
-    void setParameters(const Array & params) override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+        if constexpr (have_second_arg)
+            this->data(place).add(
+                static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num],
+                columns[1]->getUInt(row_num));
+        else
+            this->data(place).add(
+                static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num]);
     }
 
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        this->data(place).sample.merge(this->data(rhs).sample);
+        this->data(place).merge(this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        this->data(place).sample.write(buf);
+        /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
+        this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
-        this->data(place).sample.read(buf);
+        this->data(place).deserialize(buf);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        /// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
-        Sample & sample = const_cast<Sample &>(this->data(place).sample);
+        /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
+        auto & data = this->data(const_cast<AggregateDataPtr>(place));
 
-        if (returns_float)
-            static_cast<ColumnFloat64 &>(to).getData().push_back(sample.quantileInterpolated(level));
-        else
-            static_cast<ColumnVector<ArgumentFieldType> &>(to).getData().push_back(sample.quantileInterpolated(level));
-    }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
-};
-
-
-/** The same, but allows you to calculate several quantiles at once.
-  * For this, takes as parameters several levels. Example: quantiles(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
-  * Returns an array of results.
-  */
-template <typename ArgumentFieldType, bool returns_float = true>
-class AggregateFunctionQuantiles final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantiles<ArgumentFieldType, returns_float>>
-{
-private:
-    using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
-
-    using Levels = std::vector<double>;
-    Levels levels;
-    DataTypePtr type;
-
-public:
-    String getName() const override { return "quantiles"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(type);
-    }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-        if (returns_float)
-            type = std::make_shared<DataTypeFloat64>();
-        else
-            type = argument;
-    }
-
-    void setParameters(const Array & params) override
-    {
-        if (params.empty())
-            throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        size_t size = params.size();
-        levels.resize(size);
-
-        for (size_t i = 0; i < size; ++i)
-            levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        this->data(place).sample.merge(this->data(rhs).sample);
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).sample.write(buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).sample.read(buf);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        /// `Sample` can be sorted when a quantile is received, but in this context, you can not think of this as a violation of constancy.
-        Sample & sample = const_cast<Sample &>(this->data(place).sample);
-
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
-
-        size_t size = levels.size();
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
-
-        if (returns_float)
+        if constexpr (returns_many)
         {
-            ColumnFloat64::Container_t & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
+            ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+            ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-            for (size_t i = 0; i < size; ++i)
-                data_to.push_back(sample.quantileInterpolated(levels[i]));
+            size_t size = levels.size();
+            offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+
+            if (!size)
+                return;
+
+            if constexpr (returns_float)
+            {
+                auto & data_to = static_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
+                size_t old_size = data_to.size();
+                data_to.resize(data_to.size() + size);
+
+                data.getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
+            }
+            else
+            {
+                auto & data_to = static_cast<ColumnVector<Value> &>(arr_to.getData()).getData();
+                size_t old_size = data_to.size();
+                data_to.resize(data_to.size() + size);
+
+                data.getMany(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
+            }
         }
         else
         {
-            typename ColumnVector<ArgumentFieldType>::Container_t & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
-
-            for (size_t i = 0; i < size; ++i)
-                data_to.push_back(sample.quantileInterpolated(levels[i]));
+            if constexpr (returns_float)
+                static_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
+            else
+                static_cast<ColumnVector<Value> &>(to).getData().push_back(data.get(level));
         }
     }
 

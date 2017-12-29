@@ -19,19 +19,17 @@ class ExternalDictionaries;
 
 class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageDictionary>;
-
 public:
     static StoragePtr create(const String & table_name_,
         Context & context_,
-        ASTPtr & query_,
-        NamesAndTypesListPtr columns_,
+        const ASTCreateQuery & query,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);
 
     static StoragePtr create(const String & table_name,
-        NamesAndTypesListPtr columns,
+        const NamesAndTypesList & columns,
         const NamesAndTypesList & materialized_columns,
         const NamesAndTypesList & alias_columns,
         const ColumnDefaults & column_defaults,
@@ -40,7 +38,7 @@ public:
 
     std::string getName() const override { return "Dictionary"; }
     std::string getTableName() const override { return table_name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
     BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -49,25 +47,17 @@ public:
         unsigned threads = 1) override;
 
     void drop() override {}
-    static NamesAndTypesListPtr getNamesAndTypes(const DictionaryStructure & dictionaryStructure);
+    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
 private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
     String table_name;
-    NamesAndTypesListPtr columns;
+    NamesAndTypesList columns;
     String dictionary_name;
     Poco::Logger * logger;
 
-    StorageDictionary(const String & table_name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const DictionaryStructure & dictionary_structure_,
-        const String & dictionary_name_);
-
-    void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionaryStructure) const;
+    void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const;
 
     template <typename ForwardIterator>
     std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end) const
@@ -86,5 +76,15 @@ private:
         }
         return description.substr(2, description.size());
     }
+
+protected:
+    StorageDictionary(const String & table_name_,
+        const NamesAndTypesList & columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        const DictionaryStructure & dictionary_structure_,
+        const String & dictionary_name_);
 };
+
 }

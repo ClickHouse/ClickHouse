@@ -63,8 +63,14 @@
 
     <!-- Listen specified host. use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere. -->
     <!-- <listen_host>::</listen_host> -->
+    <!-- Same for hosts with disabled ipv6: -->
+    <!-- <listen_host>0.0.0.0</listen_host> -->
+
+    <!-- Default values - try listen localhost on ipv4 and ipv6: -->
+    <!--
     <listen_host>::1</listen_host>
     <listen_host>127.0.0.1</listen_host>
+    -->
 
     <max_connections>4096</max_connections>
     <keep_alive_timeout>3</keep_alive_timeout>
@@ -174,6 +180,7 @@
     <!--
         interval - send every X second
         root_path - prefix for keys
+        hostname_in_path - append hostname to root_path (default = true)
         metrics - send data from table system.metrics
         events - send data from table system.events
         asynchronous_metrics - send data from table system.asynchronous_metrics
@@ -185,6 +192,7 @@
         <timeout>0.1</timeout>
         <interval>60</interval>
         <root_path>one_min</root_path>
+        <hostname_in_path>true<hostname_in_path>
 
         <metrics>true</metrics>
         <events>true</events>
@@ -254,17 +262,13 @@
 
             <!- - Conditions. All must be satisfied. Some conditions may be omitted. - ->
             <min_part_size>10000000000</min_part_size>        <!- - Min part size in bytes. - ->
-            <min_part_size_ratio>0.01</min_part_size_ratio>    <!- - Min size of part relative to whole table size. - ->
+            <min_part_size_ratio>0.01</min_part_size_ratio>   <!- - Min size of part relative to whole table size. - ->
 
             <!- - What compression method to use. - ->
-            <method>zstd</method>    <!- - Keep in mind that zstd compression library is highly experimental. - ->
+            <method>zstd</method>
         </case>
     -->
     </compression>
-
-    <resharding>
-        <task_queue_path>/clickhouse/task_queue</task_queue_path>
-    </resharding>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
@@ -318,4 +322,9 @@
             </retention>
         </default>
     </graphite_rollup_example>
+
+    <!-- Directory in <clickhouse-path> containing schema files for various input formats.
+         The directory will be created if it doesn't exist.
+      -->
+    <format_schema_path>format_schemas/</format_schema_path>
 </yandex>

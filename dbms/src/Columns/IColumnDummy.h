@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Arena.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
 
@@ -20,51 +21,65 @@ namespace ErrorCodes
 class IColumnDummy : public IColumn
 {
 public:
+    IColumnDummy() : s(0) {}
     IColumnDummy(size_t s_) : s(s_) {}
 
-    virtual ColumnPtr cloneDummy(size_t s_) const = 0;
+public:
+    virtual MutableColumnPtr cloneDummy(size_t s_) const = 0;
 
-    ColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
-    bool isConst() const override { return true; }
+    MutableColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
     size_t size() const override { return s; }
     void insertDefault() override { ++s; }
     void popBack(size_t n) override { s -= n; }
     size_t byteSize() const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override { return 0; }
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 
-    Field operator[](size_t n) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void get(size_t n, Field & res) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
-    void insert(const Field & x) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    StringRef getDataAt(size_t n) const override { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void insertData(const char * pos, size_t length) override { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
+    void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    StringRef getDataAt(size_t) const override
     {
-        throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        return {};
+    }
+
+    void insertData(const char *, size_t) override
+    {
+        ++s;
+    }
+
+    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override
+    {
+        return { arena.allocContinue(0, begin), 0 };
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        ++s;
+        return pos;
     }
 
-    void updateHashWithValue(size_t n, SipHash & hash) const override
+    void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
-        throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
+    void insertFrom(const IColumn &, size_t) override
+    {
+        ++s;
+    }
+
+    void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
     {
         s += length;
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
+    MutableColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
         return cloneDummy(countBytesInFilter(filt));
     }
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (s != perm.size())
             throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -72,14 +87,14 @@ public:
         return cloneDummy(limit ? std::min(s, limit) : s);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
+    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
     {
         res.resize(s);
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
     }
 
-    ColumnPtr replicate(const Offsets_t & offsets) const override
+    MutableColumnPtr replicate(const Offsets & offsets) const override
     {
         if (s != offsets.size())
             throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -87,7 +102,7 @@ public:
         return cloneDummy(s == 0 ? 0 : offsets.back());
     }
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         if (s != selector.size())
             throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -96,7 +111,7 @@ public:
         for (auto idx : selector)
             ++counts[idx];
 
-        Columns res(num_columns);
+        MutableColumns res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             res[i] = cloneResized(counts[i]);
 
@@ -108,12 +123,21 @@ public:
         throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field &, Field &) const override
     {
-        throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-private:
+    void addSize(size_t delta)
+    {
+        s += delta;
+    }
+
+    bool isDummy() const override
+    {
+        return true;
+    }
+
+protected:
     size_t s;
 };
 

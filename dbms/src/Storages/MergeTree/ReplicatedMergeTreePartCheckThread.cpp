@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
-#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
 
@@ -56,7 +56,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     if (parts_set.count(name))
         return;
 
-    parts_queue.emplace_back(name, time(0) + delay_to_check_seconds);
+    parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds);
     parts_set.insert(name);
     wakeup_event.set();
 }
@@ -192,7 +192,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
     if (part_length_in_blocks > 1000)
     {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too much blocks (" << part_length_in_blocks << ")");
+        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too many blocks (" << part_length_in_blocks << ")");
         return;
     }
 
@@ -212,7 +212,12 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     LOG_WARNING(log, "Checking part " << part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
-    auto part = storage.data.getActiveContainingPart(part_name);
+    /// If the part is still in the PreCommitted -> Committed transition, it is not lost
+    /// and there is no need to go searching for it on other replicas. To definitely find the needed part
+    /// if it exists (or a part containing it) we first search among the PreCommitted parts.
+    auto part = storage.data.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
+    if (!part)
+        part = storage.data.getActiveContainingPart(part_name);
 
     /// We do not have this or a covering part.
     if (!part)
@@ -241,13 +246,12 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 if (part->columns != zk_columns)
                     throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
 
-                MergeTreePartChecker::Settings settings;
-                settings.setIndexGranularity(storage.data.index_granularity);
-                settings.setRequireChecksums(true);
-                settings.setRequireColumnFiles(true);
-
-                MergeTreePartChecker::checkDataPart(
-                    storage.data.getFullPath() + part_name, settings, storage.data.primary_key_data_types, nullptr, &need_stop);
+                checkDataPart(
+                    storage.data.getFullPath() + part_name,
+                    storage.data.index_granularity,
+                    true,
+                    storage.data.primary_key_data_types,
+                    [this] { return need_stop.load(); });
 
                 if (need_stop)
                 {
@@ -257,8 +261,10 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
                 LOG_INFO(log, "Part " << part_name << " looks good.");
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                /// TODO Better to check error code.
+
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 LOG_ERROR(log, "Part " << part_name << " looks broken. Removing it and queueing a fetch.");
@@ -270,7 +276,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 storage.data.renameAndDetachPart(part, "broken_");
             }
         }
-        else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
+        else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
         {
             /// If the part is not in ZooKeeper, delete it locally.
             /// Probably, someone just wrote down the part, and has not yet added to ZK.
@@ -288,7 +294,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             /// And then for a long time (before restarting), the data on the replicas will be different.
 
             LOG_TRACE(log, "Young part " << part_name
-                << " with age " << (time(0) - part->modification_time)
+                << " with age " << (time(nullptr) - part->modification_time)
                 << " seconds hasn't been added to ZooKeeper yet. It's ok.");
         }
     }

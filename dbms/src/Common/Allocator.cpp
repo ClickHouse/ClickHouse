@@ -1,3 +1,5 @@
+#include <Common/Allocator.h>
+
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
@@ -5,11 +7,12 @@
 #include <cstdlib>
 #include <sys/mman.h>
 
+#include <common/mremap.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
-#include <Common/Allocator.h>
-
+#include <Common/formatReadable.h>
 #include <IO/WriteHelpers.h>
+
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
@@ -54,11 +57,12 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
     if (size >= MMAP_THRESHOLD)
     {
         if (alignment > MMAP_MIN_ALIGNMENT)
-            throw DB::Exception("Too large alignment: more than page size.", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
+                + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
         buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
-            DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         /// No need for zero-fill, because mmap guarantees it.
     }
@@ -72,7 +76,7 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
                 buf = ::malloc(size);
 
             if (nullptr == buf)
-                DB::throwFromErrno("Allocator: Cannot malloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno("Allocator: Cannot malloc " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
         else
         {
@@ -80,7 +84,7 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
             int res = posix_memalign(&buf, alignment, size);
 
             if (0 != res)
-                DB::throwFromErrno("Cannot allocate memory (posix_memalign)", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+                DB::throwFromErrno("Cannot allocate memory (posix_memalign) " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 
             if (clear_memory)
                 memset(buf, 0, size);
@@ -97,7 +101,7 @@ void Allocator<clear_memory_>::free(void * buf, size_t size)
     if (size >= MMAP_THRESHOLD)
     {
         if (0 != munmap(buf, size))
-            DB::throwFromErrno("Allocator: Cannot munmap.", DB::ErrorCodes::CANNOT_MUNMAP);
+            DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
     }
     else
     {
@@ -111,45 +115,44 @@ void Allocator<clear_memory_>::free(void * buf, size_t size)
 template <bool clear_memory_>
 void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
 {
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-    if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
+    if (old_size == new_size)
+    {
+        /// nothing to do.
+    }
+    else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
     {
         CurrentMemoryTracker::realloc(old_size, new_size);
 
         buf = ::realloc(buf, new_size);
 
         if (nullptr == buf)
-            DB::throwFromErrno("Allocator: Cannot realloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-        if (clear_memory)
+        if (clear_memory && new_size > old_size)
             memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
     }
     else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
     {
         CurrentMemoryTracker::realloc(old_size, new_size);
 
-        buf = mremap(buf, old_size, new_size, MREMAP_MAYMOVE);
+        // On apple and freebsd self-implemented mremap used (common/mremap.h)
+        buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
-            DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + DB::toString(old_size) + " to " + DB::toString(new_size) + " bytes.", DB::ErrorCodes::CANNOT_MREMAP);
+            DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
 
         /// No need for zero-fill, because mmap guarantees it.
     }
-#else
-    // TODO: We need to use mmap/calloc on Apple too.
-    if ((old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT) ||
-        (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD))
+    else if (old_size >= MMAP_THRESHOLD && new_size < MMAP_THRESHOLD)
     {
-        CurrentMemoryTracker::realloc(old_size, new_size);
-
-        buf = ::realloc(buf, new_size);
-
-        if (nullptr == buf)
-            DB::throwFromErrno("Allocator: Cannot realloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-        if (clear_memory)
-            memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+        void * new_buf = alloc(new_size, alignment);
+        memcpy(new_buf, buf, new_size);
+        if (0 != munmap(buf, old_size))
+        {
+            ::free(new_buf);
+            DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+        }
+        buf = new_buf;
     }
-#endif
     else
     {
         void * new_buf = alloc(new_size, alignment);

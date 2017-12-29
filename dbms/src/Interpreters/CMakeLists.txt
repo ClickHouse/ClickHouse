@@ -5,26 +5,21 @@ else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
 endif ()
 
-if (INTERNAL_COMPILER_SAME)
-    set (INTERNAL_COMPILER_EXECUTABLE "${CMAKE_CXX_COMPILER}" CACHE STRING "")
-else ()
-    set (INTERNAL_COMPILER_EXECUTABLE "${PATH_SHARE}/clickhouse/bin/clang" CACHE STRING "")
-endif ()
-
+set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
+set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
 set (INTERNAL_COMPILER_NO_WARNING OFF CACHE BOOL "")
-
-#original string:
-# -x c++ -std=gnu++1y -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -msse4 -mpopcnt -D NDEBUG -D_GLIBCXX_USE_CXX11_ABI=0 -shared -fPIC -fvisibility=hidden -fno-implement-inlines
-set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE} -x c++ -march=native -shared -fPIC -fvisibility=hidden -fno-implement-inlines " CACHE STRING "")
-string(REPLACE "-no-pie" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
-if (INTERNAL_COMPILER_NO_WARNING)
-    string (REPLACE "-Wall" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
-    string (REPLACE "-Werror" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
-endif ()
-
 set (INTERNAL_COMPILER_HEADERS "${PATH_SHARE}/clickhouse/headers" CACHE STRING "")
 set (INTERNAL_COMPILER_HEADERS_ROOT "${INTERNAL_COMPILER_HEADERS}" CACHE STRING "")
 set (INTERNAL_COMPILER_CUSTOM_ROOT ON CACHE BOOL "")
+
+set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE} ${CXX_FLAGS_INTERNAL_COMPILER} -x c++ -march=native -fPIC -fvisibility=hidden -fno-implement-inlines -nostdinc -nostdinc++ -Wno-unused-command-line-argument -Bprefix=${PATH_SHARE}/clickhouse -isysroot=${INTERNAL_COMPILER_HEADERS_ROOT}" CACHE STRING "")
+string(REPLACE "-no-pie" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
+if (INTERNAL_COMPILER_NO_WARNING)
+    string (REPLACE "-Wall" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
+    string (REPLACE "-Wextra" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
+    string (REPLACE "-Werror" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
+endif ()
+
 list(GET Poco_INCLUDE_DIRS 0 Poco_Foundation_INCLUDE_DIR)
 list(GET Poco_INCLUDE_DIRS 1 Poco_Util_INCLUDE_DIR)
 

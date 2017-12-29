@@ -66,7 +66,7 @@ StatusFile::StatusFile(const std::string & path_)
             WriteBufferFromFileDescriptor out(fd, 1024);
             out
                 << "PID: " << getpid() << "\n"
-                << "Started at: " << LocalDateTime(time(0)) << "\n"
+                << "Started at: " << LocalDateTime(time(nullptr)) << "\n"
                 << "Revision: " << ClickHouseRevision::get() << "\n";
         }
     }

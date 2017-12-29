@@ -29,7 +29,6 @@ private:
             ATTACH_PARTITION,
             FETCH_PARTITION,
             FREEZE_PARTITION,
-            RESHARD_PARTITION,
             CLEAR_COLUMN,
         };
 
@@ -42,12 +41,6 @@ private:
         bool part = false;
 
         String from; /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
-
-        /// For RESHARD PARTITION.
-        WeightedZooKeeperPaths weighted_zookeeper_paths;
-        ASTPtr sharding_key_expr;
-        bool do_copy = false;
-        Field coordinator;
 
         /// For FREEZE PARTITION
         String with_name;
@@ -94,20 +87,6 @@ private:
             res.type = FREEZE_PARTITION;
             res.partition = partition;
             res.with_name = with_name;
-            return res;
-        }
-
-        static PartitionCommand reshardPartitions(const ASTPtr & partition_,
-            const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr_,
-            bool do_copy_, const Field & coordinator_)
-        {
-            PartitionCommand res;
-            res.type = RESHARD_PARTITION;
-            res.partition = partition_;
-            res.weighted_zookeeper_paths = weighted_zookeeper_paths_;
-            res.sharding_key_expr = sharding_key_expr_;
-            res.do_copy = do_copy_;
-            res.coordinator = coordinator_;
             return res;
         }
     };

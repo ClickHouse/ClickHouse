@@ -16,12 +16,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 class IDataTypeEnum : public IDataType
 {
 public:
-
     virtual Field castToName(const Field & value_or_name) const = 0;
     virtual Field castToValue(const Field & value_or_name) const = 0;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
+    bool isValueRepresentedByNumber() const override { return true; }
+    bool isValueRepresentedByInteger() const override { return true; }
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
+    bool haveMaximumSizeOfValue() const override { return true; }
+    bool isCategorial() const override { return true; }
+    bool isEnum() const override { return true; }
+    bool canBeInsideNullable() const override { return true; }
 };
 
 
@@ -35,6 +45,8 @@ public:
     using Values = std::vector<Value>;
     using NameToValueMap = HashMap<StringRef, FieldType, StringRefHash>;
     using ValueToNameMap = std::unordered_map<FieldType, StringRef>;
+
+    static constexpr bool is_parametric = true;
 
 private:
     Values values;
@@ -52,8 +64,6 @@ public:
     const Values & getValues() const { return values; }
     std::string getName() const override { return name; }
     const char * getFamilyName() const override;
-    bool isNumeric() const override { return true; }
-    bool behavesAsNumber() const override { return true; }
 
     const StringRef & getNameForValue(const FieldType & value) const
     {
@@ -78,10 +88,7 @@ public:
     }
 
     Field castToName(const Field & value_or_name) const override;
-
     Field castToValue(const Field & value_or_name) const override;
-
-    DataTypePtr clone() const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
@@ -101,12 +108,15 @@ public:
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
 
-    size_t getSizeOfField() const override { return sizeof(FieldType); }
-
-    ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
+    MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
+
+    bool equals(const IDataType & rhs) const override;
+
+    bool textCanContainOnlyValidUTF8() const override;
+    size_t getSizeOfValueInMemory() const override { return sizeof(Field); }
 };
 
 

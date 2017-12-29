@@ -1,6 +1,6 @@
 option (USE_INTERNAL_ZSTD_LIBRARY "Set to FALSE to use system zstd library instead of bundled" ${NOT_UNBUNDLED})
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib/zstd.h")
+if (USE_INTERNAL_ZSTD_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib/zstd.h")
    message (WARNING "submodule contrib/zstd is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_ZSTD_LIBRARY 0)
 endif ()

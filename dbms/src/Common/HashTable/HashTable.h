@@ -55,12 +55,12 @@ namespace ErrorCodes
 struct HashTableNoState
 {
     /// Serialization, in binary and text form.
-    void write(DB::WriteBuffer & wb) const         {}
-    void writeText(DB::WriteBuffer & wb) const     {}
+    void write(DB::WriteBuffer &) const         {}
+    void writeText(DB::WriteBuffer &) const     {}
 
     /// Deserialization, in binary and text form.
-    void read(DB::ReadBuffer & rb)                 {}
-    void readText(DB::ReadBuffer & rb)             {}
+    void read(DB::ReadBuffer &)                 {}
+    void readText(DB::ReadBuffer &)             {}
 };
 
 
@@ -94,7 +94,7 @@ struct HashTableCell
     HashTableCell() {}
 
     /// Create a cell with the given key / key and value.
-    HashTableCell(const Key & key_, const State & state) : key(key_) {}
+    HashTableCell(const Key & key_, const State &) : key(key_) {}
 /// HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
     /// Get what the value_type of the container will be.
@@ -107,10 +107,10 @@ struct HashTableCell
 
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return key == key_; }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return key == key_; }
 
     /// If the cell can remember the value of the hash function, then remember it.
-    void setHash(size_t hash_value) {}
+    void setHash(size_t /*hash_value*/) {}
 
     /// If the cell can store the hash value in itself, then return the stored value.
     /// It must be at least once calculated before.
@@ -121,7 +121,7 @@ struct HashTableCell
     /// If zero keys can be inserted into the table, then the cell for the zero key is stored separately, not in the main buffer.
     /// Zero keys must be such that the zeroed-down piece of memory is a zero key.
     bool isZero(const State & state) const { return isZero(key, state); }
-    static bool isZero(const Key & key, const State & state) { return ZeroTraits::check(key); }
+    static bool isZero(const Key & key, const State & /*state*/) { return ZeroTraits::check(key); }
 
     /// Set the key value to zero.
     void setZero() { ZeroTraits::set(key); }
@@ -133,7 +133,7 @@ struct HashTableCell
     bool isDeleted() const { return false; }
 
     /// Set the mapped value, if any (for HashMap), to the corresponding `value`.
-    void setMapped(const value_type & value) {}
+    void setMapped(const value_type & /*value*/) {}
 
     /// Serialization, in binary and text form.
     void write(DB::WriteBuffer & wb) const         { DB::writeBinary(key, wb); }
@@ -204,11 +204,11 @@ struct HashTableFixedGrower
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
     size_t next(size_t pos) const        { return pos + 1; }
-    bool overflow(size_t elems) const    { return false; }
+    bool overflow(size_t /*elems*/) const { return false; }
 
     void increaseSize() { __builtin_unreachable(); }
-    void set(size_t num_elems) {}
-    void setBufSize(size_t buf_size_) {}
+    void set(size_t /*num_elems*/) {}
+    void setBufSize(size_t /*buf_size_*/) {}
 };
 
 
@@ -221,7 +221,7 @@ struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    typename std::aligned_storage<sizeof(Cell), alignof(Cell)>::type zero_value_storage; /// Storage of element with zero key.
+    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -295,7 +295,7 @@ protected:
 
 
     /// Find an empty cell, starting with the specified position and further along the collision resolution chain.
-    size_t ALWAYS_INLINE findEmptyCell(const Key & x, size_t hash_value, size_t place_value) const
+    size_t ALWAYS_INLINE findEmptyCell(size_t place_value) const
     {
         while (!buf[place_value].isZero(*this))
         {
@@ -417,7 +417,7 @@ protected:
 
     void destroyElements()
     {
-        if (!std::is_trivially_destructible<Cell>::value)
+        if (!std::is_trivially_destructible_v<Cell>)
             for (iterator it = begin(); it != end(); ++it)
                 it.ptr->~Cell();
     }
@@ -426,8 +426,8 @@ protected:
     template <typename Derived, bool is_const>
     class iterator_base
     {
-        using Container = typename std::conditional<is_const, const Self, Self>::type;
-        using cell_type = typename std::conditional<is_const, const Cell, Cell>::type;
+        using Container = std::conditional_t<is_const, const Self, Self>;
+        using cell_type = std::conditional_t<is_const, const Cell, Cell>;
 
         Container * container;
         cell_type * ptr;
@@ -724,7 +724,7 @@ public:
     /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
     void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
     {
-        size_t place_value = findEmptyCell(cell->getKey(cell->getValue()), hash_value, grower.place(hash_value));
+        size_t place_value = findEmptyCell(grower.place(hash_value));
 
         memcpy(&buf[place_value], cell, sizeof(*cell));
         ++m_size;

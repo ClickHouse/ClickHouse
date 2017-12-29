@@ -4,7 +4,7 @@
 
 #include <city.h>
 
-#include <Common/HashTable/Hash.h>
+#include <Core/Types.h>
 
 #if __SSE4_2__
 #include <nmmintrin.h>
@@ -66,7 +66,7 @@ template <typename T> bool inline operator>  (T a, const UInt128 b) { return UIn
 template <typename T> bool inline operator<= (T a, const UInt128 b) { return UInt128(a) <= b; }
 template <typename T> bool inline operator<  (T a, const UInt128 b) { return UInt128(a) < b; }
 
-template <> struct IsNumber<UInt128> { static constexpr bool value = true; };
+template <> constexpr bool IsNumber<UInt128> = true;
 template <> struct TypeName<UInt128> { static const char * get() { return "UInt128"; } };
 
 struct UInt128Hash
@@ -173,15 +173,7 @@ struct UInt256HashCRC32
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
-struct UInt256HashCRC32
-{
-    DefaultHash<UInt64> hash64;
-    size_t operator()(UInt256 x) const
-    {
-        /// TODO This is not optimal.
-        return hash64(hash64(hash64(hash64(x.a) ^ x.b) ^ x.c) ^ x.d);
-    }
-};
+struct UInt256HashCRC32 : public UInt256Hash {};
 
 #endif
 }

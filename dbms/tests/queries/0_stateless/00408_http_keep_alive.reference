@@ -4,5 +4,3 @@
 < Keep-Alive: timeout=3
 < Connection: Keep-Alive
 < Keep-Alive: timeout=3
-< Connection: Keep-Alive
-< Keep-Alive: timeout=3

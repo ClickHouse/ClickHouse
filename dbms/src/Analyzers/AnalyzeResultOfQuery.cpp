@@ -54,7 +54,7 @@ void AnalyzeResultOfQuery::process(ASTPtr & ast, const Context & context, Execut
         const TypeAndConstantInference::ExpressionInfo & info = it->second;
 
         result.insert(ColumnWithTypeAndName(
-            info.is_constant_expression ? info.data_type->createConstColumn(1, info.value) : nullptr,
+            info.is_constant_expression ? info.data_type->createColumnConst(1, info.value) : nullptr,
             info.data_type,
             std::move(name)));
     }

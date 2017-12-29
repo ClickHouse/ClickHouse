@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int NOT_A_COLUMN;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int UNKNOWN_ELEMENT_IN_AST;
+    extern const int LOGICAL_ERROR;
 }
 
 using IdentifierNameSet = std::set<String>;
@@ -33,7 +34,7 @@ class WriteBuffer;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST
+class IAST : public std::enable_shared_from_this<IAST>
 {
 public:
     ASTs children;
@@ -58,13 +59,15 @@ public:
     virtual String tryGetAlias() const { return String(); }
 
     /** Set the alias. */
-    virtual void setAlias(const String & to)
+    virtual void setAlias(const String & /*to*/)
     {
         throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
     }
 
     /** Get the text that identifies this element. */
     virtual String getID() const = 0;
+
+    ASTPtr ptr() { return shared_from_this(); }
 
     /** Get a deep copy of the tree. */
     virtual ASTPtr clone() const = 0;
@@ -110,6 +113,42 @@ public:
             child->collectIdentifierNames(set);
     }
 
+    template <typename T>
+    void set(T * & field, const ASTPtr & child)
+    {
+        if (!child)
+            return;
+
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
+
+        children.push_back(child);
+        field = casted;
+    }
+
+    template <typename T>
+    void replace(T * & field, const ASTPtr & child)
+    {
+        if (!child)
+            throw Exception("Trying to replace AST subtree with nullptr", ErrorCodes::LOGICAL_ERROR);
+
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
+
+        for (ASTPtr & current_child : children)
+        {
+            if (current_child.get() == field)
+            {
+                current_child = child;
+                field = casted;
+                return;
+            }
+        }
+
+        throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
+    }
 
     /// Convert to a string.
 
@@ -152,7 +191,7 @@ public:
         formatImpl(settings, state, FormatStateStacked());
     }
 
-    virtual void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
         throw Exception("Unknown element in AST: " + getID()
             + ((range.first && (range.second > range.first))

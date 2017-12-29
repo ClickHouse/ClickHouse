@@ -10,7 +10,7 @@
 #include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -86,7 +86,7 @@ public:
         Context & context_,
         const String & database_name_,
         const String & table_name_,
-        const String & engine_,
+        const String & storage_def_,
         size_t flush_interval_milliseconds_);
 
     ~SystemLog();
@@ -105,8 +105,8 @@ private:
     Context & context;
     const String database_name;
     const String table_name;
+    const String storage_def;
     StoragePtr table;
-    const String engine;
     const size_t flush_interval_milliseconds;
 
     using QueueItem = std::pair<bool, LogElement>;        /// First element is shutdown flag for thread.
@@ -142,10 +142,10 @@ template <typename LogElement>
 SystemLog<LogElement>::SystemLog(Context & context_,
     const String & database_name_,
     const String & table_name_,
-    const String & engine_,
+    const String & storage_def_,
     size_t flush_interval_milliseconds_)
     : context(context_),
-    database_name(database_name_), table_name(table_name_), engine(engine_),
+    database_name(database_name_), table_name(table_name_), storage_def(storage_def_),
     flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
@@ -328,11 +328,13 @@ void SystemLog<LogElement>::prepareTable()
         create->table = table_name;
 
         Block sample = LogElement::createBlock();
-        create->columns = InterpreterCreateQuery::formatColumns(sample.getColumnsList());
+        create->set(create->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
 
-        ParserFunction engine_parser;
-
-        create->storage = parseQuery(engine_parser, engine.data(), engine.data() + engine.size(), "ENGINE to create table for" + LogElement::name());
+        ParserStorage storage_parser;
+        ASTPtr storage_ast = parseQuery(
+            storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
+            "Storage to create table for " + LogElement::name());
+        create->set(create->storage, storage_ast);
 
         InterpreterCreateQuery(create, context).execute();
 

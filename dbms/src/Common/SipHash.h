@@ -119,13 +119,13 @@ public:
         current_word = 0;
         switch (end - data)
         {
-            case 7: current_bytes[6] = data[6];
-            case 6: current_bytes[5] = data[5];
-            case 5: current_bytes[4] = data[4];
-            case 4: current_bytes[3] = data[3];
-            case 3: current_bytes[2] = data[2];
-            case 2: current_bytes[1] = data[1];
-            case 1: current_bytes[0] = data[0];
+            case 7: current_bytes[6] = data[6]; [[fallthrough]];
+            case 6: current_bytes[5] = data[5]; [[fallthrough]];
+            case 5: current_bytes[4] = data[4]; [[fallthrough]];
+            case 4: current_bytes[3] = data[3]; [[fallthrough]];
+            case 3: current_bytes[2] = data[2]; [[fallthrough]];
+            case 2: current_bytes[1] = data[1]; [[fallthrough]];
+            case 1: current_bytes[0] = data[0]; [[fallthrough]];
             case 0: break;
         }
     }

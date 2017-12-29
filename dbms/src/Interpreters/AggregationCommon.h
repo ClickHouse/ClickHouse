@@ -5,12 +5,12 @@
 #include <Common/SipHash.h>
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
+#include <Common/HashTable/Hash.h>
 #include <Core/Defines.h>
 #include <common/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 
 
 template <>
@@ -66,7 +66,7 @@ using KeysNullMap = std::array<UInt8, getBitmapSize<T>()>;
 /// binary blob, they are disposed in it consecutively.
 template <typename T>
 static inline T ALWAYS_INLINE packFixed(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
 {
     union
     {
@@ -108,7 +108,7 @@ static inline T ALWAYS_INLINE packFixed(
 /// Similar as above but supports nullable values.
 template <typename T>
 static inline T ALWAYS_INLINE packFixed(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes,
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
     const KeysNullMap<T> & bitmap)
 {
     union
@@ -174,7 +174,7 @@ static inline T ALWAYS_INLINE packFixed(
 
 /// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys)
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys)
 {
     UInt128 key;
     SipHash hash;
@@ -194,7 +194,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 
 /// Almost the same as above but it doesn't return any reference to key data.
 static inline UInt128 ALWAYS_INLINE hash128(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns)
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
 {
     UInt128 key;
     SipHash hash;
@@ -210,7 +210,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 
 /// Copy keys to the pool. Then put into pool StringRefs to them and return the pointer to the first.
 static inline StringRef * ALWAYS_INLINE placeKeysInPool(
-    size_t i, size_t keys_size, StringRefs & keys, Arena & pool)
+    size_t keys_size, StringRefs & keys, Arena & pool)
 {
     for (size_t j = 0; j < keys_size; ++j)
     {
@@ -221,7 +221,7 @@ static inline StringRef * ALWAYS_INLINE placeKeysInPool(
 
     /// Place the StringRefs on the newly copied keys in the pool.
     char * res = pool.alloc(keys_size * sizeof(StringRef));
-    memcpy(res, &keys[0], keys_size * sizeof(StringRef));
+    memcpy(res, keys.data(), keys_size * sizeof(StringRef));
 
     return reinterpret_cast<StringRef *>(res);
 }
@@ -229,7 +229,7 @@ static inline StringRef * ALWAYS_INLINE placeKeysInPool(
 
 /// Copy keys to the pool. Then put into pool StringRefs to them and return the pointer to the first.
 static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys, Arena & pool)
 {
     for (size_t j = 0; j < keys_size; ++j)
     {
@@ -241,7 +241,7 @@ static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
 
     /// Place the StringRefs on the newly copied keys in the pool.
     char * res = pool.alloc(keys_size * sizeof(StringRef));
-    memcpy(res, &keys[0], keys_size * sizeof(StringRef));
+    memcpy(res, keys.data(), keys_size * sizeof(StringRef));
 
     return reinterpret_cast<StringRef *>(res);
 }
@@ -261,7 +261,7 @@ static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
 /// Return a StringRef object, referring to the area (1) of the memory
 /// chunk that contains the keys. In other words, we ignore their StringRefs.
 inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys, Arena & pool)
 {
     size_t sum_keys_size = 0;
     for (size_t j = 0; j < keys_size; ++j)
@@ -281,7 +281,7 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
     }
 
     /// Place the StringRefs on the newly copied keys in the pool.
-    memcpy(place, &keys[0], keys_size * sizeof(StringRef));
+    memcpy(place, keys.data(), keys_size * sizeof(StringRef));
 
     return {res, sum_keys_size};
 }
@@ -290,7 +290,7 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
 /** Serialize keys into a continuous chunk of memory.
   */
 static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, Arena & pool)
 {
     const char * begin = nullptr;
 

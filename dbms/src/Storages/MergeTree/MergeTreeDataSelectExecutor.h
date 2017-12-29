@@ -27,7 +27,6 @@ public:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams,
-        size_t * inout_part_index,    /// If not nullptr, from this counter values are taken for the virtual column _part_index.
         Int64 max_block_number_to_read) const;
 
 private:
@@ -36,7 +35,7 @@ private:
     Logger * log;
 
     BlockInputStreams spreadMarkRangesAmongStreams(
-        RangesInDataParts parts,
+        RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
         size_t max_block_size,
@@ -47,7 +46,7 @@ private:
         const Settings & settings) const;
 
     BlockInputStreams spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts parts,
+        RangesInDataParts && parts,
         const Names & column_names,
         size_t max_block_size,
         bool use_uncompressed_cache,

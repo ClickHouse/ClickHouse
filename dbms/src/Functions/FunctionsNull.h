@@ -22,6 +22,7 @@ public:
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -37,6 +38,7 @@ public:
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -49,6 +51,7 @@ class FunctionCoalesce : public IFunction
 public:
     static constexpr auto name = "coalesce";
     static FunctionPtr create(const Context & context);
+    FunctionCoalesce(const Context & context) : context(context) {}
 
     std::string getName() const override;
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -56,6 +59,9 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+private:
+    const Context & context;
 };
 
 /// Implements the function ifNull which takes 2 arguments and returns
@@ -70,6 +76,7 @@ public:
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -86,6 +93,7 @@ public:
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -103,6 +111,7 @@ public:
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -117,6 +126,7 @@ public:
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };

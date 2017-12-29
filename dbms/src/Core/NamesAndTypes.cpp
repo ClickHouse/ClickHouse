@@ -126,7 +126,7 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
         auto it = types.find(name);
         if (it == types.end())
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.push_back(NameAndTypePair(name, *it->second));
+        res.emplace_back(name, *it->second);
     }
     return res;
 }

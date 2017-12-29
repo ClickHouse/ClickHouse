@@ -42,7 +42,7 @@ bool checkColumn(const IColumn * column)
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
-    if (!column->isConst())
+    if (!column || !column->isColumnConst())
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
@@ -59,13 +59,13 @@ const Type * checkAndGetColumnConstData(const IColumn * column)
     const ColumnConst * res = checkAndGetColumnConst<Type>(column);
 
     if (!res)
-        return res;
+        return {};
 
-    return &res->getDataColumn();
+    return static_cast<const Type *>(&res->getDataColumn());
 }
 
 template <typename Type>
-const bool checkColumnConst(const IColumn * column)
+bool checkColumnConst(const IColumn * column)
 {
     return checkAndGetColumnConst<Type>(column);
 }
@@ -83,7 +83,7 @@ inline Field toField(const T & x)
 }
 
 
-ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column);
+Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
 
 /// Returns the copy of a given block in which each column specified in

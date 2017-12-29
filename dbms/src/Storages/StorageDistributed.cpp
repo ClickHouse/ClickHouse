@@ -8,7 +8,6 @@
 #include <Storages/VirtualColumnFactory.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <Storages/MergeTree/ReshardingWorker.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -22,7 +21,6 @@
 #include <Parsers/ASTWeightedZooKeeperPath.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/queryToString.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -40,6 +38,7 @@
 #include <memory>
 
 #include <boost/filesystem.hpp>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -48,9 +47,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int STORAGE_REQUIRES_PARAMETER;
-    extern const int RESHARDING_NO_WORKER;
-    extern const int RESHARDING_INVALID_PARAMETERS;
-    extern const int RESHARDING_INITIATOR_CHECK_FAILED;
 }
 
 
@@ -75,6 +71,7 @@ ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, co
     auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
     actual_query.database = database;
     actual_query.table = table;
+    actual_query.table_function = nullptr;
     /// make sure query is not INSERT SELECT
     actual_query.select = nullptr;
 
@@ -129,7 +126,7 @@ StorageDistributed::~StorageDistributed() = default;
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -139,7 +136,7 @@ StorageDistributed::StorageDistributed(
     : name(name_), columns(columns_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
@@ -148,7 +145,7 @@ StorageDistributed::StorageDistributed(
 
 StorageDistributed::StorageDistributed(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -162,7 +159,7 @@ StorageDistributed::StorageDistributed(
     name(name_), columns(columns_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
@@ -171,13 +168,13 @@ StorageDistributed::StorageDistributed(
 
 StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
-    auto res = make_shared(
+    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
         name_, columns_, remote_database_,
         remote_table_, String{}, context_);
 
@@ -188,12 +185,12 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 
 
 BlockInputStreams StorageDistributed::read(
-    const Names & column_names,
+    const Names & /*column_names*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     auto cluster = getCluster();
 
@@ -223,10 +220,12 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = context.getCluster(cluster_name);
+    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
 
     /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    bool write_enabled = !path.empty() && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
+    bool write_enabled = (!path.empty() || owned_cluster)
+                         && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
 
     if (!write_enabled)
         throw Exception{
@@ -234,9 +233,12 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
             " with more than one shard and no sharding key provided",
             ErrorCodes::STORAGE_REQUIRES_PARAMETER};
 
+    bool insert_sync = settings.insert_distributed_sync || owned_cluster;
+    auto timeout = settings.insert_distributed_timeout;
+
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings.insert_distributed_sync, settings.insert_distributed_timeout);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, insert_sync, timeout);
 }
 
 
@@ -247,11 +249,11 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
-        *columns, materialized_columns, alias_columns, column_defaults, {});
+        columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 
@@ -268,157 +270,35 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::reshardPartitions(
-    const ASTPtr & query, const String & database_name,
-    const ASTPtr & partition,
-    const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-    const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    const Context & context)
-{
-    auto & resharding_worker = context.getReshardingWorker();
-    if (!resharding_worker.isStarted())
-        throw Exception{"Resharding background thread is not running", ErrorCodes::RESHARDING_NO_WORKER};
-
-    if (!coordinator.isNull())
-        throw Exception{"Use of COORDINATE WITH is forbidden in ALTER TABLE ... RESHARD"
-            " queries for distributed tables",
-            ErrorCodes::RESHARDING_INVALID_PARAMETERS};
-
-    auto cluster = getCluster();
-
-    /// resharding_worker doesn't need to own cluster, here only meta-information of cluster is used
-    std::string coordinator_id = resharding_worker.createCoordinator(*cluster);
-
-    std::atomic<bool> has_notified_error{false};
-
-    std::string dumped_coordinator_state;
-
-    auto handle_exception = [&](const std::string & msg = "")
-    {
-        try
-        {
-            if (!has_notified_error)
-                resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR, msg);
-            dumped_coordinator_state = resharding_worker.dumpCoordinatorState(coordinator_id);
-            resharding_worker.deleteCoordinator(coordinator_id);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    };
-
-    try
-    {
-        /// Create query ALTER TABLE ... RESHARD [COPY] PARTITION ... COORDINATE WITH ...
-
-        ASTPtr alter_query_ptr = std::make_shared<ASTAlterQuery>();
-        auto & alter_query = static_cast<ASTAlterQuery &>(*alter_query_ptr);
-
-        alter_query.database = remote_database;
-        alter_query.table = remote_table;
-
-        alter_query.parameters.emplace_back();
-        ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
-
-        parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-        if (partition)
-            parameters.partition = partition->clone();
-
-        ASTPtr expr_list = std::make_shared<ASTExpressionList>();
-        for (const auto & entry : weighted_zookeeper_paths)
-        {
-            ASTPtr weighted_path_ptr = std::make_shared<ASTWeightedZooKeeperPath>();
-            auto & weighted_path = static_cast<ASTWeightedZooKeeperPath &>(*weighted_path_ptr);
-            weighted_path.path = entry.first;
-            weighted_path.weight = entry.second;
-            expr_list->children.push_back(weighted_path_ptr);
-        }
-
-        parameters.weighted_zookeeper_paths = expr_list;
-        parameters.sharding_key_expr = sharding_key_expr;
-        parameters.do_copy = do_copy;
-        parameters.coordinator = std::make_shared<ASTLiteral>(StringRange(), Field(coordinator_id));
-
-        resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
-
-        ClusterProxy::AlterStreamFactory alter_stream_factory;
-
-        BlockInputStreams streams = ClusterProxy::executeQuery(
-                alter_stream_factory, cluster, alter_query_ptr, context, context.getSettingsRef());
-
-        /// This callback is called if an exception has occurred while attempting to read
-        /// a block from a shard. This is to avoid a potential deadlock if other shards are
-        /// waiting inside a barrier. Actually, even without this solution, we would avoid
-        /// such a deadlock because we would eventually time out while trying to get remote
-        /// blocks. Nevertheless this is not the ideal way of sorting out this issue since
-        /// we would then not get to know the actual cause of the failure.
-        auto exception_callback = [&resharding_worker, coordinator_id, &has_notified_error]()
-        {
-            try
-            {
-                resharding_worker.setStatus(coordinator_id, ReshardingWorker::STATUS_ERROR);
-                has_notified_error = true;
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        };
-
-        streams[0] = std::make_shared<UnionBlockInputStream<>>(
-            streams, nullptr, context.getSettingsRef().max_distributed_connections, exception_callback);
-        streams.resize(1);
-
-        auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);
-        if (stream_ptr == nullptr)
-            throw Exception{"StorageDistributed: Internal error", ErrorCodes::LOGICAL_ERROR};
-        auto & stream = *stream_ptr;
-
-        stream.readPrefix();
-
-        while (!stream.isCancelled() && stream.read())
-            ;
-
-        if (!stream.isCancelled())
-            stream.readSuffix();
-    }
-    catch (const Exception & ex)
-    {
-        handle_exception(ex.message());
-        LOG_ERROR(log, dumped_coordinator_state);
-        throw;
-    }
-    catch (const std::exception & ex)
-    {
-        handle_exception(ex.what());
-        LOG_ERROR(log, dumped_coordinator_state);
-        throw;
-    }
-    catch (...)
-    {
-        handle_exception();
-        LOG_ERROR(log, dumped_coordinator_state);
-        throw;
-    }
-}
-
-
 BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
 {
     /// Create DESCRIBE TABLE query.
     auto cluster = getCluster();
 
-    ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
-    auto & describe_query = static_cast<ASTDescribeQuery &>(*describe_query_ptr);
+    auto describe_query = std::make_shared<ASTDescribeQuery>();
 
-    describe_query.database = remote_database;
-    describe_query.table = remote_table;
+    std::string name = remote_database + '.' + remote_table;
+
+    auto id = std::make_shared<ASTIdentifier>();
+    id->name = name;
+
+    auto desc_database = std::make_shared<ASTIdentifier>();
+    auto desc_table = std::make_shared<ASTIdentifier>();
+    desc_database->name = remote_database;
+    desc_table->name = remote_table;
+
+    id->children.push_back(desc_database);
+    id->children.push_back(desc_table);
+
+    auto table_expression = std::make_shared<ASTTableExpression>();
+    table_expression->database_and_table_name = id;
+
+    describe_query->table_expression = table_expression;
 
     ClusterProxy::DescribeStreamFactory describe_stream_factory;
 
     return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query_ptr, context, settings);
+            describe_stream_factory, cluster, describe_query, context, settings);
 }
 
 

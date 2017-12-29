@@ -11,7 +11,7 @@
 using namespace DB;
 
 
-int main(int arg, char ** argv)
+int main(int, char **)
 try
 {
     {

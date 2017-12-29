@@ -13,7 +13,7 @@
 
 #include <Common/ArenaAllocator.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <common/likely.h>
 #include <type_traits>
@@ -45,7 +45,7 @@ struct GroupArrayNumericData
 
 template <typename T, typename Tlimit_num_elems>
 class GroupArrayNumericImpl final
-    : public IUnaryAggregateFunction<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
+    : public IAggregateFunctionDataHelper<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
     DataTypePtr data_type;
@@ -53,7 +53,7 @@ class GroupArrayNumericImpl final
 
 public:
     explicit GroupArrayNumericImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-            : data_type(data_type_), max_elems(max_elems_) {}
+        : data_type(data_type_), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
@@ -62,20 +62,12 @@ public:
         return std::make_shared<DataTypeArray>(data_type);
     }
 
-    void setArgument(const DataTypePtr & argument) {}
-
-    void setParameters(const Array & params) override
-    {
-        if (!limit_num_elems && !params.empty())
-            throw Exception("This instatintion of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
 
-        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num], arena);
+        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -125,11 +117,11 @@ public:
         size_t size = value.size();
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 
-        typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
     }
 
@@ -245,7 +237,7 @@ struct GroupArrayGeneralListData
 /// It has poor performance in case of many small objects
 template <typename Node, bool limit_num_elems>
 class GroupArrayGeneralListImpl final
-    : public IUnaryAggregateFunction<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>
+    : public IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>
 {
     using Data = GroupArrayGeneralListData<Node>;
     static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
@@ -255,29 +247,19 @@ class GroupArrayGeneralListImpl final
     UInt64 max_elems;
 
 public:
-    GroupArrayGeneralListImpl(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
+    GroupArrayGeneralListImpl(const DataTypePtr & data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : data_type(data_type), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
 
-    void setParameters(const Array & params) override
-    {
-        if (!limit_num_elems && !params.empty())
-            throw Exception("This instantiation of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-        data_type = argument;
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (limit_num_elems && data(place).elems >= max_elems)
             return;
 
-        Node * node = Node::allocate(column, row_num, arena);
+        Node * node = Node::allocate(*columns[0], row_num, arena);
 
         if (unlikely(!data(place).first))
         {
@@ -392,7 +374,7 @@ public:
 
         auto & column_data = column_array.getData();
 
-        if (std::is_same<Node, GroupArrayListNodeString>::value)
+        if (std::is_same_v<Node, GroupArrayListNodeString>)
         {
             auto & string_offsets = static_cast<ColumnString &>(column_data).getOffsets();
             string_offsets.reserve(string_offsets.size() + data(place).elems);

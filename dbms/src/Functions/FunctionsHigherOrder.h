@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /** Higher-order functions for arrays:
@@ -42,16 +43,16 @@ struct ArrayMapImpl
     /// true if the array must be exactly one.
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeArray>(expression_return);
     }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        return mapped->isConst()
-            ? std::make_shared<ColumnArray>(mapped->convertToFullColumnIfConst(), array.getOffsetsColumn())
-            : std::make_shared<ColumnArray>(mapped, array.getOffsetsColumn());
+        return mapped->isColumnConst()
+            ? ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr())
+            : ColumnArray::create(mapped, array.getOffsetsPtr());
     }
 };
 
@@ -61,7 +62,7 @@ struct ArrayFilterImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return std::make_shared<DataTypeArray>(array_element);
     }
@@ -81,18 +82,17 @@ struct ArrayFilterImpl
             if (column_filter_const->getValue<UInt8>())
                 return array.clone();
             else
-                return std::make_shared<ColumnArray>(
+                return ColumnArray::create(
                     array.getDataPtr()->cloneEmpty(),
-                    std::make_shared<ColumnArray::ColumnOffsets_t>(array.size(), 0));
+                    ColumnArray::ColumnOffsets::create(array.size(), 0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
         ColumnPtr filtered = array.getData().filter(filter, -1);
 
-        const IColumn::Offsets_t & in_offsets = array.getOffsets();
-        auto column_offsets = std::make_shared<ColumnArray::ColumnOffsets_t>(in_offsets.size());
-        ColumnPtr column_offsets_ptr = column_offsets;
-        IColumn::Offsets_t & out_offsets = column_offsets->getData();
+        const IColumn::Offsets & in_offsets = array.getOffsets();
+        auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
+        IColumn::Offsets & out_offsets = column_offsets->getData();
 
         size_t in_pos = 0;
         size_t out_pos = 0;
@@ -106,7 +106,7 @@ struct ArrayFilterImpl
             out_offsets[i] = out_pos;
         }
 
-        return std::make_shared<ColumnArray>(filtered, column_offsets_ptr);
+        return ColumnArray::create(filtered, std::move(column_offsets));
     }
 };
 
@@ -116,7 +116,7 @@ struct ArrayCountImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt32>();
     }
@@ -134,9 +134,9 @@ struct ArrayCountImpl
 
             if (column_filter_const->getValue<UInt8>())
             {
-                const IColumn::Offsets_t & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
-                ColumnUInt32::Container_t & out_counts = out_column->getData();
+                const IColumn::Offsets & offsets = array.getOffsets();
+                auto out_column = ColumnUInt32::create(offsets.size());
+                ColumnUInt32::Container & out_counts = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -145,16 +145,16 @@ struct ArrayCountImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
             else
-                return DataTypeUInt32().createConstColumn(array.size(), UInt64(0));
+                return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
-        const IColumn::Offsets_t & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
-        ColumnUInt32::Container_t & out_counts = out_column->getData();
+        const IColumn::Offsets & offsets = array.getOffsets();
+        auto out_column = ColumnUInt32::create(offsets.size());
+        ColumnUInt32::Container & out_counts = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -168,7 +168,7 @@ struct ArrayCountImpl
             out_counts[i] = count;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -178,7 +178,7 @@ struct ArrayExistsImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -196,9 +196,9 @@ struct ArrayExistsImpl
 
             if (column_filter_const->getValue<UInt8>())
             {
-                const IColumn::Offsets_t & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
-                ColumnUInt8::Container_t & out_exists = out_column->getData();
+                const IColumn::Offsets & offsets = array.getOffsets();
+                auto out_column = ColumnUInt8::create(offsets.size());
+                ColumnUInt8::Container & out_exists = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -207,16 +207,16 @@ struct ArrayExistsImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
             else
-                return DataTypeUInt8().createConstColumn(array.size(), UInt64(0));
+                return DataTypeUInt8().createColumnConst(array.size(), UInt64(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
-        const IColumn::Offsets_t & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
-        ColumnUInt8::Container_t & out_exists = out_column->getData();
+        const IColumn::Offsets & offsets = array.getOffsets();
+        auto out_column = ColumnUInt8::create(offsets.size());
+        ColumnUInt8::Container & out_exists = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -234,7 +234,7 @@ struct ArrayExistsImpl
             out_exists[i] = exists;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -244,7 +244,7 @@ struct ArrayAllImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -261,12 +261,12 @@ struct ArrayAllImpl
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_filter_const->getValue<UInt8>())
-                return DataTypeUInt8().createConstColumn(array.size(), UInt64(1));
+                return DataTypeUInt8().createColumnConst(array.size(), UInt64(1));
             else
             {
-                const IColumn::Offsets_t & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
-                ColumnUInt8::Container_t & out_all = out_column->getData();
+                const IColumn::Offsets & offsets = array.getOffsets();
+                auto out_column = ColumnUInt8::create(offsets.size());
+                ColumnUInt8::Container & out_all = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -275,14 +275,14 @@ struct ArrayAllImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
         }
 
         const IColumn::Filter & filter = column_filter->getData();
-        const IColumn::Offsets_t & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
-        ColumnUInt8::Container_t & out_all = out_column->getData();
+        const IColumn::Offsets & offsets = array.getOffsets();
+        auto out_column = ColumnUInt8::create(offsets.size());
+        ColumnUInt8::Container & out_all = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -300,7 +300,7 @@ struct ArrayAllImpl
             out_all[i] = all;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -310,7 +310,7 @@ struct ArraySumImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
         if (checkDataType<DataTypeUInt8>(&*expression_return) ||
             checkDataType<DataTypeUInt16>(&*expression_return) ||
@@ -332,7 +332,7 @@ struct ArraySumImpl
     }
 
     template <typename Element, typename Result>
-    static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets_t & offsets, ColumnPtr & res_ptr)
+    static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
         const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
 
@@ -345,9 +345,8 @@ struct ArraySumImpl
 
             const Element x = column_const->template getValue<Element>();
 
-            auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
-            res_ptr = res_column;
-            typename ColumnVector<Result>::Container_t & res = res_column->getData();
+            auto res_column = ColumnVector<Result>::create(offsets.size());
+            typename ColumnVector<Result>::Container & res = res_column->getData();
 
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
@@ -356,13 +355,13 @@ struct ArraySumImpl
                 pos = offsets[i];
             }
 
+            res_ptr = std::move(res_column);
             return true;
         }
 
-        const typename ColumnVector<Element>::Container_t & data = column->getData();
-        auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
-        res_ptr = res_column;
-        typename ColumnVector<Result>::Container_t & res = res_column->getData();
+        const typename ColumnVector<Element>::Container & data = column->getData();
+        auto res_column = ColumnVector<Result>::create(offsets.size());
+        typename ColumnVector<Result>::Container & res = res_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -375,12 +374,13 @@ struct ArraySumImpl
             res[i] = s;
         }
 
+        res_ptr = std::move(res_column);
         return true;
     }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        const IColumn::Offsets_t & offsets = array.getOffsets();
+        const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
         if (executeType< UInt8 , UInt64>(mapped, offsets, res) ||
@@ -405,7 +405,7 @@ struct ArrayFirstImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return array_element;
     }
@@ -425,7 +425,7 @@ struct ArrayFirstImpl
             {
                 const auto & offsets = array.getOffsets();
                 const auto & data = array.getData();
-                ColumnPtr out{data.cloneEmpty()};
+                auto out = data.cloneEmpty();
 
                 size_t pos{};
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -438,20 +438,20 @@ struct ArrayFirstImpl
                     pos = offsets[i];
                 }
 
-                return out;
+                return std::move(out);
             }
             else
             {
-                ColumnPtr out{array.getData().cloneEmpty()};
+                auto out = array.getData().cloneEmpty();
                 out->insertDefault();
-                return out->replicate(IColumn::Offsets_t(1, array.size()));
+                return out->replicate(IColumn::Offsets(1, array.size()));
             }
         }
 
         const auto & filter = column_filter->getData();
         const auto & offsets = array.getOffsets();
         const auto & data = array.getData();
-        ColumnPtr out{data.cloneEmpty()};
+        auto out = data.cloneEmpty();
 
         size_t pos{};
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -472,7 +472,7 @@ struct ArrayFirstImpl
                 out->insertDefault();
         }
 
-        return out;
+        return std::move(out);
     }
 };
 
@@ -482,7 +482,7 @@ struct ArrayFirstIndexImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt32>();
     }
@@ -501,7 +501,7 @@ struct ArrayFirstIndexImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+                auto out_column = ColumnUInt32::create(offsets.size());
                 auto & out_index = out_column->getData();
 
                 size_t pos{};
@@ -511,15 +511,15 @@ struct ArrayFirstIndexImpl
                     pos = offsets[i];
                 }
 
-                return out_column;
+                return std::move(out_column);
             }
             else
-                return DataTypeUInt32().createConstColumn(array.size(), UInt64(0));
+                return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
         }
 
         const auto & filter = column_filter->getData();
         const auto & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+        auto out_column = ColumnUInt32::create(offsets.size());
         auto & out_index = out_column->getData();
 
         size_t pos{};
@@ -539,7 +539,7 @@ struct ArrayFirstIndexImpl
             out_index[i] = index;
         }
 
-        return out_column;
+        return std::move(out_column);
     }
 };
 
@@ -553,7 +553,7 @@ struct ArraySortImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return std::make_shared<DataTypeArray>(array_element);
     }
@@ -575,7 +575,7 @@ struct ArraySortImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        const ColumnArray::Offsets_t & offsets = array.getOffsets();
+        const ColumnArray::Offsets & offsets = array.getOffsets();
 
         size_t size = offsets.size();
         size_t nested_size = array.getData().size();
@@ -584,7 +584,7 @@ struct ArraySortImpl
         for (size_t i = 0; i < nested_size; ++i)
             permutation[i] = i;
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
@@ -592,7 +592,7 @@ struct ArraySortImpl
             current_offset = next_offset;
         }
 
-        return std::make_shared<ColumnArray>(array.getData().permute(permutation, 0), array.getOffsetsColumn());
+        return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsPtr());
     }
 };
 
@@ -602,7 +602,7 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayMapped>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); };
 
     String getName() const override
     {
@@ -743,8 +743,10 @@ public:
             const ExpressionActions & expression = *column_expression->getExpression();
             const NamesAndTypesList & required_columns = expression.getRequiredColumnsWithTypes();
 
-            Names argument_name_vector = column_expression->getArgumentNames();
-            NameSet argument_names(argument_name_vector.begin(), argument_name_vector.end());
+            const NamesAndTypesList expression_arguments = column_expression->getArguments();
+            NameSet argument_names;
+            for (const auto & expression_argument : expression_arguments)
+                argument_names.emplace(expression_argument.name);
 
             for (const auto & required_column : required_columns)
             {
@@ -798,13 +800,13 @@ public:
                 throw Exception("First argument for function " + getName() + " must be an expression.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            ColumnExpression * column_expression = typeid_cast<ColumnExpression *>(column_with_type_and_name.column.get());
+            const ColumnExpression * column_expression = typeid_cast<const ColumnExpression *>(column_with_type_and_name.column.get());
 
             ColumnPtr offsets_column;
 
             Block temp_block;
             const ExpressionActions & expression = *column_expression->getExpression();
-            NamesAndTypes expression_arguments = column_expression->getArguments();
+            const NamesAndTypesList & expression_arguments = column_expression->getArguments();
             NameSet argument_names;
 
             ColumnPtr column_first_array_ptr;
@@ -812,11 +814,9 @@ public:
 
             /// Put the expression arguments in the block.
 
-            for (size_t i = 0; i < expression_arguments.size(); ++i)
+            size_t i = 0;
+            for (const auto expression_argument : expression_arguments)
             {
-                const std::string & argument_name = expression_arguments[i].name;
-                DataTypePtr argument_type = expression_arguments[i].type;
-
                 ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
                 const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
@@ -831,13 +831,13 @@ public:
 
                 if (!offsets_column)
                 {
-                    offsets_column = column_array->getOffsetsColumn();
+                    offsets_column = column_array->getOffsetsPtr();
                 }
                 else
                 {
                     /// The first condition is optimization: do not compare data if the pointers are equal.
-                    if (column_array->getOffsetsColumn() != offsets_column
-                        && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets_t &>(*offsets_column).getData())
+                    if (column_array->getOffsetsPtr() != offsets_column
+                        && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
 
@@ -847,12 +847,13 @@ public:
                     column_first_array = column_array;
                 }
 
-                temp_block.insert(ColumnWithTypeAndName(
+                temp_block.insert({
                     column_array->getDataPtr(),
-                    argument_type,
-                    argument_name));
+                    expression_argument.type,
+                    expression_argument.name});
 
-                argument_names.insert(argument_name);
+                argument_names.insert(expression_argument.name);
+                ++i;
             }
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the block.
@@ -870,7 +871,7 @@ public:
                 ColumnWithTypeAndName replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
 
                 replicated_column.name = name;
-                replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
+                replicated_column.column = typeid_cast<const ColumnArray &>(*replicated_column.column).getDataPtr();
                 replicated_column.type = typeid_cast<const DataTypeArray &>(*replicated_column.type).getNestedType(),
                 temp_block.insert(std::move(replicated_column));
 
@@ -885,16 +886,16 @@ public:
 };
 
 
-struct NameArrayMap            { static constexpr auto name = "arrayMap"; };
-struct NameArrayFilter        { static constexpr auto name = "arrayFilter"; };
-struct NameArrayCount        { static constexpr auto name = "arrayCount"; };
-struct NameArrayExists        { static constexpr auto name = "arrayExists"; };
-struct NameArrayAll            { static constexpr auto name = "arrayAll"; };
-struct NameArraySum            { static constexpr auto name = "arraySum"; };
-struct NameArrayFirst        { static constexpr auto name = "arrayFirst"; };
-struct NameArrayFirstIndex    { static constexpr auto name = "arrayFirstIndex"; };
+struct NameArrayMap         { static constexpr auto name = "arrayMap"; };
+struct NameArrayFilter      { static constexpr auto name = "arrayFilter"; };
+struct NameArrayCount       { static constexpr auto name = "arrayCount"; };
+struct NameArrayExists      { static constexpr auto name = "arrayExists"; };
+struct NameArrayAll         { static constexpr auto name = "arrayAll"; };
+struct NameArraySum         { static constexpr auto name = "arraySum"; };
+struct NameArrayFirst       { static constexpr auto name = "arrayFirst"; };
+struct NameArrayFirstIndex  { static constexpr auto name = "arrayFirstIndex"; };
 struct NameArraySort        { static constexpr auto name = "arraySort"; };
-struct NameArrayReverseSort    { static constexpr auto name = "arrayReverseSort"; };
+struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; };
 
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;

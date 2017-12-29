@@ -17,7 +17,7 @@ namespace DB
 class Context;
 class IDataType;
 
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 
@@ -28,6 +28,10 @@ class AggregateFunctionFactory final : public ext::singleton<AggregateFunctionFa
     friend class StorageSystemFunctions;
 
 public:
+    /** Creator have arguments: name of aggregate function, types of arguments, values of parameters.
+      * Parameters are for "parametric" aggregate functions.
+      * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
+      */
     using Creator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &)>;
 
     /// For compatibility with SQL, it's possible to specify that certain aggregate function name is case insensitive.

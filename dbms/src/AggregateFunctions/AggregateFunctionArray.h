@@ -10,20 +10,31 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 
 /** Not an aggregate function, but an adapter of aggregate functions,
   *  which any aggregate function `agg(x)` makes an aggregate function of the form `aggArray(x)`.
   * The adapted aggregate function calculates nested aggregate function for each element of the array.
   */
-class AggregateFunctionArray final : public IAggregateFunction
+class AggregateFunctionArray final : public IAggregateFunctionHelper<AggregateFunctionArray>
 {
 private:
-    AggregateFunctionPtr nested_func_owner;
-    IAggregateFunction * nested_func;
-    size_t num_agruments;
+    AggregateFunctionPtr nested_func;
+    size_t num_arguments;
 
 public:
-    AggregateFunctionArray(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
+    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments)
+        : nested_func(nested_), num_arguments(arguments.size())
+    {
+        for (const auto & type : arguments)
+            if (!typeid_cast<const DataTypeArray *>(type.get()))
+                throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 
     String getName() const override
     {
@@ -33,30 +44,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
-    }
-
-    void setArguments(const DataTypes & arguments) override
-    {
-        num_agruments = arguments.size();
-
-        if (0 == num_agruments)
-            throw Exception("Array aggregate functions requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        DataTypes nested_arguments;
-        for (size_t i = 0; i < num_agruments; ++i)
-        {
-            if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*arguments[i]))
-                nested_arguments.push_back(array->getNestedType());
-            else
-                throw Exception("Illegal type " + arguments[i]->getName() + " of argument #" + toString(i + 1) + " for aggregate function " + getName() + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        nested_func->setArguments(nested_arguments);
-    }
-
-    void setParameters(const Array & params) override
-    {
-        nested_func->setParameters(params);
     }
 
     void create(AggregateDataPtr place) const override
@@ -86,16 +73,26 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const IColumn * nested[num_agruments];
+        const IColumn * nested[num_arguments];
 
-        for (size_t i = 0; i < num_agruments; ++i)
+        for (size_t i = 0; i < num_arguments; ++i)
             nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
 
         const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
-        const IColumn::Offsets_t & offsets = first_array_column.getOffsets();
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
         size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
         size_t end = offsets[row_num];
+
+        /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
+        for (size_t i = 1; i < num_arguments; ++i)
+        {
+            const ColumnArray & ith_column = static_cast<const ColumnArray &>(*columns[i]);
+            const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
+
+            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
+                throw Exception("Arrays passed to " + getName() + " aggregate function have different sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+        }
 
         for (size_t i = begin; i < end; ++i)
             nested_func->add(place, nested, i, arena);
@@ -125,13 +122,6 @@ public:
     {
         return nested_func->allocatesMemoryInArena();
     }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionArray &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

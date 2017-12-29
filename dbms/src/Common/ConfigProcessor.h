@@ -32,7 +32,11 @@ public:
     using Substitutions = std::vector<std::pair<std::string, std::string>>;
 
     /// Set log_to_console to true if the logging subsystem is not initialized yet.
-    ConfigProcessor(bool throw_on_bad_incl = false, bool log_to_console = false, const Substitutions & substitutions = Substitutions());
+    explicit ConfigProcessor(
+        const std::string & path,
+        bool throw_on_bad_incl = false,
+        bool log_to_console = false,
+        const Substitutions & substitutions = Substitutions());
 
     ~ConfigProcessor();
 
@@ -52,9 +56,8 @@ public:
     ///    If has_zk_includes is non-NULL and there are such elements, set has_zk_includes to true.
     /// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
     XMLDocumentPtr processConfig(
-            const std::string & path,
-            bool * has_zk_includes = nullptr,
-            zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr);
+        bool * has_zk_includes = nullptr,
+        zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr);
 
 
     /// loadConfig* functions apply processConfig and create Poco::Util::XMLConfiguration.
@@ -67,28 +70,34 @@ public:
         ConfigurationPtr configuration;
         bool has_zk_includes;
         bool loaded_from_preprocessed;
-        bool preprocessed_written;
+        XMLDocumentPtr preprocessed_xml;
     };
 
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
     /// If it is the case, set has_zk_includes to true and don't write config-preprocessed.xml,
     /// expecting that config would be reloaded with zookeeper later.
-    LoadedConfig loadConfig(const std::string & path, bool allow_zk_includes = false);
+    LoadedConfig loadConfig(bool allow_zk_includes = false);
 
     /// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
-            const std::string & path,
-            zkutil::ZooKeeperNodeCache & zk_node_cache,
-            bool fallback_to_preprocessed = false);
+        zkutil::ZooKeeperNodeCache & zk_node_cache,
+        bool fallback_to_preprocessed = false);
+
+    void savePreprocessedConfig(const LoadedConfig & loaded_config);
 
 public:
-
     using Files = std::list<std::string>;
 
     static Files getConfigMergeFiles(const std::string & config_path);
 
+    /// Is the file named as result of config preprocessing, not as original files.
+    static bool isPreprocessedFile(const std::string & config_path);
+
 private:
+    const std::string path;
+    const std::string preprocessed_path;
+
     bool throw_on_bad_incl;
 
     Logger * log;
@@ -114,6 +123,4 @@ private:
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
             std::unordered_set<std::string> & contributing_zk_paths);
-
-    void savePreprocessedConfig(const XMLDocumentPtr & config, const std::string & preprocessed_path);
 };

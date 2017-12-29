@@ -13,11 +13,9 @@ class DataTypeUUID final : public DataTypeNumberBase<UInt128>
 {
 
 public:
-    bool behavesAsNumber() const override { return false; }
-
-    std::string getName() const override { return "UUID"; }
     const char * getFamilyName() const override { return "UUID"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeUUID>(); }
+
+    bool equals(const IDataType & rhs) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -28,5 +26,9 @@ public:
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+
+    bool canBeUsedInBitOperations() const override { return true; }
+    bool canBeInsideNullable() const override { return true; }
 };
+
 }

@@ -319,7 +319,6 @@ private:
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,
-        const Context & context,
         size_t & out_primary_key_column_num,
         DataTypePtr & out_primary_key_column_type,
         Field & out_value,

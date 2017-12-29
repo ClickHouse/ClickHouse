@@ -2,7 +2,7 @@
 #include <sys/types.h>
 
 #include <map>
-#include <experimental/optional>
+#include <optional>
 
 #include <Common/escapeForFileName.h>
 
@@ -43,7 +43,7 @@ namespace ErrorCodes
 class StripeLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
-    StripeLogBlockInputStream(const NameSet & column_names_, StorageStripeLog & storage_, size_t max_read_buffer_size_,
+    StripeLogBlockInputStream(StorageStripeLog & storage_, size_t max_read_buffer_size_,
         std::shared_ptr<const IndexForNativeFormat> & index_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_)
@@ -84,8 +84,8 @@ protected:
             /// Freeing memory before destroying the object.
             if (!res)
             {
-                block_in = std::experimental::nullopt;
-                data_in = std::experimental::nullopt;
+                block_in.reset();
+                data_in.reset();
                 index.reset();
             }
         }
@@ -106,8 +106,8 @@ private:
       * - to save RAM when using a large number of sources.
       */
     bool started = false;
-    std::experimental::optional<CompressedReadBufferFromFile> data_in;
-    std::experimental::optional<NativeBlockInputStream> block_in;
+    std::optional<CompressedReadBufferFromFile> data_in;
+    std::optional<NativeBlockInputStream> block_in;
 };
 
 
@@ -175,7 +175,7 @@ private:
 StorageStripeLog::StorageStripeLog(
     const std::string & path_,
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -187,7 +187,7 @@ StorageStripeLog::StorageStripeLog(
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageStripeLog"))
 {
-    if (columns->empty())
+    if (columns.empty())
         throw Exception("Empty list of columns passed to StorageStripeLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     String full_path = path + escapeForFileName(name) + '/';
@@ -200,7 +200,7 @@ StorageStripeLog::StorageStripeLog(
 }
 
 
-void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageStripeLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -215,10 +215,10 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 
 BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
+    const size_t /*max_block_size*/,
     unsigned num_streams)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
@@ -249,7 +249,7 @@ BlockInputStreams StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         res.emplace_back(std::make_shared<StripeLogBlockInputStream>(
-            column_names_set, *this, context.getSettingsRef().max_read_buffer_size, index, begin, end));
+            *this, context.getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -259,7 +259,7 @@ BlockInputStreams StorageStripeLog::read(
 
 
 BlockOutputStreamPtr StorageStripeLog::write(
-    const ASTPtr & query, const Settings & settings)
+    const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<StripeLogBlockOutputStream>(*this);
 }

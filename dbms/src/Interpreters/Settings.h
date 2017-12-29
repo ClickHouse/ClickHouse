@@ -33,288 +33,280 @@ struct Settings
     /** As a result, for small columns (around 1-8 bytes), with index_granularity = 8192, the block size will be 64 KB. */ \
     /** And for large columns (Title - string ~100 bytes), the block size will be ~819 KB. */ \
     /** Due to this, the compression ratio almost does not get worse. */ \
-    M(SettingUInt64, min_compress_block_size, DEFAULT_MIN_COMPRESS_BLOCK_SIZE) \
-    M(SettingUInt64, max_compress_block_size, DEFAULT_MAX_COMPRESS_BLOCK_SIZE) \
+    M(SettingUInt64, min_compress_block_size, DEFAULT_MIN_COMPRESS_BLOCK_SIZE, "The actual size of the block, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.") \
+    M(SettingUInt64, max_compress_block_size, DEFAULT_MAX_COMPRESS_BLOCK_SIZE, "The maximum size of blocks of uncompressed data before compressing for writing to a table.") \
     /** Maximum block size for reading */ \
-    M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
+    M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size for reading") \
     /** The maximum block size for insertion, if we control the creation of blocks for insertion. */ \
-    M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE) \
+    M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, "The maximum block size for insertion, if we control the creation of blocks for insertion.") \
     /** Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough. */ \
-    M(SettingUInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE) \
+    M(SettingUInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, "Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.") \
     /** Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough. */ \
-    M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256)) \
+    M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), "Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.") \
     /** The maximum number of threads to execute the request. By default, it is determined automatically. */ \
-    M(SettingMaxThreads, max_threads, 0) \
+    M(SettingMaxThreads, max_threads, 0, "The maximum number of threads to execute the request. By default, it is determined automatically.") \
     /** The maximum size of the buffer to read from the filesystem. */ \
-    M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE) \
+    M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "The maximum size of the buffer to read from the filesystem.") \
     /** The maximum number of connections for distributed processing of one query (should be greater than max_threads). */ \
-    M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
+    M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS, "The maximum number of connections for distributed processing of one query (should be greater than max_threads).") \
     /** Which part of the query can be read into RAM for parsing (the remaining data for INSERT, if any, is read later) */ \
-    M(SettingUInt64, max_query_size, DEFAULT_MAX_QUERY_SIZE) \
+    M(SettingUInt64, max_query_size, DEFAULT_MAX_QUERY_SIZE, "Which part of the query can be read into RAM for parsing (the remaining data for INSERT, if any, is read later)") \
     /** The interval in microseconds to check if the request is cancelled, and to send progress info. */ \
-    M(SettingUInt64, interactive_delay, DEFAULT_INTERACTIVE_DELAY) \
-    M(SettingSeconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC) \
+    M(SettingUInt64, interactive_delay, DEFAULT_INTERACTIVE_DELAY, "The interval in microseconds to check if the request is cancelled, and to send progress info.") \
+    M(SettingSeconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, "") \
     /** If you should select one of the working replicas. */ \
-    M(SettingMilliseconds, connect_timeout_with_failover_ms, DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS) \
-    M(SettingSeconds, receive_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC) \
-    M(SettingSeconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC) \
+    M(SettingMilliseconds, connect_timeout_with_failover_ms, DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS, "") \
+    M(SettingSeconds, receive_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "") \
+    M(SettingSeconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC, "") \
     /** The wait time in the request queue, if the number of concurrent requests exceeds the maximum. */ \
-    M(SettingMilliseconds, queue_max_wait_ms, DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS) \
+    M(SettingMilliseconds, queue_max_wait_ms, DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS, "The wait time in the request queue, if the number of concurrent requests exceeds the maximum.") \
     /** Block at the query wait cycle on the server for the specified number of seconds. */ \
-    M(SettingUInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL) \
+    M(SettingUInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL, "Block at the query wait cycle on the server for the specified number of seconds.") \
     /** Maximum number of connections with one remote server in the pool. */ \
-    M(SettingUInt64, distributed_connections_pool_size, DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE) \
+    M(SettingUInt64, distributed_connections_pool_size, DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE, "Maximum number of connections with one remote server in the pool.") \
     /** The maximum number of attempts to connect to replicas. */ \
-    M(SettingUInt64, connections_with_failover_max_tries, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES) \
+    M(SettingUInt64, connections_with_failover_max_tries, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES, "The maximum number of attempts to connect to replicas.") \
     /** Calculate minimums and maximums of the result columns. They can be output in JSON-formats. */ \
-    M(SettingBool, extremes, false) \
+    M(SettingBool, extremes, false, "Calculate minimums and maximums of the result columns. They can be output in JSON-formats.") \
     /** Whether to use the cache of uncompressed blocks. */ \
-    M(SettingBool, use_uncompressed_cache, true) \
+    M(SettingBool, use_uncompressed_cache, true, "Whether to use the cache of uncompressed blocks.") \
     /** Whether the running request should be canceled with the same id as the new one. */ \
-    M(SettingBool, replace_running_query, false) \
+    M(SettingBool, replace_running_query, false, "Whether the running request should be canceled with the same id as the new one.") \
     /** Number of threads performing background work for tables (for example, merging in merge tree). \
       * TODO: Now only applies when the server is started. You can make it dynamically variable. */ \
-    M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
+    M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE, "Number of threads performing background work for tables (for example, merging in merge tree).") \
     \
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
-    M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
+    M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS, "Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown.") \
     \
     /** Should StorageDistributed DirectoryMonitors try to batch individual inserts into bigger ones. */ \
-    M(SettingBool, distributed_directory_monitor_batch_inserts, false) \
+    M(SettingBool, distributed_directory_monitor_batch_inserts, false, "Should StorageDistributed DirectoryMonitors try to batch individual inserts into bigger ones.") \
     \
     /** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
-    M(SettingBool, optimize_move_to_prewhere, true) \
+    M(SettingBool, optimize_move_to_prewhere, true, "Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree.") \
     \
     /** Wait for actions to manipulate the partitions. 0 - do not wait, 1 - wait for execution only of itself, 2 - wait for everyone. */ \
-    M(SettingUInt64, replication_alter_partitions_sync, 1) \
+    M(SettingUInt64, replication_alter_partitions_sync, 1, "Wait for actions to manipulate the partitions. 0 - do not wait, 1 - wait for execution only of itself, 2 - wait for everyone.") \
     /** Wait for actions to change the table structure within the specified number of seconds. 0 - wait unlimited time. */ \
-    M(SettingUInt64, replication_alter_columns_timeout, 60) \
+    M(SettingUInt64, replication_alter_columns_timeout, 60, "Wait for actions to change the table structure within the specified number of seconds. 0 - wait unlimited time.") \
     \
-    M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
+    M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM, "Which replicas (among healthy replicas) to preferably send a query to (on the first attempt) for distributed processing.") \
     \
-    M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE) \
-    M(SettingFloat, totals_auto_threshold, 0.5) \
+    M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = ‘any’ are present.") \
+    M(SettingFloat, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.") \
     \
     /** Whether query compilation is enabled. */ \
-    M(SettingBool, compile, false) \
+    M(SettingBool, compile, false, "Whether query compilation is enabled.") \
     /** The number of structurally identical queries before they are compiled. */ \
-    M(SettingUInt64, min_count_to_compile, 3) \
+    M(SettingUInt64, min_count_to_compile, 3, "The number of structurally identical queries before they are compiled.") \
     /** From what number of keys, a two-level aggregation starts. 0 - the threshold is not set. */ \
-    M(SettingUInt64, group_by_two_level_threshold, 100000) \
+    M(SettingUInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.") \
     /** From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. \
       * Two-level aggregation is used when at least one of the thresholds is triggered. */ \
-    M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000) \
+    M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set.") \
     /** Is the memory-saving mode of distributed aggregation enabled. */ \
-    M(SettingBool, distributed_aggregation_memory_efficient, false) \
+    M(SettingBool, distributed_aggregation_memory_efficient, false, "Is the memory-saving mode of distributed aggregation enabled.") \
     /** Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. \
       * 0 means - same as 'max_threads'. */ \
-    M(SettingUInt64, aggregation_memory_efficient_merge_threads, 0) \
+    M(SettingUInt64, aggregation_memory_efficient_merge_threads, 0, "Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.") \
     \
     /** The maximum number of replicas of each shard used when executing the query */ \
-    M(SettingUInt64, max_parallel_replicas, 1) \
-    M(SettingUInt64, parallel_replicas_count, 0) \
-    M(SettingUInt64, parallel_replica_offset, 0) \
+    M(SettingUInt64, max_parallel_replicas, 1, "The maximum number of replicas of each shard used when the query is executed. For consistency (to get different parts of the same partition), this option only works for the specified sampling key. The lag of the replicas is not controlled.") \
+    M(SettingUInt64, parallel_replicas_count, 0, "") \
+    M(SettingUInt64, parallel_replica_offset, 0, "") \
     \
     /** Silently skip unavailable shards. */ \
-    M(SettingBool, skip_unavailable_shards, false) \
+    M(SettingBool, skip_unavailable_shards, false, "Silently skip unavailable shards.") \
     \
     /** Do not merge aggregation states from different servers for distributed query processing \
       *  - in case it is for certain that there are different keys on different shards. \
       */ \
-    M(SettingBool, distributed_group_by_no_merge, false) \
+    M(SettingBool, distributed_group_by_no_merge, false, "Do not merge aggregation states from different servers for distributed query processing - in case it is for certain that there are different keys on different shards.") \
     \
     /** Advanced settings for reading from MergeTree */ \
     \
     /** If at least as many lines are read from one file, the reading can be parallelized. */ \
-    M(SettingUInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192)) \
+    M(SettingUInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), "If at least as many lines are read from one file, the reading can be parallelized.") \
     /** You can skip reading more than that number of rows at the price of one seek per file. */ \
-    M(SettingUInt64, merge_tree_min_rows_for_seek, 0) \
+    M(SettingUInt64, merge_tree_min_rows_for_seek, 0, "You can skip reading more than that number of rows at the price of one seek per file.") \
     /** If the index segment can contain the required keys, divide it into as many parts and recursively check them. */ \
-    M(SettingUInt64, merge_tree_coarse_index_granularity, 8) \
+    M(SettingUInt64, merge_tree_coarse_index_granularity, 8, "If the index segment can contain the required keys, divide it into as many parts and recursively check them. ") \
     /** The maximum number of rows per request, to use the cache of uncompressed data. If the request is large, the cache is not used. \
       * (For large queries not to flush out the cache.) */ \
-    M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
+    M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024), "The maximum number of rows per request, to use the cache of uncompressed data. If the request is large, the cache is not used.") \
     \
     /** Distribute read from MergeTree over threads evenly, ensuring stable average execution time of each thread within one read operation. */ \
-    M(SettingBool, merge_tree_uniform_read_distribution, true) \
+    M(SettingBool, merge_tree_uniform_read_distribution, true, "Distribute read from MergeTree over threads evenly, ensuring stable average execution time of each thread within one read operation.") \
     \
     /** The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization */ \
-    M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
+    M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3, "The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization ") \
     \
     /** The minimum number of bytes for input/output operations is bypassing the page cache. 0 - disabled. */ \
-    M(SettingUInt64, min_bytes_to_use_direct_io, 0) \
+    M(SettingUInt64, min_bytes_to_use_direct_io, 0, "The minimum number of bytes for input/output operations is bypassing the page cache. 0 - disabled.") \
     \
     /** Throw an exception if there is an index, and it is not used. */ \
-    M(SettingBool, force_index_by_date, 0) \
-    M(SettingBool, force_primary_key, 0) \
+    M(SettingBool, force_index_by_date, 0, "") \
+    M(SettingBool, force_primary_key, 0, "") \
     \
     /** In the INSERT query with specified columns, fill in the default values only for columns with explicit DEFAULTs. */ \
-    M(SettingBool, strict_insert_defaults, 0) \
+    M(SettingBool, strict_insert_defaults, 0, "In the INSERT query with specified columns, fill in the default values only for columns with explicit DEFAULTs.") \
     \
     /** If the maximum size of mark_cache is exceeded, delete only records older than mark_cache_min_lifetime seconds. */ \
-    M(SettingUInt64, mark_cache_min_lifetime, 10000) \
+    M(SettingUInt64, mark_cache_min_lifetime, 10000, "If the maximum size of mark_cache is exceeded, delete only records older than mark_cache_min_lifetime seconds.") \
     \
     /** Allows you to use more sources than the number of threads - to more evenly distribute work across threads. \
       * It is assumed that this is a temporary solution, since it will be possible in the future to make the number of sources equal to the number of threads, \
       *  but for each source to dynamically select available work for itself. \
       */ \
-    M(SettingFloat, max_streams_to_max_threads_ratio, 1) \
+    M(SettingFloat, max_streams_to_max_threads_ratio, 1, "") \
     \
     /** Allows you to select the method of data compression when writing */ \
-    M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
+    M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4, "Allows you to select the method of data compression when writing.") \
     \
     /** Allows you to select the level of ZSTD compression */ \
-    M(SettingInt64, network_zstd_compression_level, 1) \
+    M(SettingInt64, network_zstd_compression_level, 1, "Allows you to select the level of ZSTD compression.") \
     \
     /** Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities. */ \
-    M(SettingUInt64, priority, 0) \
+    M(SettingUInt64, priority, 0, "Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.") \
     \
     /** Log requests and write the log to the system table. */ \
-    M(SettingBool, log_queries, 0) \
+    M(SettingBool, log_queries, 0, "Log requests and write the log to the system table.") \
     \
     /** If query length is greater than specified threshold (in bytes), then cut query when writing to query log. \
       * Also limit length of printed query in ordinary text log. \
       */ \
-    M(SettingUInt64, log_queries_cut_to_length, 100000) \
+    M(SettingUInt64, log_queries_cut_to_length, 100000, "If query length is greater than specified threshold (in bytes), then cut query when writing to query log. Also limit length of printed query in ordinary text log.") \
     \
     /** How are distributed subqueries performed inside IN or JOIN sections? */ \
-    M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY) \
+    M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, "How are distributed subqueries performed inside IN or JOIN sections?") \
     \
     /** The scheme for executing GLOBAL subqueries. */ \
-    M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
+    M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH, "The scheme for executing GLOBAL subqueries.") \
     \
     /** The maximum number of concurrent requests per user. */ \
-    M(SettingUInt64, max_concurrent_queries_for_user, 0) \
+    M(SettingUInt64, max_concurrent_queries_for_user, 0, "The maximum number of concurrent requests per user.") \
+    \
+    /** For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed */ \
+    M(SettingBool, insert_deduplicate, true, "For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed") \
     \
     /** For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled. */ \
-    M(SettingUInt64, insert_quorum, 0) \
-    M(SettingMilliseconds, insert_quorum_timeout, 600000) \
+    M(SettingUInt64, insert_quorum, 0, "For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled.") \
+    M(SettingMilliseconds, insert_quorum_timeout, 600000, "") \
     /** For SELECT queries from the replicated table, throw an exception if the replica does not have a chunk written with the quorum; \
       * do not read the parts that have not yet been written with the quorum. */ \
-    M(SettingUInt64, select_sequential_consistency, 0) \
+    M(SettingUInt64, select_sequential_consistency, 0, "For SELECT queries from the replicated table, throw an exception if the replica does not have a chunk written with the quorum.") \
     /** The maximum number of different shards and the maximum number of replicas of one shard in the `remote` function. */ \
-    M(SettingUInt64, table_function_remote_max_addresses, 1000) \
+    M(SettingUInt64, table_function_remote_max_addresses, 1000, "The maximum number of different shards and the maximum number of replicas of one shard in the `remote` function.") \
     /** Settings to reduce the number of threads in case of slow reads. */ \
     /** Pay attention only to readings that took at least that much time. */ \
-    M(SettingMilliseconds, read_backoff_min_latency_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_latency_ms, 1000, "Pay attention only to readings that took at least that much time.") \
     /** Count events when the bandwidth is less than that many bytes per second. */ \
-    M(SettingUInt64, read_backoff_max_throughput, 1048576) \
+    M(SettingUInt64, read_backoff_max_throughput, 1048576, "Count events when the bandwidth is less than that many bytes per second.") \
     /** Do not pay attention to the event, if the previous one has passed less than a certain amount of time. */ \
-    M(SettingMilliseconds, read_backoff_min_interval_between_events_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_interval_between_events_ms, 1000, "Do not pay attention to the event, if the previous one has passed less than a certain amount of time.") \
     /** The number of events after which the number of threads will be reduced. */ \
-    M(SettingUInt64, read_backoff_min_events, 2) \
+    M(SettingUInt64, read_backoff_min_events, 2, "The number of events after which the number of threads will be reduced.") \
     \
     /** For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability. */ \
-    M(SettingFloat, memory_tracker_fault_probability, 0.) \
+    M(SettingFloat, memory_tracker_fault_probability, 0., "For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability.") \
     \
     /** Compress the result if the client over HTTP said that it understands data compressed by gzip or deflate */ \
-    M(SettingBool, enable_http_compression, 0) \
+    M(SettingBool, enable_http_compression, 0, "Compress the result if the client over HTTP said that it understands data compressed by gzip or deflate.") \
     /** Compression level - used if the client on HTTP said that it understands data compressed by gzip or deflate */ \
-    M(SettingInt64, http_zlib_compression_level, 3) \
+    M(SettingInt64, http_zlib_compression_level, 3, "Compression level - used if the client on HTTP said that it understands data compressed by gzip or deflate.") \
     \
     /** If you uncompress the POST data from the client compressed by the native format, do not check the checksum */ \
-    M(SettingBool, http_native_compression_disable_checksumming_on_decompress, 0) \
-    \
-    /** Timeout in seconds */ \
-    M(SettingUInt64, resharding_barrier_timeout, 300) \
+    M(SettingBool, http_native_compression_disable_checksumming_on_decompress, 0, "If you uncompress the POST data from the client compressed by the native format, do not check the checksum.") \
     \
     /** What aggregate function to use for implementation of count(DISTINCT ...) */ \
-    M(SettingString, count_distinct_implementation, "uniqExact") \
+    M(SettingString, count_distinct_implementation, "uniqExact", "What aggregate function to use for implementation of count(DISTINCT ...)") \
     \
     /** Write statistics about read rows, bytes, time elapsed in suitable output formats */ \
-    M(SettingBool, output_format_write_statistics, true) \
+    M(SettingBool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.") \
     \
     /** Write add http CORS header */ \
-    M(SettingBool, add_http_cors_header, false) \
+    M(SettingBool, add_http_cors_header, false, "Write add http CORS header.") \
     \
     /** Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats). */ \
-    M(SettingBool, input_format_skip_unknown_fields, false) \
+    M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats).") \
     \
     /** For Values format: if field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression. */ \
-    M(SettingBool, input_format_values_interpret_expressions, true) \
+    M(SettingBool, input_format_values_interpret_expressions, true, "For Values format: if field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.") \
     \
     /** Controls quoting of 64-bit integers in JSON output format. */ \
-    M(SettingBool, output_format_json_quote_64bit_integers, true) \
+    M(SettingBool, output_format_json_quote_64bit_integers, true, "Controls quoting of 64-bit integers in JSON output format.") \
     \
     /** Enables "+nan", "-nan", "+inf", "-inf" outputs in JSON output format. */ \
-    M(SettingBool, output_format_json_quote_denormals, false) \
+    M(SettingBool, output_format_json_quote_denormals, false, "Enables \"+nan\", \"-nan\", \"+inf\", \"-inf\" outputs in JSON output format.") \
     \
     /** Rows limit for Pretty formats. */ \
-    M(SettingUInt64, output_format_pretty_max_rows, 10000) \
+    M(SettingUInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.") \
     \
     /** Use client timezone for interpreting DateTime string values, instead of adopting server timezone. */ \
-    M(SettingBool, use_client_time_zone, false) \
+    M(SettingBool, use_client_time_zone, false, "Use client timezone for interpreting DateTime string values, instead of adopting server timezone.") \
     \
     /** Send progress notifications using X-ClickHouse-Progress headers. \
       * Some clients do not support high amount of HTTP headers (Python requests in particular), so it is disabled by default. \
       */ \
-    M(SettingBool, send_progress_in_http_headers, false) \
+    M(SettingBool, send_progress_in_http_headers, false, "Send progress notifications using X-ClickHouse-Progress headers.") \
     \
     /** Do not send HTTP headers X-ClickHouse-Progress more frequently than at each specified interval. */ \
-    M(SettingUInt64, http_headers_progress_interval_ms, 100) \
+    M(SettingUInt64, http_headers_progress_interval_ms, 100, "Do not send HTTP headers X-ClickHouse-Progress more frequently than at each specified interval.") \
     \
     /** Do fsync after changing metadata for tables and databases (.sql files). \
       * Could be disabled in case of poor latency on server with high load of DDL queries and high load of disk subsystem. \
       */ \
-    M(SettingBool, fsync_metadata, 1) \
+    M(SettingBool, fsync_metadata, 1, "Do fsync after changing metadata for tables and databases (.sql files).") \
     \
     /** Maximum amount of errors while reading text formats (like CSV, TSV). \
       * In case of error, if both values are non-zero, \
       *  and at least absolute or relative amount of errors is lower than corresponding value, \
       *  will skip until next line and continue. \
       */ \
-    M(SettingUInt64, input_format_allow_errors_num, 0) \
-    M(SettingFloat, input_format_allow_errors_ratio, 0) \
+    M(SettingUInt64, input_format_allow_errors_num, 0, "Maximum absolute amount of errors while reading text formats (like CSV, TSV).") \
+    M(SettingFloat, input_format_allow_errors_ratio, 0, "Maximum relative amount of errors while reading text formats (like CSV, TSV).") \
     \
    /** Use NULLs for non-joined rows of outer JOINs. \
      * If false, use default value of corresponding columns data type. \
      */ \
-    M(SettingBool, join_use_nulls, 0) \
+    M(SettingBool, join_use_nulls, 0, "Use NULLs for non-joined rows of outer JOINs. If false, use default value of corresponding columns data type.") \
     /* */ \
-    M(SettingUInt64, preferred_block_size_bytes, 1000000) \
+    M(SettingUInt64, preferred_block_size_bytes, 1000000, "") \
    /** If set, distributed queries of Replicated tables will choose servers \
      * with replication delay in seconds less than the specified value (not inclusive). \
      * Zero means do not take delay into account. \
      */ \
     \
-    M(SettingUInt64, max_replica_delay_for_distributed_queries, 300) \
+    M(SettingUInt64, max_replica_delay_for_distributed_queries, 300, "If set, distributed queries of Replicated tables will choose servers with replication delay in seconds less than the specified value (not inclusive).") \
    /** Suppose max_replica_delay_for_distributed_queries is set and all replicas for the queried table are stale. \
      * If this setting is enabled, the query will be performed anyway, otherwise the error will be reported. \
      */ \
-    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1) \
+    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1, "") \
     /** For development and testing purposes only still */ \
-    M(SettingBool, distributed_ddl_allow_replicated_alter, 0) \
+    M(SettingBool, distributed_ddl_allow_replicated_alter, 0, "For development and testing purposes only still.") \
     /** Limit on max column size in block while reading. Helps to decrease cache misses count. \
       * Should be close to L2 cache size. */ \
-    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 0) \
+    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 0, "Limit on max column size in block while reading. Helps to decrease cache misses count. Should be close to L2 cache size.") \
     \
     /** If setting is enabled, insert query into distributed waits until data will be sent to all nodes in cluster. \
      */ \
-    M(SettingBool, insert_distributed_sync, false) \
+    M(SettingBool, insert_distributed_sync, false, "If setting is enabled, insert query into distributed waits until data will be sent to all nodes in cluster.") \
     /** Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. \
      *  Zero value means no timeout. \
      */ \
-    M(SettingUInt64, insert_distributed_timeout, 0) \
+    M(SettingUInt64, insert_distributed_timeout, 0, "Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled.") \
     /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
-    M(SettingInt64, distributed_ddl_task_timeout, 120) \
-    \
-    /** If true, and the date parameter of MergeTree engines is an expression (not a column name), \
-      * it will be interpreted as the partitioning expression, allowing custom partitions. \
-      * IMPORTANT: Don't use this setting just yet. \
-      *  It is for testing purposes, the syntax will likely change soon and the server will not be able \
-      *  to load the tables created this way. You have been warned. \
-      */ \
-    M(SettingBool, experimental_merge_tree_allow_custom_partitions, false) \
+    M(SettingInt64, distributed_ddl_task_timeout, 120, "Timeout for DDL query responses from all hosts in cluster. Negative value means infinite.") \
     /* Timeout for flushing data from streaming storages. */ \
-    M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS) \
+    M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS, "Timeout for flushing data from streaming storages.") \
     /* Schema identifier (used by schema-based formats) */ \
-    M(SettingString, schema, "")
+    M(SettingString, format_schema, "", "Schema identifier (used by schema-based formats)")
 
 
     /// Possible limits for query execution.
     Limits limits;
 
-#define DECLARE(TYPE, NAME, DEFAULT) \
+#define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};
 
     APPLY_FOR_SETTINGS(DECLARE)

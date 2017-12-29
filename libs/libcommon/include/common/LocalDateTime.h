@@ -48,8 +48,8 @@ private:
         m_month = values.month;
         m_day = values.day_of_month;
         m_hour = date_lut.toHour(time);
-        m_minute = date_lut.toMinuteInaccurate(time);
-        m_second = date_lut.toSecondInaccurate(time);
+        m_minute = date_lut.toMinute(time);
+        m_second = date_lut.toSecond(time);
     }
 
     void init(const char * s, size_t length)
@@ -95,22 +95,8 @@ public:
         init(data, length);
     }
 
-    LocalDateTime(const LocalDateTime & x)
-    {
-        operator=(x);
-    }
-
-    LocalDateTime & operator= (const LocalDateTime & x)
-    {
-        m_year = x.m_year;
-        m_month = x.m_month;
-        m_day = x.m_day;
-        m_hour = x.m_hour;
-        m_minute = x.m_minute;
-        m_second = x.m_second;
-
-        return *this;
-    }
+    LocalDateTime(const LocalDateTime &) noexcept = default;
+    LocalDateTime & operator= (const LocalDateTime &) noexcept = default;
 
     LocalDateTime & operator= (time_t time)
     {

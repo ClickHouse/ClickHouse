@@ -5,20 +5,19 @@
 #include <string>
 #include <sstream>
 
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Element.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/MongoDB/Connection.h>
+    #include <Poco/MongoDB/Cursor.h>
+    #include <Poco/MongoDB/Element.h>
+#pragma GCC diagnostic pop
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB
@@ -51,27 +50,27 @@ namespace
     using ValueType = ExternalResultDescription::ValueType;
 
     template <typename T>
-    void insertNumber(IColumn * column, const Poco::MongoDB::Element & value, const std::string & name)
+    void insertNumber(IColumn & column, const Poco::MongoDB::Element & value, const std::string & name)
     {
         switch (value.type())
         {
             case Poco::MongoDB::ElementTraits<Int32>::TypeId:
-                static_cast<ColumnVector<T> *>(column)->getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Int64>::TypeId:
-                static_cast<ColumnVector<T> *>(column)->getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int64> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                static_cast<ColumnVector<T> *>(column)->getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<bool>::TypeId:
-                static_cast<ColumnVector<T> *>(column)->getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
-                static_cast<ColumnVector<T> *>(column)->getData().emplace_back();
+                static_cast<ColumnVector<T> &>(column).getData().emplace_back();
                 break;
             case Poco::MongoDB::ElementTraits<String>::TypeId:
-                static_cast<ColumnVector<T> *>(column)->getData().push_back(
+                static_cast<ColumnVector<T> &>(column).getData().push_back(
                     parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
                 break;
             default:
@@ -81,7 +80,7 @@ namespace
     }
 
     void insertValue(
-        IColumn * column, const ValueType type, const Poco::MongoDB::Element & value, const std::string & name)
+        IColumn & column, const ValueType type, const Poco::MongoDB::Element & value, const std::string & name)
     {
         switch (type)
         {
@@ -104,7 +103,7 @@ namespace
                             " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
                 String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                static_cast<ColumnString *>(column)->insertDataWithTerminatingZero(string.data(), string.size() + 1);
+                static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
                 break;
             }
 
@@ -115,7 +114,7 @@ namespace
                         "Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
                             " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
-                static_cast<ColumnUInt16 *>(column)->getData().push_back(
+                static_cast<ColumnUInt16 &>(column).getData().push_back(
                     UInt16{DateLUT::instance().toDayNum(
                         static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())});
                 break;
@@ -128,11 +127,16 @@ namespace
                         "Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
                             " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
-                static_cast<ColumnUInt32 *>(column)->getData().push_back(
+                static_cast<ColumnUInt32 &>(column).getData().push_back(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
                 break;
             }
         }
+    }
+
+    void insertDefaultValue(IColumn & column, const IColumn & sample_column)
+    {
+        column.insertFrom(sample_column, 0);
     }
 }
 
@@ -142,14 +146,11 @@ Block MongoDBBlockInputStream::readImpl()
     if (all_read)
         return {};
 
-    Block block = description.sample_block.cloneEmpty();
-
-    /// cache pointers returned by the calls to getByPosition
-    std::vector<IColumn *> columns(block.columns());
+    MutableColumns columns(description.sample_block.columns());
     const size_t size = columns.size();
 
     for (const auto i : ext::range(0, size))
-        columns[i] = block.getByPosition(i).column.get();
+        columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
     while (num_rows < max_block_size)
@@ -166,9 +167,9 @@ Block MongoDBBlockInputStream::readImpl()
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
                 if (value.isNull())
-                    insertDefaultValue(columns[idx], *description.sample_columns[idx]);
+                    insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
                 else
-                    insertValue(columns[idx], description.types[idx], *value, name);
+                    insertValue(*columns[idx], description.types[idx], *value, name);
             }
         }
 
@@ -182,7 +183,7 @@ Block MongoDBBlockInputStream::readImpl()
     if (num_rows == 0)
         return {};
 
-    return block;
+    return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
 }

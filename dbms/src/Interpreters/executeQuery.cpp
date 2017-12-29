@@ -61,7 +61,17 @@ static String joinLines(const String & query)
 /// Log query into text log (not into system table).
 static void logQuery(const String & query, const Context & context)
 {
-    LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString() << ") " << joinLines(query));
+    const auto & current_query_id = context.getClientInfo().current_query_id;
+    const auto & initial_query_id = context.getClientInfo().initial_query_id;
+    const auto & current_user = context.getClientInfo().current_user;
+
+    LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
+    << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
+    << ", query_id: " << current_query_id
+    << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
+    << ") "
+    << joinLines(query)
+    );
 }
 
 
@@ -417,7 +427,7 @@ void executeQuery(
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
-            std::experimental::optional<WriteBufferFromFile> out_file_buf;
+            std::optional<WriteBufferFromFile> out_file_buf;
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)

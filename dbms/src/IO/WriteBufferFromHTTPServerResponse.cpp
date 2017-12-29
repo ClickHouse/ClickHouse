@@ -7,7 +7,7 @@
 #include <IO/HTTPCommon.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 
 namespace DB
 {

@@ -1,4 +1,4 @@
-#include <experimental/optional>
+#include <optional>
 
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
@@ -42,7 +42,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Field.h>
-#include <Common/Collator.h>
+#include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
 
@@ -100,11 +100,30 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
         }
     }
 
-    renameColumns();
-    if (!required_column_names.empty())
-        rewriteExpressionList(required_column_names);
+    if (is_first_select_inside_union_all && (hasAsterisk()))
+    {
+        basicInit(input);
 
-    basicInit(input);
+        // We execute this code here, because otherwise the following kind of query would not work
+        // SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
+        // because the asterisk is replaced with columns only when query_analyzer objects are created in basicInit().
+        renameColumns();
+
+        if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
+        {
+            rewriteExpressionList(required_column_names);
+            /// Now there is obsolete information to execute the query. We update this information.
+            initQueryAnalyzer();
+        }
+    }
+    else
+    {
+        renameColumns();
+        if (!required_column_names.empty())
+            rewriteExpressionList(required_column_names);
+
+        basicInit(input);
+    }
 }
 
 bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
@@ -124,7 +143,7 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
     {
         if (table_column_names.empty())
         {
-            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getColumnsList();
+            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getNamesAndTypesList();
         }
     }
     else
@@ -155,6 +174,15 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
         throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
     query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
+
+    if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
+        throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+
+    if (query.final() && (input || !storage || !storage->supportsFinal()))
+        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+
+    if (query.prewhere_expression && (input || !storage || !storage->supportsPrewhere()))
+        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
     /// Save the new temporary tables in the query context
     for (const auto & it : query_analyzer->getExternalTables())
@@ -316,7 +344,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 DataTypes InterpreterSelectQuery::getReturnTypes()
 {
     DataTypes res;
-    const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getColumnsList();
+    const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getNamesAndTypesList();
     for (auto & column : columns)
         res.push_back(column.type);
 
@@ -509,7 +537,7 @@ void InterpreterSelectQuery::executeSingleQuery()
             before_order_and_select = chain.getLastActions();
             chain.addStep();
 
-            query_analyzer->appendProjectResult(chain, !second_stage);
+            query_analyzer->appendProjectResult(chain);
             final_projection = chain.getLastActions();
 
             chain.finalize();
@@ -691,7 +719,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         return QueryProcessingStage::FetchColumns;
 
     /// The subquery interpreter, if the subquery
-    std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;
+    std::optional<InterpreterSelectQuery> interpreter_subquery;
 
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredColumns();
@@ -754,15 +782,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         if (query_analyzer->hasAggregation())
             interpreter_subquery->ignoreWithTotals();
     }
-
-    if (query.sample_size() && (!storage || !storage->supportsSampling()))
-        throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
-
-    if (query.final() && (!storage || !storage->supportsFinal()))
-        throw Exception(storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
-
-    if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
-        throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -839,9 +858,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                     MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), required_columns, log};
             };
 
-            if (const StorageMergeTree * merge_tree = typeid_cast<const StorageMergeTree *>(storage.get()))
+            if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
                 optimize_prewhere(*merge_tree);
-            else if (const StorageReplicatedMergeTree * merge_tree = typeid_cast<const StorageReplicatedMergeTree *>(storage.get()))
+            else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
                 optimize_prewhere(*merge_tree);
         }
 
@@ -1203,7 +1222,7 @@ void InterpreterSelectQuery::executePreLimit()
     {
         transformStreams([&](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, false);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, 0, false);
         });
 
         if (hasMoreThanOneStream())

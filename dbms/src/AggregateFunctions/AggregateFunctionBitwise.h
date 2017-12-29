@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
@@ -40,7 +40,7 @@ struct AggregateFunctionGroupBitXorData
 
 /// Counts bitwise operation on numbers.
 template <typename T, typename Data>
-class AggregateFunctionBitwise final : public IUnaryAggregateFunction<Data, AggregateFunctionBitwise<T, Data>>
+class AggregateFunctionBitwise final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>
 {
 public:
     String getName() const override { return Data::name(); }
@@ -50,19 +50,12 @@ public:
         return std::make_shared<DataTypeNumber<T>>();
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if (!argument->behavesAsNumber())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        this->data(place).update(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).update(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).update(this->data(rhs).value);
     }

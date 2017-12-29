@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <memory>
 #include <Poco/Observer.h>
@@ -402,7 +403,7 @@ private:
   */
 static void terminate_handler()
 {
-    static __thread bool terminating = false;
+    static thread_local bool terminating = false;
     if (terminating)
     {
         abort();
@@ -523,7 +524,7 @@ void BaseDaemon::reloadConfiguration()
       */
     std::string log_command_line_option = config().getString("logger.log", "");
     config_path = config().getString("config-file", "config.xml");
-    loaded_config = ConfigProcessor(false, true).loadConfig(config_path, /* allow_zk_includes = */ true);
+    loaded_config = ConfigProcessor(config_path, false, true).loadConfig(/* allow_zk_includes = */ true);
     if (last_configuration != nullptr)
         config().removeConfiguration(last_configuration);
     last_configuration = loaded_config.configuration.duplicate();
@@ -604,11 +605,13 @@ void BaseDaemon::buildLoggers()
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log_file = new FileChannel;
-        log_file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
-        log_file->setProperty("rotation", config().getRawString("logger.size", "100M"));
-        log_file->setProperty("archive", "number");
-        log_file->setProperty("compress", config().getRawString("logger.compress", "true"));
-        log_file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.log")).absolute().toString());
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
+        log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
+        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
+        log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
+        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
         log->setChannel(log_file);
         split->addChannel(log);
         log_file->open();
@@ -622,11 +625,13 @@ void BaseDaemon::buildLoggers()
             pf->setProperty("times", "local");
             Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
             error_log_file = new FileChannel;
-            error_log_file->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
-            error_log_file->setProperty("rotation", config().getRawString("logger.size", "100M"));
-            error_log_file->setProperty("archive", "number");
-            error_log_file->setProperty("compress", config().getRawString("logger.compress", "true"));
-            error_log_file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.errorlog")).absolute().toString());
+            error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
+            error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
             errorlog->setChannel(error_log_file);
             level->setChannel(errorlog);
             split->addChannel(level);
@@ -715,6 +720,20 @@ void BaseDaemon::initialize(Application & self)
     /// Считаем конфигурацию
     reloadConfiguration();
 
+    /// This must be done before creation of any files (including logs).
+    if (config().has("umask"))
+    {
+        std::string umask_str = config().getString("umask");
+        mode_t umask_num = 0;
+        std::stringstream stream;
+        stream << umask_str;
+        stream >> std::oct >> umask_num;
+
+        umask(umask_num);
+    }
+
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config);
+
     /// В случае падения - сохраняем коры
     {
         struct rlimit rlim;
@@ -742,18 +761,6 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
-    }
-
-    /// This must be done before creation of any files (including logs).
-    if (config().has("umask"))
-    {
-        std::string umask_str = config().getString("umask");
-        mode_t umask_num = 0;
-        std::stringstream stream;
-        stream << umask_str;
-        stream >> std::oct >> umask_num;
-
-        umask(umask_num);
     }
 
     std::string log_path = config().getString("logger.log", "");
@@ -921,11 +928,35 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
             );
 }
 
+bool isPidRunning(pid_t pid)
+{
+    if (getpgid(pid) >= 0)
+        return 1;
+    return 0;
+}
 
 void BaseDaemon::PID::seed(const std::string & file_)
 {
     /// переведём путь в абсолютный
-    file = Poco::Path(file_).absolute().toString();
+    auto file_path = Poco::Path(file_).absolute();
+    file = file_path.toString();
+    Poco::File poco_file(file);
+
+    if (poco_file.exists())
+    {
+        pid_t pid_read = 0;
+        {
+            std::ifstream in(file);
+            if (in.good())
+            {
+                in >> pid_read;
+                if (pid_read && isPidRunning(pid_read))
+                    throw Poco::Exception("Pid file exists and program running with pid = " + std::to_string(pid_read) + ", should not start daemon.");
+            }
+        }
+        std::cerr << "Old pid file exists (with pid = " << pid_read << "), removing." << std::endl;
+        poco_file.remove();
+    }
 
     int fd = open(file.c_str(),
         O_CREAT | O_EXCL | O_WRONLY,

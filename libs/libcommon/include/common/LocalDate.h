@@ -65,9 +65,9 @@ public:
     LocalDate(DayNum_t day_num)
     {
         const auto & values = DateLUT::instance().getValues(day_num);
-        m_year     = values.year;
+        m_year  = values.year;
         m_month = values.month;
-        m_day     = values.day_of_month;
+        m_day   = values.day_of_month;
     }
 
     LocalDate(unsigned short year_, unsigned char month_, unsigned char day_)
@@ -89,19 +89,8 @@ public:
     {
     }
 
-    LocalDate(const LocalDate & x)
-    {
-        operator=(x);
-    }
-
-    LocalDate & operator= (const LocalDate & x)
-    {
-        m_year = x.m_year;
-        m_month = x.m_month;
-        m_day = x.m_day;
-
-        return *this;
-    }
+    LocalDate(const LocalDate &) noexcept = default;
+    LocalDate & operator= (const LocalDate &) noexcept = default;
 
     LocalDate & operator= (time_t time)
     {

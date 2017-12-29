@@ -1,8 +1,14 @@
 #include <Dictionaries/DictionaryStructure.h>
-#include <Common/StringUtils.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
+#include <Common/StringUtils.h>
+#include <IO/WriteHelpers.h>
 
+#include <ext/range.h>
+#include <numeric>
 #include <unordered_set>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -61,6 +67,7 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
         { "UInt16", AttributeUnderlyingType::UInt16 },
         { "UInt32", AttributeUnderlyingType::UInt32 },
         { "UInt64", AttributeUnderlyingType::UInt64 },
+        { "UUID", AttributeUnderlyingType::UInt128 },
         { "Int8", AttributeUnderlyingType::Int8 },
         { "Int16", AttributeUnderlyingType::Int16 },
         { "Int32", AttributeUnderlyingType::Int32 },
@@ -90,6 +97,7 @@ std::string toString(const AttributeUnderlyingType type)
         case AttributeUnderlyingType::UInt16: return "UInt16";
         case AttributeUnderlyingType::UInt32: return "UInt32";
         case AttributeUnderlyingType::UInt64: return "UInt64";
+        case AttributeUnderlyingType::UInt128: return "UUID";
         case AttributeUnderlyingType::Int8: return "Int8";
         case AttributeUnderlyingType::Int16: return "Int16";
         case AttributeUnderlyingType::Int32: return "Int32";
@@ -102,16 +110,6 @@ std::string toString(const AttributeUnderlyingType type)
     throw Exception{
         "Unknown attribute_type " + toString(static_cast<int>(type)),
         ErrorCodes::ARGUMENT_OUT_OF_BOUND};
-}
-
-
-DictionaryLifetime::DictionaryLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-{
-    const auto & lifetime_min_key = config_prefix + ".min";
-    const auto has_min = config.has(lifetime_min_key);
-
-    this->min_sec = has_min ? config.getInt(lifetime_min_key) : config.getInt(config_prefix);
-    this->max_sec = has_min ? config.getInt(config_prefix + ".max") : this->min_sec;
 }
 
 
@@ -230,7 +228,7 @@ bool DictionaryStructure::isKeySizeFixed() const
 size_t DictionaryStructure::getKeySize() const
 {
     return std::accumulate(std::begin(*key), std::end(*key), size_t{},
-        [] (const auto running_size, const auto & key_i) {return running_size + key_i.type->getSizeOfField(); });
+        [] (const auto running_size, const auto & key_i) {return running_size + key_i.type->getSizeOfValueInMemory(); });
 }
 
 
@@ -285,15 +283,14 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             try
             {
                 ReadBufferFromString null_value_buffer{null_value_string};
-                ColumnPtr column_with_null_value = type->createColumn();
+                auto column_with_null_value = type->createColumn();
                 type->deserializeTextEscaped(*column_with_null_value, null_value_buffer);
                 null_value = (*column_with_null_value)[0];
             }
-            catch (const std::exception & e)
+            catch (Exception & e)
             {
-                throw Exception{
-                    std::string{"Error parsing null_value: "} + e.what(),
-                    ErrorCodes::BAD_ARGUMENTS};
+                e.addMessage("error parsing null_value");
+                throw;
             }
         }
 
