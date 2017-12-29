@@ -1,9 +1,13 @@
 #include <Storages/NextGenReplication/StorageNextGenReplicatedMergeTree.h>
 #include <Storages/NextGenReplication/NextGenReplicatedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
+#include <Common/randomSeed.h>
+#include <Common/hex.h>
 
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -13,6 +17,8 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int INCORRECT_DATA;
     extern const int REPLICA_IS_ALREADY_EXIST;
+    extern const int NO_ACTIVE_REPLICAS;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 
@@ -86,6 +92,8 @@ StorageNextGenReplicatedMergeTree::StorageNextGenReplicatedMergeTree(
         /// Temporary directories contain unfinalized results of Merges or Fetches (after forced restart)
         ///  and don't allow to reinitialize them, so delete each of them immediately.
         data.clearOldTemporaryDirectories(0);
+
+        initPartSet();
     }
 
     /// TODO: Check table structure.
@@ -133,7 +141,6 @@ void StorageNextGenReplicatedMergeTree::startup()
         /// TODO: do something if the node already exists.
     }
 
-    /// TODO initialize the part set from disk.
     part_set_updating_thread = std::thread([this] { runPartSetUpdatingThread(); });
 
     parts_producing_task = context.getBackgroundPool().addTask([this] { return runPartsProducingTask(); });
@@ -183,6 +190,22 @@ void StorageNextGenReplicatedMergeTree::createTableOrReplica(zkutil::ZooKeeper &
 
         throw;
     }
+}
+
+void StorageNextGenReplicatedMergeTree::initPartSet()
+{
+    std::lock_guard<std::mutex> lock(parts_mutex);
+
+    auto parts_on_disk = data.getDataParts(
+        {MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+
+    for (const MergeTreeData::DataPartPtr & part : parts_on_disk)
+    {
+        parts.emplace(part->info, Part{part->info, part->name,
+            (part->state == MergeTreeDataPartState::Committed) ? Part::State::Committed : Part::State::Outdated});
+    }
+
+    /// TODO: check and sync with ZooKeeper.
 }
 
 void StorageNextGenReplicatedMergeTree::shutdown()
@@ -253,6 +276,7 @@ void StorageNextGenReplicatedMergeTree::drop()
 
         LOG_INFO(log, "Removing replica " << replica_path << " from ZooKeeper");
 
+        /// TODO: part refcounts are not deleted. Maybe get rid of them altogether.
         zookeeper->tryRemoveRecursive(replica_path);
 
         Strings replicas;
@@ -289,21 +313,14 @@ void StorageNextGenReplicatedMergeTree::runPartSetUpdatingThread()
     {
         try
         {
-            auto zookeeper = getZooKeeper();
-            Strings part_nodes = zookeeper->getChildren(zookeeper_path + "/parts", nullptr, part_set_updating_event);
-
-            bool have_new_parts = false;
+            std::vector<MergeTreePartInfo> ephemeral_parts;
+            std::vector<String> active_parts;
             {
-                std::lock_guard<std::mutex> lock(parts_mutex);
-                /// TODO maybe not the best idea to lock the mutex for so long.
+                auto zookeeper = getZooKeeper();
+                Strings part_nodes = zookeeper->getChildren(
+                    zookeeper_path + "/parts", nullptr, part_set_updating_event);
 
-                for (auto it = parts.begin(); it != parts.end(); )
-                {
-                    if (it->second.state == Part::State::Ephemeral)
-                        it = parts.erase(it);
-                    else
-                        ++it;
-                }
+                ActiveDataPartSet current_parts(data.format_version);
 
                 for (const String & part_name : part_nodes)
                 {
@@ -319,24 +336,49 @@ void StorageNextGenReplicatedMergeTree::runPartSetUpdatingThread()
 
                         if (begin == end)
                             throw Exception("Bad ephemeral insert node name: " + part_name, ErrorCodes::LOGICAL_ERROR);
-
                         ++begin;
+
                         UInt64 block_num = parse<UInt64>(begin, end - begin);
 
-                        MergeTreePartInfo part_info(partition_id, block_num, block_num, 0);
-                        parts.emplace(part_info, Part{part_info, Part::State::Ephemeral});
+                        ephemeral_parts.emplace_back(partition_id, block_num, block_num, 0);
                     }
                     else
+                        current_parts.add(part_name);
+                }
+
+                active_parts = current_parts.getParts();
+            }
+
+            bool have_new_parts = false;
+            {
+                std::lock_guard<std::mutex> lock(parts_mutex);
+                /// TODO maybe not the best idea to lock the mutex for so long.
+
+                for (auto it = parts.begin(); it != parts.end(); )
+                {
+                    if (it->second.state == Part::State::Ephemeral)
+                        it = parts.erase(it);
+                    else
+                        ++it;
+                }
+
+                for (const MergeTreePartInfo & part_info : ephemeral_parts)
+                    parts.emplace(
+                        part_info, Part{part_info, part_info.getPartName(), Part::State::Ephemeral});
+                /// TODO: calling part_info->getPartName() is a bit misleading here.
+                /// Better not store names in ZK at all.
+
+                for (const String & part : active_parts)
+                {
+                    auto part_info = MergeTreePartInfo::fromPartName(part, data.format_version);
+                    auto insertion = parts.emplace(part_info, Part{part_info, part, Part::State::Virtual});
+                    if (insertion.second)
                     {
-                        auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
-                        auto insertion = parts.emplace(part_info, Part{part_info, Part::State::Virtual});
-                        if (insertion.second)
-                        {
-                            LOG_TRACE(log, "New part: " << part_name);
-                            have_new_parts = true;
-                        }
+                        LOG_TRACE(log, "New part: " << part);
+                        have_new_parts = true;
                     }
                 }
+
             }
 
             if (have_new_parts)
@@ -354,7 +396,130 @@ void StorageNextGenReplicatedMergeTree::runPartSetUpdatingThread()
 
 bool StorageNextGenReplicatedMergeTree::runPartsProducingTask()
 {
-    return false;
+    thread_local pcg64 rng(randomSeed());
+
+    Part * selected_part = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(parts_mutex);
+
+        std::vector<Part *> virtual_parts;
+        for (auto & part : parts)
+        {
+            if (part.second.state == Part::State::Virtual)
+                virtual_parts.emplace_back(&part.second);
+        }
+
+        if (virtual_parts.empty())
+            return false;
+
+        selected_part = virtual_parts[rng() % virtual_parts.size()];
+        selected_part->state = Part::State::Preparing;
+    }
+
+    Part::State state_to_revert_to = Part::State::Virtual;
+    try
+    {
+        String part_path = zookeeper_path + "/parts/" + selected_part->name;
+        LOG_TRACE(log, "Fetching part " << selected_part->name);
+
+        String checksum;
+        String replica_path;
+        ReplicatedMergeTreeAddress replica_address;
+        {
+            auto zookeeper = getZooKeeper();
+
+            checksum = zookeeper->get(part_path + "/checksum");
+
+            Strings replicas = zookeeper->getChildren(part_path + "/replicas");
+            replicas.erase(
+                std::remove_if(
+                    replicas.begin(), replicas.end(),
+                    [&](const String & r) { return r == replica_name; }),
+                replicas.end());
+
+            while (!replicas.empty())
+            {
+                /// Try to find an active replica
+                size_t i = (rng() % replicas.size());
+                String address;
+                if (zookeeper->tryGet(zookeeper_path + "/replicas/" + replicas[i] + "/is_active", address))
+                {
+                    replica_path = zookeeper_path + "/replicas/" + replicas[i];
+                    replica_address.fromString(address);
+                    break;
+                }
+                else
+                    replicas.erase(replicas.begin() + i);
+            }
+
+            if (replicas.empty())
+                throw Exception(
+                    "No active replica for part " + selected_part->name, ErrorCodes::NO_ACTIVE_REPLICAS);
+        }
+
+        /// TODO: lock table metadata? I don't think it is needed.
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
+        MergeTreeData::MutableDataPartPtr part = parts_fetcher.fetchPart(
+            selected_part->name, replica_path, replica_address.host, replica_address.replication_port, timeouts, false);
+
+        /// TODO: common code for adding part.
+
+        String hash_string;
+        {
+            SipHash hash;
+            part->checksums.summaryDataChecksum(hash);
+            char hash_data[16];
+            hash.get128(hash_data);
+            hash_string.resize(32);
+            for (size_t i = 0; i < 16; ++i)
+                writeHexByteLowercase(hash_data[i], &hash_string[2 * i]);
+        }
+        if (hash_string != checksum)
+            throw Exception(
+                "Checksum mismatch for part " + selected_part->name + " downloaded from " + replica_path,
+                ErrorCodes::CHECKSUM_DOESNT_MATCH);
+
+        MergeTreeData::Transaction transaction;
+        {
+            std::lock_guard<std::mutex> lock(parts_mutex);
+
+            data.renameTempPartAndAdd(part, nullptr, &transaction);
+            state_to_revert_to = Part::State::Prepared;
+            selected_part->state = state_to_revert_to;
+        }
+
+        try
+        {
+            getZooKeeper()->create(
+                part_path + "/replicas/" + replica_name, String(), zkutil::CreateMode::Persistent);
+            transaction.commit();
+        }
+        catch (const zkutil::KeeperException & ex)
+        {
+            if (ex.code == ZNONODE || ex.code == ZNODEEXISTS)
+            {
+                std::lock_guard<std::mutex> lock(parts_mutex);
+                selected_part->state = Part::State::Committed;
+                transaction.commit();
+            }
+            else if (zkutil::isTemporaryErrorCode(ex.code))
+            {
+                std::lock_guard<std::mutex> lock(parts_mutex);
+                selected_part->state = Part::State::MaybeCommitted;
+                transaction.commit();
+            }
+            else
+                throw;
+        }
+    }
+    catch (...)
+    {
+        std::lock_guard<std::mutex> lock(parts_mutex);
+        selected_part->state = state_to_revert_to;
+        throw;
+    }
+
+    return true;
 }
 
 void StorageNextGenReplicatedMergeTree::runMergeSelectingThread()

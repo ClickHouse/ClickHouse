@@ -62,11 +62,19 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
         Part * inserted_part = nullptr;
         {
             std::lock_guard<std::mutex> lock(storage.parts_mutex);
-            auto insertion = storage.parts.emplace(part->info, Part{part->info, Part::State::Ephemeral});
+            auto insertion = storage.parts.emplace(
+                part->info, Part{part->info, part->name, Part::State::Ephemeral});
             inserted_part = &insertion.first->second;
             if (!insertion.second && inserted_part->state != Part::State::Ephemeral)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
             /// TODO check covering and covered parts;
+        }
+
+        MergeTreeData::Transaction transaction;
+        {
+            std::lock_guard<std::mutex> lock(storage.parts_mutex);
+            storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
+            inserted_part->state = Part::State::Prepared;
         }
 
         String part_path = parts_path + "/" + part->name;
@@ -80,13 +88,6 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
             hash_string.resize(32);
             for (size_t i = 0; i < 16; ++i)
                 writeHexByteLowercase(hash_data[i], &hash_string[2 * i]);
-        }
-
-        MergeTreeData::Transaction transaction;
-        {
-            std::lock_guard<std::mutex> lock(storage.parts_mutex);
-            storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
-            inserted_part->state = Part::State::Prepared;
         }
 
         zkutil::Ops ops;

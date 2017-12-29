@@ -117,11 +117,14 @@ private:
         };
 
         MergeTreePartInfo info;
+        String name;
         State state;
     };
 
     mutable std::mutex parts_mutex;
     std::map<MergeTreePartInfo, Part> parts;
+
+    void initPartSet();
 
     /// A thread that updates the part set based on ZooKeeper notifications.
     std::thread part_set_updating_thread;
