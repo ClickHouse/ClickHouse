@@ -55,8 +55,8 @@ public:
         bool attach,
         bool has_force_restore_data_flag) const;
 
-    /// Register a function by its name.
-    /// No locking, you must register all functions before usage of get.
+    /// Register a table engine by its name.
+    /// No locking, you must register all engines before usage of get.
     void registerStorage(const std::string & name, Creator creator);
 
 private:
