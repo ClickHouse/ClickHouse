@@ -549,13 +549,20 @@ public:
 };
 
 
+enum class FunctionSleepVariant
+{
+    PerBlock,
+    PerRow
+};
+
+template <FunctionSleepVariant variant>
 class FunctionSleep : public IFunction
 {
 public:
-    static constexpr auto name = "sleep";
+    static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionSleep>();
+        return std::make_shared<FunctionSleep<variant>>();
     }
 
     /// Get the name of the function.
@@ -617,7 +624,7 @@ public:
 
         /// We do not sleep if the block is empty.
         if (size > 0)
-            usleep(static_cast<unsigned>(seconds * 1e6));
+            usleep(static_cast<unsigned>(seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6));
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
         block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, UInt64(0))->convertToFullColumnIfConst();
@@ -1751,7 +1758,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionBlockNumber>();
     factory.registerFunction<FunctionRowNumberInBlock>();
     factory.registerFunction<FunctionRowNumberInAllBlocks>();
-    factory.registerFunction<FunctionSleep>();
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>();
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
     factory.registerFunction<FunctionMaterialize>();
     factory.registerFunction<FunctionIgnore>();
     factory.registerFunction<FunctionIndexHint>();
