@@ -1,4 +1,5 @@
 #include <Storages/StorageLog.h>
+#include <Storages/StorageFactory.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -28,8 +29,8 @@
 #include <Poco/DirectoryIterator.h>
 
 
-#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION     ".bin"
-#define DBMS_STORAGE_LOG_MARKS_FILE_NAME         "__marks.mrk"
+#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
+#define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
 
 
 namespace DB
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -580,6 +582,23 @@ bool StorageLog::checkData() const
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
+}
+
+
+void registerStorageLog(StorageFactory & factory)
+{
+    factory.registerStorage("Log", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return StorageLog::create(
+            args.data_path, args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.context.getSettings().max_compress_block_size);
+    });
 }
 
 }
