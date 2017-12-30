@@ -74,7 +74,7 @@ protected:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         bool attach,
-        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+        size_t max_compress_block_size_);
 };
 
 }

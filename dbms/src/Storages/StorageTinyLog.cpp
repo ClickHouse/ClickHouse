@@ -403,7 +403,7 @@ bool StorageTinyLog::checkData() const
 }
 
 
-void registerTinyLog(StorageFactory & factory)
+void registerStorageTinyLog(StorageFactory & factory)
 {
     factory.registerStorage("TinyLog", [](const StorageFactory::Arguments & args)
     {
@@ -415,7 +415,7 @@ void registerTinyLog(StorageFactory & factory)
         return StorageTinyLog::create(
             args.data_path, args.table_name, args.columns,
             args.materialized_columns, args.alias_columns, args.column_defaults,
-            args.context.getSettings().max_compress_block_size);
+            args.attach, args.context.getSettings().max_compress_block_size);
     });
 }
 
