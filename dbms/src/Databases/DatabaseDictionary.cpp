@@ -40,7 +40,8 @@ Tables DatabaseDictionary::loadTables()
         {
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[name] = StorageDictionary::create(name, columns, {}, {}, {}, dictionary_structure, name);
+            tables[name] = StorageDictionary::create(name,
+                columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, dictionary_structure, name);
         }
     }
 
@@ -74,7 +75,8 @@ StoragePtr DatabaseDictionary::tryGetTable(
             {
                 const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
                 auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-                return StorageDictionary::create(table_name, columns, {}, {}, {}, dictionary_structure, table_name);
+                return StorageDictionary::create(table_name,
+                    columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, dictionary_structure, table_name);
             }
         }
     }

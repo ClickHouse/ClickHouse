@@ -31,6 +31,8 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageTinyLog.h>
+#include <Storages/StorageFactory.h>
+
 #include <Poco/DirectoryIterator.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -397,6 +400,23 @@ BlockOutputStreamPtr StorageTinyLog::write(
 bool StorageTinyLog::checkData() const
 {
     return file_checker.check();
+}
+
+
+void registerTinyLog(StorageFactory & factory)
+{
+    factory.registerStorage("TinyLog", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return StorageTinyLog::create(
+            args.data_path, args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.context.getSettings().max_compress_block_size);
+    });
 }
 
 }

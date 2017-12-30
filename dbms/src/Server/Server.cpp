@@ -36,6 +36,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Storages/registerStorages.h>
 
 #include "ConfigReloader.h"
 #include "HTTPHandlerFactory.h"
@@ -87,6 +88,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerStorages();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
 

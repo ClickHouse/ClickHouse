@@ -91,32 +91,20 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
 
 void registerStorageDictionary(StorageFactory & factory)
 {
-    factory.registerStorage("Dictionary", [](
-        ASTs & args,
-        const String &,
-        const String & table_name,
-        const String &,
-        Context &,
-        Context & context,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
-        bool,
-        bool)
+    factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)
     {
-        if (args.size() != 1)
+        if (args.engine_args.size() != 1)
             throw Exception("Storage Dictionary requires single parameter: name of dictionary",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String dictionary_name = typeid_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+        String dictionary_name = typeid_cast<const ASTLiteral &>(*args.engine_args[0]).value.safeGet<String>();
 
-        const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+        const auto & dictionary = args.context.getExternalDictionaries().getDictionary(dictionary_name);
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
 
         return StorageDictionary::create(
-            table_name, columns, materialized_columns, alias_columns,
-            column_defaults, dictionary_structure, dictionary_name);
+            args.table_name, args.columns, args.materialized_columns, args.alias_columns,
+            args.column_defaults, dictionary_structure, dictionary_name);
     });
 }
 
