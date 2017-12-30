@@ -9,9 +9,11 @@ namespace DB
 {
 
 class Context;
+class ASTCreateQuery;
+class ASTStorage;
 
 
-/** Allows you to create a table by the name and parameters of the engine.
+/** Allows to create a table by the name and parameters of the engine.
   * In 'columns', 'materialized_columns', etc., Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
@@ -20,7 +22,10 @@ class StorageFactory : public ext::singleton<StorageFactory>
 public:
     struct Arguments
     {
-        ASTs & args;
+        const String & engine_name;
+        ASTs & engine_args;
+        ASTStorage * storage_def;
+        const ASTCreateQuery & query;
         const String & data_path;
         const String & table_name;
         const String & database_name;

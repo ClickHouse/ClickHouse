@@ -8,6 +8,7 @@
 #include <Storages/VirtualColumnFactory.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/StorageFactory.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -26,10 +27,12 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
 #include <Interpreters/ClusterProxy/AlterStreamFactory.h>
+#include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>
 
@@ -47,6 +50,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int STORAGE_REQUIRES_PARAMETER;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -365,6 +370,64 @@ void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::str
     requireConnectionPool(name, storage);
     if (!directory_monitor)
         directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+}
+
+
+void registerStorageDistributed(StorageFactory & factory)
+{
+    factory.registerStorage("Distributed", [](const StorageFactory::Arguments & args)
+    {
+        /** Arguments of engine is following:
+          * - name of cluster in configuration;
+          * - name of remote database;
+          * - name of remote table;
+          *
+          * Remote database may be specified in following form:
+          * - identifier;
+          * - constant expression with string result, like currentDatabase();
+          * -- string literal as specific case;
+          * - empty string means 'use default database from cluster'.
+          */
+
+        ASTs & engine_args = args.engine_args;
+
+        if (!(engine_args.size() == 3 || engine_args.size() == 4))
+            throw Exception("Storage Distributed requires 3 or 4 parameters"
+                " - name of configuration section with list of remote servers, name of remote database, name of remote table,"
+                " sharding key expression (optional).", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        String cluster_name = getClusterName(*engine_args[0]);
+
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+        engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+
+        String remote_database = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String remote_table = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
+
+        const auto & sharding_key = engine_args.size() == 4 ? engine_args[3] : nullptr;
+
+        /// Check that sharding_key exists in the table and has numeric type.
+        if (sharding_key)
+        {
+            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns).getActions(true);
+            const Block & block = sharding_expr->getSampleBlock();
+
+            if (block.columns() != 1)
+                throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+
+            auto type = block.getByPosition(0).type;
+
+            if (!type->isValueRepresentedByInteger())
+                throw Exception("Sharding expression has type " + type->getName() +
+                    ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+        }
+
+        return StorageDistributed::create(
+            args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            remote_database, remote_table, cluster_name,
+            args.context, sharding_key, args.data_path);
+    });
 }
 
 }
