@@ -286,7 +286,7 @@ void registerStorageStripeLog(StorageFactory & factory)
         return StorageStripeLog::create(
             args.data_path, args.table_name, args.columns,
             args.materialized_columns, args.alias_columns, args.column_defaults,
-            args.context.getSettings().max_compress_block_size);
+            args.attach, args.context.getSettings().max_compress_block_size);
     });
 }
 

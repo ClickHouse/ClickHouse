@@ -132,25 +132,6 @@ StorageDistributed::~StorageDistributed() = default;
 StorageDistributed::StorageDistributed(
     const std::string & name_,
     const NamesAndTypesList & columns_,
-    const String & remote_database_,
-    const String & remote_table_,
-    const String & cluster_name_,
-    const Context & context_,
-    const ASTPtr & sharding_key_,
-    const String & data_path_)
-    : name(name_), columns(columns_),
-    remote_database(remote_database_), remote_table(remote_table_),
-    context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
-    sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-    path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
-{
-}
-
-
-StorageDistributed::StorageDistributed(
-    const std::string & name_,
-    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -180,8 +161,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     const Context & context_)
 {
     auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        name_, columns_, remote_database_,
-        remote_table_, String{}, context_);
+        name_, columns_, NamesAndTypesList(), NamesAndTypesList(), ColumnDefaults(),
+        remote_database_, remote_table_, String{}, context_, ASTPtr(), String());
 
     res->owned_cluster = owned_cluster_;
 
