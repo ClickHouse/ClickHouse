@@ -570,7 +570,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                             query_ptr)),
                     /// @note shouldn't these two contexts be session contexts in case of temporary table?
                     columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)),
-                columns.materialized_columns);
+                columns.materialized_columns, static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns));
 
         BlockIO io;
         io.in_sample = as_select_sample;

@@ -527,7 +527,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
       * This will support some of the cases (but not all) when the table structure does not match.
       */
-    Block structure_of_destination_table = table->getSampleBlock();
+    bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
+    Block structure_of_destination_table = allow_materialized ? table->getSampleBlock() : table->getSampleBlockNonMaterialized();
     Names columns_intersection;
     columns_intersection.reserve(block.columns());
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
