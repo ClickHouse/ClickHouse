@@ -61,9 +61,8 @@ public:
 
         void execute();
 
-        /// This mutex is recursive, because it's locked during 'execute' method,
-        ///  and the task can schedule itself again during execution.
-        std::recursive_mutex mutex;
+        std::mutex schedule_mutex;
+        std::mutex exec_mutex;
 
         std::string name;
         bool deactivated = false;
@@ -90,10 +89,10 @@ private:
     void delayExecutionThreadFunction();
 
     /// Schedule task for execution after specified delay from now.
-    void scheduleDelayedTask(const TaskHandle & task, size_t ms);
+    void scheduleDelayedTask(const TaskHandle & task, size_t ms, std::lock_guard<std::mutex> &);
 
     /// Remove task, that was scheduled with delay, from schedule.
-    void cancelDelayedTask(const TaskHandle & task, std::lock_guard<std::recursive_mutex> &);
+    void cancelDelayedTask(const TaskHandle & task, std::lock_guard<std::mutex> &);
 
     /// Number for worker threads.
     const size_t size;
