@@ -213,7 +213,7 @@ WatchCallback ZooKeeper::callbackForTaskHandle(const TaskHandlePtr & task)
         {
             if (t)
             {
-                t->scheduleAfter(0);
+                t->schedule();
                 t.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
             }
         };
