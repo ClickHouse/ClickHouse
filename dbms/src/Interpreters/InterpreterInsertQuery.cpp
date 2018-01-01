@@ -118,7 +118,8 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<AddingDefaultBlockOutputStream>(
         out, required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
 
-    out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, table->materialized_columns);
+    out = std::make_shared<ProhibitColumnsBlockOutputStream>(
+        out, table->materialized_columns, static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns));
 
     out = std::make_shared<SquashingBlockOutputStream>(
         out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
