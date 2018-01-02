@@ -55,8 +55,8 @@ namespace ErrorCodes
 class TinyLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
-    TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
-        : block_size(block_size_), column_names(column_names_), column_types(column_names.size()),
+    TinyLogBlockInputStream(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
+        : block_size(block_size_), columns(columns_),
         storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
 
     String getName() const override { return "TinyLog"; }
@@ -67,8 +67,7 @@ protected:
     Block readImpl() override;
 private:
     size_t block_size;
-    Names column_names;
-    DataTypes column_types;
+    NamesAndTypesList columns;
     StorageTinyLog & storage;
     bool finished = false;
     size_t max_read_buffer_size;
@@ -151,8 +150,8 @@ String TinyLogBlockInputStream::getID() const
     std::stringstream res;
     res << "TinyLog(" << storage.getTableName() << ", " << &storage;
 
-    for (const auto & name : column_names)
-        res << ", " << name;
+    for (const auto & name_type : columns)
+        res << ", " << name_type.name;
 
     res << ")";
     return res.str();
@@ -180,27 +179,20 @@ Block TinyLogBlockInputStream::readImpl()
             return res;
     }
 
-    /// If the files are not open, then open them.
-    if (streams.empty())
-        for (size_t i = 0, size = column_names.size(); i < size; ++i)
-            column_types[i] = storage.getDataTypeByName(column_names[i]);
-
     /// Pointers to offset columns, shared for columns from nested data structures
     using OffsetColumns = std::map<std::string, ColumnPtr>;
     OffsetColumns offset_columns;
 
-    for (size_t i = 0, size = column_names.size(); i < size; ++i)
+    for (const auto & name_type : columns)
     {
-        const auto & name = column_names[i];
-
         MutableColumnPtr column;
 
         bool read_offsets = true;
 
         /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
         {
-            String nested_name = Nested::extractTableName(name);
+            String nested_name = Nested::extractTableName(name_type.name);
 
             if (offset_columns.count(nested_name) == 0)
                 offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
@@ -210,20 +202,20 @@ Block TinyLogBlockInputStream::readImpl()
             column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
         }
         else
-            column = column_types[i]->createColumn();
+            column = name_type.type->createColumn();
 
         try
         {
-            readData(name, *column_types[i], *column, block_size, read_offsets);
+            readData(name_type.name, *name_type.type, *column, block_size, read_offsets);
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name + " at " + storage.full_path());
+            e.addMessage("while reading column " + name_type.name + " at " + storage.full_path());
             throw;
         }
 
         if (column->size())
-            res.insert(ColumnWithTypeAndName(std::move(column), column_types[i], name));
+            res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
     if (!res || streams.begin()->second->compressed.eof())
@@ -386,7 +378,7 @@ BlockInputStreams StorageTinyLog::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
     return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
-        max_block_size, column_names, *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size, getColumnsList().addTypes(column_names), *this, context.getSettingsRef().max_read_buffer_size));
 }
 
 
