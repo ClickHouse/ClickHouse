@@ -11,10 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -105,7 +102,7 @@ private:
     using FileStreams = std::map<std::string, Stream>;
     FileStreams streams;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, bool read_offsets = true);
+    void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
 };
 
 
@@ -192,34 +189,13 @@ Block LogBlockInputStream::readImpl()
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
 
-    /// Pointers to offset columns, shared for columns from nested data structures
-    using OffsetColumns = std::map<std::string, ColumnPtr>;
-    OffsetColumns offset_columns;
-
     for (const auto & name_type : columns)
     {
-        MutableColumnPtr column;
-
-        bool read_offsets = true;
-
-        /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
-        {
-            String nested_name = Nested::extractTableName(name_type.name);
-
-            if (offset_columns.count(nested_name) == 0)
-                offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
-            else
-                read_offsets = false; /// on previous iterations the offsets were already read by `readData`
-
-            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
-        }
-        else
-            column = name_type.type->createColumn();
+        MutableColumnPtr column = name_type.type->createColumn();
 
         try
         {
-            readData(name_type.name, *name_type.type, *column, max_rows_to_read, read_offsets);
+            readData(name_type.name, *name_type.type, *column, max_rows_to_read);
         }
         catch (Exception & e)
         {
@@ -243,17 +219,14 @@ Block LogBlockInputStream::readImpl()
         streams.clear();
     }
 
-    return res;
+    return Nested::flatten(res);
 }
 
 
-void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, bool with_offsets)
+void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
 {
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
-            return nullptr;
-
         String stream_name = IDataType::getFileNameForStream(name, path);
 
         const auto & file_it = storage.files.find(stream_name);
@@ -529,7 +502,7 @@ BlockInputStreams StorageLog::read(
     processed_stage = QueryProcessingStage::FetchColumns;
     loadMarks();
 
-    NamesAndTypesList columns = getColumnsList().addTypes(column_names);
+    NamesAndTypesList columns = Nested::collect(getColumnsList().addTypes(column_names));
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
