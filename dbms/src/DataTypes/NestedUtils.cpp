@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -13,11 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INVALID_NESTED_NAME;
-}
-
 namespace Nested
 {
 
@@ -27,23 +23,48 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
 }
 
 
-std::string extractTableName(const std::string & nested_name)
+/** Name can be treated as compound if and only if both parts are simple identifiers.
+  */
+std::pair<std::string, std::string> splitName(const std::string & name)
 {
-    const char * first_pos = strchr(nested_name.data(), '.');
-    const char * last_pos = strrchr(nested_name.data(), '.');
-    if (first_pos != last_pos)
-        throw Exception("Invalid nested column name: " + nested_name, ErrorCodes::INVALID_NESTED_NAME);
-    return first_pos == nullptr ? nested_name : nested_name.substr(0, first_pos - nested_name.data());
+    const char * begin = name.data();
+    const char * pos = begin;
+    const char * end = begin + name.size();
+
+    if (pos >= end || !isValidIdentifierBegin(*pos))
+        return {name, {}};
+
+    ++pos;
+
+    while (pos < end && isWordCharASCII(*pos))
+        ++pos;
+
+    if (pos >= end || *pos != '.')
+        return {name, {}};
+
+    const char * first_end = pos;
+    ++pos;
+    const char * second_begin = pos;
+
+    if (pos >= end || !isValidIdentifierBegin(*pos))
+        return {name, {}};
+
+    ++pos;
+
+    while (pos < end && isWordCharASCII(*pos))
+        ++pos;
+
+    if (pos != end)
+        return {name, {}};
+
+    return {{ begin, first_end }, { second_begin, end }};
 }
 
 
-std::string extractElementName(const std::string & nested_name)
+std::string extractTableName(const std::string & nested_name)
 {
-    const char * first_pos = strchr(nested_name.data(), '.');
-    const char * last_pos = strrchr(nested_name.data(), '.');
-    if (first_pos != last_pos)
-        throw Exception("Invalid nested column name: " + nested_name, ErrorCodes::INVALID_NESTED_NAME);
-    return last_pos == nullptr ? nested_name : nested_name.substr(last_pos - nested_name.data() + 1);
+    auto splitted = splitName(nested_name);
+    return splitted.first;
 }
 
 
@@ -79,7 +100,31 @@ NamesAndTypesList flatten(const NamesAndTypesList & names_and_types)
 
 NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 {
-    return names_and_types; // TODO
+    NamesAndTypesList res;
+
+    std::map<std::string, NamesAndTypesList> nested;
+    for (const auto & name_type : names_and_types)
+    {
+        bool collected = false;
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
+        {
+            auto splitted = splitName(name_type.name);
+            if (!splitted.second.empty())
+            {
+                nested[splitted.first].emplace_back(splitted.second, type_arr->getNestedType());
+                collected = true;
+            }
+        }
+
+        if (!collected)
+            res.push_back(name_type);
+    }
+
+    for (const auto & name_elems : nested)
+        res.emplace_back(name_elems.first, std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(name_elems.second.getTypes(), name_elems.second.getNames())));
+
+    return res;
 }
 
 }
