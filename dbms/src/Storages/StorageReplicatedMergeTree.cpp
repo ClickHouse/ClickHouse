@@ -2363,7 +2363,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         if (!partition)
         {
             selected = merger.selectPartsToMerge(
-                future_merged_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
+                future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
         }
         else
         {
