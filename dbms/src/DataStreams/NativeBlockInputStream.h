@@ -81,6 +81,8 @@ public:
 
     static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
 
+    Block getHeader() override;
+
 protected:
     Block readImpl() override;
 

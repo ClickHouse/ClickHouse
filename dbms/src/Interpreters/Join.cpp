@@ -1045,6 +1045,8 @@ public:
         return res.str();
     }
 
+    Block getHeader() override { return result_sample_block; };
+
 
 protected:
     Block readImpl() override

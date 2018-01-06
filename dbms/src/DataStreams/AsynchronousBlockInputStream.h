@@ -80,6 +80,9 @@ public:
     }
 
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
+
     ~AsynchronousBlockInputStream() override
     {
         if (started)

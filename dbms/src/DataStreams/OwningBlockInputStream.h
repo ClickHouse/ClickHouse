@@ -20,6 +20,8 @@ public:
         children.push_back(stream);
     }
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
 private:
     Block readImpl() override { return stream->read(); }
 

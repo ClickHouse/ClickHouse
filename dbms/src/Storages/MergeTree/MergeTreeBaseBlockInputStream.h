@@ -31,6 +31,8 @@ public:
 
     ~MergeTreeBaseBlockInputStream() override;
 
+    Block getHeader() override { return storage.getSampleBlock(); };
+
 protected:
 
     Block readImpl() override final;

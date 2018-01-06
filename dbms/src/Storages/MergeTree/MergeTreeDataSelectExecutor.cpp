@@ -507,7 +507,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
           * They are done before the execution of the pipeline; they can not be interrupted; during the computation, packets of progress are not sent.
           */
         if (!prewhere_subqueries.empty())
-            CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(), prewhere_subqueries, settings.limits).read();
+            CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(Block()), prewhere_subqueries, settings.limits).read();
     }
 
     RangesInDataParts parts_with_ranges;

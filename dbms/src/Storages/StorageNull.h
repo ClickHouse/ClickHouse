@@ -30,7 +30,7 @@ public:
         size_t,
         unsigned) override
     {
-        return { std::make_shared<NullBlockInputStream>() };
+        return { std::make_shared<NullBlockInputStream>(Block()) };
     }
 
     BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override

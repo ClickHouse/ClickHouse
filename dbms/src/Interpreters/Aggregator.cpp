@@ -88,31 +88,54 @@ void AggregatedDataVariants::convertToTwoLevel()
 }
 
 
-void Aggregator::Params::calculateColumnNumbers(const Block & block)
+Block Aggregator::getHeader(bool final) const
 {
-    if (keys.empty() && !key_names.empty())
-        for (Names::const_iterator it = key_names.begin(); it != key_names.end(); ++it)
-            keys.push_back(block.getPositionByName(*it));
+    Block res;
 
-    for (AggregateDescriptions::iterator it = aggregates.begin(); it != aggregates.end(); ++it)
-        if (it->arguments.empty() && !it->argument_names.empty())
-            for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
-                it->arguments.push_back(block.getPositionByName(*jt));
+    if (params.src_header)
+    {
+        for (size_t i = 0; i < params.keys_size; ++i)
+            res.insert(params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty());
+
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            ColumnWithTypeAndName col;
+            col.name = params.aggregates[i].column_name;
+
+            size_t arguments_size = params.aggregates[i].arguments.size();
+            DataTypes argument_types(arguments_size);
+            for (size_t j = 0; j < arguments_size; ++j)
+                argument_types[j] = params.src_header.safeGetByPosition(params.aggregates[i].arguments[j]).type;
+
+            if (final)
+                col.type = params.aggregates[i].function->getReturnType();
+            else
+                col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
+
+            res.insert(std::move(col));
+        }
+    }
+    else if (params.intermediate_header)
+    {
+        res = params.intermediate_header.cloneEmpty();
+
+        if (final)
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                res.safeGetByPosition(params.keys_size + i).type = params.aggregates[i].function->getReturnType();
+    }
+
+    /// All columns are non-constant in result.
+    for (auto & elem : res)
+        elem.column = nullptr;
+
+    return res;
 }
 
 
-void Aggregator::initialize(const Block & block)
+Aggregator::Aggregator(const Params & params_)
+    : params(params_),
+    isCancelled([]() { return false; })
 {
-    if (isCancelled())
-        return;
-
-    std::lock_guard<std::mutex> lock(mutex);
-
-    if (initialized)
-        return;
-
-    initialized = true;
-
     if (current_memory_tracker)
         memory_usage_before_aggregation = current_memory_tracker->get();
 
@@ -133,57 +156,6 @@ void Aggregator::initialize(const Block & block)
         if (!params.aggregates[i].function->hasTrivialDestructor())
             all_aggregates_has_trivial_destructor = false;
     }
-
-    if (isCancelled())
-        return;
-
-    /** All below, if non-empty block passed.
-      * (it doesn't needed in methods that merging blocks with aggregation states).
-      */
-    if (!block)
-        return;
-
-    /// Transform names of columns to numbers.
-    params.calculateColumnNumbers(block);
-
-    if (isCancelled())
-        return;
-
-    /// Create "header" block, describing result.
-    if (!sample)
-    {
-        for (size_t i = 0; i < params.keys_size; ++i)
-        {
-            sample.insert(block.safeGetByPosition(params.keys[i]).cloneEmpty());
-            if (ColumnPtr converted = sample.safeGetByPosition(i).column->convertToFullColumnIfConst())
-                sample.safeGetByPosition(i).column = converted;
-        }
-
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-        {
-            ColumnWithTypeAndName col;
-            col.name = params.aggregates[i].column_name;
-
-            size_t arguments_size = params.aggregates[i].arguments.size();
-            DataTypes argument_types(arguments_size);
-            for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = block.safeGetByPosition(params.aggregates[i].arguments[j]).type;
-
-            col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
-            col.column = col.type->createColumn();
-
-            sample.insert(std::move(col));
-        }
-    }
-}
-
-
-void Aggregator::setSampleBlock(const Block & block)
-{
-    std::lock_guard<std::mutex> lock(mutex);
-
-    if (!sample)
-        sample = block.cloneEmpty();
 }
 
 
@@ -711,8 +683,6 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
     Sizes & key_sizes, StringRefs & key,
     bool & no_more_keys)
 {
-    initialize(block);
-
     if (isCancelled())
         return true;
 
@@ -1174,9 +1144,11 @@ Block Aggregator::prepareBlockAndFill(
     MutableColumns final_aggregate_columns(params.aggregates_size);
     AggregateColumnsData aggregate_columns_data(params.aggregates_size);
 
+    Block header = getHeader(final);
+
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = sample.safeGetByPosition(i).column->cloneEmpty();
+        key_columns[i] = header.safeGetByPosition(i).type->createColumn();
         key_columns[i]->reserve(rows);
     }
 
@@ -1184,7 +1156,7 @@ Block Aggregator::prepareBlockAndFill(
     {
         if (!final)
         {
-            aggregate_columns[i] = sample.safeGetByPosition(i + params.keys_size).column->cloneEmpty();
+            aggregate_columns[i] = header.safeGetByPosition(i + params.keys_size).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
@@ -1213,7 +1185,7 @@ Block Aggregator::prepareBlockAndFill(
 
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, data_variants.key_sizes, final);
 
-    Block res = sample.cloneEmpty();
+    Block res = header.cloneEmpty();
 
     for (size_t i = 0; i < params.keys_size; ++i)
         res.getByPosition(i).column = std::move(key_columns[i]);
@@ -1221,18 +1193,13 @@ Block Aggregator::prepareBlockAndFill(
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         if (final)
-        {
-            res.getByPosition(i + params.keys_size).type = aggregate_functions[i]->getReturnType();
             res.getByPosition(i + params.keys_size).column = std::move(final_aggregate_columns[i]);
-        }
         else
-        {
             res.getByPosition(i + params.keys_size).column = std::move(aggregate_columns[i]);
-        }
     }
 
     /// Change the size of the columns-constants in the block.
-    size_t columns = sample.columns();
+    size_t columns = header.columns();
     for (size_t i = 0; i < columns; ++i)
         if (res.getByPosition(i).column->isColumnConst())
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
@@ -1660,6 +1627,8 @@ public:
         return res.str();
     }
 
+    Block getHeader() override { return aggregator.getHeader(final); }
+
     ~MergingAndConvertingBlockInputStream()
     {
         LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
@@ -1846,7 +1815,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
             non_empty_data.push_back(data);
 
     if (non_empty_data.empty())
-        return std::make_unique<NullBlockInputStream>();
+        return std::make_unique<NullBlockInputStream>(getHeader(final));
 
     if (non_empty_data.size() > 1)
     {
@@ -2029,11 +1998,6 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
     StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
 
-    initialize({});
-
-    if (isCancelled())
-        return;
-
     /** If the remote servers used a two-level aggregation method,
       *  then blocks will contain information about the number of the bucket.
       * Then the calculations can be parallelized by buckets.
@@ -2062,11 +2026,11 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
     if (bucket_to_blocks.empty())
         return;
 
-    setSampleBlock(bucket_to_blocks.begin()->second.front());
+    Block header = getHeader(true);
 
     /// How to perform the aggregation?
     for (size_t i = 0; i < params.keys_size; ++i)
-        key_columns[i] = sample.safeGetByPosition(i).column.get();
+        key_columns[i] = header.safeGetByPosition(i).column.get();
 
     Sizes key_sizes;
     AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
@@ -2217,12 +2181,11 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
 
-    initialize({});
-    setSampleBlock(blocks.front());
+    Block header = getHeader(true);
 
     /// How to perform the aggregation?
     for (size_t i = 0; i < params.keys_size; ++i)
-        key_columns[i] = sample.safeGetByPosition(i).column.get();
+        key_columns[i] = header.safeGetByPosition(i).column.get();
 
     Sizes key_sizes;
     AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
@@ -2377,9 +2340,6 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
     if (!block)
         return {};
 
-    initialize({});
-    setSampleBlock(block);
-
     AggregatedDataVariants data;
 
     StringRefs key(params.keys_size);
@@ -2500,18 +2460,9 @@ String Aggregator::getID() const
 {
     std::stringstream res;
 
-    if (params.keys.empty())
-    {
-        res << "key_names";
-        for (size_t i = 0; i < params.key_names.size(); ++i)
-            res << ", " << params.key_names[i];
-    }
-    else
-    {
-        res << "keys";
-        for (size_t i = 0; i < params.keys.size(); ++i)
-            res << ", " << params.keys[i];
-    }
+    res << "keys";
+    for (size_t i = 0; i < params.keys.size(); ++i)
+        res << ", " << params.keys[i];
 
     res << ", aggregates";
     for (size_t i = 0; i < params.aggregates_size; ++i)

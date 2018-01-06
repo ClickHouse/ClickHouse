@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int INCORRECT_INDEX;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 NativeBlockInputStream::NativeBlockInputStream(
@@ -47,6 +48,19 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 
     if (column.size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
+}
+
+
+Block NativeBlockInputStream::getHeader()
+{
+    /// Note: we may read first block and stash it for further use just to get header.
+    if (!use_index)
+        throw Exception("Method getHeader for NativeBlockInputStream requires index", ErrorCodes::NOT_IMPLEMENTED);
+
+    Block res;
+    for (const auto & column : index_block_it->columns)
+        res.insert({ nullptr, DataTypeFactory::instance().get(column.type), column.name });
+    return res;
 }
 
 

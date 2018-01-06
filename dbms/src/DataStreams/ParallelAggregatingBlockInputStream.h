@@ -31,6 +31,8 @@ public:
 
     void cancel() override;
 
+    Block getHeader() override;
+
 protected:
     /// Do nothing that preparation to execution of the query be done in parallel, in ParallelInputsProcessor.
     void readPrefix() override

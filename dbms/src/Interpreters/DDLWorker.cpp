@@ -937,7 +937,7 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 public:
 
     DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
-    : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
+        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
@@ -965,6 +965,8 @@ public:
     {
         return "DDLQueryStatusInputSream(" + node_path + ")";
     }
+
+    Block getHeader() override { return sample; };
 
     Block readImpl() override
     {

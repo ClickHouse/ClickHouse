@@ -48,6 +48,13 @@ class IBlockInputStream : private boost::noncopyable
 public:
     IBlockInputStream() {}
 
+    /** Get data structure of the stream in a form of "header" block (it is also called "sample block").
+      * Header block contains column names, data types, and constant columns.
+      * If the column is not constant (and not dummy), then the header block will contain nullptr instead of column.
+      * It is guaranteed that method "read" returns blocks of exactly that structure.
+      */
+    virtual Block getHeader() = 0;
+
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
       * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.

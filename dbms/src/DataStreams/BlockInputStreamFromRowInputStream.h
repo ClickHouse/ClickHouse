@@ -38,6 +38,8 @@ public:
 
     RowInputStreamPtr & getRowInput() { return row_input; }
 
+    Block getHeader() override { return sample; }
+
 protected:
     Block readImpl() override;
 

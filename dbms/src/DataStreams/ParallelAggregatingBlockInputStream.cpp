@@ -29,6 +29,12 @@ ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
 }
 
 
+Block ParallelAggregatingBlockInputStream::getHeader()
+{
+    return aggregator.getHeader(final);
+}
+
+
 String ParallelAggregatingBlockInputStream::getID() const
 {
     std::stringstream res;

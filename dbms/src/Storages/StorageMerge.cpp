@@ -247,7 +247,7 @@ BlockInputStreams StorageMerge::read(
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
-                auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
+                auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>(getSampleBlock()) : streams.front();
                 if (!streams.empty())
                 {
                     /// will throw if some columns not convertible

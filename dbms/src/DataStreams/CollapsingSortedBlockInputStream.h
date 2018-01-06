@@ -51,6 +51,8 @@ public:
         return res.str();
     }
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;

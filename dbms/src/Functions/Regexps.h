@@ -11,8 +11,8 @@ namespace ProfileEvents
 }
 
 
-namespace DB {
-
+namespace DB
+{
 
 namespace Regexps
 {

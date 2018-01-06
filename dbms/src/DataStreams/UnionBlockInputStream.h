@@ -139,6 +139,8 @@ public:
         return doGetBlockExtraInfo();
     }
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
 protected:
     void finalize()
     {

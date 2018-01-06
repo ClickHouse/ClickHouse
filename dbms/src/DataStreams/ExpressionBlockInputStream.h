@@ -24,6 +24,7 @@ public:
     String getName() const override;
     String getID() const override;
     const Block & getTotals() override;
+    Block getHeader() override;
 
 protected:
     Block readImpl() override;

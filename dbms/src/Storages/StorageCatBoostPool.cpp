@@ -59,6 +59,8 @@ public:
         reader->readSuffix();
     }
 
+    Block getHeader() override { return sample_block; };
+
 private:
     Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;

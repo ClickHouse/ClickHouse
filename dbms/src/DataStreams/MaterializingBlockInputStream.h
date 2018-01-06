@@ -13,6 +13,7 @@ public:
     MaterializingBlockInputStream(const BlockInputStreamPtr & input);
     String getName() const override;
     String getID() const override;
+    Block getHeader() override;
 
 protected:
     Block readImpl() override;

@@ -70,7 +70,7 @@ const Block & TotalsHavingBlockInputStream::getTotals()
                 addToTotals(current_totals, overflow_aggregates, nullptr);
         }
 
-        totals = header.cloneWithColumns(std::move(current_totals));
+        totals = unfinalized_header.cloneWithColumns(std::move(current_totals));
         finalize(totals);
     }
 
@@ -81,17 +81,26 @@ const Block & TotalsHavingBlockInputStream::getTotals()
 }
 
 
+Block TotalsHavingBlockInputStream::getHeader()
+{
+    unfinalized_header = children.at(0)->getHeader();
+    auto res = unfinalized_header;
+    finalize(res);
+    return res;
+}
+
+
 Block TotalsHavingBlockInputStream::readImpl()
 {
+    if (!unfinalized_header)
+        getHeader();
+
     Block finalized;
     Block block;
 
     while (1)
     {
         block = children[0]->read();
-
-        if (!header)
-            header = block.cloneEmpty();
 
         /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
         if (overflow_row && block && block.info.is_overflows)

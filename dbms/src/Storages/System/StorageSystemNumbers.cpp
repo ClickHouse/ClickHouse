@@ -15,11 +15,16 @@ public:
     NumbersBlockInputStream(size_t block_size_, size_t offset_, size_t step_)
         : block_size(block_size_), next(offset_), step(step_) {}
 
-    String getName() const { return "Numbers"; }
-    String getID() const { return "Numbers"; }
+    String getName() const override { return "Numbers"; }
+    String getID() const override { return "Numbers"; }
+
+    Block getHeader() override
+    {
+        return { ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), "number") };
+    }
 
 protected:
-    Block readImpl()
+    Block readImpl() override
     {
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();

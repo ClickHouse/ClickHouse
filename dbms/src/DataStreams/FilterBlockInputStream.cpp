@@ -23,10 +23,14 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     children.push_back(input);
 }
 
-FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name_)
-    : expression(expression_), filter_column(-1), filter_column_name(filter_column_name_)
+FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name)
+    : expression(expression_)
 {
     children.push_back(input);
+
+    /// Determine position of filter column.
+    Block src_header = input->getHeader();
+    filter_column = src_header.getPositionByName(filter_column_name);
 }
 
 
@@ -36,7 +40,7 @@ String FilterBlockInputStream::getName() const { return "Filter"; }
 String FilterBlockInputStream::getID() const
 {
     std::stringstream res;
-    res << "Filter(" << children.back()->getID() << ", " << expression->getID() << ", " << filter_column << ", " << filter_column_name << ")";
+    res << "Filter(" << children.back()->getID() << ", " << expression->getID() << ", " << filter_column << ")";
     return res.str();
 }
 
@@ -53,34 +57,39 @@ const Block & FilterBlockInputStream::getTotals()
 }
 
 
+Block FilterBlockInputStream::getHeader()
+{
+    auto res = children.back()->getHeader();
+    expression->execute(res);
+
+    /// Isn't the filter already constant?
+    ColumnPtr column = res.safeGetByPosition(filter_column).column;
+
+    if (!have_constant_filter_description)
+    {
+        have_constant_filter_description = true;
+        if (column)
+            constant_filter_description = ConstantFilterDescription(*column);
+    }
+
+    if (constant_filter_description.always_false
+        || constant_filter_description.always_true)
+        return res;
+
+    /// Replace the filter column to a constant with value 1.
+    auto res_filter_elem = res.getByPosition(filter_column);
+    res_filter_elem.column = res_filter_elem.type->createColumnConst(res.rows(), UInt64(1));
+    return res;
+}
+
+
 Block FilterBlockInputStream::readImpl()
 {
     Block res;
 
-    if (is_first)
+    if (!have_constant_filter_description)
     {
-        is_first = false;
-
-        const Block & sample_block = expression->getSampleBlock();
-
-        /// Find the current position of the filter column in the block.
-        /** sample_block has the result structure of evaluating the expression.
-          * But this structure does not necessarily match expression->execute(res) below,
-          *  because the expression can be applied to a block that also contains additional,
-          *  columns unnecessary for this expression, but needed later, in the next stages of the query execution pipeline.
-          * There will be no such columns in sample_block.
-          * Therefore, the position of the filter column in it can be different.
-          */
-        ssize_t filter_column_in_sample_block = filter_column;
-        if (filter_column_in_sample_block == -1)
-            filter_column_in_sample_block = sample_block.getPositionByName(filter_column_name);
-
-        /// Let's check if the filter column is a constant containing 0 or 1.
-        ColumnPtr column = sample_block.safeGetByPosition(filter_column_in_sample_block).column;
-
-        if (column)
-            constant_filter_description = ConstantFilterDescription(*column);
-
+        getHeader();
         if (constant_filter_description.always_false)
             return res;
     }
@@ -96,10 +105,6 @@ Block FilterBlockInputStream::readImpl()
 
         if (constant_filter_description.always_true)
             return res;
-
-        /// Find the current position of the filter column in the block.
-        if (filter_column == -1)
-            filter_column = res.getPositionByName(filter_column_name);
 
         size_t columns = res.columns();
         ColumnPtr column = res.safeGetByPosition(filter_column).column;

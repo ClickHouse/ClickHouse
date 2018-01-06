@@ -73,6 +73,8 @@ public:
         return res.str();
     }
 
+    Block getHeader() override { return storage.getSampleBlock(); };
+
 protected:
     Block readImpl() override;
 

@@ -67,6 +67,8 @@ public:
 
     void readSuffixImpl() override;
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
     /// for use in implementations of IColumn::gather()
     template <typename Column>
     void gather(Column & column_res);

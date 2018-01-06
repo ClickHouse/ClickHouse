@@ -31,6 +31,13 @@ public:
         return res.str();
     }
 
+    Block getHeader() override
+    {
+        Block res = children.back()->getHeader();
+        res.insert({nullptr, data_type, column_name});
+        return res;
+    }
+
 protected:
     Block readImpl() override
     {

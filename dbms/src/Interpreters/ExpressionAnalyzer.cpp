@@ -1373,8 +1373,9 @@ void ExpressionAnalyzer::optimizeGroupBy()
     if (!(select_query && select_query->group_expression_list))
         return;
 
-    const auto is_literal = [] (const ASTPtr& ast) {
-        return typeid_cast<const ASTLiteral*>(ast.get());
+    const auto is_literal = [] (const ASTPtr & ast)
+    {
+        return typeid_cast<const ASTLiteral *>(ast.get());
     };
 
     auto & group_exprs = select_query->group_expression_list->children;
