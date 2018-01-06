@@ -46,6 +46,10 @@ target_link_libraries (clickhouse-format-lib clickhouse_common_io ${Boost_PROGRA
 if (USE_EMBEDDED_COMPILER)
     link_directories (${LLVM_LIBRARY_DIRS})
     add_subdirectory ("Compiler-${LLVM_VERSION}")
+    # Link clickhouse-clang binary even if CLICKHOUSE_SPLIT_BINARY is OFF
+    # in order to get system include paths for Interpreters/Compiler.cpp
+    add_executable (clickhouse-clang clickhouse-clang.cpp)
+    target_link_libraries (clickhouse-clang clickhouse-compiler-lib)
 endif ()
 
 if (CLICKHOUSE_SPLIT_BINARY)
@@ -70,8 +74,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-extract-from-config clickhouse-format)
 
     if (USE_EMBEDDED_COMPILER)
-        add_executable (clickhouse-clang clickhouse-clang.cpp)
-        target_link_libraries (clickhouse-clang clickhouse-compiler-lib)
+        # clickhouse-clang is linked above
         add_executable (clickhouse-lld clickhouse-lld.cpp)
         target_link_libraries (clickhouse-lld clickhouse-compiler-lib)
         install (TARGETS clickhouse-clang clickhouse-lld RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)

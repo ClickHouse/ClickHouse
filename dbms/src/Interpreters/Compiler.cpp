@@ -222,23 +222,10 @@ void Compiler::compile(
             INTERNAL_COMPILER_EXECUTABLE
             " " INTERNAL_COMPILER_FLAGS
 
-
-    #if INTERNAL_COMPILER_CUSTOM_ROOT
-            /// To get correct order merge this results carefully:
-            /// echo | clang -x c++ -E -Wp,-v -
-            /// echo | g++ -x c++ -E -Wp,-v -
-
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE "/c++/*"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/backward"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/clang/*/include"                  /// if compiler is clang (from package)
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include"                /// if clang installed manually
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include-fixed"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include"                            /// if something installed manually
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include"
-    #endif
+            #if USE_EMBEDDED_COMPILER
+            /// Contains `echo "" | clickhouse-clang -x c++ -E -Wp,-v -`
+            #include "CompilerIncludes.h"
+            #endif /* USE_EMBEDDED_COMPILER */
             " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
             " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
             " -I " INTERNAL_COMPILER_HEADERS "/contrib/libpcg-random/include/"
