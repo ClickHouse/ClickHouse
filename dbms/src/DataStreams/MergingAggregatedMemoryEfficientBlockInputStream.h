@@ -80,6 +80,8 @@ public:
       */
     void cancel() override;
 
+    Block getHeader() override;
+
 protected:
     Block readImpl() override;
 

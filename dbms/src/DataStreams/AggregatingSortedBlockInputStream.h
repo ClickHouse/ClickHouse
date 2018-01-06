@@ -49,6 +49,8 @@ public:
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;

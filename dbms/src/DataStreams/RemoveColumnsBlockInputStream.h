@@ -34,6 +34,17 @@ public:
         return res.str();
     }
 
+    Block getHeader() override
+    {
+        Block res = children.back()->getHeader();
+
+        for (const auto & it : columns_to_remove)
+            if (res.has(it))
+                res.erase(it);
+
+        return res;
+    }
+
 protected:
     Block readImpl() override
     {

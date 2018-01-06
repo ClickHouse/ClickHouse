@@ -138,7 +138,8 @@ void DatabaseMemory::shutdown()
         tables_snapshot = tables;
     }
 
-    for (const auto & kv: tables_snapshot) {
+    for (const auto & kv: tables_snapshot)
+    {
         kv.second->shutdown();
     }
 

@@ -1,4 +1,6 @@
 #include <DataStreams/LimitByBlockInputStream.h>
+#include <Common/SipHash.h>
+
 
 namespace DB
 {

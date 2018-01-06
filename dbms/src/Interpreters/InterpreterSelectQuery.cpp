@@ -379,8 +379,8 @@ BlockIO InterpreterSelectQuery::execute()
     if (hasNoData())
     {
         BlockIO res;
-        res.in = std::make_shared<NullBlockInputStream>();
         res.in_sample = getSampleBlock();
+        res.in = std::make_shared<NullBlockInputStream>(res.in_sample);
         return res;
     }
 
@@ -938,6 +938,15 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
     AggregateDescriptions aggregates;
     query_analyzer->getAggregateInfo(key_names, aggregates);
 
+    Block header = streams[0]->getHeader();
+    ColumnNumbers keys;
+    for (const auto & name : key_names)
+        keys.push_back(header.getPositionByName(name));
+    for (auto & descr : aggregates)
+        if (descr.arguments.empty())
+            for (const auto & name : descr.argument_names)
+                descr.arguments.push_back(header.getPositionByName(name));
+
     const Settings & settings = context.getSettingsRef();
 
     /** Two-level aggregation is useful in two cases:
@@ -946,7 +955,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
       */
     bool allow_to_use_two_level_group_by = streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
 
-    Aggregator::Params params(key_names, aggregates,
+    Aggregator::Params params(header, keys, aggregates,
         overflow_row, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
@@ -990,6 +999,15 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
     AggregateDescriptions aggregates;
     query_analyzer->getAggregateInfo(key_names, aggregates);
 
+    Block header = streams[0]->getHeader();
+    ColumnNumbers keys;
+    for (const auto & name : key_names)
+        keys.push_back(header.getPositionByName(name));
+    for (auto & descr : aggregates)
+        if (descr.arguments.empty())
+            for (const auto & name : descr.argument_names)
+                descr.arguments.push_back(header.getPositionByName(name));
+
     /** There are two modes of distributed aggregation.
       *
       * 1. In different threads read from the remote servers blocks.
@@ -1005,7 +1023,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(key_names, aggregates, overflow_row);
+    Aggregator::Params params(header, keys, aggregates, overflow_row);
 
     const Settings & settings = context.getSettingsRef();
 

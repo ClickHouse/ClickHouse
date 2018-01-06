@@ -108,7 +108,8 @@ public:
     ~ReadBufferFromKafkaConsumer() { reset(); }
 
     /// Commit messages read with this consumer
-    void commit() {
+    void commit()
+    {
         LOG_TRACE(log, "Committing " << read_messages << " messages");
         if (read_messages == 0)
             return;
@@ -174,6 +175,8 @@ public:
 
         return reader->read();
     }
+
+    Block getHeader() override { return storage.getSampleBlock(); };
 
     void readPrefixImpl() override
     {

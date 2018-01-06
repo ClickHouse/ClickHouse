@@ -6,6 +6,11 @@
 namespace DB
 {
 
+Block MergingAggregatedBlockInputStream::getHeader()
+{
+    return aggregator.getHeader(final);
+}
+
 
 Block MergingAggregatedBlockInputStream::readImpl()
 {

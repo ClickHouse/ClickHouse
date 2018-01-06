@@ -157,6 +157,8 @@ public:
         return reader->read();
     }
 
+    Block getHeader() override { return storage.getSampleBlock(); };
+
     void readPrefixImpl() override
     {
         reader->readPrefix();

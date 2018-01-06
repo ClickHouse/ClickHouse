@@ -25,6 +25,8 @@ public:
 
     String getID() const override;
 
+    Block getHeader() override { return header; }
+
 protected:
     Block readImpl() override;
 
@@ -52,6 +54,7 @@ private:
     void buildActions(const Block & in_sample, const Block & out_sample);
 
 private:
+    Block header;
     Actions actions;
     std::vector<std::optional<String>> rename;
     bool must_transform = false;

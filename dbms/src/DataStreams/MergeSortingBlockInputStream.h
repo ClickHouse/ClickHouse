@@ -39,6 +39,8 @@ public:
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
 protected:
     Block readImpl() override;
 
@@ -95,6 +97,8 @@ public:
     bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
+
+    Block getHeader() override { return children.at(0)->getHeader(); }
 
 protected:
     Block readImpl() override;

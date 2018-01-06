@@ -15,13 +15,14 @@ protected:
 
     virtual Block getBlock(size_t start, size_t length) const = 0;
 
+    Block getHeader() override;
+
 private:
     const size_t rows_count;
     const size_t max_block_size;
-    size_t next_row;
+    size_t next_row = 0;
 
     Block readImpl() override;
-    void readPrefixImpl() override { next_row = 0; }
 };
 
 }

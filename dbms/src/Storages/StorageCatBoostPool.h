@@ -45,7 +45,8 @@ private:
 
     ColumnTypesMap getColumnTypesMap() const
     {
-        return {
+        return
+        {
                 {"Target", DatasetColumnType::Target},
                 {"Num", DatasetColumnType::Num},
                 {"Categ", DatasetColumnType::Categ},

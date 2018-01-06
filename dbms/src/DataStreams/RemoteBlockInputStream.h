@@ -78,6 +78,8 @@ public:
         return multiplexed_connections->getBlockExtraInfo();
     }
 
+    Block getHeader() override;
+
 protected:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
@@ -95,10 +97,14 @@ protected:
 private:
     void sendQuery();
 
+    Block receiveBlock();
+
     /// If wasn't sent yet, send request to cancell all connections to replicas
     void tryCancel(const char * reason);
 
 private:
+    Block header;
+
     std::function<std::unique_ptr<MultiplexedConnections>()> create_multiplexed_connections;
 
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;

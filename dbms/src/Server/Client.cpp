@@ -92,7 +92,8 @@ public:
 
 private:
     using StringSet = std::unordered_set<String>;
-    StringSet exit_strings {
+    StringSet exit_strings
+    {
         "exit", "quit", "logout",
         "учше", "йгше", "дщпщге",
         "exit;", "quit;", "logout;",

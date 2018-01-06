@@ -35,6 +35,8 @@ public:
         return res.str();
     }
 
+    Block getHeader() override { return {}; }
+
 protected:
     Block readImpl() override
     {

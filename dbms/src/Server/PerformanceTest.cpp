@@ -599,7 +599,8 @@ private:
     void removeConfigurationsIf(
         std::vector<XMLConfigurationPtr> & configs, FilterType filter_type, const Strings & values, bool leave = false)
     {
-        auto checker = [&filter_type, &values, &leave](XMLConfigurationPtr & config) {
+        auto checker = [&filter_type, &values, &leave](XMLConfigurationPtr & config)
+        {
             if (values.size() == 0)
                 return false;
 
@@ -629,7 +630,8 @@ private:
             if (filter_type == FilterType::Name_regexp)
             {
                 String config_name = config->getString("name", "");
-                auto regex_checker = [&config_name](const String & name_regexp) {
+                auto regex_checker = [&config_name](const String & name_regexp)
+                {
                     std::regex pattern(name_regexp);
                     return std::regex_search(config_name, pattern);
                 };
@@ -915,7 +917,8 @@ private:
 
             auto queries_pre_format = queries;
             queries.clear();
-            for (const auto & query : queries_pre_format) {
+            for (const auto & query : queries_pre_format)
+            {
                 auto formatted = formatQueries(query, substitutions);
                 queries.insert(queries.end(), formatted.begin(), formatted.end());
             }

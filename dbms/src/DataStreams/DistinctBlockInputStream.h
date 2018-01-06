@@ -24,6 +24,8 @@ public:
 
     String getID() const override;
 
+    Block getHeader() override { return children.at(0)->getHeader(); }
+
 protected:
     Block readImpl() override;
 

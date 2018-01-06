@@ -22,6 +22,18 @@ String MaterializingBlockInputStream::getID() const
     return res.str();
 }
 
+Block MaterializingBlockInputStream::getHeader()
+{
+    Block res = children.back()->getHeader();
+
+    /// Constant columns become non constant.
+    for (auto & elem : res)
+        if (!elem.column->isColumnConst())
+            elem.column = nullptr;
+
+    return res;
+}
+
 Block MaterializingBlockInputStream::readImpl()
 {
     return materializeBlock(children.back()->read());

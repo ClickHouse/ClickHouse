@@ -29,6 +29,8 @@ public:
 
     String getID() const override;
 
+    Block getHeader() override { return description.sample_block; };
+
 private:
     Block readImpl() override;
 

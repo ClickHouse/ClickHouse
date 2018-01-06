@@ -148,7 +148,8 @@ void RemoteBlockInputStream::sendExternalTables()
     multiplexed_connections->sendExternalTablesData(external_tables_data);
 }
 
-Block RemoteBlockInputStream::readImpl()
+
+Block RemoteBlockInputStream::receiveBlock()
 {
     if (!sent_query)
     {
@@ -161,17 +162,14 @@ Block RemoteBlockInputStream::readImpl()
     while (true)
     {
         if (isCancelled())
-            return Block();
+            return {};
 
         Connection::Packet packet = multiplexed_connections->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                /// If the block is not empty and is not a header block
-                if (packet.block && (packet.block.rows() > 0))
-                    return packet.block;
-                break;  /// If the block is empty - we will receive other packets before EndOfStream.
+                return packet.block;
 
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
@@ -182,7 +180,7 @@ Block RemoteBlockInputStream::readImpl()
                 if (!multiplexed_connections->hasActiveConnections())
                 {
                     finished = true;
-                    return Block();
+                    return {};
                 }
                 break;
 
@@ -213,6 +211,42 @@ Block RemoteBlockInputStream::readImpl()
                 got_unknown_packet_from_replica = true;
                 throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         }
+    }
+}
+
+
+Block RemoteBlockInputStream::getHeader()
+{
+    if (header)
+        return header;
+
+    Block res = receiveBlock();
+    if (res.rows() > 0)
+        throw Exception("Logical error: the header block must be sent before data", ErrorCodes::LOGICAL_ERROR);
+
+    header = res;
+    return header;
+}
+
+
+Block RemoteBlockInputStream::readImpl()
+{
+    while (true)
+    {
+        Block res = receiveBlock();
+
+        if (finished)
+            return {};
+
+        /// If the block is empty - we will receive other packets before EndOfStream.
+        if (!res)
+            continue;
+
+        if (res.rows() > 0)
+            return res;
+
+        /// Block with zero rows is a header block. The data will be sent in a following packet.
+        header = res;
     }
 }
 

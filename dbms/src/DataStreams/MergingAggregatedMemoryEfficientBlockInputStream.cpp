@@ -90,6 +90,12 @@ MergingAggregatedMemoryEfficientBlockInputStream::MergingAggregatedMemoryEfficie
 }
 
 
+Block MergingAggregatedMemoryEfficientBlockInputStream::getHeader()
+{
+    return aggregator.getHeader(final);
+}
+
+
 String MergingAggregatedMemoryEfficientBlockInputStream::getID() const
 {
     std::stringstream res;

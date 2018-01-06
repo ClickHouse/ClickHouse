@@ -979,9 +979,13 @@ class Aggregator
 public:
     struct Params
     {
+        /// Data structure of source blocks.
+        Block src_header;
+        /// Data structure of intermediate blocks before merge.
+        Block intermediate_header;
+
         /// What to count.
-        Names key_names;
-        ColumnNumbers keys;            /// The column numbers are computed later.
+        ColumnNumbers keys;
         AggregateDescriptions aggregates;
         size_t keys_size;
         size_t aggregates_size;
@@ -1008,35 +1012,34 @@ public:
         const std::string tmp_path;
 
         Params(
-            const Names & key_names_, const AggregateDescriptions & aggregates_,
+            const Block & src_header_,
+            const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
             bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
             Compiler * compiler_, UInt32 min_count_to_compile_,
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_, const std::string & tmp_path_)
-            : key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
+            : src_header(src_header_),
+            keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
             compiler(compiler_), min_count_to_compile(min_count_to_compile_),
             group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_), tmp_path(tmp_path_)
         {
-            std::sort(key_names.begin(), key_names.end());
-            key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
-            keys_size = key_names.size();
         }
 
         /// Only parameters that matter during merge.
-        Params(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_)
-            : Params(key_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, "") {}
+        Params(const Block & intermediate_header_,
+            const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, "")
+        {
+            intermediate_header = intermediate_header_;
+        }
 
-        /// Compute the column numbers in `keys` and `aggregates`.
+        /// Calculate the column numbers in `keys` and `aggregates`.
         void calculateColumnNumbers(const Block & block);
     };
 
-    Aggregator(const Params & params_)
-        : params(params_),
-        isCancelled([]() { return false; })
-    {
-    }
+    Aggregator(const Params & params_);
 
     /// Aggregate the source. Get the result in the form of one of the data structures.
     void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);
@@ -1111,6 +1114,9 @@ public:
 
     const TemporaryFiles & getTemporaryFiles() const { return temporary_files; }
 
+    /// Get data structure of the result.
+    Block getHeader(bool final) const;
+
 protected:
     friend struct AggregatedDataVariants;
     friend class MergingAndConvertingBlockInputStream;
@@ -1145,11 +1151,7 @@ protected:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
-    /// To initialize from the first block when used concurrently.
-    bool initialized = false;
     std::mutex mutex;
-
-    Block sample;
 
     Logger * log = &Logger::get("Aggregator");
 
@@ -1178,16 +1180,6 @@ protected:
 
     /// For external aggregation.
     TemporaryFiles temporary_files;
-
-    /** If only the column names (key_names, and also aggregates[i].column_name) are specified, then calculate the column numbers.
-      * Generate block - sample of the result. It is used in the convertToBlocks, mergeAndConvertToBlocks methods.
-      */
-    void initialize(const Block & block);
-
-    /** Set the block - sample of the result,
-      *  only if it has not already been set.
-      */
-    void setSampleBlock(const Block & block);
 
     /** Select the aggregation method based on the number and types of keys. */
     AggregatedDataVariants::Type chooseAggregationMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes) const;

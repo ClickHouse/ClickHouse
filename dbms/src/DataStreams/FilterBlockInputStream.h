@@ -27,6 +27,7 @@ public:
     String getName() const override;
     String getID() const override;
     const Block & getTotals() override;
+    Block getHeader() override;
 
 protected:
     Block readImpl() override;
@@ -34,11 +35,9 @@ protected:
 private:
     ExpressionActionsPtr expression;
     ssize_t filter_column;
-    String filter_column_name;
-
-    bool is_first = true;
 
     ConstantFilterDescription constant_filter_description;
+    bool have_constant_filter_description = false;
 };
 
 }

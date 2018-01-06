@@ -20,8 +20,8 @@ namespace ErrorCodes
 class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_)
-        : column_names(column_names_), begin(begin_), end(end_), it(begin) {}
+    MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, const StorageMemory & storage_)
+        : column_names(column_names_), begin(begin_), end(end_), it(begin), storage(storage_) {}
 
     String getName() const override { return "Memory"; }
 
@@ -36,6 +36,8 @@ public:
         res << ")";
         return res.str();
     }
+
+    Block getHeader() override { return storage.getSampleBlock(); };
 
 protected:
     Block readImpl() override
@@ -62,6 +64,7 @@ private:
     BlocksList::iterator begin;
     BlocksList::iterator end;
     BlocksList::iterator it;
+    const StorageMemory & storage;
 };
 
 
@@ -121,7 +124,7 @@ BlockInputStreams StorageMemory::read(
         std::advance(begin, stream * size / num_streams);
         std::advance(end, (stream + 1) * size / num_streams);
 
-        res.push_back(std::make_shared<MemoryBlockInputStream>(column_names, begin, end));
+        res.push_back(std::make_shared<MemoryBlockInputStream>(column_names, begin, end, *this));
     }
 
     return res;

@@ -71,12 +71,12 @@ StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList 
 class BufferBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_)
-        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
+    BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage_)
+        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_), storage(storage_) {}
 
-    String getName() const { return "Buffer"; }
+    String getName() const override { return "Buffer"; }
 
-    String getID() const
+    String getID() const override
     {
         std::stringstream res;
         res << "Buffer(" << &buffer;
@@ -88,8 +88,10 @@ public:
         return res.str();
     }
 
+    Block getHeader() override { return storage.getSampleBlock(); };
+
 protected:
-    Block readImpl()
+    Block readImpl() override
     {
         Block res;
 
@@ -111,6 +113,7 @@ protected:
 private:
     Names column_names;
     StorageBuffer::Buffer & buffer;
+    const StorageBuffer & storage;
     bool has_been_read = false;
 };
 
@@ -140,7 +143,7 @@ BlockInputStreams StorageBuffer::read(
     BlockInputStreams streams_from_buffers;
     streams_from_buffers.reserve(num_shards);
     for (auto & buf : buffers)
-        streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf));
+        streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf, *this));
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
