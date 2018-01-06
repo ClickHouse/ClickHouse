@@ -187,6 +187,7 @@ debian/files
 dbms/src/Server/data/*
 dbms/src/Server/metadata/*
 dbms/src/Server/status
+dbms/src/Interpreters/CompilerIncludes.h
 config-9001.xml
 
 *-preprocessed.xml
