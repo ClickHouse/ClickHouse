@@ -88,6 +88,9 @@ list (APPEND dbms_headers
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
+if (USE_EMBEDDED_COMPILER)
+    list (APPEND dbms_headers ${CMAKE_CURRENT_SOURCE_DIR}/src/Interpreters/CompilerIncludes.h)
+endif ()
 
 list(REMOVE_ITEM clickhouse_common_io_sources
     src/Common/StringUtils.cpp)
