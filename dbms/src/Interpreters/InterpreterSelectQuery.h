@@ -80,6 +80,7 @@ public:
      */
     const BlockInputStreams & executeWithoutUnion();
 
+    /// TODO It's confusing that these methods return result structure for the case of QueryProcessingStage::Complete regardless to the actual 'to_stage'.
     DataTypes getReturnTypes();
     Block getSampleBlock();
 

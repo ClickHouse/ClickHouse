@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -169,6 +171,7 @@ Block RemoteBlockInputStream::receiveBlock()
         switch (packet.type)
         {
             case Protocol::Server::Data:
+                LOG_INFO(log, "received " << packet.block.rows() << ": " << packet.block.dumpStructure());
                 return packet.block;
 
             case Protocol::Server::Exception:
@@ -223,6 +226,8 @@ Block RemoteBlockInputStream::getHeader()
     Block res = receiveBlock();
     if (res.rows() > 0)
         throw Exception("Logical error: the header block must be sent before data", ErrorCodes::LOGICAL_ERROR);
+
+    DUMP(res);
 
     header = res;
     return header;

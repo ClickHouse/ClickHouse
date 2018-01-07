@@ -1,6 +1,7 @@
 #include <DataStreams/TotalsHavingBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
@@ -43,12 +44,13 @@ static void finalize(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         ColumnWithTypeAndName & current = block.safeGetByPosition(i);
-        const ColumnAggregateFunction * unfinalized_column = typeid_cast<const ColumnAggregateFunction *>(current.column.get());
+        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
 
-        if (unfinalized_column)
+        if (unfinalized_type)
         {
-            current.type = unfinalized_column->getAggregateFunction()->getReturnType();
-            current.column = unfinalized_column->convertToValues();
+            current.type = unfinalized_type->getReturnType();
+            if (current.column)
+                current.column = typeid_cast<const ColumnAggregateFunction &>(*current.column).convertToValues();
         }
     }
 }

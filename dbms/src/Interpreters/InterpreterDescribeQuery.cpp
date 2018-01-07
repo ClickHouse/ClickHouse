@@ -24,8 +24,6 @@ BlockIO InterpreterDescribeQuery::execute()
 {
     BlockIO res;
     res.in = executeImpl();
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 

@@ -1145,7 +1145,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         return io;
 
     auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, entry, context);
-    io.in_sample = stream->getSampleBlock();
     io.in = std::move(stream);
     return io;
 }

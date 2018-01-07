@@ -302,8 +302,16 @@ void TCPHandler::processOrdinaryQuery()
     if (state.io.in)
     {
         /// Send header-block, to allow client to prepare output format for data to send.
-        if (state.io.in_sample)
-            sendData(state.io.in_sample);
+        {
+            Block header = state.io.in->getHeader();
+
+            /// create non-zero columns so that SampleBlock can be
+            /// written (read) with BlockOut(In)putStreams
+            for (auto & elem : header)
+                elem.column = elem.type->createColumn();
+
+            sendData(header);
+        }
 
         AsynchronousBlockInputStream async_in(state.io.in);
         async_in.readPrefix();
@@ -709,7 +717,7 @@ bool TCPHandler::isQueryCancelled()
 }
 
 
-void TCPHandler::sendData(Block & block)
+void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput();
 

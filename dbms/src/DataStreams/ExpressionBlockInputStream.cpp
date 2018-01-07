@@ -33,9 +33,7 @@ const Block & ExpressionBlockInputStream::getTotals()
 
 Block ExpressionBlockInputStream::getHeader()
 {
-    auto res = children.back()->getHeader();
-    expression->execute(res);
-    return res;
+    return expression->getSampleBlock();
 }
 
 Block ExpressionBlockInputStream::readImpl()

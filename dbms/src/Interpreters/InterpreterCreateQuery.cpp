@@ -573,7 +573,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 columns.materialized_columns);
 
         BlockIO io;
-        io.in_sample = as_select_sample;
         io.in = std::make_shared<NullAndDoCopyBlockInputStream>(interpreter_select->execute().in, out);
 
         return io;

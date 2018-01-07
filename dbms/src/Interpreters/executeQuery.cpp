@@ -442,7 +442,7 @@ void executeQuery(
                 ? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->format).name
                 : context.getDefaultFormat();
 
-            BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in_sample);
+            BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 
             if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(streams.in.get()))
             {

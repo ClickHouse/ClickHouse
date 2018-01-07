@@ -187,25 +187,25 @@ BlockIO InterpreterKillQueryQuery::execute()
     ProcessList & process_list = context.getProcessList();
     QueryDescriptors queries_to_stop = extractQueriesExceptMeAndCheckAccess(processes_block, context);
 
-    res_io.in_sample = processes_block.cloneEmpty();
-    res_io.in_sample.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
+    auto header = processes_block.cloneEmpty();
+    header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
 
     if (!query.sync || query.test)
     {
-        MutableColumns res_columns = res_io.in_sample.cloneEmptyColumns();
+        MutableColumns res_columns = header.cloneEmptyColumns();
 
         for (const auto & query_desc : queries_to_stop)
         {
             auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
-            insertResultRow(query_desc.source_num, code, processes_block, res_io.in_sample, res_columns);
+            insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
         }
 
-        res_io.in = std::make_shared<OneBlockInputStream>(res_io.in_sample.cloneWithColumns(std::move(res_columns)));
+        res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
     }
     else
     {
         res_io.in = std::make_shared<SyncKillQueryInputStream>(
-            process_list, std::move(queries_to_stop), std::move(processes_block), res_io.in_sample);
+            process_list, std::move(queries_to_stop), std::move(processes_block), header);
     }
 
     return res_io;

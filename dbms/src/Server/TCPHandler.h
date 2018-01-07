@@ -130,7 +130,7 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(Block & block);    /// Write a block to the network.
+    void sendData(const Block & block);    /// Write a block to the network.
     void sendException(const Exception & e);
     void sendProgress();
     void sendEndOfStream();

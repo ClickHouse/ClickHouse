@@ -21,6 +21,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -44,6 +45,8 @@
 #include <Core/Field.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
+
+#include <Core/iostream_debug_helpers.h>
 
 
 namespace ProfileEvents
@@ -376,14 +379,6 @@ BlockIO InterpreterSelectQuery::execute()
 {
     (void) executeWithoutUnion();
 
-    if (hasNoData())
-    {
-        BlockIO res;
-        res.in_sample = getSampleBlock();
-        res.in = std::make_shared<NullBlockInputStream>(res.in_sample);
-        return res;
-    }
-
     executeUnion();
 
     /// Constraints on the result, the quota on the result, and also callback for progress.
@@ -407,8 +402,6 @@ BlockIO InterpreterSelectQuery::execute()
 
     BlockIO res;
     res.in = streams[0];
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 
@@ -543,14 +536,6 @@ void InterpreterSelectQuery::executeSingleQuery()
             chain.finalize();
             chain.clear();
         }
-
-        /** If there is no data.
-         *  This check is specially postponed slightly lower than it could be (immediately after executeFetchColumns),
-         *  for the query to be analyzed, and errors (for example, type mismatches) could be found in it.
-         *  Otherwise, the empty result could be returned for the incorrect query.
-         */
-        if (hasNoData())
-            return;
 
         /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
         if (has_where)
@@ -691,10 +676,6 @@ void InterpreterSelectQuery::executeSingleQuery()
         }
     }
 
-    /** If there is no data. */
-    if (hasNoData())
-        return;
-
     SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     if (!subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(subqueries_for_sets);
@@ -715,9 +696,6 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 {
-    if (!hasNoData())
-        return QueryProcessingStage::FetchColumns;
-
     /// The subquery interpreter, if the subquery
     std::optional<InterpreterSelectQuery> interpreter_subquery;
 
@@ -866,6 +844,19 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 
         streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
+        /// The storage has no data for this query.
+        if (streams.empty())
+        {
+            from_stage = QueryProcessingStage::FetchColumns;
+            Block header;
+            for (const auto & name : required_columns)
+            {
+                auto type = storage->getDataTypeByName(name);
+                header.insert({ type->createColumn(), type, name });
+            }
+            streams.emplace_back(std::make_shared<OneBlockInputStream>(header));
+        }
+
         if (alias_actions)
         {
             /// Wrap each stream returned from the table to calculate and add ALIAS columns
@@ -1000,13 +991,13 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
     query_analyzer->getAggregateInfo(key_names, aggregates);
 
     Block header = streams[0]->getHeader();
+
+    DUMP(header);
+    DUMP(key_names);
+
     ColumnNumbers keys;
     for (const auto & name : key_names)
         keys.push_back(header.getPositionByName(name));
-    for (auto & descr : aggregates)
-        if (descr.arguments.empty())
-            for (const auto & name : descr.argument_names)
-                descr.arguments.push_back(header.getPositionByName(name));
 
     /** There are two modes of distributed aggregation.
       *
@@ -1345,12 +1336,6 @@ void InterpreterSelectQuery::transformStreams(Transform && transform)
 
     if (stream_with_non_joined_data)
         transform(stream_with_non_joined_data);
-}
-
-
-bool InterpreterSelectQuery::hasNoData() const
-{
-    return streams.empty() && !stream_with_non_joined_data;
 }
 
 
