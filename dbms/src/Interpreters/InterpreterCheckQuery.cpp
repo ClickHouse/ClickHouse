@@ -244,7 +244,6 @@ BlockIO InterpreterCheckQuery::execute()
 
         BlockIO res;
         res.in = std::make_shared<OneBlockInputStream>(block);
-        res.in_sample = getSampleBlock();
 
         return res;
     }
@@ -256,7 +255,6 @@ BlockIO InterpreterCheckQuery::execute()
 
         BlockIO res;
         res.in = std::make_shared<OneBlockInputStream>(result);
-        res.in_sample = result.cloneEmpty();
 
         return res;
     }

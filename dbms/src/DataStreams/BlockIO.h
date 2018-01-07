@@ -21,7 +21,6 @@ struct BlockIO
     BlockInputStreamPtr in;
     BlockOutputStreamPtr out;
 
-    Block in_sample;    /// Example of a block to be read from `in`.
     Block out_sample;   /// Example of a block to be written to `out`.
 
     /// Callbacks for query logging could be set here.
@@ -51,7 +50,6 @@ struct BlockIO
         process_list_entry      = rhs.process_list_entry;
         in                      = rhs.in;
         out                     = rhs.out;
-        in_sample               = rhs.in_sample;
         out_sample              = rhs.out_sample;
 
         finish_callback         = rhs.finish_callback;

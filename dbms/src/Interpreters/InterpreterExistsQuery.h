@@ -25,7 +25,6 @@ private:
     ASTPtr query_ptr;
     const Context & context;
 
-    Block getSampleBlock();
     BlockInputStreamPtr executeImpl();
 };
 

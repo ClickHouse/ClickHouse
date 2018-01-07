@@ -29,7 +29,7 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     children.push_back(input);
 
     /// Determine position of filter column.
-    Block src_header = input->getHeader();
+    Block src_header = expression->getSampleBlock();
     filter_column = src_header.getPositionByName(filter_column_name);
 }
 
@@ -59,8 +59,7 @@ const Block & FilterBlockInputStream::getTotals()
 
 Block FilterBlockInputStream::getHeader()
 {
-    auto res = children.back()->getHeader();
-    expression->execute(res);
+    Block res = expression->getSampleBlock();
 
     /// Isn't the filter already constant?
     ColumnPtr column = res.safeGetByPosition(filter_column).column;
