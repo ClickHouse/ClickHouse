@@ -1064,7 +1064,8 @@ private:
     void onProgress(const Progress & value)
     {
         progress.incrementPiecewiseAtomically(value);
-        block_out_stream->onProgress(value);
+        if (block_out_stream)
+            block_out_stream->onProgress(value);
         writeProgress();
     }
 

@@ -46,8 +46,6 @@
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace ProfileEvents
 {
@@ -991,9 +989,6 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
     query_analyzer->getAggregateInfo(key_names, aggregates);
 
     Block header = streams[0]->getHeader();
-
-    DUMP(header);
-    DUMP(key_names);
 
     ColumnNumbers keys;
     for (const auto & name : key_names)

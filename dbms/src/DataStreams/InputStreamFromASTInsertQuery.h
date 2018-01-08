@@ -3,7 +3,7 @@
 #include <Parsers/IAST.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <cstddef>
-#include <optional>
+#include <memory>
 
 
 namespace DB
@@ -31,8 +31,8 @@ public:
     Block getHeader() override { return res_stream->getHeader(); }
 
 private:
-    std::optional<ReadBuffer> input_buffer_ast_part;
-    std::optional<ReadBuffer> input_buffer_contacenated;
+    std::unique_ptr<ReadBuffer> input_buffer_ast_part;
+    std::unique_ptr<ReadBuffer> input_buffer_contacenated;
 
     BlockInputStreamPtr res_stream;
 };
