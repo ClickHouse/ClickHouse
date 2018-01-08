@@ -310,7 +310,8 @@ void TCPHandler::processOrdinaryQuery()
             for (auto & elem : header)
                 elem.column = elem.type->createColumn();
 
-            sendData(header);
+            if (header)
+                sendData(header);
         }
 
         AsynchronousBlockInputStream async_in(state.io.in);
@@ -346,12 +347,12 @@ void TCPHandler::processOrdinaryQuery()
                 }
             }
 
-        /** If data has run out, we will send the profiling data and total values to
-          * the last zero block to be able to use
-          * this information in the suffix output of stream.
-          * If the request was interrupted, then `sendTotals` and other methods could not be called,
-          *  because we have not read all the data yet,
-          *  and there could be ongoing calculations in other threads at the same time.
+            /** If data has run out, we will send the profiling data and total values to
+              * the last zero block to be able to use
+              * this information in the suffix output of stream.
+              * If the request was interrupted, then `sendTotals` and other methods could not be called,
+              *  because we have not read all the data yet,
+              *  and there could be ongoing calculations in other threads at the same time.
               */
             if (!block && !isQueryCancelled())
             {

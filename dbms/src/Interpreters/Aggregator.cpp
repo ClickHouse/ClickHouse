@@ -23,8 +23,6 @@
 #include <Common/demangle.h>
 #include <Interpreters/config_compile.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace ProfileEvents
 {
@@ -119,7 +117,6 @@ Block Aggregator::getHeader(bool final) const
     }
     else if (params.intermediate_header)
     {
-        DUMP(params.intermediate_header);
         res = params.intermediate_header.cloneEmpty();
 
         if (final)
@@ -1147,11 +1144,7 @@ Block Aggregator::prepareBlockAndFill(
     MutableColumns final_aggregate_columns(params.aggregates_size);
     AggregateColumnsData aggregate_columns_data(params.aggregates_size);
 
-    DUMP(params.aggregates_size);
-
     Block header = getHeader(final);
-
-    DUMP(header);
 
     for (size_t i = 0; i < params.keys_size; ++i)
     {
@@ -1163,8 +1156,6 @@ Block Aggregator::prepareBlockAndFill(
     {
         if (!final)
         {
-            DUMP(header.safeGetByPosition(i + params.keys_size).type);
-
             aggregate_columns[i] = header.safeGetByPosition(i + params.keys_size).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
@@ -1234,8 +1225,6 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
 
             for (size_t i = 0; i < params.aggregates_size; ++i)
             {
-                DUMP4(i, final, aggregate_columns, offsets_of_aggregate_states);
-
                 if (!final)
                     aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
                 else
