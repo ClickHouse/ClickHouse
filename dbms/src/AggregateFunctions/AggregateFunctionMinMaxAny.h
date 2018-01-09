@@ -170,14 +170,14 @@ public:
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
+struct SingleValueDataString
 {
 private:
     using Self = SingleValueDataString;
 
     Int32 size = -1;    /// -1 indicates that there is no value.
     Int32 capacity = 0;    /// power of two or zero
-    char * __attribute__((__packed__, __aligned__(1))) large_data;
+    char * large_data;
 
 public:
     static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
