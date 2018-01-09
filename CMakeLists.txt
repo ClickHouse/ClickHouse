@@ -79,6 +79,13 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
+# Don't skip the full RPATH for the build tree to get working binaries
+# without running `make install`.
+set (CMAKE_SKIP_BUILD_RPATH OFF)
+
+# The RPATH to be used when installing
+set (CMAKE_INSTALL_RPATH "")
+
 if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "amd64.*|x86_64.*|AMD64.*")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
