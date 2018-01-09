@@ -219,9 +219,8 @@ endif ()
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
-add_subdirectory (tests)
-
 if (ENABLE_TESTS)
+    add_subdirectory (tests)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
