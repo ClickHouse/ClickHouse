@@ -109,4 +109,26 @@ struct ArraySinkSourceSelector
     }
 };
 
+template <typename Base>
+struct ArraySourcePairSelector
+{
+    template <typename ... Args>
+    static void select(IArraySource & first, IArraySource & second, Args && ... args)
+    {
+        GetArraySourceSelector<Base>::select(first, second, args ...);
+    }
+
+    template <typename FirstSource, typename ... Args>
+    static void selectImpl(FirstSource && first, IArraySource & second, Args && ... args)
+    {
+        GetArraySourceSelector<Base>::select(second, first, args ...);
+    }
+
+    template <typename SecondSource, typename FirstSource, typename ... Args>
+    static void selectImpl(SecondSource && second, FirstSource && first, Args && ... args)
+    {
+        Base::selectSourcePair(first, second, args ...);
+    }
+};
+
 }
