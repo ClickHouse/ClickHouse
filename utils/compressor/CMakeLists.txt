@@ -1,9 +1,10 @@
 find_package (Threads)
 
-add_executable (clickhouse-compressor main.cpp)
-target_link_libraries (clickhouse-compressor clickhouse-compressor-lib)
+add_executable (util-clickhouse-compressor main.cpp)
+target_link_libraries (util-clickhouse-compressor clickhouse-compressor-lib)
+set_target_properties(util-clickhouse-compressor PROPERTIES OUTPUT_NAME "clickhouse-compressor")
 
-install (TARGETS clickhouse-compressor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse-compressor)
+#install (TARGETS util-clickhouse-compressor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse-compressor)
 
 add_executable (zstd_test zstd_test.cpp)
 target_link_libraries (zstd_test ${ZSTD_LIBRARY} Threads::Threads)
