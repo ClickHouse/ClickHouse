@@ -63,23 +63,21 @@ public:
         return s.str();
     }
 
-    Block getHeader() override { return storage.getSampleBlock(); };
+    Block getHeader() override
+    {
+        start();
+
+        if (block_in)
+            return block_in->getHeader();
+        else
+            return {};
+    };
 
 protected:
     Block readImpl() override
     {
         Block res;
-
-        if (!started)
-        {
-            started = true;
-
-            data_in.emplace(
-                storage.full_path() + "data.bin", 0, 0,
-                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
-
-            block_in.emplace(*data_in, 0, true, index_begin, index_end);
-        }
+        start();
 
         if (block_in)
         {
@@ -112,6 +110,20 @@ private:
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
     std::optional<NativeBlockInputStream> block_in;
+
+    void start()
+    {
+        if (!started)
+        {
+            started = true;
+
+            data_in.emplace(
+                storage.full_path() + "data.bin", 0, 0,
+                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
+
+            block_in.emplace(*data_in, 0, true, index_begin, index_end);
+        }
+    }
 };
 
 

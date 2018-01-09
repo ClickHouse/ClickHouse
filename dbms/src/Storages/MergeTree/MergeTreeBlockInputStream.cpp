@@ -62,6 +62,13 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     setTotalRowsApprox(total_rows);
 }
 
+
+Block MergeTreeBlockInputStream::getHeader()
+{
+    return storage.getSampleBlockForColumns(ordered_names);
+}
+
+
 String MergeTreeBlockInputStream::getID() const
 {
     std::stringstream res;

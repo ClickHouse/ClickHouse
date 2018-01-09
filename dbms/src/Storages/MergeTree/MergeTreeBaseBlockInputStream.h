@@ -31,10 +31,7 @@ public:
 
     ~MergeTreeBaseBlockInputStream() override;
 
-    Block getHeader() override { return storage.getSampleBlock(); };
-
 protected:
-
     Block readImpl() override final;
 
     /// Creates new this->task, and initilizes readers
@@ -48,7 +45,6 @@ protected:
     void injectVirtualColumns(Block & block);
 
 protected:
-
     MergeTreeData & storage;
 
     ExpressionActionsPtr prewhere_actions;

@@ -93,7 +93,6 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-
     StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
         : storage(storage_)
     {
@@ -157,7 +156,7 @@ public:
         return reader->read();
     }
 
-    Block getHeader() override { return storage.getSampleBlock(); };
+    Block getHeader() override { return reader->getHeader(); };
 
     void readPrefixImpl() override
     {
