@@ -5,21 +5,12 @@ else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
 endif ()
 
-if (USE_EMBEDDED_COMPILER)
-    # Generate CompilerIncludes.h which contains all
-    # `-isystem` includes for bundled clickhouse-clang
-    add_custom_command(OUTPUT CompilerIncludes.h
-                       COMMAND ${PROJECT_SOURCE_DIR}/dbms/scripts/gen-compiler-includes.sh
-                               ${PROJECT_BINARY_DIR}/dbms/src/Server/clickhouse-clang
-                               > ${CMAKE_CURRENT_BINARY_DIR}/CompilerIncludes.h
-                       DEPENDS clickhouse-clang)
-endif ()
-
 set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
 set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
 set (INTERNAL_COMPILER_NO_WARNING OFF CACHE INTERNAL "")
 set (INTERNAL_COMPILER_HEADERS "${PATH_SHARE}/clickhouse/headers" CACHE STRING "")
 set (INTERNAL_COMPILER_HEADERS_ROOT "${INTERNAL_COMPILER_HEADERS}" CACHE STRING "")
+set (INTERNAL_COMPILER_CUSTOM_ROOT ON CACHE INTERNAL "")
 
 set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE} ${CXX_FLAGS_INTERNAL_COMPILER} -x c++ -march=native -fPIC -fvisibility=hidden -fno-implement-inlines -nostdinc -nostdinc++ -Wno-unused-command-line-argument -Bprefix=${PATH_SHARE}/clickhouse -isysroot=${INTERNAL_COMPILER_HEADERS_ROOT}" CACHE STRING "")
 string(REPLACE "-no-pie" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
