@@ -23,14 +23,14 @@ public:
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
-        const Names &,
+        const Names & column_names,
         const SelectQueryInfo &,
         const Context &,
         QueryProcessingStage::Enum &,
         size_t,
         unsigned) override
     {
-        return { std::make_shared<NullBlockInputStream>(Block()) };
+        return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
     }
 
     BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override

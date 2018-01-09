@@ -304,12 +304,6 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
-
-            /// create non-zero columns so that SampleBlock can be
-            /// written (read) with BlockOut(In)putStreams
-            for (auto & elem : header)
-                elem.column = elem.type->createColumn();
-
             if (header)
                 sendData(header);
         }
