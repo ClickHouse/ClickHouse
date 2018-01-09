@@ -36,6 +36,8 @@ public:
 
     Block getHeader() override
     {
+        std::cerr << "LazyBlockInputStream::getHeader()\n";
+
         init();
         if (!input)
             return {};
@@ -67,11 +69,15 @@ private:
         if (initialized)
             return;
 
+        std::cerr << "LazyBlockInputStream::init()\n";
+
         input = generator();
         initialized = true;
 
         if (!input)
             return;
+
+        std::cerr << "!\n";
 
         auto * p_input = dynamic_cast<IProfilingBlockInputStream *>(input.get());
 

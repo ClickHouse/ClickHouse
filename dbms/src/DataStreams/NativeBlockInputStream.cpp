@@ -59,7 +59,10 @@ Block NativeBlockInputStream::getHeader()
 
     Block res;
     for (const auto & column : index_block_it->columns)
-        res.insert({ nullptr, DataTypeFactory::instance().get(column.type), column.name });
+    {
+        auto type = DataTypeFactory::instance().get(column.type);
+        res.insert({ type->createColumn(), type, column.name });
+    }
     return res;
 }
 

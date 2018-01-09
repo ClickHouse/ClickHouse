@@ -28,13 +28,7 @@ Block DictionaryBlockInputStreamBase::readImpl()
 
 Block DictionaryBlockInputStreamBase::getHeader()
 {
-    Block block = getBlock(0, 0);
-
-    /// Columns are non constant. Reset them for header block.
-    for (auto & elem : block)
-        elem.column = nullptr;
-
-    return block;
+    return getBlock(0, 0);
 }
 
 }

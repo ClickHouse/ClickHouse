@@ -20,7 +20,7 @@ public:
 
     Block getHeader() override
     {
-        return { ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), "number") };
+        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
     }
 
 protected:

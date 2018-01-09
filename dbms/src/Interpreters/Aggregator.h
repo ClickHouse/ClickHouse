@@ -900,25 +900,25 @@ struct AggregatedDataVariants : private boost::noncopyable
     #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key32)            \
         M(key64)            \
-        M(key_string)        \
-        M(key_fixed_string)    \
-        M(keys128)            \
-        M(keys256)            \
-        M(hashed)            \
-        M(concat)            \
-        M(serialized)        \
-        M(nullable_keys128)    \
-        M(nullable_keys256)    \
+        M(key_string)       \
+        M(key_fixed_string) \
+        M(keys128)          \
+        M(keys256)          \
+        M(hashed)           \
+        M(concat)           \
+        M(serialized)       \
+        M(nullable_keys128) \
+        M(nullable_keys256) \
 
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
-        M(key8)                \
+        M(key8)             \
         M(key16)            \
         M(key64_hash64)     \
-        M(key_string_hash64) \
+        M(key_string_hash64)\
         M(key_fixed_string_hash64) \
-        M(keys128_hash64)     \
-        M(keys256_hash64)     \
-        M(concat_hash64)     \
+        M(keys128_hash64)   \
+        M(keys256_hash64)   \
+        M(concat_hash64)    \
         M(serialized_hash64) \
 
     #define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
@@ -943,16 +943,16 @@ struct AggregatedDataVariants : private boost::noncopyable
     void convertToTwoLevel();
 
     #define APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
-        M(key32_two_level)                \
-        M(key64_two_level)                \
-        M(key_string_two_level)            \
-        M(key_fixed_string_two_level)    \
-        M(keys128_two_level)            \
-        M(keys256_two_level)            \
-        M(hashed_two_level)                \
-        M(concat_two_level)                \
-        M(serialized_two_level)            \
-        M(nullable_keys128_two_level)    \
+        M(key32_two_level)            \
+        M(key64_two_level)            \
+        M(key_string_two_level)       \
+        M(key_fixed_string_two_level) \
+        M(keys128_two_level)          \
+        M(keys256_two_level)          \
+        M(hashed_two_level)           \
+        M(concat_two_level)           \
+        M(serialized_two_level)       \
+        M(nullable_keys128_two_level) \
         M(nullable_keys256_two_level)
 };
 
@@ -1182,7 +1182,7 @@ protected:
     TemporaryFiles temporary_files;
 
     /** Select the aggregation method based on the number and types of keys. */
-    AggregatedDataVariants::Type chooseAggregationMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes) const;
+    AggregatedDataVariants::Type chooseAggregationMethod(Sizes & key_sizes) const;
 
     /** Create states of aggregate functions for one key.
       */

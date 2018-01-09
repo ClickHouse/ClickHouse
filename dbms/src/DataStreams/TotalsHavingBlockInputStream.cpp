@@ -85,9 +85,11 @@ const Block & TotalsHavingBlockInputStream::getTotals()
 
 Block TotalsHavingBlockInputStream::getHeader()
 {
-    unfinalized_header = children.at(0)->getHeader();
-    auto res = unfinalized_header;
+    Block res = children.at(0)->getHeader();
+    unfinalized_header = res;
     finalize(res);
+    if (expression)
+        expression->execute(res);
     return res;
 }
 

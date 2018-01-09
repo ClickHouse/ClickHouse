@@ -907,7 +907,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 }
 
 
-void InterpreterSelectQuery::executeWhere(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeWhere(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
@@ -916,7 +916,7 @@ void InterpreterSelectQuery::executeWhere(ExpressionActionsPtr expression)
 }
 
 
-void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression, bool overflow_row, bool final)
+void InterpreterSelectQuery::executeAggregation(const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
     transformStreams([&](auto & stream)
     {
@@ -1034,7 +1034,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 }
 
 
-void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeHaving(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
@@ -1043,7 +1043,7 @@ void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
 }
 
 
-void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionActionsPtr expression, bool overflow_row)
+void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, const ExpressionActionsPtr & expression, bool overflow_row)
 {
     executeUnion();
 
@@ -1055,7 +1055,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionA
 }
 
 
-void InterpreterSelectQuery::executeExpression(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeExpression(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
@@ -1156,7 +1156,7 @@ void InterpreterSelectQuery::executeMergeSorted()
 }
 
 
-void InterpreterSelectQuery::executeProjection(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeProjection(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
