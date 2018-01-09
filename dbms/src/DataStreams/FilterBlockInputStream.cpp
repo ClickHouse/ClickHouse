@@ -59,7 +59,8 @@ const Block & FilterBlockInputStream::getTotals()
 
 Block FilterBlockInputStream::getHeader()
 {
-    Block res = expression->getSampleBlock();
+    Block res = children.back()->getHeader();
+    expression->execute(res);
 
     /// Isn't the filter already constant?
     ColumnPtr column = res.safeGetByPosition(filter_column).column;

@@ -66,7 +66,7 @@ std::ostream & operator<<(std::ostream & stream, const IFunction & what)
 std::ostream & operator<<(std::ostream & stream, const Block & what)
 {
     stream << "Block("
-           << "size = " << what.columns()
+           << "num_columns = " << what.columns()
            << "){" << what.dumpStructure() << "}";
     return stream;
 }

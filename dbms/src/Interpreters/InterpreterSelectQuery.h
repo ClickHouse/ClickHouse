@@ -138,19 +138,19 @@ private:
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
     QueryProcessingStage::Enum executeFetchColumns();
 
-    void executeWhere(ExpressionActionsPtr expression);
-    void executeAggregation(ExpressionActionsPtr expression, bool overflow_row, bool final);
+    void executeWhere(const ExpressionActionsPtr & expression);
+    void executeAggregation(const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(bool overflow_row, bool final);
-    void executeTotalsAndHaving(bool has_having, ExpressionActionsPtr expression, bool overflow_row);
-    void executeHaving(ExpressionActionsPtr expression);
-    void executeExpression(ExpressionActionsPtr expression);
+    void executeTotalsAndHaving(bool has_having, const ExpressionActionsPtr & expression, bool overflow_row);
+    void executeHaving(const ExpressionActionsPtr & expression);
+    void executeExpression(const ExpressionActionsPtr & expression);
     void executeOrder();
     void executeMergeSorted();
     void executePreLimit();
     void executeUnion();
     void executeLimitBy();
     void executeLimit();
-    void executeProjection(ExpressionActionsPtr expression);
+    void executeProjection(const ExpressionActionsPtr & expression);
     void executeDistinct(bool before_order, Names columns);
     void executeSubqueriesInSetsAndJoins(std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 

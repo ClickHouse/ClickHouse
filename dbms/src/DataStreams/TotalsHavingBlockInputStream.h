@@ -19,6 +19,7 @@ private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 public:
+    /// expression may be nullptr
     TotalsHavingBlockInputStream(
         const BlockInputStreamPtr & input_,
         bool overflow_row_, const ExpressionActionsPtr & expression_,

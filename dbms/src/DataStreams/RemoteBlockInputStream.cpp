@@ -169,7 +169,6 @@ Block RemoteBlockInputStream::receiveBlock()
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                LOG_INFO(log, "received " << packet.block.rows() << ": " << packet.block.dumpStructure());
                 return packet.block;
 
             case Protocol::Server::Exception:

@@ -34,7 +34,7 @@ public:
     Block getHeader() override
     {
         Block res = children.back()->getHeader();
-        res.insert({nullptr, data_type, column_name});
+        res.insert({data_type->createColumn(), data_type, column_name});
         return res;
     }
 

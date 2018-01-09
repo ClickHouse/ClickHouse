@@ -20,7 +20,7 @@ public:
     {
         Block res;
         for (const auto & elem : block)
-            res.insert({ elem.column->isColumnConst() ? elem.column->cloneEmpty() : nullptr, elem.type, elem.name });
+            res.insert({ elem.column->cloneEmpty(), elem.type, elem.name });
         return res;
     }
 
