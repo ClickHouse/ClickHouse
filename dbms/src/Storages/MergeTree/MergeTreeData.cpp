@@ -290,7 +290,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             }
         }
 
-        if(miss_column)
+        if (miss_column)
             throw Exception("Sign column " + sign_column + " does not exist in table declaration.");
     }
     else if (!sign_column.empty())
@@ -334,7 +334,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                 break;
             }
         }
-        if(miss_column)
+        if (miss_column)
             throw Exception("Version column " + version_column + " does not exist in table declaration.");
     }
 
