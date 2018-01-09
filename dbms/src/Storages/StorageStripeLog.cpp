@@ -245,7 +245,7 @@ BlockInputStreams StorageStripeLog::read(
     NameSet column_names_set(column_names.begin(), column_names.end());
 
     if (!Poco::File(full_path() + "index.mrk").exists())
-        return { std::make_shared<NullBlockInputStream>(getSampleBlock()) };
+        return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
 
     CompressedReadBufferFromFile index_in(full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE);
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
