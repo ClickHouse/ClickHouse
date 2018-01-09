@@ -4,7 +4,7 @@
 # Usage: ./gen-includes.sh [COMPILER]
 #
 
-# Set locale to C to capture GCC's "search starts here" text in English
+# Set local to C to capture GCC's "search starts here" text in English
 export LANG=C
 export LC_ALL=C
 export LC_MESSAGES=C
