@@ -1,6 +1,6 @@
 option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test instead of bundled" ${NOT_UNBUNDLED})
 
-if (USE_INTERNAL_GTEST_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletets/CMakeLists.txt")
+if (USE_INTERNAL_GTEST_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeLists.txt")
    message (WARNING "submodule contrib/googletest is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_GTEST_LIBRARY 0)
 endif ()
