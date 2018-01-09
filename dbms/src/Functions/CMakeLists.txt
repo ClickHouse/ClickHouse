@@ -62,6 +62,8 @@ generate_function_register(Array
   FunctionArrayPushFront
   FunctionArrayPopBack
   FunctionArrayPopFront
+  FunctionArrayHasAll
+  FunctionArrayHasAny
 )
 
 

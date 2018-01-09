@@ -1153,4 +1153,135 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
     }
 }
 
+
+/// Methods to check if first array has elements from second array, overloaded for various combinations of types.
+
+template <bool all, typename FirstSliceType, typename SecondSliceType,
+          bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
+bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
+                  const UInt8 * first_null_map, const UInt8 * second_null_map)
+{
+    const bool has_first_null_map = first_null_map != nullptr;
+    const bool has_second_null_map = second_null_map != nullptr;
+
+    for (size_t i = 0; i < second.size; ++i)
+    {
+        bool has = false;
+        for (size_t j = 0; j < first.size && !has; ++j)
+        {
+            const bool is_first_null = has_first_null_map && first_null_map[j];
+            const bool is_second_null = has_second_null_map && second_null_map[i];
+
+            if (is_first_null && is_second_null)
+                has = true;
+
+            if (!is_first_null && !is_second_null && isEqual(first, second, j, i))
+                has = true;
+        }
+
+        if (has && !all)
+            return true;
+
+        if (!has && all)
+            return false;
+
+    }
+
+    return all;
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
+template <typename T, typename U>
+bool sliceEqualElements(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second, size_t first_ind, size_t second_ind)
+{
+    return first.data[first_ind] == second.data[second_ind];
+}
+
+#pragma GCC diagnostic pop
+
+template <typename T>
+bool sliceEqualElements(const NumericArraySlice<T> & first, const GenericArraySlice & second, size_t, size_t)
+{
+    return false;
+}
+
+template <typename U>
+bool sliceEqualElements(const GenericArraySlice & first, const NumericArraySlice<U> & second, size_t, size_t)
+{
+    return false;
+}
+
+inline ALWAYS_INLINE bool sliceEqualElements(const GenericArraySlice & first, const GenericArraySlice & second, size_t first_ind, size_t second_ind)
+{
+    return first.elements->compareAt(first_ind + first.begin, second_ind + second.begin, *second.elements, -1) == 0;
+}
+
+template <bool all, typename T, typename U>
+bool sliceHas(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second)
+{
+    auto impl = sliceHasImpl<all, NumericArraySlice<T>, NumericArraySlice<U>, sliceEqualElements<T, U>>;
+    return impl(first, second, nullptr, nullptr);
+}
+
+template <bool all>
+bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
+{
+    /// Generic arrays should have the same type in order to use column.compareAt(...)
+    if (typeid(*first.elements) != typeid(*second.elements))
+        return false;
+
+    auto impl = sliceHasImpl<all, GenericArraySlice, GenericArraySlice, sliceEqualElements>;
+    return impl(first, second, nullptr, nullptr);
+}
+
+template <bool all, typename U>
+bool sliceHas(const GenericArraySlice & /*first*/, const NumericArraySlice<U> & /*second*/)
+{
+    return false;
+}
+
+template <bool all, typename T>
+bool sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & /*second*/)
+{
+    return false;
+}
+
+template <bool all, typename FirstArraySlice, typename SecondArraySlice>
+bool sliceHas(const FirstArraySlice & first, NullableArraySlice<SecondArraySlice> & second)
+{
+    auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
+    return impl(first, second, nullptr, second.null_map);
+}
+
+template <bool all, typename FirstArraySlice, typename SecondArraySlice>
+bool sliceHas(const NullableArraySlice<FirstArraySlice> & first, SecondArraySlice & second)
+{
+    auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
+    return impl(first, second, first.null_map, nullptr);
+}
+
+template <bool all, typename FirstArraySlice, typename SecondArraySlice>
+bool sliceHas(const NullableArraySlice<FirstArraySlice> & first, NullableArraySlice<SecondArraySlice> & second)
+{
+    auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
+    return impl(first, second, first.null_map, second.null_map);
+}
+
+template <bool all, typename FirstSource, typename SecondSource>
+void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
+{
+    auto size = result.size();
+    auto & data = result.getData();
+    for (auto row : ext::range(0, size))
+    {
+        data[row] = static_cast<UInt8>(sliceHas<all>(first.getWhole(), second.getWhole()) ? 1 : 0);
+        first.next();
+        second.next();
+    }
+}
+
+void sliceHas(IArraySource & first, IArraySource & second, bool all, ColumnUInt8 & result);
+
 }

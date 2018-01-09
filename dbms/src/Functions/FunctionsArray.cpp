@@ -19,6 +19,7 @@
 #include <Interpreters/castColumn.h>
 #include <tuple>
 #include <array>
+#include <DataTypes/DataTypeNothing.h>
 
 
 namespace DB
@@ -2494,12 +2495,15 @@ String FunctionArrayConcat::getName() const
 DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.empty())
-        throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-    if (!array_type)
-        throw Exception("First argument for function " + getName() + " must be an array but it has type "
-            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    for (auto i : ext::range(0, arguments.size()))
+    {
+        auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+        if (!array_type)
+            throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
+                            + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 
     return getLeastCommonType(arguments);
 }
@@ -2835,6 +2839,97 @@ FunctionPtr FunctionArrayPopFront::create(const Context &)
 FunctionPtr FunctionArrayPopBack::create(const Context &)
 {
     return std::make_shared<FunctionArrayPopBack>();
+}
+
+
+/// Implementation of FunctionArrayAllAny.
+
+FunctionPtr FunctionArrayHasAll::create(const Context & context)
+{
+    return std::make_shared<FunctionArrayHasAll>(context);
+}
+
+FunctionPtr FunctionArrayHasAny::create(const Context & context)
+{
+    return std::make_shared<FunctionArrayHasAny>(context);
+}
+
+
+DataTypePtr FunctionArrayHasAllAny::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    for (auto i : ext::range(0, arguments.size()))
+    {
+        auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+        if (!array_type)
+            throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
+                            + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    return std::make_shared<DataTypeUInt8>();
+}
+
+void FunctionArrayHasAllAny::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+    size_t rows = block.rows();
+    size_t num_args = arguments.size();
+
+    auto result_column = ColumnUInt8::create(rows);
+
+    DataTypePtr common_type = nullptr;
+    auto commonType = [& common_type, & block, & arguments]()
+    {
+        if (common_type == nullptr)
+        {
+            DataTypes data_types;
+            data_types.reserve(arguments.size());
+            for (const auto & argument : arguments)
+                data_types.push_back(block.getByPosition(argument).type);
+
+            common_type = getLeastCommonType(data_types);
+        }
+
+        return common_type;
+    };
+
+    Columns preprocessed_columns(num_args);
+
+    for (size_t i = 0; i < num_args; ++i)
+    {
+        const auto & argument = block.getByPosition(arguments[i]);
+        ColumnPtr preprocessed_column = argument.column;
+
+        const auto argument_type = typeid_cast<const DataTypeArray *>(argument.type.get());
+        const auto & nested_type = argument_type->getNestedType();
+
+        /// Converts Array(Nothing) or Array(Nullable(Nothing) to common type. Example: hasAll([Null, 1], [Null]) -> 1
+        if (typeid_cast<const DataTypeNothing *>(removeNullable(nested_type).get()))
+            preprocessed_column = castColumn(argument, commonType(), context);
+
+        preprocessed_columns[i] = std::move(preprocessed_column);
+    }
+
+    std::vector<std::unique_ptr<IArraySource>> sources;
+
+    for (auto & argument_column : preprocessed_columns)
+    {
+        bool is_const = false;
+
+        if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
+        {
+            is_const = true;
+            argument_column = argument_column_const->getDataColumnPtr();
+        }
+
+        if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
+            sources.emplace_back(createArraySource(*argument_column_array, is_const, rows));
+        else
+            throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
+    }
+
+    auto result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
+    sliceHas(*sources[0], *sources[1], all, *result_column_ptr);
+
+    block.getByPosition(result).column = std::move(result_column);
 }
 
 }

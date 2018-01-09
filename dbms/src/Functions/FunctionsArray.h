@@ -1540,6 +1540,48 @@ public:
     FunctionArrayPopBack() : FunctionArrayPop(false, name) {}
 };
 
+class FunctionArrayHasAllAny : public IFunction
+{
+public:
+    FunctionArrayHasAllAny(const Context & context, bool all, const char * name)
+        : context(context), all(all), name(name) {}
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+private:
+    const Context & context;
+    bool all;
+    const char * name;
+};
+
+class FunctionArrayHasAll : public FunctionArrayHasAllAny
+{
+public:
+    static constexpr auto name = "hasAll";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayHasAll(const Context & context) : FunctionArrayHasAllAny(context, true, name) {}
+};
+
+class FunctionArrayHasAny : public FunctionArrayHasAllAny
+{
+public:
+    static constexpr auto name = "hasAny";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayHasAny(const Context & context) : FunctionArrayHasAllAny(context, false, name) {}
+};
 
 struct NameHas { static constexpr auto name = "has"; };
 struct NameIndexOf { static constexpr auto name = "indexOf"; };
