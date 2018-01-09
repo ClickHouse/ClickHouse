@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 void ProhibitColumnsBlockOutputStream::write(const Block & block)
 {
-    if(allow_materialized)
+    if (allow_materialized)
     {
         for (const auto & column : columns)
             if (block.has(column.name))
