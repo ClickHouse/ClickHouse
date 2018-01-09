@@ -46,7 +46,7 @@ class ClickHouseCluster:
 
         self.base_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name', self.project_name]
         self.base_zookeeper_cmd = None
-        self.pre_zookkeeper_commands = []
+        self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
 
@@ -113,8 +113,11 @@ class ClickHouseCluster:
 
         if self.with_zookeeper and self.base_zookeeper_cmd:
             subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
-            for command in self.pre_zookkeeper_commands:
+            for command in self.pre_zookeeper_commands:
                 self.run_zookeeper_client_command(command, repeats=5)
+
+        # Uncomment for debugging
+        # print ' '.join(self.base_cmd + ['up', '--no-recreate'])
 
         subprocess.check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
@@ -159,7 +162,7 @@ class ClickHouseCluster:
         return self.docker_client.containers.run('zookeeper', cli_cmd, remove=True, network_mode=network_mode)
 
     def add_zookeeper_startup_command(self, command):
-        self.pre_zookkeeper_commands.append(command)
+        self.pre_zookeeper_commands.append(command)
 
 
 DOCKER_COMPOSE_TEMPLATE = '''
@@ -224,11 +227,13 @@ class ClickHouseInstance:
 
     def exec_in_container(self, cmd, **kwargs):
         container = self.get_docker_handle()
-        handle = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
-        output = self.docker_client.api.exec_start(handle).decode('utf8')
-        exit_code = self.docker_client.api.exec_inspect(handle)['ExitCode']
+        exec_id = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
+        output = self.docker_client.api.exec_start(exec_id, detach=False)
+
+        output = output.decode('utf8')
+        exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
         if exit_code:
-            raise Exception('Cmd {} failed! Return code {}. Output {}'.format(' '.join(cmd), exit_code, output))
+            raise Exception('Cmd "{}" failed! Return code {}. Output: {}'.format(' '.join(cmd), exit_code, output))
         return output
 
 

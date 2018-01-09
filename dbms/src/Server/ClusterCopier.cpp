@@ -393,7 +393,7 @@ String TaskPartition::getPartitionActiveWorkersPath() const
 
 String TaskPartition::getActiveWorkerPath() const
 {
-    return getPartitionActiveWorkersPath() + toString(task_shard.numberInCluster());
+    return getPartitionActiveWorkersPath() + "/" + toString(task_shard.numberInCluster());
 }
 
 String TaskPartition::getCommonPartitionIsDirtyPath() const
@@ -670,7 +670,7 @@ public:
                 bool is_done;
 
                 size_t num_tries = 0;
-                constexpr size_t max_tries = 10;
+                constexpr size_t max_tries = 1000;
 
                 Stopwatch watch;
 
@@ -715,6 +715,17 @@ public:
                     LOG_INFO(log, "It took " << watch.elapsedSeconds() << " seconds to copy partition " << partition_name);
             }
         }
+    }
+
+    /// Disables DROP PARTITION commands that used to clear data after errors
+    void setSafeMode(bool is_safe_mode_ = true)
+    {
+        is_safe_mode = is_safe_mode_;
+    }
+
+    void setCopyFaultProbability(double copy_fault_probability_)
+    {
+        copy_fault_probability = copy_fault_probability_;
     }
 
     /** Checks that the whole partition of a table was copied. We should do it carefully due to dirty lock.
@@ -841,9 +852,13 @@ protected:
 
     bool tryDropPartition(TaskPartition & task_partition, const zkutil::ZooKeeperPtr & zookeeper)
     {
+        if (is_safe_mode)
+            throw Exception("DROP PARTITION is prohibited in safe mode", ErrorCodes::NOT_IMPLEMENTED);
+
         TaskTable & task_table = task_partition.task_shard.task_table;
 
         String current_shards_path = task_partition.getPartitionShardsPath();
+        String current_partition_active_workers_dir = task_partition.getPartitionActiveWorkersPath();
         String is_dirty_flag_path = task_partition.getCommonPartitionIsDirtyPath();
         String dirt_cleaner_path = is_dirty_flag_path + "/cleaner";
 
@@ -865,7 +880,7 @@ protected:
         }
 
         zkutil::Stat stat;
-        if (zookeeper->exists(current_shards_path, &stat))
+        if (zookeeper->exists(current_partition_active_workers_dir, &stat))
         {
             if (stat.numChildren != 0)
             {
@@ -885,7 +900,10 @@ protected:
         // query += " DROP PARTITION ID '" + task_partition.name + "'";
 
         ClusterPtr & cluster_push = task_table.cluster_push;
-        Settings & settings_push = task_cluster->settings_push;
+        Settings settings_push = task_cluster->settings_push;
+
+        /// It is important, DROP PARTITION must be done synchronously
+        settings_push.replication_alter_partitions_sync = 2;
 
         LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
         /// Limit number of max executing replicas to 1
@@ -941,13 +959,15 @@ protected:
         };
 
         /// Returns SELECT query filtering current partition and applying user filter
-        auto get_select_query = [&] (const DatabaseAndTableName & from_table, const String & fields)
+        auto get_select_query = [&] (const DatabaseAndTableName & from_table, const String & fields, String limit = "")
         {
             String query;
             query += "SELECT " + fields + " FROM " + getDatabaseDotTable(from_table);
             query += " WHERE (_part LIKE '" + task_partition.name + "%')";
             if (!task_table.where_condition_str.empty())
                 query += " AND (" + task_table.where_condition_str + ")";
+            if (!limit.empty())
+                query += " LIMIT " + limit;
 
             ParserQuery p_query(query.data() + query.size());
             return parseQuery(p_query, query);
@@ -976,7 +996,7 @@ protected:
             return false;
         }
 
-        /// Create ephemeral node to mark that we are active
+        /// Create ephemeral node to mark that we are active and process the partition
         zookeeper->createAncestors(current_task_is_active_path);
         zkutil::EphemeralNodeHolderPtr partition_task_node_holder;
         try
@@ -1028,7 +1048,7 @@ protected:
         }
 
         /// Create local Distributed tables:
-        ///  a table fetching data from current shard and a table inserting data to the whole cluster
+        ///  a table fetching data from current shard and a table inserting data to the whole destination cluster
         DatabaseAndTableName table_shard(working_database_name, ".read_shard." + task_table.name_in_config);
         DatabaseAndTableName table_split(working_database_name, ".split." + task_table.name_in_config);
         {
@@ -1116,8 +1136,17 @@ protected:
 
         /// Do the copying
         {
+            bool inject_fault = false;
+            if (copy_fault_probability > 0)
+            {
+                std::uniform_real_distribution<> dis(0, 1);
+                double value = dis(task_table.task_cluster.random_generator);
+                inject_fault = value < copy_fault_probability;
+            }
+
             // Select all fields
-            ASTPtr query_select_ast = get_select_query(table_shard, "*");
+            ASTPtr query_select_ast = get_select_query(table_shard, "*", inject_fault ? "1" : "");
+
             LOG_DEBUG(log, "Executing SELECT query: " << queryToString(query_select_ast));
 
             ASTPtr query_insert_ast;
@@ -1147,7 +1176,7 @@ protected:
                 BlockIO io_insert = interpreter_insert.execute();
 
                 using ExistsFuture = zkutil::ZooKeeper::ExistsFuture;
-                auto future_is_dirty = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
+                auto future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
 
                 Stopwatch watch(CLOCK_MONOTONIC_COARSE);
                 constexpr size_t check_period_milliseconds = 500;
@@ -1158,17 +1187,17 @@ protected:
                     if (zookeeper->expired())
                         throw Exception("ZooKeeper session is expired, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
 
-                    if (future_is_dirty != nullptr)
+                    if (future_is_dirty_checker != nullptr)
                     {
                         zkutil::ZooKeeper::StatAndExists status;
                         try
                         {
-                            status = future_is_dirty->get();
-                            future_is_dirty.reset();
+                            status = future_is_dirty_checker->get();
+                            future_is_dirty_checker.reset();
                         }
                         catch (zkutil::KeeperException & e)
                         {
-                            future_is_dirty.reset();
+                            future_is_dirty_checker.reset();
 
                             if (e.isTemporaryError())
                                 LOG_INFO(log, "ZooKeeper is lagging: " << e.displayText());
@@ -1183,7 +1212,7 @@ protected:
                     if (watch.elapsedMilliseconds() >= check_period_milliseconds)
                     {
                         watch.restart();
-                        future_is_dirty = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
+                        future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
                     }
 
                     return false;
@@ -1193,8 +1222,11 @@ protected:
                 copyData(*io_select.in, *io_insert.out, cancel_check);
 
                 // Just in case
-                if (future_is_dirty != nullptr)
-                    future_is_dirty.get();
+                if (future_is_dirty_checker != nullptr)
+                    future_is_dirty_checker.get();
+
+                if (inject_fault)
+                    throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
             }
             catch (...)
             {
@@ -1399,6 +1431,9 @@ private:
     String host_id;
     String working_database_name;
 
+    bool is_safe_mode = false;
+    double copy_fault_probability = 0.0;
+
     ConfigurationPtr task_cluster_config;
     std::unique_ptr<TaskCluster> task_cluster;
 
@@ -1423,17 +1458,25 @@ public:
         if (is_help)
             return;
 
-        // <hostname>#<pid>_<start_timestamp>
-        process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
-        host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
-        process_path = Poco::Path(Poco::Path::current() + "/clickhouse-copier_" + process_id).absolute().toString();
-        Poco::File(process_path).createDirectories();
-
         config_xml_path = config().getString("config-file");
         task_path = config().getString("task-path");
         log_level = config().getString("log-level", "debug");
+        is_safe_mode = config().has("safe-mode");
+        if (config().has("copy-fault-probability"))
+            copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
+        base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
+
+        // process_id is '<hostname>#<pid>_<start_timestamp>'
+        process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
+        host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
+        process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
+        Poco::File(process_path).createDirectories();
 
         setupLogging();
+
+        std::string stderr_path = process_path + "/stderr";
+        if (!freopen(stderr_path.c_str(), "a+", stderr))
+            throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
     }
 
     void handleHelp(const std::string & name, const std::string & value)
@@ -1450,10 +1493,17 @@ public:
     void defineOptions(Poco::Util::OptionSet & options) override
     {
         options.addOption(Poco::Util::Option("config-file", "c", "path to config file with ZooKeeper config", true)
-                               .argument("config-file").binding("config-file"));
-        options.addOption(Poco::Util::Option("task-path", "p", "path to task in ZooKeeper")
-                               .argument("task-path").binding("task-path"));
-        options.addOption(Poco::Util::Option("log-level", "", "log level").binding("log-level"));
+                              .argument("config-file").binding("config-file"));
+        options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
+                              .argument("task-path").binding("task-path"));
+        options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
+                              .binding("safe-mode"));
+        options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
+                              .argument("copy-fault-probability").binding("copy-fault-probability"));
+        options.addOption(Poco::Util::Option("log-level", "", "sets log level")
+                              .argument("log-level").binding("log-level"));
+        options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consequitive copier launches will populate /base-dir/launch_id/* directories")
+                              .argument("base-dir").binding("base-dir"));
 
         using Me = std::decay_t<decltype(*this)>;
         options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
@@ -1469,7 +1519,7 @@ public:
         split_channel->addChannel(log_file_channel);
         log_file_channel->open();
 
-        if (!config().getBool("application.runAsService", false))
+        if (!config().getBool("application.runAsService", true))
         {
             Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
             split_channel->addChannel(console_channel);
@@ -1537,6 +1587,8 @@ public:
         std::unique_ptr<ClusterCopier> copier(new ClusterCopier(
             zookeeper_configuration, task_path, host_id, default_database, *context));
 
+        copier->setSafeMode(is_safe_mode);
+        copier->setCopyFaultProbability(copy_fault_probability);
         copier->init();
         copier->process();
     }
@@ -1547,8 +1599,11 @@ private:
     std::string config_xml_path;
     std::string task_path;
     std::string log_level = "debug";
+    bool is_safe_mode = false;
+    double copy_fault_probability = 0;
     bool is_help = false;
 
+    std::string base_dir;
     std::string process_path;
     std::string process_id;
     std::string host_id;
