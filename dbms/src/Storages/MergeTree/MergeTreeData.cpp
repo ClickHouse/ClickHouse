@@ -289,7 +289,6 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                 break;
             }
         }
-
         if (miss_column)
             throw Exception("Sign column " + sign_column + " does not exist in table declaration.");
     }
