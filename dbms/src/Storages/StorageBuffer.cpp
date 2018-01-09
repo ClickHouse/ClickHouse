@@ -88,7 +88,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override { return storage.getSampleBlock(); };
+    Block getHeader() override { return storage.getSampleBlockForColumns(column_names); };
 
 protected:
     Block readImpl() override

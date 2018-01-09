@@ -38,6 +38,12 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
 }
 
 
+Block MergeTreeThreadBlockInputStream::getHeader()
+{
+    return pool->getHeader();
+};
+
+
 String MergeTreeThreadBlockInputStream::getID() const
 {
     std::stringstream res;

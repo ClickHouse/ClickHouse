@@ -117,6 +117,12 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
 }
 
 
+Block MergeTreeReadPool::getHeader() const
+{
+    return data.getSampleBlockForColumns(column_names);
+}
+
+
 void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
 {
     if (backoff_settings.min_read_latency_ms == 0 || do_not_steal_tasks)

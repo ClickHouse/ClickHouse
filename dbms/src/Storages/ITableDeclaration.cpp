@@ -120,6 +120,20 @@ Block ITableDeclaration::getSampleBlockNonMaterialized() const
 }
 
 
+Block ITableDeclaration::getSampleBlockForColumns(const Names & column_names) const
+{
+    Block res;
+
+    for (const auto & name : column_names)
+    {
+        auto col = getColumn(name);
+        res.insert({ col.type->createColumn(), col.type, name });
+    }
+
+    return res;
+}
+
+
 static std::string listOfColumns(const NamesAndTypesList & available_columns)
 {
     std::stringstream s;

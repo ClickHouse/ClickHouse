@@ -61,7 +61,15 @@ public:
 
     String getID() const override;
 
-    Block getHeader() override { return storage.getSampleBlock(); };
+    Block getHeader() override
+    {
+        Block res;
+
+        for (const auto & name_type : columns)
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+
+        return res;
+    };
 
 protected:
     Block readImpl() override;
