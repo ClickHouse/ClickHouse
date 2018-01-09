@@ -9,6 +9,3 @@ target_link_libraries(clickhouse_table_functions dbms clickhouse_storages_system
 if (Poco_DataODBC_FOUND)
     target_link_libraries (clickhouse_table_functions ${Poco_DataODBC_LIBRARY})
 endif ()
-
-
-target_include_directories (clickhouse_table_functions BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})

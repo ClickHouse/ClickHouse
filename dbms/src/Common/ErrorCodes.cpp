@@ -250,7 +250,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY = 242;
     extern const int NOT_ENOUGH_SPACE = 243;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR = 244;
-    extern const int INVALID_NESTED_NAME = 245;
     extern const int CORRUPTED_DATA = 246;
     extern const int INCORRECT_MARK = 247;
     extern const int INVALID_PARTITION_VALUE = 248;

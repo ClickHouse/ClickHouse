@@ -26,6 +26,7 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
+#include <Storages/StorageFactory.h>
 
 
 namespace DB
@@ -37,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -269,6 +271,23 @@ bool StorageStripeLog::checkData() const
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
+}
+
+
+void registerStorageStripeLog(StorageFactory & factory)
+{
+    factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return StorageStripeLog::create(
+            args.data_path, args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.attach, args.context.getSettings().max_compress_block_size);
+    });
 }
 
 }

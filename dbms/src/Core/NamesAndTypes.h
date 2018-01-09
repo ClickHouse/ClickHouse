@@ -59,6 +59,7 @@ public:
     size_t sizeOfDifference(const NamesAndTypesList & rhs) const;
 
     Names getNames() const;
+    DataTypes getTypes() const;
 
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const NameSet & names) const;
