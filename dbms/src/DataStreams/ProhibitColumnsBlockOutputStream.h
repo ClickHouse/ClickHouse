@@ -11,8 +11,8 @@ namespace DB
 class ProhibitColumnsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ProhibitColumnsBlockOutputStream(const BlockOutputStreamPtr & output, const NamesAndTypesList & columns, bool allow_materialized)
-        : output{output}, columns{columns}, allow_materialized{allow_materialized}
+    ProhibitColumnsBlockOutputStream(const BlockOutputStreamPtr & output, const NamesAndTypesList & columns)
+        : output{output}, columns{columns}
     {
     }
 
@@ -26,7 +26,6 @@ private:
 
     BlockOutputStreamPtr output;
     NamesAndTypesList columns;
-    bool allow_materialized;
 };
 
 }

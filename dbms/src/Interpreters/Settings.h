@@ -301,7 +301,7 @@ struct Settings
     M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS, "Timeout for flushing data from streaming storages.") \
     /* Schema identifier (used by schema-based formats) */ \
     M(SettingString, format_schema, "", "Schema identifier (used by schema-based formats)") \
-    M(SettingBool, insert_allow_materialized_columns, 0, "If setting is enabled, require materialized columns for the INSERT query.")
+    M(SettingBool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.")
 
 
     /// Possible limits for query execution.
