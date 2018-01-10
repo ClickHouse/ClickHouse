@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-COPYING_FAIL_PROBABILITY = 0.5
+COPYING_FAIL_PROBABILITY = 0.33
 cluster = None
 
 @pytest.fixture(scope="module")
@@ -48,7 +48,7 @@ def started_cluster():
 
     finally:
         pass
-        #cluster.shutdown()
+        cluster.shutdown()
 
 
 def _test_copying(cmd_options):
@@ -105,6 +105,10 @@ def _test_copying(cmd_options):
     assert TSV(cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("0\n")
 
     zk.delete(zk_task_path, recursive=True)
+    instance.query("DROP TABLE hits_all ON CLUSTER cluster1")
+    instance.query("DROP TABLE hits_all ON CLUSTER cluster1")
+    instance.query("DROP TABLE hits ON CLUSTER cluster0")
+    instance.query("DROP TABLE hits ON CLUSTER cluster1")
 
 
 def test_copy_simple(started_cluster):

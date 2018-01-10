@@ -2,8 +2,4 @@
     <distributed_ddl>
         <path>/clickhouse/task_queue/ddl</path>
     </distributed_ddl>
-
-    <merge_tree>
-        <replicated_deduplication_window>0</replicated_deduplication_window>
-    </merge_tree>
 </yandex>
