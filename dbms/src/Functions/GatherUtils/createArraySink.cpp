@@ -1,6 +1,8 @@
-#include "GatherUtils.h"
+#include <Functions/GatherUtils/Sinks.h>
+#include <Functions/GatherUtils/Sources.h>
+#include <Core/TypeListNumber.h>
 
-namespace DB
+namespace DB::GatherUtils
 {
 /// Creates IArraySink from ColumnArray
 

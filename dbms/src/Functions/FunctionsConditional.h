@@ -18,11 +18,14 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastCommonType.h>
-#include <Functions/GatherUtils.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Algorithms.h>
 
 
 namespace DB
 {
+
+using namespace GatherUtils;
 
 /** Selection function by condition: if(cond, then, else).
   * cond - UInt8
