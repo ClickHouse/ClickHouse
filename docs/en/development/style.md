@@ -452,7 +452,7 @@
    }
    else    /// If the calculations are already in progress, wait for results
        pool.wait();
-       
+
    if (exception)
        exception->rethrow();
    ```
@@ -563,7 +563,7 @@ This is not recommended, but it is allowed.
 
    ```cpp
    using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
-   
+
    /** Creates an aggregate function by name.
      */
    class AggregateFunctionFactory
@@ -691,7 +691,7 @@ This is not recommended, but it is allowed.
 
    The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
-6. Use `-Wall -Werror` compilation flags.
+6. Use `-Wall -Wextra -Werror` compilation flags.
 
 7. Use static linking with all libraries except those that are difficult to connect to statically (see the output of the 'ldd' command).
 
