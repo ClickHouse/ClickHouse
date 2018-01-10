@@ -31,7 +31,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
-#include <Interpreters/ClusterProxy/AlterStreamFactory.h>
 #include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>

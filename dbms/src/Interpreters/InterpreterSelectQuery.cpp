@@ -100,7 +100,7 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
         }
     }
 
-    if (is_first_select_inside_union_all && (hasAsterisk()))
+    if (is_first_select_inside_union_all && hasAsterisk())
     {
         basicInit(input);
 

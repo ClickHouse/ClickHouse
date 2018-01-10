@@ -50,16 +50,16 @@ public:
         return type_res;
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (this->data(place).value.changeIfBetter(*columns[1], row_num))
-            this->data(place).result.change(*columns[0], row_num);
+        if (this->data(place).value.changeIfBetter(*columns[1], row_num, arena))
+            this->data(place).result.change(*columns[0], row_num, arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if (this->data(place).value.changeIfBetter(this->data(rhs).value))
-            this->data(place).result.change(this->data(rhs).result);
+        if (this->data(place).value.changeIfBetter(this->data(rhs).value, arena))
+            this->data(place).result.change(this->data(rhs).result, arena);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -68,10 +68,10 @@ public:
         this->data(place).value.write(buf, *type_val);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
-        this->data(place).result.read(buf, *type_res);
-        this->data(place).value.read(buf, *type_val);
+        this->data(place).result.read(buf, *type_res, arena);
+        this->data(place).value.read(buf, *type_val, arena);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

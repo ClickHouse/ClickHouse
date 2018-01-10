@@ -181,7 +181,8 @@ public:
 
 private:
 
-    struct Ellipse {
+    struct Ellipse
+    {
         Float64 x;
         Float64 y;
         Float64 a;

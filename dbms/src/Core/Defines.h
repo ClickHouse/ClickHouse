@@ -71,6 +71,9 @@
 
 #define DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS 7500
 
+#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
+#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
+
 #define ALWAYS_INLINE __attribute__((__always_inline__))
 #define NO_INLINE __attribute__((__noinline__))
 
