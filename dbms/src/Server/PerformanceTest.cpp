@@ -516,8 +516,7 @@ public:
           tests_names(std::move(tests_names_)),
           skip_names(std::move(skip_names_)),
           tests_names_regexp(std::move(tests_names_regexp_)),
-          skip_names_regexp(std::move(skip_names_regexp_)),
-
+          skip_names_regexp(std::move(skip_names_regexp_))
     {
         if (input_files.size() < 1)
         {
