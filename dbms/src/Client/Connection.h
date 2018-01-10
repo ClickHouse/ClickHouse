@@ -17,6 +17,7 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/CompressionSettings.h>
+#include <IO/ConnectionTimeouts.h>
 
 #include <Interpreters/Settings.h>
 #include <Interpreters/TablesStatus.h>
@@ -54,12 +55,10 @@ class Connection : private boost::noncopyable
 public:
     Connection(const String & host_, UInt16 port_, const String & default_database_,
         const String & user_, const String & password_,
+        const ConnectionTimeouts & timeouts_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
         Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
-        Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
-        Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
-        Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
@@ -67,7 +66,7 @@ public:
         client_name(client_name_),
         compression(compression_),
         encryption(encryption_),
-        connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
+        timeouts(timeouts_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
     {
@@ -82,12 +81,10 @@ public:
     Connection(const String & host_, UInt16 port_, const Poco::Net::SocketAddress & resolved_address_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const ConnectionTimeouts & timeouts_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
         Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
-        Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
-        Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
-        Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_),
@@ -97,7 +94,7 @@ public:
         client_name(client_name_),
         compression(compression_),
         encryption(encryption_),
-        connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
+        timeouts(timeouts_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
     {
@@ -233,9 +230,7 @@ private:
       */
     ThrottlerPtr throttler;
 
-    Poco::Timespan connect_timeout;
-    Poco::Timespan receive_timeout;
-    Poco::Timespan send_timeout;
+    ConnectionTimeouts timeouts;
     Poco::Timespan sync_request_timeout;
 
     /// From where to read query execution result.

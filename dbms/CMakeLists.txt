@@ -219,6 +219,21 @@ target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)
+    include (${PROJECT_SOURCE_DIR}/cmake/find_gtest.cmake)
+
+    if (USE_INTERNAL_GTEST_LIBRARY)
+        # Google Test from sources
+        add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+        # avoid problems with <regexp.h>
+        target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+        target_include_directories (gtest INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
+    endif ()
+
+    macro(grep_gtest_sources BASE_DIR DST_VAR)
+        # Cold match files that are not in tests/ directories
+        file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
+    endmacro()
+
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
