@@ -59,8 +59,6 @@
 
     <!-- Setting used to insert data -->
     <settings_push>
-        <!-- Remove this setting after superfluous deduplication after DROP PARTITION is fixed -->
-        <insert_deduplicate>0</insert_deduplicate>
     </settings_push>
 
     <!-- Tasks -->
