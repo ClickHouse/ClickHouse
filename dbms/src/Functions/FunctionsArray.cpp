@@ -6,7 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastCommonType.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Functions/GatherUtils.h>
+#include <Functions/GatherUtils/GatherUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -2536,7 +2536,7 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
         preprocessed_columns[i] = std::move(preprocessed_column);
     }
 
-    std::vector<std::unique_ptr<IArraySource>> sources;
+    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
     for (auto & argument_column : preprocessed_columns)
     {
@@ -2549,13 +2549,13 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
         }
 
         if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
-            sources.emplace_back(createArraySource(*argument_column_array, is_const, rows));
+            sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
         else
             throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
     }
 
-    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
-    concat(sources, *sink);
+    auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
+    GatherUtils::concat(sources, *sink);
 
     block.getByPosition(result).column = std::move(result_column);
 }
@@ -2617,7 +2617,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     const auto & offset_column = block.getByPosition(arguments[1]).column;
     const auto & length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
 
-    std::unique_ptr<IArraySource> source;
+    std::unique_ptr<GatherUtils::IArraySource> source;
 
     size_t size = array_column->size();
     bool is_const = false;
@@ -2629,11 +2629,11 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     }
 
     if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
-        source = createArraySource(*argument_column_array, is_const, size);
+        source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
-    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+    auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
     if (offset_column->onlyNull())
     {
@@ -2643,11 +2643,11 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
             return;
         }
         else if (length_column->isColumnConst())
-            sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
+            GatherUtils::sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
         else
         {
             auto const_offset_column = ColumnConst::create(ColumnInt8::create(1, 1), size);
-            sliceDynamicOffsetBounded(*source, *sink, *const_offset_column, *length_column);
+            GatherUtils::sliceDynamicOffsetBounded(*source, *sink, *const_offset_column, *length_column);
         }
     }
     else if (offset_column->isColumnConst())
@@ -2657,27 +2657,27 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
         if (!length_column || length_column->onlyNull())
         {
             if (offset > 0)
-                sliceFromLeftConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(offset - 1));
+                GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(offset - 1));
             else
-                sliceFromRightConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(-offset));
+                GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(-offset));
         }
         else if (length_column->isColumnConst())
         {
             ssize_t length = length_column->getInt(0);
             if (offset > 0)
-                sliceFromLeftConstantOffsetBounded(*source, *sink, static_cast<size_t>(offset - 1), length);
+                GatherUtils::sliceFromLeftConstantOffsetBounded(*source, *sink, static_cast<size_t>(offset - 1), length);
             else
-                sliceFromRightConstantOffsetBounded(*source, *sink, static_cast<size_t>(-offset), length);
+                GatherUtils::sliceFromRightConstantOffsetBounded(*source, *sink, static_cast<size_t>(-offset), length);
         }
         else
-            sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
+            GatherUtils::sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
     }
     else
     {
         if (!length_column || length_column->onlyNull())
-            sliceDynamicOffsetUnbounded(*source, *sink, *offset_column);
+            GatherUtils::sliceDynamicOffsetUnbounded(*source, *sink, *offset_column);
         else
-            sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
+            GatherUtils::sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
     }
 
     block.getByPosition(result).column = std::move(result_column);
@@ -2725,7 +2725,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     if (!block.getByPosition(arguments[1]).type->equals(*return_nested_type))
         appended_column = castColumn(block.getByPosition(arguments[1]), return_nested_type, context);
 
-    std::vector<std::unique_ptr<IArraySource>> sources;
+    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
     size_t size = array_column->size();
     bool is_const = false;
@@ -2737,7 +2737,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     }
 
     if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
-        sources.push_back(createArraySource(*argument_column_array, is_const, size));
+        sources.push_back(GatherUtils::createArraySource(*argument_column_array, is_const, size));
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
@@ -2754,13 +2754,13 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
         offsets->getElement(i) = i + 1;
 
     ColumnArray::Ptr appended_array_column = ColumnArray::create(appended_column, std::move(offsets));
-    sources.push_back(createArraySource(*appended_array_column, is_appended_const, size));
+    sources.push_back(GatherUtils::createArraySource(*appended_array_column, is_appended_const, size));
 
-    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+    auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
     if (push_front)
         sources[0].swap(sources[1]);
-    concat(sources, *sink);
+    GatherUtils::concat(sources, *sink);
 
     block.getByPosition(result).column = std::move(result_column);
 }
@@ -2808,21 +2808,21 @@ void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & argument
 
     const auto & array_column = block.getByPosition(arguments[0]).column;
 
-    std::unique_ptr<IArraySource> source;
+    std::unique_ptr<GatherUtils::IArraySource> source;
 
     size_t size = array_column->size();
 
     if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
-        source = createArraySource(*argument_column_array, false, size);
+        source = GatherUtils::createArraySource(*argument_column_array, false, size);
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
-    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+    auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
     if (pop_front)
-        sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
+        GatherUtils::sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
     else
-        sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
+        GatherUtils::sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
 
     block.getByPosition(result).column = std::move(result_column);
 }
@@ -2908,7 +2908,7 @@ void FunctionArrayHasAllAny::executeImpl(Block & block, const ColumnNumbers & ar
         preprocessed_columns[i] = std::move(preprocessed_column);
     }
 
-    std::vector<std::unique_ptr<IArraySource>> sources;
+    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
     for (auto & argument_column : preprocessed_columns)
     {
@@ -2921,13 +2921,13 @@ void FunctionArrayHasAllAny::executeImpl(Block & block, const ColumnNumbers & ar
         }
 
         if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
-            sources.emplace_back(createArraySource(*argument_column_array, is_const, rows));
+            sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
         else
             throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
     }
 
     auto result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
-    sliceHas(*sources[0], *sources[1], all, *result_column_ptr);
+    GatherUtils::sliceHas(*sources[0], *sources[1], all, *result_column_ptr);
 
     block.getByPosition(result).column = std::move(result_column);
 }

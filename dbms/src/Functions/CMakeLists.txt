@@ -68,6 +68,7 @@ generate_function_register(Array
 
 
 add_headers_and_sources(clickhouse_functions .)
+add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions ./Conditional)
 add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
 

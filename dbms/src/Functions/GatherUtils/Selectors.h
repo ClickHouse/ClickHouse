@@ -1,6 +1,9 @@
-#include "GatherUtils.h"
+#pragma once
 
-namespace DB
+#include <Functions/GatherUtils/Algorithms.h>
+#include <Core/TypeListNumber.h>
+
+namespace DB::GatherUtils
 {
 /// Base classes which selects template function implementation with concrete ArraySource or ArraySink
 /// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector

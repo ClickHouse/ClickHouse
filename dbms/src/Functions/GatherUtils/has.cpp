@@ -1,8 +1,7 @@
-#include <Functions/GatherUtils.h>
-#include <Functions/GatherUtils_selectors.h>
+#include <Functions/GatherUtils/Selectors.h>
+#include <Functions/GatherUtils/Algorithms.h>
 
-
-namespace DB
+namespace DB::GatherUtils
 {
 
 struct ArrayHasSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSelectArraySourcePair>
