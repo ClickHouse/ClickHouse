@@ -23,7 +23,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Settings.h>
 #include <common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
@@ -504,9 +503,8 @@ public:
         Strings && tests_names_,
         Strings && skip_names_,
         Strings && tests_names_regexp_,
-        Strings && skip_names_regexp_,
-        const ConnectionTimeouts & timeouts)
-        : connection(host_, port_, default_database_, user_, password_, timeouts),
+        Strings && skip_names_regexp_)
+        : connection(host_, port_, default_database_, user_, password_),
           gotSIGINT(false),
           lite_output(lite_output_),
           profiles_file(profiles_file_),
@@ -601,7 +599,8 @@ private:
     void removeConfigurationsIf(
         std::vector<XMLConfigurationPtr> & configs, FilterType filter_type, const Strings & values, bool leave = false)
     {
-        auto checker = [&filter_type, &values, &leave](XMLConfigurationPtr & config) {
+        auto checker = [&filter_type, &values, &leave](XMLConfigurationPtr & config)
+        {
             if (values.size() == 0)
                 return false;
 
@@ -631,7 +630,8 @@ private:
             if (filter_type == FilterType::Name_regexp)
             {
                 String config_name = config->getString("name", "");
-                auto regex_checker = [&config_name](const String & name_regexp) {
+                auto regex_checker = [&config_name](const String & name_regexp)
+                {
                     std::regex pattern(name_regexp);
                     return std::regex_search(config_name, pattern);
                 };
@@ -917,7 +917,8 @@ private:
 
             auto queries_pre_format = queries;
             queries.clear();
-            for (const auto & query : queries_pre_format) {
+            for (const auto & query : queries_pre_format)
+            {
                 auto formatted = formatQueries(query, substitutions);
                 queries.insert(queries.end(), formatted.begin(), formatted.end());
             }
@@ -1483,8 +1484,6 @@ try
     Strings tests_names_regexp = options.count("names-regexp") ? options["names-regexp"].as<Strings>() : Strings({});
     Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
-    auto timeouts = DB::ConnectionTimeouts::getTCPTimeouts(DB::Settings());
-
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),
         options["database"].as<String>(),
@@ -1498,8 +1497,7 @@ try
         std::move(tests_names),
         std::move(skip_names),
         std::move(tests_names_regexp),
-        std::move(skip_names_regexp),
-        timeouts);
+        std::move(skip_names_regexp));
 
     return 0;
 }

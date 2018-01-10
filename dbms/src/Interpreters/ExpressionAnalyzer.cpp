@@ -1373,8 +1373,9 @@ void ExpressionAnalyzer::optimizeGroupBy()
     if (!(select_query && select_query->group_expression_list))
         return;
 
-    const auto is_literal = [] (const ASTPtr& ast) {
-        return typeid_cast<const ASTLiteral*>(ast.get());
+    const auto is_literal = [] (const ASTPtr & ast)
+    {
+        return typeid_cast<const ASTLiteral *>(ast.get());
     };
 
     auto & group_exprs = select_query->group_expression_list->children;
@@ -1620,10 +1621,10 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
 
             /** Why is LazyBlockInputStream used?
               *
-              * The fact is that when processing a request of the form
+              * The fact is that when processing a query of the form
               *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
               *  if the distributed remote_test table contains localhost as one of the servers,
-              *  the request will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
+              *  the query will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
               *
               * The query execution pipeline will be:
               * CreatingSets
@@ -1632,7 +1633,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
               *   reading from the table _data1, creating the set (2)
               *   read from the table subordinate to remote_test.
               *
-              * (The second part of the pipeline under CreateSets is a reinterpretation of the request inside StorageDistributed,
+              * (The second part of the pipeline under CreateSets is a reinterpretation of the query inside StorageDistributed,
               *  the query differs in that the database name and tables are replaced with subordinates, and the subquery is replaced with _data1.)
               *
               * But when creating the pipeline, when creating the source (2), it will be found that the _data1 table is empty

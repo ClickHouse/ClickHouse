@@ -1396,7 +1396,8 @@ public:
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
-        auto deleter = [&agg_func](char * ptr) {
+        auto deleter = [&agg_func](char * ptr)
+        {
             agg_func.destroy(ptr);
             free(ptr);
         };
@@ -1529,7 +1530,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr res;
-        dispatchForSourceType(*arguments[0], [&](auto field_type_tag) {
+        dispatchForSourceType(*arguments[0], [&](auto field_type_tag)
+        {
             res = std::make_shared<DataTypeNumber<DstFieldType<decltype(field_type_tag)>>>();
         });
 
