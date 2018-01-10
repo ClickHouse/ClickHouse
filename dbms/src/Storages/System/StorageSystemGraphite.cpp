@@ -124,7 +124,8 @@ static Strings getAllGraphiteSections(const AbstractConfiguration & config)
 
 StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
     : name(name_)
-    , columns {
+    , columns
+    {
         {"config_name", std::make_shared<DataTypeString>()},
         {"regexp",      std::make_shared<DataTypeString>()},
         {"function",    std::make_shared<DataTypeString>()},

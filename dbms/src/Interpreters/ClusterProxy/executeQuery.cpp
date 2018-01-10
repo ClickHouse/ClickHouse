@@ -5,7 +5,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/queryToString.h>
-#include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -24,8 +23,7 @@ BlockInputStreams executeQuery(
     const std::string query = queryToString(query_ast);
 
     Settings new_settings = settings;
-    new_settings.queue_max_wait_ms = ConnectionTimeouts::saturate(new_settings.queue_max_wait_ms,
-                                                                  settings.limits.max_execution_time);
+    new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
 
     /// Does not matter on remote servers, because queries are sent under different user.
     new_settings.max_concurrent_queries_for_user = 0;

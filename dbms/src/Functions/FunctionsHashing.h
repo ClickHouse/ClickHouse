@@ -835,7 +835,8 @@ struct ImplMetroHash64
     static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
     static auto Hash64(const char * s, const size_t len)
     {
-        union {
+        union
+        {
             UInt64 u64;
             UInt8 u8[sizeof(u64)];
         };
