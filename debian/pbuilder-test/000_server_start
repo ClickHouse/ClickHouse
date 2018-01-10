@@ -1,4 +1,0 @@
-#!/bin/bash
-
-service clickhouse-server start
-sleep 3
