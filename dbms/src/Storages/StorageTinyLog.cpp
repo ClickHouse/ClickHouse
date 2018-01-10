@@ -17,9 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -55,8 +53,8 @@ namespace ErrorCodes
 class TinyLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
-    TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
-        : block_size(block_size_), column_names(column_names_), column_types(column_names.size()),
+    TinyLogBlockInputStream(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
+        : block_size(block_size_), columns(columns_),
         storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
 
     String getName() const override { return "TinyLog"; }
@@ -67,8 +65,7 @@ protected:
     Block readImpl() override;
 private:
     size_t block_size;
-    Names column_names;
-    DataTypes column_types;
+    NamesAndTypesList columns;
     StorageTinyLog & storage;
     bool finished = false;
     size_t max_read_buffer_size;
@@ -88,7 +85,7 @@ private:
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
     FileStreams streams;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, bool read_offsets = true);
+    void readData(const String & name, const IDataType & type, IColumn & column, size_t limit);
 };
 
 
@@ -151,8 +148,8 @@ String TinyLogBlockInputStream::getID() const
     std::stringstream res;
     res << "TinyLog(" << storage.getTableName() << ", " << &storage;
 
-    for (const auto & name : column_names)
-        res << ", " << name;
+    for (const auto & name_type : columns)
+        res << ", " << name_type.name;
 
     res << ")";
     return res.str();
@@ -180,50 +177,22 @@ Block TinyLogBlockInputStream::readImpl()
             return res;
     }
 
-    /// If the files are not open, then open them.
-    if (streams.empty())
-        for (size_t i = 0, size = column_names.size(); i < size; ++i)
-            column_types[i] = storage.getDataTypeByName(column_names[i]);
-
-    /// Pointers to offset columns, shared for columns from nested data structures
-    using OffsetColumns = std::map<std::string, ColumnPtr>;
-    OffsetColumns offset_columns;
-
-    for (size_t i = 0, size = column_names.size(); i < size; ++i)
+    for (const auto & name_type : columns)
     {
-        const auto & name = column_names[i];
-
-        MutableColumnPtr column;
-
-        bool read_offsets = true;
-
-        /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
-        {
-            String nested_name = Nested::extractTableName(name);
-
-            if (offset_columns.count(nested_name) == 0)
-                offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
-            else
-                read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
-
-            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
-        }
-        else
-            column = column_types[i]->createColumn();
+        MutableColumnPtr column = name_type.type->createColumn();
 
         try
         {
-            readData(name, *column_types[i], *column, block_size, read_offsets);
+            readData(name_type.name, *name_type.type, *column, block_size);
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name + " at " + storage.full_path());
+            e.addMessage("while reading column " + name_type.name + " at " + storage.full_path());
             throw;
         }
 
         if (column->size())
-            res.insert(ColumnWithTypeAndName(std::move(column), column_types[i], name));
+            res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
     if (!res || streams.begin()->second->compressed.eof())
@@ -232,17 +201,14 @@ Block TinyLogBlockInputStream::readImpl()
         streams.clear();
     }
 
-    return res;
+    return Nested::flatten(res);
 }
 
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit, bool with_offsets)
+void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit)
 {
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
-            return nullptr;
-
         String stream_name = IDataType::getFileNameForStream(name, path);
 
         if (!streams.count(stream_name))
@@ -261,10 +227,11 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
 
+        if (!written_streams.insert(stream_name).second)
+            return nullptr;
+
         if (!streams.count(stream_name))
             streams[stream_name] = std::make_unique<Stream>(storage.files[stream_name].data_file.path(), storage.max_compress_block_size);
-        else if (!written_streams.insert(stream_name).second)
-            return nullptr;
 
         return &streams[stream_name]->compressed;
     };
@@ -386,7 +353,7 @@ BlockInputStreams StorageTinyLog::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
     return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
-        max_block_size, column_names, *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size, Nested::collect(getColumnsList().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 }
 
 

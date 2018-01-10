@@ -37,9 +37,8 @@ WriteBufferFromFile::WriteBufferFromFile(
 
 #ifdef __APPLE__
     bool o_direct = (flags != -1) && (flags & O_DIRECT);
-    if (o_direct) {
+    if (o_direct)
         flags = flags & ~O_DIRECT;
-    }
 #endif
 
     fd = open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
