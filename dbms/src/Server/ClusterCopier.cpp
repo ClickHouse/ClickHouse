@@ -1,6 +1,6 @@
 #include "ClusterCopier.h"
 #include "StatusFile.h"
-#include <boost/program_options.hpp>
+#include <boost/algorithm/string.hpp>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
@@ -237,6 +237,10 @@ struct TaskTable
     ClusterPtr cluster_pull;
     ClusterPtr cluster_push;
 
+    /// Filter partitions that should be copied
+    bool has_enabled_partitions = false;
+    NameSet enabled_partitions;
+
     /// Prioritized list of shards
     TasksShard all_shards;
     TasksShard local_shards;
@@ -448,6 +452,17 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
         // Will use canonical expression form
         where_condition_str = queryToString(where_condition_ast);
     }
+
+    has_enabled_partitions = config.has(table_prefix + "enabled_partitions");
+    if (has_enabled_partitions)
+    {
+        Strings partitions;
+        String partitions_str = config.getString(table_prefix + "enabled_partitions");
+        boost::trim_if(partitions_str, isWhitespaceASCII);
+        boost::split(partitions, partitions_str, isWhitespaceASCII, boost::token_compress_on);
+        std::copy(partitions.begin(), partitions.end(), std::inserter(enabled_partitions, enabled_partitions.begin()));
+    }
+
 }
 
 
@@ -633,6 +648,13 @@ public:
                 Strings partitions = getRemotePartitions(task_table.table_pull, *connection_entry, &task_cluster->settings_pull);
                 for (const String & partition_name : partitions)
                 {
+                    /// Do not process partition if it is in enabled_partitions list
+                    if (task_table.has_enabled_partitions && !task_table.enabled_partitions.count(partition_name))
+                    {
+                        LOG_DEBUG(log, "Will skip partition " << partition_name);
+                        continue;
+                    }
+
                     task_shard->partitions.emplace(partition_name, TaskPartition(*task_shard, partition_name));
                     task_table.partition_to_shards[partition_name].emplace_back(task_shard);
                 }

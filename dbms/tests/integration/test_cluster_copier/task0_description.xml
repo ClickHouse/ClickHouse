@@ -72,6 +72,8 @@
             <database_push>default</database_push>
             <table_push>hits</table_push>
 
+            <enabled_partitions> 0  1   2</enabled_partitions>
+
             <!-- Engine of destination tables -->
             <engine>ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16</engine>
 
