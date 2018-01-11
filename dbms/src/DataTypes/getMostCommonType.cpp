@@ -100,8 +100,7 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
 
         if (non_nothing_types.size() < types.size())
         {
-            getNothingOrThrow(" because some of them are Nothing");
-            return getMostCommonType(non_nothing_types, throw_if_result_is_nothing);
+            return getNothingOrThrow(" because some of them are Nothing");
         }
     }
 
@@ -171,7 +170,7 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                common_tuple_types[elem_idx] = getMostCommonType(nested_types[elem_idx], false);
+                common_tuple_types[elem_idx] = getMostCommonType(nested_types[elem_idx], throw_if_result_is_nothing);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -190,9 +189,7 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
             if (const auto type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
             {
                 have_nullable = true;
-
-                if (!type_nullable->onlyNull())
-                    nested_types.emplace_back(type_nullable->getNestedType());
+                nested_types.emplace_back(type_nullable->getNestedType());
             }
             else
             {
@@ -204,7 +201,8 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
         if (have_nullable)
         {
             if (all_nullable)
-                return std::make_shared<DataTypeNullable>(getMostCommonType(nested_types, throw_if_result_is_nothing));
+                return std::make_shared<DataTypeNullable>(getMostCommonType(nested_types, false));
+
             return getMostCommonType(nested_types, throw_if_result_is_nothing);
         }
     }
@@ -230,7 +228,7 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
                 else if (!type->equals(*fixed_string_type))
                     return getNothingOrThrow(" because some of them are FixedStrings with different length");
             }
-            else if (type->isFixedString())
+            else if (type->isString())
                 have_string = true;
             else
                 all_strings = false;
@@ -277,7 +275,7 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
 
         auto minimize = [](size_t & what, size_t value)
         {
-            if (value < what)
+            if (what == 0 || value < what)
                 what = value;
         };
 
@@ -325,19 +323,16 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
             }
 
             /// If there are signed and unsigned types of same bit-width, the result must be unsigned number.
-
-            size_t max_bit_width_of_integer = std::min(min_bits_of_signed_integer, min_bits_of_unsigned_integer);
-
-            /// If the result must be unsigned integer.
-            if (min_bits_of_unsigned_integer)
+            if (min_bits_of_unsigned_integer &&
+                (min_bits_of_signed_integer == 0 || min_bits_of_unsigned_integer <= min_bits_of_signed_integer))
             {
-                if (max_bit_width_of_integer <= 8)
+                if (min_bits_of_unsigned_integer <= 8)
                     return std::make_shared<DataTypeUInt8>();
-                else if (max_bit_width_of_integer <= 16)
+                else if (min_bits_of_unsigned_integer <= 16)
                     return std::make_shared<DataTypeUInt16>();
-                else if (max_bit_width_of_integer <= 32)
+                else if (min_bits_of_unsigned_integer <= 32)
                     return std::make_shared<DataTypeUInt32>();
-                else if (max_bit_width_of_integer <= 64)
+                else if (min_bits_of_unsigned_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
                 else
                     throw Exception("Logical error: " + getExceptionMessagePrefix(types)
@@ -346,18 +341,17 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
 
             /// All signed.
             {
-                if (max_bit_width_of_integer <= 8)
+                if (min_bits_of_signed_integer <= 8)
                     return std::make_shared<DataTypeInt8>();
-                else if (max_bit_width_of_integer <= 16)
+                else if (min_bits_of_signed_integer <= 16)
                     return std::make_shared<DataTypeInt16>();
-                else if (max_bit_width_of_integer <= 32)
+                else if (min_bits_of_signed_integer <= 32)
                     return std::make_shared<DataTypeInt32>();
-                else if (max_bit_width_of_integer <= 64)
+                else if (min_bits_of_signed_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
                 else
                     throw Exception("Logical error: " + getExceptionMessagePrefix(types)
                                     + " but as all data types are integers, we must have found maximum signed integer type", ErrorCodes::NO_COMMON_TYPE);
-
             }
         }
     }
