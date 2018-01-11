@@ -28,7 +28,7 @@
 #ifndef DOUBLE_CONVERSION_BIGNUM_H_
 #define DOUBLE_CONVERSION_BIGNUM_H_
 
-#include "utils.h"
+#include <double-conversion/utils.h>
 
 namespace double_conversion {
 
@@ -136,7 +136,7 @@ class Bignum {
   // The Bignum's value equals value(bigits_) * 2^(exponent_ * kBigitSize).
   int exponent_;
 
-  DISALLOW_COPY_AND_ASSIGN(Bignum);
+  DC_DISALLOW_COPY_AND_ASSIGN(Bignum);
 };
 
 }  // namespace double_conversion

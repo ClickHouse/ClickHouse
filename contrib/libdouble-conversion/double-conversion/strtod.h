@@ -28,7 +28,7 @@
 #ifndef DOUBLE_CONVERSION_STRTOD_H_
 #define DOUBLE_CONVERSION_STRTOD_H_
 
-#include "utils.h"
+#include <double-conversion/utils.h>
 
 namespace double_conversion {
 

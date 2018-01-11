@@ -25,10 +25,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <math.h>
+#include <cmath>
 
-#include "fixed-dtoa.h"
-#include "ieee.h"
+#include <double-conversion/fixed-dtoa.h>
+#include <double-conversion/ieee.h>
 
 namespace double_conversion {
 
@@ -98,7 +98,7 @@ class UInt128 {
     return high_bits_ == 0 && low_bits_ == 0;
   }
 
-  int BitAt(int position) {
+  int BitAt(int position) const {
     if (position >= 64) {
       return static_cast<int>(high_bits_ >> (position - 64)) & 1;
     } else {
@@ -259,7 +259,8 @@ static void FillFractionals(uint64_t fractionals, int exponent,
       fractionals -= static_cast<uint64_t>(digit) << point;
     }
     // If the first bit after the point is set we have to round up.
-    if (((fractionals >> (point - 1)) & 1) == 1) {
+    ASSERT(fractionals == 0 || point - 1 >= 0);
+    if ((fractionals != 0) && ((fractionals >> (point - 1)) & 1) == 1) {
       RoundUp(buffer, length, decimal_point);
     }
   } else {  // We need 128 bits.
