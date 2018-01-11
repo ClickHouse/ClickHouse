@@ -43,6 +43,9 @@ target_link_libraries (clickhouse-compressor-lib clickhouse_common_io ${Boost_PR
 add_library (clickhouse-format-lib ${SPLIT_SHARED} Format.cpp)
 target_link_libraries (clickhouse-format-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
+add_library (clickhouse-cluster-copier-lib ClusterCopier.cpp)
+target_link_libraries (clickhouse-cluster-copier-lib dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
+
 if (USE_EMBEDDED_COMPILER)
     link_directories (${LLVM_LIBRARY_DIRS})
     add_subdirectory ("Compiler-${LLVM_VERSION}")
@@ -99,6 +102,7 @@ else ()
         clickhouse-extract-from-config-lib
         clickhouse-compressor-lib
         clickhouse-format-lib
+        clickhouse-cluster-copier-lib
         dbms
     )
 
@@ -110,6 +114,7 @@ else ()
     add_custom_target (clickhouse-extract-from-config ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-extract-from-config DEPENDS clickhouse)
     add_custom_target (clickhouse-compressor ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-compressor DEPENDS clickhouse)
     add_custom_target (clickhouse-format ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-format DEPENDS clickhouse)
+    add_custom_target (clickhouse-cluster-copier ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-cluster-copier DEPENDS clickhouse)
     # install always because depian package want this files:
     add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
     add_custom_target (clickhouse-lld ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-lld DEPENDS clickhouse)
@@ -124,6 +129,7 @@ else ()
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-extract-from-config
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-compressor
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-format
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-cluster-copier
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-clang
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-lld
        DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)

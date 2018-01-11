@@ -49,6 +49,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int STORAGE_REQUIRES_PARAMETER;
+    extern const int BAD_ARGUMENTS;
+    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
@@ -196,7 +198,7 @@ BlockInputStreams StorageDistributed::read(
         external_tables = context.getExternalTables();
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
-        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
+        processed_stage, QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::executeQuery(
             select_stream_factory, cluster, modified_query_ast, context, settings);
@@ -205,18 +207,24 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
+    if (owned_cluster && context.getApplicationType() != Context::ApplicationType::LOCAL)
+        throw Exception(
+            "Method write is not supported by storage " + getName() +
+            " created via a table function", ErrorCodes::READONLY);
 
-    /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
-    bool write_enabled = (!path.empty() || owned_cluster)
-                         && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    auto cluster = (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
 
-    if (!write_enabled)
-        throw Exception{
+    bool is_sharding_key_ok = has_sharding_key || ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2);
+    if (!is_sharding_key_ok)
+        throw Exception(
             "Method write is not supported by storage " + getName() +
             " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER};
+            ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+
+    if (path.empty() && !settings.insert_distributed_sync.value)
+        throw Exception(
+            "Data path should be set for storage " + getName() +
+            " to enable asynchronous inserts", ErrorCodes::BAD_ARGUMENTS);
 
     bool insert_sync = settings.insert_distributed_sync || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
