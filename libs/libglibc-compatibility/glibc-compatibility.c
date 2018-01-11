@@ -125,10 +125,10 @@ int pthread_getname_np(pthread_t thread, char *name, size_t len) { name[0] = '\0
 
 
 #define SHMDIR "/dev/shm/"
-const char * __shm_directory(size_t *len)
+const char * __shm_directory(size_t * len)
 {
-  *len = sizeof(SHMDIR) - 1;
-  return SHMDIR;
+    *len = sizeof(SHMDIR) - 1;
+    return SHMDIR;
 }
 
 
