@@ -50,27 +50,13 @@ Package: clickhouse-client
 Architecture: any
 Pre-Depends: clickhouse-common (= ${binary:Version})
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Replaces: clickhouse-compressor
+Conflicts: clickhouse-compressor
 Description: Client binary for clickhouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
  This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
-
-Package: clickhouse-utils
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
-Replaces: clickhouse-compressor
-Provides: clickhouse-compressor
-Conflicts: clickhouse-compressor
-Description: Various utilities for clickhouse analytics db
- Yandex ClickHouse is a column-oriented database management system
- that allows generating analytical data reports in real time.
- .
- This package provides:
- .
-   - compressor
-   - zookeeper client
-   - extract-from-config tool
 
 Package: clickhouse-test
 Priority: extra
