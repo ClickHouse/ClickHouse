@@ -27,7 +27,7 @@ namespace
     String getExceptionMessagePrefix(const DataTypes & types)
     {
         WriteBufferFromOwnString res;
-        res << "There is no common type for types ";
+        res << "There is no least common type for types ";
 
         bool first = true;
         for (const auto & type : types)
