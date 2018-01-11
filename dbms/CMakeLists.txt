@@ -172,7 +172,7 @@ if (NOT USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
-    target_include_directories (dbms BEFORE PRIVATE ${ZOOKEEPER_INCLUDE_DIR})
+    target_include_directories (clickhouse_common_io BEFORE PUBLIC ${ZOOKEEPER_INCLUDE_DIR})
 endif ()
 
 if (Poco_DataODBC_FOUND)
