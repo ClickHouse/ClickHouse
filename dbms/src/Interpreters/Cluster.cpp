@@ -75,8 +75,8 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
 
     resolved_address = resolveSocketAddress(parsed_host_port.first, parsed_host_port.second);
-    host_name = host_port_;
-    port = clickhouse_port;
+    host_name = parsed_host_port.first;
+    port = parsed_host_port.second;
     is_local = isLocal(*this, clickhouse_port);
 }
 
