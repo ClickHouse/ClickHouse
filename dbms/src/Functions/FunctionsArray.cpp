@@ -4,7 +4,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Functions/FunctionFactory.h>
-#include <DataTypes/getLeastCommonType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Common/HashTable/HashMap.h>
@@ -53,7 +53,7 @@ FunctionArray::FunctionArray(const Context & context)
 
 DataTypePtr FunctionArray::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    return std::make_shared<DataTypeArray>(getLeastCommonType(arguments));
+    return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
 }
 
 void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2505,7 +2505,7 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
                             + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    return getLeastCommonType(arguments);
+    return getLeastSupertype(arguments);
 }
 
 void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2700,7 +2700,7 @@ DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) co
 
     DataTypes types = {nested_type, arguments[1]};
 
-    return std::make_shared<DataTypeArray>(getLeastCommonType(types));
+    return std::make_shared<DataTypeArray>(getLeastSupertype(types));
 }
 
 void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -2885,7 +2885,7 @@ void FunctionArrayHasAllAny::executeImpl(Block & block, const ColumnNumbers & ar
             for (const auto & argument : arguments)
                 data_types.push_back(block.getByPosition(argument).type);
 
-            common_type = getLeastCommonType(data_types);
+            common_type = getLeastSupertype(data_types);
         }
 
         return common_type;

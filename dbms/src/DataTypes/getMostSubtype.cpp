@@ -2,7 +2,7 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
-#include <DataTypes/getMostCommonType.h>
+#include <DataTypes/getMostSubtype.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -27,7 +27,7 @@ namespace
 String getExceptionMessagePrefix(const DataTypes & types)
 {
     WriteBufferFromOwnString res;
-    res << "There is no most common type for types ";
+    res << "There is no subtype for types ";
 
     bool first = true;
     for (const auto & type : types)
@@ -45,7 +45,7 @@ String getExceptionMessagePrefix(const DataTypes & types)
 }
 
 
-DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_nothing)
+DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_nothing)
 {
 
     auto getNothingOrThrow = [throw_if_result_is_nothing, & types](const std::string & reason)
@@ -89,19 +89,14 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
 
     /// Recursive rules
 
-    /// If there are Nothing types, skip them
+    /// If there are Nothing types, result is Nothing
     {
         DataTypes non_nothing_types;
         non_nothing_types.reserve(types.size());
 
         for (const auto & type : types)
-            if (!typeid_cast<const DataTypeNothing *>(type.get()))
-                non_nothing_types.emplace_back(type);
-
-        if (non_nothing_types.size() < types.size())
-        {
-            return getNothingOrThrow(" because some of them are Nothing");
-        }
+            if (typeid_cast<const DataTypeNothing *>(type.get()))
+                return getNothingOrThrow(" because some of them are Nothing");
     }
 
     /// For Arrays
@@ -128,7 +123,7 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
             if (!all_arrays)
                 return getNothingOrThrow(" because some of them are Array and some of them are not");
 
-            return std::make_shared<DataTypeArray>(getMostCommonType(nested_types, false));
+            return std::make_shared<DataTypeArray>(getMostSubtype(nested_types, false));
         }
     }
 
@@ -170,7 +165,7 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                common_tuple_types[elem_idx] = getMostCommonType(nested_types[elem_idx], throw_if_result_is_nothing);
+                common_tuple_types[elem_idx] = getMostSubtype(nested_types[elem_idx], throw_if_result_is_nothing);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -201,9 +196,9 @@ DataTypePtr getMostCommonType(const DataTypes & types, bool throw_if_result_is_n
         if (have_nullable)
         {
             if (all_nullable)
-                return std::make_shared<DataTypeNullable>(getMostCommonType(nested_types, false));
+                return std::make_shared<DataTypeNullable>(getMostSubtype(nested_types, false));
 
-            return getMostCommonType(nested_types, throw_if_result_is_nothing);
+            return getMostSubtype(nested_types, throw_if_result_is_nothing);
         }
     }
 
