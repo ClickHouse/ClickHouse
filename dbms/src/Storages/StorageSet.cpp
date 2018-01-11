@@ -21,6 +21,12 @@ namespace ErrorCodes
 }
 
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_FILE_NAME;
+}
+
+
 class SetOrJoinBlockOutputStream : public IBlockOutputStream
 {
 public:
@@ -87,8 +93,12 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_ + escapeForFileName(name_) + '/'), name(name_), columns(columns_)
+    name(name_), columns(columns_)
 {
+    if (path_.empty())
+        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    path = path_ + escapeForFileName(name_) + '/';
 }
 
 

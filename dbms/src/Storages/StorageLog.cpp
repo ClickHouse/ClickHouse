@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -371,7 +372,10 @@ StorageLog::StorageLog(
     if (columns.empty())
         throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    /// create files if they do not exist
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+     /// create files if they do not exist
     Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
     for (const auto & column : getColumnsList())
