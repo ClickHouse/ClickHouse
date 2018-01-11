@@ -952,7 +952,7 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 {
     ReadBufferFromMemory in(pos, end - pos);
     tryReadIntText(x, in);
-    return in.position();
+    return pos + in.count();
 }
 
 
