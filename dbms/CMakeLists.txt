@@ -167,6 +167,14 @@ target_link_libraries (dbms
     ${BTRIE_LIBRARIES}
 )
 
+if (NOT USE_INTERNAL_RE2_LIBRARY)
+    target_include_directories (dbms BEFORE PRIVATE ${RE2_INCLUDE_DIR})
+endif ()
+
+if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
+    target_include_directories (clickhouse_common_io BEFORE PUBLIC ${ZOOKEEPER_INCLUDE_DIR})
+endif ()
+
 if (Poco_DataODBC_FOUND)
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
 endif()
@@ -183,10 +191,21 @@ target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
     target_link_libraries (dbms ${ICU_LIBS})
+    target_include_directories (dbms PRIVATE ${ICU_INCLUDE_DIR})
 endif ()
 
 if (USE_CAPNP)
-    target_link_libraries (dbms ${CAPNP_LIBS})
+    target_link_libraries (dbms ${CAPNP_LIBRARY})
+    if (NOT USE_INTERNAL_CAPNP_LIBRARY)
+        target_include_directories (dbms BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
+    endif ()
+endif ()
+
+if (USE_RDKAFKA)
+    target_link_libraries (dbms ${RDKAFKA_LIBRARY})
+    if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
+        target_include_directories (dbms BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
+    endif ()
 endif ()
 
 target_link_libraries (dbms
@@ -208,10 +227,6 @@ target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
-
-if (USE_RDKAFKA)
-    target_link_libraries (dbms ${RDKAFKA_LIBRARY})
-endif ()
 
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
