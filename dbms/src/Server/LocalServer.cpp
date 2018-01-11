@@ -12,7 +12,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>

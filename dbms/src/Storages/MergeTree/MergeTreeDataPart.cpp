@@ -10,7 +10,7 @@
 #include <Core/Defines.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
