@@ -6,7 +6,6 @@ if (NOT USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (RE2_LIBRARY AND RE2_INCLUDE_DIR)
-    #include_directories (${RE2_INCLUDE_DIR})
     set (RE2_ST_LIBRARY ${RE2_LIBRARY})
 else ()
     set (USE_INTERNAL_RE2_LIBRARY 1)
