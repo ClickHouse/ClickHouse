@@ -25,17 +25,18 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <limits.h>
-#include <math.h>
+#include <climits>
+#include <locale>
+#include <cmath>
 
-#include "double-conversion.h"
+#include <double-conversion/double-conversion.h>
 
-#include "bignum-dtoa.h"
-#include "fast-dtoa.h"
-#include "fixed-dtoa.h"
-#include "ieee.h"
-#include "strtod.h"
-#include "utils.h"
+#include <double-conversion/bignum-dtoa.h>
+#include <double-conversion/fast-dtoa.h>
+#include <double-conversion/fixed-dtoa.h>
+#include <double-conversion/ieee.h>
+#include <double-conversion/strtod.h>
+#include <double-conversion/utils.h>
 
 namespace double_conversion {
 
@@ -118,7 +119,7 @@ void DoubleToStringConverter::CreateDecimalRepresentation(
     StringBuilder* result_builder) const {
   // Create a representation that is padded with zeros if needed.
   if (decimal_point <= 0) {
-      // "0.00000decimal_rep".
+      // "0.00000decimal_rep" or "0.000decimal_rep00".
     result_builder->AddCharacter('0');
     if (digits_after_point > 0) {
       result_builder->AddCharacter('.');
@@ -129,7 +130,7 @@ void DoubleToStringConverter::CreateDecimalRepresentation(
       result_builder->AddPadding('0', remaining_digits);
     }
   } else if (decimal_point >= length) {
-    // "decimal_rep0000.00000" or "decimal_rep.0000"
+    // "decimal_rep0000.00000" or "decimal_rep.0000".
     result_builder->AddSubstring(decimal_digits, length);
     result_builder->AddPadding('0', decimal_point - length);
     if (digits_after_point > 0) {
@@ -137,7 +138,7 @@ void DoubleToStringConverter::CreateDecimalRepresentation(
       result_builder->AddPadding('0', digits_after_point);
     }
   } else {
-    // "decima.l_rep000"
+    // "decima.l_rep000".
     ASSERT(digits_after_point > 0);
     result_builder->AddSubstring(decimal_digits, decimal_point);
     result_builder->AddCharacter('.');
@@ -414,21 +415,55 @@ void DoubleToStringConverter::DoubleToAscii(double v,
 }
 
 
-// Consumes the given substring from the iterator.
-// Returns false, if the substring does not match.
-template <class Iterator>
-static bool ConsumeSubString(Iterator* current,
-                             Iterator end,
-                             const char* substring) {
-  ASSERT(**current == *substring);
+namespace {
+
+inline char ToLower(char ch) {
+  static const std::ctype<char>& cType =
+      std::use_facet<std::ctype<char> >(std::locale::classic());
+  return cType.tolower(ch);
+}
+
+inline char Pass(char ch) {
+  return ch;
+}
+
+template <class Iterator, class Converter>
+static inline bool ConsumeSubStringImpl(Iterator* current,
+                                        Iterator end,
+                                        const char* substring,
+                                        Converter converter) {
+  ASSERT(converter(**current) == *substring);
   for (substring++; *substring != '\0'; substring++) {
     ++*current;
-    if (*current == end || **current != *substring) return false;
+    if (*current == end || converter(**current) != *substring) {
+      return false;
+    }
   }
   ++*current;
   return true;
 }
 
+// Consumes the given substring from the iterator.
+// Returns false, if the substring does not match.
+template <class Iterator>
+static bool ConsumeSubString(Iterator* current,
+                             Iterator end,
+                             const char* substring,
+                             bool allow_case_insensibility) {
+  if (allow_case_insensibility) {
+    return ConsumeSubStringImpl(current, end, substring, ToLower);
+  } else {
+    return ConsumeSubStringImpl(current, end, substring, Pass);
+  }
+}
+
+// Consumes first character of the str is equal to ch
+inline bool ConsumeFirstCharacter(char ch,
+                                         const char* str,
+                                         bool case_insensibility) {
+  return case_insensibility ? ToLower(ch) == str[0] : ch == str[0];
+}
+}  // namespace
 
 // Maximum number of significant digits in decimal representation.
 // The longest possible double in decimal representation is
@@ -629,7 +664,6 @@ static double RadixStringToIeee(Iterator* current,
   return Double(DiyFp(number, exponent)).value();
 }
 
-
 template <class Iterator>
 double StringToDoubleConverter::StringToIeee(
     Iterator input,
@@ -645,6 +679,8 @@ double StringToDoubleConverter::StringToIeee(
   const bool allow_leading_spaces = (flags_ & ALLOW_LEADING_SPACES) != 0;
   const bool allow_trailing_spaces = (flags_ & ALLOW_TRAILING_SPACES) != 0;
   const bool allow_spaces_after_sign = (flags_ & ALLOW_SPACES_AFTER_SIGN) != 0;
+  const bool allow_case_insensibility = (flags_ & ALLOW_CASE_INSENSIBILITY) != 0;
+
 
   // To make sure that iterator dereferencing is valid the following
   // convention is used:
@@ -694,8 +730,8 @@ double StringToDoubleConverter::StringToIeee(
   }
 
   if (infinity_symbol_ != NULL) {
-    if (*current == infinity_symbol_[0]) {
-      if (!ConsumeSubString(&current, end, infinity_symbol_)) {
+    if (ConsumeFirstCharacter(*current, infinity_symbol_, allow_case_insensibility)) {
+      if (!ConsumeSubString(&current, end, infinity_symbol_, allow_case_insensibility)) {
         return junk_string_value_;
       }
 
@@ -713,8 +749,8 @@ double StringToDoubleConverter::StringToIeee(
   }
 
   if (nan_symbol_ != NULL) {
-    if (*current == nan_symbol_[0]) {
-      if (!ConsumeSubString(&current, end, nan_symbol_)) {
+    if (ConsumeFirstCharacter(*current, nan_symbol_, allow_case_insensibility)) {
+      if (!ConsumeSubString(&current, end, nan_symbol_, allow_case_insensibility)) {
         return junk_string_value_;
       }
 

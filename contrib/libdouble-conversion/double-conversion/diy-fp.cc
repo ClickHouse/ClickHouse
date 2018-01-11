@@ -26,8 +26,8 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-#include "diy-fp.h"
-#include "utils.h"
+#include <double-conversion/diy-fp.h>
+#include <double-conversion/utils.h>
 
 namespace double_conversion {
 
