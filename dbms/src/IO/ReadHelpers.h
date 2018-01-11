@@ -26,6 +26,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 
+#include <double-conversion/double-conversion.h>
+
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
 
@@ -255,15 +257,15 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                         return ReturnType(false);
                 }
                 break;
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
+            case '0': [[fallthrough]];
+            case '1': [[fallthrough]];
+            case '2': [[fallthrough]];
+            case '3': [[fallthrough]];
+            case '4': [[fallthrough]];
+            case '5': [[fallthrough]];
+            case '6': [[fallthrough]];
+            case '7': [[fallthrough]];
+            case '8': [[fallthrough]];
             case '9':
                 x *= 10;
                 x += *buf.position() - '0';
@@ -377,70 +379,35 @@ void assertNaN(ReadBuffer & buf);
 template <typename T, typename ReturnType>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
 
-    bool negative = false;
-    x = 0;
-    bool after_point = false;
-    double power_of_ten = 1;
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     if (buf.eof())
     {
         if (throw_exception)
-            throwReadAfterEOF();
+            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
         else
             return ReturnType(false);
     }
 
-    while (!buf.eof())
+    /// We use special code to read denormals (inf, nan), because we support slightly more variants that double-conversion library does:
+    /// Example: inf and Infinity.
+
+    bool negative = false;
+
+    while (true)
     {
         switch (*buf.position())
         {
-            case '+':
-                break;
             case '-':
-                negative = true;
-                break;
-            case '.':
-                after_point = true;
-                break;
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
-                if (after_point)
-                {
-                    power_of_ten /= 10;
-                    x += (*buf.position() - '0') * power_of_ten;
-                }
-                else
-                {
-                    x *= 10;
-                    x += *buf.position() - '0';
-                }
-                break;
-            case 'e':
-            case 'E':
             {
+                negative = true;
                 ++buf.position();
-                Int32 exponent = 0;
-                bool res = exceptionPolicySelector<throw_exception>(readIntText<Int32>, tryReadIntText<Int32>, exponent, buf);
-                if (res)
-                {
-                    x *= exp10(exponent);
-                    if (negative)
-                        x = -x;
-                }
-                return ReturnType(res);
+                continue;
             }
 
-            case 'i':
+            case 'i': [[fallthrough]];
             case 'I':
             {
                 bool res = exceptionPolicySelector<throw_exception>(assertInfinity, parseInfinity, buf);
@@ -453,7 +420,7 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
                 return ReturnType(res);
             }
 
-            case 'n':
+            case 'n': [[fallthrough]];
             case 'N':
             {
                 bool res = exceptionPolicySelector<throw_exception>(assertNaN, parseNaN, buf);
@@ -467,19 +434,78 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
             }
 
             default:
-            {
-                if (negative)
-                    x = -x;
-                return ReturnType(true);
-            }
+                break;
         }
-        ++buf.position();
+        break;
     }
 
-    if (negative)
-        x = -x;
+    static const double_conversion::StringToDoubleConverter converter(
+        double_conversion::StringToDoubleConverter::NO_FLAGS,
+        0, 0, nullptr, nullptr);
 
-    return ReturnType(true);
+    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
+    static constexpr int MAX_LENGTH = 310;
+
+    if (buf.position() + MAX_LENGTH <= buf.buffer().end())
+    {
+        int num_processed_characters = 0;
+
+        if constexpr (std::is_same_v<T, double>)
+            x = converter.StringToDouble(buf.position(), buf.buffer().end() - buf.position(), &num_processed_characters);
+        else
+            x = converter.StringToFloat(buf.position(), buf.buffer().end() - buf.position(), &num_processed_characters);
+
+        if (num_processed_characters <= 0)
+        {
+            if (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return ReturnType(false);
+        }
+
+        buf.position() += num_processed_characters;
+
+        if (negative)
+            x = -x;
+        return ReturnType(true);
+    }
+    else
+    {
+        /// Slow path. Copy characters that may be present in floating point number to temporary buffer.
+
+        char tmp_buf[MAX_LENGTH];
+        int num_copied_chars = 0;
+
+        while (!buf.eof() && num_copied_chars < MAX_LENGTH)
+        {
+            char c = *buf.position();
+            if (!(isNumericASCII(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'))
+                break;
+
+            tmp_buf[num_copied_chars] = c;
+            ++buf.position();
+            ++num_copied_chars;
+        }
+
+        int num_processed_characters = 0;
+
+        if constexpr (std::is_same_v<T, double>)
+            x = converter.StringToDouble(tmp_buf, num_copied_chars, &num_processed_characters);
+        else
+            x = converter.StringToFloat(tmp_buf, num_copied_chars, &num_processed_characters);
+
+        if (num_processed_characters < num_copied_chars)
+        {
+            if (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return ReturnType(false);
+        }
+
+        if (negative)
+            x = -x;
+        return ReturnType(true);
+    }
 }
 
 template <typename T>
@@ -925,46 +951,9 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message =
 template <typename T>
 static inline const char * tryReadIntText(T & x, const char * pos, const char * end)
 {
-    bool negative = false;
-    x = 0;
-    if (pos >= end)
-        return pos;
-
-    while (pos < end)
-    {
-        switch (*pos)
-        {
-            case '+':
-                break;
-            case '-':
-                if (std::is_signed_v<T>)
-                    negative = true;
-                else
-                    return pos;
-                break;
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
-                x *= 10;
-                x += *pos - '0';
-                break;
-            default:
-                if (negative)
-                    x = -x;
-                return pos;
-        }
-        ++pos;
-    }
-    if (negative)
-        x = -x;
-    return pos;
+    ReadBufferFromMemory in(pos, end - pos);
+    tryReadIntText(x, in);
+    return in.position();
 }
 
 
