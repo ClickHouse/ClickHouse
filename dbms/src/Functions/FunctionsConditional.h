@@ -17,7 +17,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/getLeastCommonType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Algorithms.h>
 
@@ -836,7 +836,7 @@ public:
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return getLeastCommonType({arguments[1], arguments[2]});
+        return getLeastSupertype({arguments[1], arguments[2]});
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
