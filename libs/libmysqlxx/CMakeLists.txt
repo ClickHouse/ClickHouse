@@ -49,6 +49,7 @@ if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
 endif ()
 
 target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIBRARIES} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
+target_include_directories (mysqlxx PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)
