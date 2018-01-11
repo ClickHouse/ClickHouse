@@ -354,7 +354,7 @@ void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 template <bool throw_exception, typename ExcepFun, typename NoExcepFun, typename... Args>
 bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
 {
-    if (throw_exception)
+    if constexpr (throw_exception)
     {
         excep_f(std::forward<Args>(args)...);
         return true;
@@ -374,7 +374,7 @@ void assertNaN(ReadBuffer & buf);
 
 /// Rough: not exactly nearest machine representable number is returned.
 /// Some garbage may be successfully parsed, examples: '.' parsed as 0; 123Inf parsed as inf.
-template <typename T, typename ReturnType, char point_symbol = '.'>
+template <typename T, typename ReturnType>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -401,7 +401,7 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
             case '-':
                 negative = true;
                 break;
-            case point_symbol:
+            case '.':
                 after_point = true;
                 break;
             case '0':

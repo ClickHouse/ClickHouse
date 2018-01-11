@@ -99,29 +99,26 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 
-inline void writeFloatText(double x, WriteBuffer & buf)
+template <typename T>
+inline void writeFloatText(T x, WriteBuffer & buf)
 {
-    DoubleConverter<false>::BufferType buffer;
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
+
+    using Converter = DoubleConverter<false>;
+
+    Converter::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-    const auto result = DoubleConverter<false>::instance().ToShortest(x, &builder);
+    bool result = false;
+    if constexpr (std::is_same_v<T, double>)
+        result = Converter::instance().ToShortest(x, &builder);
+    else
+        result = Converter::instance().ToShortestSingle(x, &builder);
 
     if (!result)
-        throw Exception("Cannot print double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-    buf.write(buffer, builder.position());
-}
-
-inline void writeFloatText(float x, WriteBuffer & buf)
-{
-    DoubleConverter<false>::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-
-    const auto result = DoubleConverter<false>::instance().ToShortestSingle(x, &builder);
-
-    if (!result)
-        throw Exception("Cannot print float number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-
+    /// TODO Excessive copy. Use optimistic path if buffer have enough bytes.
     buf.write(buffer, builder.position());
 }
 
