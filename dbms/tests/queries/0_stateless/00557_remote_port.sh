@@ -14,6 +14,8 @@ else
     echo 0
     echo 0
     echo 0
+    echo 0
+    echo 0
 fi
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('${CLICKHOUSE_HOST}',          system, one);"
