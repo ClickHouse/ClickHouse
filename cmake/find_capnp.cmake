@@ -2,7 +2,19 @@ option (ENABLE_CAPNP "Enable Cap'n Proto" ON)
 
 if (ENABLE_CAPNP)
 
-    option (USE_INTERNAL_CAPNP_LIBRARY "Set to FALSE to use system capnproto library instead of bundled" ${NOT_UNBUNDLED})
+    # cmake 3.5.1 bug:
+    # capnproto uses this cmake feature:
+    # target_compile_features(kj PUBLIC cxx_constexpr)
+    # old cmake adds -std=gnu++11 to end of all compile commands (even if -std=gnu++17 already present in compile string)
+    # cmake 3.9.1 (ubuntu artful) have no this bug (c++17 support added to cmake 3.8.2)
+    if (CMAKE_VERSION VERSION_LESS "3.8.0")
+       set (USE_INTERNAL_CAPNP_LIBRARY_DEFAULT 0)
+       set (MISSING_INTERNAL_CAPNP_LIBRARY 1)
+    else ()
+       set (USE_INTERNAL_CAPNP_LIBRARY_DEFAULT ${NOT_UNBUNDLED})
+    endif ()
+
+    option (USE_INTERNAL_CAPNP_LIBRARY "Set to FALSE to use system capnproto library instead of bundled" ${USE_INTERNAL_CAPNP_LIBRARY_DEFAULT})
 
     if (USE_INTERNAL_CAPNP_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/CMakeLists.txt")
        message (WARNING "submodule contrib/capnproto is missing. to fix try run: \n git submodule update --init --recursive")
@@ -26,7 +38,7 @@ if (ENABLE_CAPNP)
         set (USE_INTERNAL_CAPNP_LIBRARY 1)
         set (CAPNP_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/src")
         set (CAPNP_LIBRARY capnpc)
-        set(USE_CAPNP 1)
+        set (USE_CAPNP 1)
     endif ()
 
 endif ()

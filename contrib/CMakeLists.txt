@@ -86,14 +86,13 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
-    #set(CAPNP_LITE 1 CACHE INTERNAL "")
+    set(CAPNP_LITE 1 CACHE INTERNAL "")
     set(BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
     set (CMAKE_CXX_EXTENSIONS)
     add_subdirectory (capnproto/c++)
     set (CMAKE_CXX_EXTENSIONS ${_save})
-    #target_include_directories(capnpc PUBLIC capnproto/c++/src)
-    target_include_directories(capnpc PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
+    target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
 
 
