@@ -27,6 +27,7 @@ target_link_libraries (clickhouse-extract-from-config-lib clickhouse_common_io $
 
 add_library (clickhouse-client-lib Client.cpp)
 target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_include_directories (clickhouse-client-lib PRIVATE ${READLINE_INCLUDE_DIR})
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
 
 add_library (clickhouse-benchmark-lib ${SPLIT_SHARED} Benchmark.cpp)

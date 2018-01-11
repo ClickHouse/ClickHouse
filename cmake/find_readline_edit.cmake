@@ -35,7 +35,7 @@ elseif (EDIT_LIB AND TERMCAP_LIB)
 endif ()
 
 if (LINE_EDITING_LIBS AND READLINE_INCLUDE_DIR)
-    include_directories (${READLINE_INCLUDE_DIR})
+    #include_directories (${READLINE_INCLUDE_DIR})
 
     include (CheckCXXSourceRuns)
 
