@@ -1,3 +1,5 @@
+language: cpp
+
 sudo: required
 dist: trusty
 
