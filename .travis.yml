@@ -7,10 +7,12 @@ os: linux
 
 cache:
   ccache: true
+  directories:
+  - /var/cache/pbuilder
 
 addons:
   apt:
-    packages: [ pbuilder ]
+    packages: [ pbuilder, fakeroot ]
 
 script:
-  - ./release --pbuilder
+  - env TEST_RUN=1 ./release --pbuilder
