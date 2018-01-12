@@ -572,7 +572,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         out = std::make_shared<AddingDefaultBlockOutputStream>(
             out, columns.columns, columns.column_defaults, context, strict_insert_defaults);
 
-        if (context.getSettingsRef().insert_allow_materialized_columns)
+        if (!context.getSettingsRef().insert_allow_materialized_columns)
             out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, columns.materialized_columns);
 
         BlockIO io;

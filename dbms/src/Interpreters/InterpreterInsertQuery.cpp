@@ -37,8 +37,9 @@ namespace ErrorCodes
 }
 
 
-InterpreterInsertQuery::InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterInsertQuery::InterpreterInsertQuery(
+    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
+    : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
     ProfileEvents::increment(ProfileEvents::InsertQuery);
 }
@@ -118,7 +119,7 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<AddingDefaultBlockOutputStream>(
         out, required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
 
-    if (context.getSettingsRef().insert_allow_materialized_columns)
+    if (!allow_materialized)
         out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, table->materialized_columns);
 
     out = std::make_shared<SquashingBlockOutputStream>(
