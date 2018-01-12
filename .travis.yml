@@ -19,5 +19,6 @@ install:
 script:
   - mkdir build
   - cd build
+  - which $CXX
   - cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` && make -j `nproc || grep -c ^processor /proc/cpuinfo` all
   
