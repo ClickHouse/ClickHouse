@@ -95,6 +95,7 @@ namespace ErrorCodes
     extern const int TOO_MUCH_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int CANNOT_ASSIGN_OPTIMIZE;
 }
 
 
@@ -1582,7 +1583,7 @@ namespace
     bool canMergePartsAccordingToZooKeeperInfo(
         const MergeTreeData::DataPartPtr & left,
         const MergeTreeData::DataPartPtr & right,
-        zkutil::ZooKeeperPtr && zookeeper, const String & zookeeper_path, const MergeTreeData & data)
+        zkutil::ZooKeeperPtr && zookeeper, const String & zookeeper_path, const MergeTreeData & data, String * out_reason = nullptr)
     {
         const String & partition_id = left->info.partition_id;
 
@@ -1600,7 +1601,10 @@ namespace
                 throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
 
             if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
+            {
+                if (out_reason) *out_reason = "Quorum status condition is unsatisfied";
                 return false;
+            }
         }
 
         /// Won't merge last_part even if quorum is satisfied, because we gonna check if replica has this part
@@ -1614,7 +1618,10 @@ namespace
                 throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
 
             if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
+            {
+                if (out_reason) *out_reason = "Quorum 'last part' condition is unsatisfied";
                 return false;
+            }
         }
 
         /// You can merge the parts, if all the numbers between them are abandoned - do not correspond to any blocks.
@@ -1625,8 +1632,34 @@ namespace
 
             if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
                 AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+            {
+                if (out_reason)
+                    *out_reason = "Block " + toString(number) + " in gap between merging parts " + left->name + " and "
+                                  + right->name + " is not abandoned";
                 return false;
+            }
         }
+
+        return true;
+    }
+
+
+    /// If any of the parts is already going to be merge into a larger one, do not agree to merge it.
+    bool partsWillNotBeMergedOrDisabled(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
+                                        ReplicatedMergeTreeQueue & queue, String * out_reason = nullptr)
+    {
+        auto set_reason = [&out_reason] (const String & part_name)
+        {
+            if (out_reason)
+                *out_reason = "Part " + part_name + " cannot be merged yet, a merge has already assigned for it or it is temporarily disabled";
+            return false;
+        };
+
+        if (queue.partWillBeMergedOrMergesDisabled(left->name))
+            return set_reason(left->name);
+
+        if (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name))
+            return set_reason(right->name);
 
         return true;
     }
@@ -1721,7 +1754,6 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
     LOG_DEBUG(log, "Merge selecting thread started");
 
     bool deduplicate = false; /// TODO: read deduplicate option from table config
-    bool need_pull = true;
 
     auto uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
     {
@@ -1738,15 +1770,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
     /// Will be updated below.
     std::chrono::steady_clock::time_point now;
 
-    auto can_merge = [&]
-        (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    auto can_merge = [&] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
     {
-        /// If any of the parts is already going to be merge into a larger one, do not agree to merge it.
-        if (queue.partWillBeMergedOrMergesDisabled(left->name)
-            || (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name)))
-            return false;
-
-        return cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
+        return partsWillNotBeMergedOrDisabled(left, right, queue)
+               && cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
     };
 
     while (!shutdown_called && is_leader_node)
@@ -1755,20 +1782,16 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
         try
         {
-            if (need_pull)
-            {
-                /// You need to load new entries into the queue before you select parts to merge.
-                ///  (so we know which parts are already going to be merged).
-                pullLogsToQueue();
-                need_pull = false;
-            }
-
             std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-            /** If many merges is already queued, then will queue only small enough merges.
-              * Otherwise merge queue could be filled with only large merges,
-              *  and in the same time, many small parts could be created and won't be merged.
-              */
+            /// You need to load new entries into the queue before you select parts to merge.
+            ///  (so we know which parts are already going to be merged).
+            /// We must select parts for merge under the mutex because other threads (OPTIMIZE queries) could push new merges.
+            pullLogsToQueue();
+
+            /// If many merges is already queued, then will queue only small enough merges.
+            /// Otherwise merge queue could be filled with only large merges,
+            /// and in the same time, many small parts could be created and won't be merged.
             size_t merges_queued = queue.countMerges();
 
             if (merges_queued >= data.settings.max_replicated_merges_in_queue)
@@ -1786,14 +1809,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                 now = std::chrono::steady_clock::now();
 
                 if (max_parts_size_for_merge > 0
-                    && merger.selectPartsToMerge(
-                        future_merged_part, false,
-                        max_parts_size_for_merge,
-                        can_merge)
+                    && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge)
                     && createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate))
                 {
                     success = true;
-                    need_pull = true;
                 }
             }
         }
@@ -2345,42 +2364,51 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         return true;
     }
 
-    auto can_merge = [this]
-        (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String * out_reason)
     {
-        return canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data);
+        return partsWillNotBeMergedOrDisabled(left, right, queue, out_reason)
+               && canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data, out_reason);
     };
-
-    pullLogsToQueue();
 
     ReplicatedMergeTreeLogEntryData merge_entry;
     {
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
+        /// We must select parts for merge under the mutex because other threads (OPTIMIZE queries) could push new merges.
+        pullLogsToQueue();
+
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
         MergeTreeDataMerger::FuturePart future_merged_part;
+        String disable_reason;
         bool selected = false;
 
         if (!partition)
         {
             selected = merger.selectPartsToMerge(
-                future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
+                future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
         }
         else
         {
             String partition_id = data.getPartitionIDFromQuery(partition, context);
-            selected = merger.selectAllPartsToMergeWithinPartition(future_merged_part, disk_space, can_merge, partition_id, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
         }
+
+        auto handle_noop = [&] (const String & message)
+        {
+            if (context.getSettingsRef().optimize_throw_if_noop)
+                throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+            return false;
+        };
 
         if (!selected)
         {
-            LOG_INFO(log, "Cannot select parts for optimization");
-            return false;
+            LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
+            return handle_noop(disable_reason);
         }
 
         if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
-            return false;
+            return handle_noop("Can't create merge queue node in ZooKeeper");
     }
 
     waitForAllReplicasToProcessLogEntry(merge_entry);
