@@ -64,6 +64,7 @@ generate_function_register(Array
   FunctionArrayPopFront
   FunctionArrayHasAll
   FunctionArrayHasAny
+  FunctionArrayIntersect
 )
 
 
