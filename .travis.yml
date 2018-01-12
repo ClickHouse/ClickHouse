@@ -12,7 +12,7 @@ cache:
 
 addons:
   apt:
-    packages: [ pbuilder, fakeroot ]
+    packages: [ pbuilder, fakeroot, debhelper ]
 
 script:
   - env TEST_RUN=1 ./release --pbuilder
