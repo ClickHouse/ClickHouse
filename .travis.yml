@@ -1,5 +1,3 @@
-language: cpp
-
 sudo: required
 dist: trusty
 
@@ -12,7 +10,7 @@ cache:
 
 addons:
   apt:
-    packages: [ pbuilder, fakeroot, debhelper ]
+    packages: [ pbuilder, fakeroot, debhelper, libboost-dev, zlib1g-dev, liblz4-dev, libdouble-conversion-dev, libzstd-dev, libre2-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libpoco-dev, libsparsehash-dev, libgoogle-perftools-dev, libunwind-dev, libzstd-dev ]
 
 script:
-  - env TEST_RUN=1 ./release --pbuilder
+  - env TEST_RUN=1 CMAKE_FLAGS="-DUNBUNDLED=1" ./release --pbuilder
