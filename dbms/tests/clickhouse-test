@@ -89,6 +89,8 @@ def main(args):
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
 
+    passed_total = 0
+    skipped_total = 0
     failures_total = 0
 
     # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
@@ -157,9 +159,11 @@ def main(args):
                         if not args.zookeeper and 'zookeeper' in name:
                             report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
                             print(MSG_SKIPPED + " - no zookeeper")
+                            skipped_total += 1
                         elif not args.shard and 'shard' in name:
                             report_testcase.append(et.Element("skipped", attrib = {"message": "no shard"}))
                             print(MSG_SKIPPED + " - no shard")
+                            skipped_total += 1
                         else:
                             disabled_file = os.path.join(suite_dir, name) + '.disabled'
 
@@ -192,7 +196,7 @@ def main(args):
                                     failure = et.Element("failure", attrib = {"message": "Timeout"})
                                     report_testcase.append(failure)
 
-                                    failures = failures + 1
+                                    failures += 1
                                     print("{0} - Timeout!".format(MSG_FAIL))
                                 else:
                                     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
@@ -208,8 +212,8 @@ def main(args):
                                         stdout_element.text = et.CDATA(stdout)
                                         report_testcase.append(stdout_element)
 
-                                        failures = failures + 1
-                                        failures_chain = failures_chain + 1
+                                        failures += 1
+                                        failures_chain += 1
                                         print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
 
                                         if stderr:
@@ -229,8 +233,8 @@ def main(args):
                                         stderr_element.text = et.CDATA(stderr)
                                         report_testcase.append(stderr_element)
 
-                                        failures = failures + 1
-                                        failures_chain = failures_chain + 1
+                                        failures += 1
+                                        failures_chain += 1
                                         print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
                                     elif 'Exception' in stdout:
                                         failure = et.Element("error", attrib = {"message": "having exception"})
@@ -240,8 +244,8 @@ def main(args):
                                         stdout_element.text = et.CDATA(stdout)
                                         report_testcase.append(stdout_element)
 
-                                        failures = failures + 1
-                                        failures_chain = failures_chain + 1
+                                        failures += 1
+                                        failures_chain += 1
                                         print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
                                     elif not os.path.isfile(reference_file):
                                         skipped = et.Element("skipped", attrib = {"message": "no reference file"})
@@ -264,15 +268,16 @@ def main(args):
                                                 stdout_element.text = et.CDATA(remove_control_characters(diff))
 
                                             report_testcase.append(stdout_element)
-                                            failures = failures + 1
+                                            failures += 1
                                             print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
                                         else:
+                                            passed_total += 1
+                                            failures_chain = 0
                                             print(MSG_OK)
                                             if os.path.exists(stdout_file):
                                                 os.remove(stdout_file)
                                             if os.path.exists(stderr_file):
                                                 os.remove(stderr_file)
-                                            failures_chain = 0
                     except KeyboardInterrupt as e:
                         print(colored("Break tests execution", "red"))
                         raise e
@@ -281,7 +286,7 @@ def main(args):
                         error = et.Element("error", attrib = {"type": exc_type.__name__, "message": str(exc_value)})
                         report_testcase.append(error)
 
-                        failures = failures + 1
+                        failures += 1
                         print("{0} - Test internal error: {1}\n{2}".format(MSG_FAIL, exc_type.__name__, exc_value))
                     finally:
                         dump_report(args.output, suite, name, report_testcase)
@@ -292,10 +297,10 @@ def main(args):
             failures_total = failures_total + failures
 
     if failures_total > 0:
-        print(colored("\nHaving {0} errors!".format(failures_total), "red", attrs=["bold"]))
+        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), "red", attrs=["bold"]))
         sys.exit(1)
     else:
-        print(colored("\nAll tests passed.", "green", attrs=["bold"]))
+        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), "green", attrs=["bold"]))
         sys.exit(0)
 
 
