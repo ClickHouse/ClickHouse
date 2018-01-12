@@ -12,9 +12,21 @@ addons:
   apt:
     packages: [ libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, liblz4-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libpoco-dev, libsparsehash-dev, libgoogle-perftools-dev ]
 
-install:
-  - export CXX="clang-5.0"
-  - export CC="clang-5.0"
+
+matrix:
+  include:
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-7
+      env:
+        - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
+
+before_install:
+    - eval "${MATRIX_EVAL}"
 
 script:
   - mkdir build
