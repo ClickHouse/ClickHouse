@@ -45,7 +45,7 @@ String getExceptionMessagePrefix(const DataTypes & types)
 }
 
 
-DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_nothing)
+DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_nothing, bool force_support_conversion)
 {
 
     auto getNothingOrThrow = [throw_if_result_is_nothing, & types](const std::string & reason)
@@ -123,7 +123,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
             if (!all_arrays)
                 return getNothingOrThrow(" because some of them are Array and some of them are not");
 
-            return std::make_shared<DataTypeArray>(getMostSubtype(nested_types, false));
+            return std::make_shared<DataTypeArray>(getMostSubtype(nested_types, false, force_support_conversion));
         }
     }
 
@@ -165,7 +165,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                common_tuple_types[elem_idx] = getMostSubtype(nested_types[elem_idx], throw_if_result_is_nothing);
+                common_tuple_types[elem_idx] =
+                        getMostSubtype(nested_types[elem_idx], throw_if_result_is_nothing, force_support_conversion);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -195,10 +196,10 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         if (have_nullable)
         {
-            if (all_nullable)
-                return std::make_shared<DataTypeNullable>(getMostSubtype(nested_types, false));
+            if (all_nullable || force_support_conversion)
+                return std::make_shared<DataTypeNullable>(getMostSubtype(nested_types, false, force_support_conversion));
 
-            return getMostSubtype(nested_types, throw_if_result_is_nothing);
+            return getMostSubtype(nested_types, throw_if_result_is_nothing, force_support_conversion);
         }
     }
 
