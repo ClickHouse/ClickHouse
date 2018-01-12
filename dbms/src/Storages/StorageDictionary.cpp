@@ -6,6 +6,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Parsers/ASTLiteral.h>
 #include <common/logger_useful.h>
@@ -97,6 +98,7 @@ void registerStorageDictionary(StorageFactory & factory)
             throw Exception("Storage Dictionary requires single parameter: name of dictionary",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
         String dictionary_name = typeid_cast<const ASTLiteral &>(*args.engine_args[0]).value.safeGet<String>();
 
         const auto & dictionary = args.context.getExternalDictionaries().getDictionary(dictionary_name);
