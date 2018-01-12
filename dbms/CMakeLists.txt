@@ -92,8 +92,8 @@ endif()
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
-add_subdirectory(src/Common/ZooKeeper)       
-add_subdirectory(src/Common/ConfigProcessor) 
+add_subdirectory(src/Common/ZooKeeper)
+add_subdirectory(src/Common/ConfigProcessor)
 
 if (MAKE_STATIC_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
