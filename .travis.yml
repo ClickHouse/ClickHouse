@@ -10,15 +10,15 @@ cache:
 
 addons:
   apt:
-    packages: [ libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev ]
+    packages: [ libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, liblz4-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libpoco-dev, libsparsehash-dev, libgoogle-perftools-dev ]
 
 install:
-  - export CXX="clang++-5.0"
+  - export CXX="clang-5.0"
   - export CC="clang-5.0"
 
 script:
   - mkdir build
   - cd build
   - which $CXX
-  - cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` && make -j `nproc || grep -c ^processor /proc/cpuinfo` all
+  - cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` -DUNBUNDLED=1 && make -j `nproc || grep -c ^processor /proc/cpuinfo` all
   
