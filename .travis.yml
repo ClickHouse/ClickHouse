@@ -1,0 +1,23 @@
+language: cpp
+
+sudo: required
+dist: trusty
+
+os: linux
+
+cache:
+  ccache: true
+
+addons:
+  apt:
+    packages: [ libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev ]
+
+install:
+  - export CXX="clang++-5.0"
+  - export CC="clang-5.0"
+
+script:
+  - mkdir build
+  - cd build
+  - cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` && make -j `nproc || grep -c ^processor /proc/cpuinfo` all
+  
