@@ -1,0 +1,16 @@
+language: cpp
+
+sudo: required
+dist: trusty
+
+os: linux
+
+cache:
+  ccache: true
+
+addons:
+  apt:
+    packages: [ pbuilder ]
+
+script:
+  - ./release --pbuilder
