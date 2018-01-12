@@ -150,12 +150,16 @@ bool MergeTreeDataMerger::selectPartsToMerge(
     FuturePart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
-    const AllowedMergingPredicate & can_merge_callback)
+    const AllowedMergingPredicate & can_merge_callback,
+    String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
 
     if (data_parts.empty())
+    {
+        if (out_disable_reason) *out_disable_reason = "There are no parts in the table";
         return false;
+    }
 
     time_t current_time = time(nullptr);
 
@@ -166,7 +170,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         const String & partition_id = part->info.partition_id;
-        if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part)))
+        if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part, nullptr)))
         {
             if (partitions.empty() || !partitions.back().empty())
                 partitions.emplace_back();
@@ -205,7 +209,10 @@ bool MergeTreeDataMerger::selectPartsToMerge(
         max_total_size_to_merge);
 
     if (parts_to_merge.empty())
+    {
+        if (out_disable_reason) *out_disable_reason = "There are no need to merge parts according to merge selector algorithm";
         return false;
+    }
 
     if (parts_to_merge.size() == 1)
         throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
@@ -229,7 +236,8 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     size_t available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
-    bool final)
+    bool final,
+    String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
@@ -237,7 +245,10 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
         return false;
 
     if (!final && parts.size() == 1)
+    {
+        if (out_disable_reason) *out_disable_reason = "There is only one part inside partition";
         return false;
+    }
 
     auto it = parts.begin();
     auto prev_it = it;
@@ -246,7 +257,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     while (it != parts.end())
     {
         /// For the case of one part, we check that it can be merged "with itself".
-        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it))
+        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, out_disable_reason))
         {
             return false;
         }
@@ -258,7 +269,8 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     }
 
     /// Enough disk space to cover the new merge with a margin.
-    if (available_disk_space <= sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT)
+    auto required_disk_space = sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT;
+    if (available_disk_space <= required_disk_space)
     {
         time_t now = time(nullptr);
         if (now - disk_space_warning_time > 3600)
@@ -273,6 +285,10 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
                 << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
                 << "% on overhead); suppressing similar warnings for the next hour");
         }
+
+        if (out_disable_reason) *out_disable_reason = "Insufficient available disk space, required " +
+                formatReadableSizeWithDecimalSuffix(required_disk_space);
+
         return false;
     }
 
