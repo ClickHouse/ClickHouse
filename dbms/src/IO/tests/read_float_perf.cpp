@@ -5,6 +5,7 @@
 
 #include <Core/Types.h>
 #include <Common/Stopwatch.h>
+#include <Common/formatReadable.h>
 #include <IO/readFloatText.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -50,12 +51,12 @@ void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
     while (!in.eof())
     {
         F(x, in);
-        assertChar('\n', in);
+        in.ignore();
         sum += x;
     }
 
     watch.stop();
-    out << "Read in " << watch.elapsedSeconds() << " sec, result = " << sum << "\n";
+    out << "Read in " << watch.elapsedSeconds() << " sec, " << formatReadableSizeWithBinarySuffix(in.count() / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
 }
 
 
