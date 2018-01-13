@@ -287,15 +287,18 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     int read_digits = in.count() - count_after_sign;
 
-    int before_point_additional_exponent = 0;
-    if (read_digits > significant_digits)
-        before_point_additional_exponent = read_digits - significant_digits;
+    if (unlikely(read_digits > significant_digits))
+    {
+        int before_point_additional_exponent = read_digits - significant_digits;
+        x = shift10(before_point, before_point_additional_exponent);
+    }
     else
     {
+        x = before_point;
+
         /// Shortcut for the common case when there is an integer that fit in Int64.
         if (read_digits && (in.eof() || *in.position() < '.'))
         {
-            x = before_point;
             if (negative)
                 x = -x;
             return ReturnType(true);
@@ -317,11 +320,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (exponent_negative)
             exponent = -exponent;
     }
-
-    if (unlikely(before_point_additional_exponent))
-        x = shift10(before_point, before_point_additional_exponent);
-    else
-        x = before_point;
 
     if (after_point)
         x += shift10(after_point, after_point_exponent);
