@@ -299,7 +299,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     int before_point_additional_exponent = 0;
     if (read_digits > significant_digits_before_point)
-        before_point_additional_exponent = read_digits - significant_digits_before_point;
+        before_point_additional_exponent = read_digits - significant_digits_before_point - (before_point < 0);
     else
     {
         /// Shortcut for the common case when there is an integer that fit in Int64.
