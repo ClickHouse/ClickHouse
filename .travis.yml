@@ -25,6 +25,20 @@ matrix:
       env:
         - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
 
+    # We need gcc7 headers to compile c++17 code on clang
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-5.0
+            - ubuntu-toolchain-r-test
+          packages:
+            - clang-5.0
+            - g++-7
+      env:
+        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0
+
+
 before_install:
     - eval "${MATRIX_EVAL}"
 
@@ -32,5 +46,4 @@ script:
   - mkdir build
   - cd build
   - which $CXX
-  - cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` -DUNBUNDLED=1 && make -j `nproc || grep -c ^processor /proc/cpuinfo` all
-  
+  - cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` -DUNBUNDLED=1 && make -j `nproc || grep -c ^processor /proc/cpuinfo` clickhouse-bundle
