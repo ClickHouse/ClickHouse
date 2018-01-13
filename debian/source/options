@@ -1,2 +1,3 @@
 tar-ignore
-tar-ignore="contrib/poco/openssl/*"
+tar-ignore="ClickHouse/contrib/poco/openssl/*"
+tar-ignore="ClickHouse/build*"
