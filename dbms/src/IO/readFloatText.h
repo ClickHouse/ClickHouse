@@ -204,6 +204,7 @@ void readIntTextUpToNChars(T & x, ReadBuffer & buf)
             x = -x;
     };
 
+    /// In optimistic case we can skip bound checking for first loop.
     if (buf.position() + N <= buf.buffer().end())
     {
         for (size_t i = 0; i < N; ++i)
