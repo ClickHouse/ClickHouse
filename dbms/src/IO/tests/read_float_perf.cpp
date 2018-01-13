@@ -18,7 +18,6 @@
 # Prepare data
 
 $ clickhouse-local --query="SELECT number FROM system.numbers LIMIT 10000000" > numbers1.tsv
-$ clickhouse-local --query="SELECT number % 10 FROM system.numbers LIMIT 10000000" > numbers1.tsv
 $ clickhouse-local --query="SELECT number % 10 FROM system.numbers LIMIT 10000000" > numbers2.tsv
 $ clickhouse-local --query="SELECT number / 1000 FROM system.numbers LIMIT 10000000" > numbers3.tsv
 $ clickhouse-local --query="SELECT rand64() / 1000 FROM system.numbers LIMIT 10000000" > numbers4.tsv
