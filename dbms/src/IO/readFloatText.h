@@ -1,6 +1,7 @@
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <common/shift10.h>
+#include <common/likely.h>
 #include <double-conversion/double-conversion.h>
 
 #include <common/iostream_debug_helpers.h>
@@ -211,23 +212,8 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
 
 template <size_t N, typename T>
-void readIntTextUpToNChars(T & x, ReadBuffer & buf)
+void readUIntTextUpToNChars(T & x, ReadBuffer & buf)
 {
-    bool negative = false;
-
-    if (std::is_signed_v<T> && !buf.eof() && *buf.position() == '-')
-    {
-        ++buf.position();
-        negative = true;
-    }
-
-    auto finalize = [&]
-    {
-        /// Note that this is undefined behaviour in case of overflow.
-        if (std::is_signed_v<T> && negative)
-            x = -x;
-    };
-
     /// In optimistic case we can skip bound checking for first loop.
     if (buf.position() + N <= buf.buffer().end())
     {
@@ -240,17 +226,11 @@ void readIntTextUpToNChars(T & x, ReadBuffer & buf)
                 ++buf.position();
             }
             else
-            {
-                finalize();
                 return;
-            }
         }
 
         while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
             ++buf.position();
-
-        finalize();
-        return;
     }
     else
     {
@@ -263,17 +243,11 @@ void readIntTextUpToNChars(T & x, ReadBuffer & buf)
                 ++buf.position();
             }
             else
-            {
-                finalize();
                 return;
-            }
         }
 
         while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
             ++buf.position();
-
-        finalize();
-        return;
     }
 }
 
@@ -286,26 +260,44 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto prev_count = in.count();
-
-    Int64 before_point = 0;
+    bool negative = false;
+    UInt64 before_point = 0;
     UInt64 after_point = 0;
     int after_point_exponent = 0;
     int exponent = 0;
 
-    constexpr int significant_digits_before_point = std::numeric_limits<decltype(before_point)>::digits10;
-    readIntTextUpToNChars<significant_digits_before_point>(before_point, in);
-    int read_digits = in.count() - prev_count;
+    if (in.eof())
+    {
+        if constexpr (throw_exception)
+            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+        else
+            return false;
+    }
+
+    if (*in.position() == '-')
+    {
+        negative = true;
+        ++in.position();
+    }
+
+    auto count_after_sign = in.count();
+
+    constexpr int significant_digits = std::numeric_limits<UInt64>::digits10;
+    readUIntTextUpToNChars<significant_digits>(before_point, in);
+
+    int read_digits = in.count() - count_after_sign;
 
     int before_point_additional_exponent = 0;
-    if (read_digits > significant_digits_before_point)
-        before_point_additional_exponent = read_digits - significant_digits_before_point - (before_point < 0);
+    if (read_digits > significant_digits)
+        before_point_additional_exponent = read_digits - significant_digits;
     else
     {
         /// Shortcut for the common case when there is an integer that fit in Int64.
         if (read_digits && (in.eof() || *in.position() < '.'))
         {
             x = before_point;
+            if (negative)
+                x = -x;
             return ReturnType(true);
         }
     }
@@ -313,15 +305,17 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (checkChar('.', in))
     {
         auto after_point_count = in.count();
-        constexpr int significant_digits_after_point = std::numeric_limits<decltype(after_point)>::digits10;
-        readIntTextUpToNChars<significant_digits_after_point>(after_point, in);
+        readUIntTextUpToNChars<significant_digits>(after_point, in);
         int read_digits = in.count() - after_point_count;
-        after_point_exponent = read_digits > significant_digits_after_point ? -significant_digits_after_point : -read_digits;
+        after_point_exponent = read_digits > significant_digits ? -significant_digits : -read_digits;
     }
 
     if (checkChar('e', in) || checkChar('E', in))
     {
-        readIntTextUpToNChars<4>(exponent, in);
+        bool exponent_negative = checkChar('-', in);
+        readUIntTextUpToNChars<4>(exponent, in);
+        if (exponent_negative)
+            exponent = -exponent;
     }
 
     if (unlikely(before_point_additional_exponent))
@@ -330,31 +324,26 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         x = before_point;
 
     if (after_point)
-    {
-        if (x >= 0)
-            x += shift10(after_point, after_point_exponent);
-        else
-            x -= shift10(after_point, after_point_exponent);
-    }
+        x += shift10(after_point, after_point_exponent);
 
     if (exponent)
         x = shift10(x, exponent);
 
-    auto total_read_characters = in.count() - prev_count;
+    if (negative)
+        x = -x;
 
-    if (total_read_characters == 0)
-    {
-        if constexpr (throw_exception)
-            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
-        else
-            return false;
-    }
+    auto num_characters_without_sign = in.count() - count_after_sign;
 
     /// Denormals. At most one character is read before denormal and it is '-'.
-    /// Note that it also can be '+' and '0', but we don't support this case and the behaviour is implementation specific.
-    if (!in.eof() && *in.position() >= '.')
+    if (num_characters_without_sign == 0)
     {
-        bool negative = total_read_characters == 1;
+        if (in.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return false;
+        }
 
         if (*in.position() == 'i' || *in.position() == 'I')
         {
@@ -377,6 +366,13 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
                 return ReturnType(true);
             }
             return ReturnType(false);
+        }
+        else
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return false;
         }
     }
 
