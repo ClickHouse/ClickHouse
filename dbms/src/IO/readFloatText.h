@@ -190,45 +190,29 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 template <size_t N, typename T>
 void readIntTextUpToNChars(T & x, ReadBuffer & buf)
 {
+    if (unlikely(buf.eof()))
+        return;
+
     bool negative = false;
-    x = 0;
+
+    if (std::is_signed_v<T> && *buf.position() == '-')
+    {
+        ++buf.position();
+        negative = true;
+    }
 
     for (size_t i = 0; !buf.eof(); ++i)
     {
-        switch (*buf.position())
+        if ((*buf.position() & 0xF0) == 0x30)
         {
-            case '+':
-                break;
-            case '-':
-                if (std::is_signed_v<T>)
-                    negative = true;
-                else
-                    throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
-                break;
-            case '0': [[fallthrough]];
-            case '1': [[fallthrough]];
-            case '2': [[fallthrough]];
-            case '3': [[fallthrough]];
-            case '4': [[fallthrough]];
-            case '5': [[fallthrough]];
-            case '6': [[fallthrough]];
-            case '7': [[fallthrough]];
-            case '8': [[fallthrough]];
-            case '9':
-                if (i < N)
-                {
-                    x *= 10;
-                    x += *buf.position() - '0';
-                }
-                break;
-            default:
-                if (negative)
-                    x = -x;
-                return;
+            x *= 10;
+            x += *buf.position() & 0x0F;
+            ++buf.position();
         }
-        ++buf.position();
+        else
+            break;
     }
-    if (negative)
+    if (std::is_signed_v<T> && negative)
         x = -x;
 }
 
