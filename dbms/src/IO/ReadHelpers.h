@@ -275,6 +275,9 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         }
         ++buf.position();
     }
+
+    /// NOTE Signed integer overflow is undefined behaviour. Consider we have '128' that is parsed as Int8 and overflowed.
+    /// We are happy if it is overflowed to -128 and then 'x = -x' does nothing. But UBSan will warn.
     if (negative)
         x = -x;
 
@@ -330,6 +333,11 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
+        /// This check is suddenly faster than
+        ///  unsigned char c = *buf.position() - '0';
+        ///  if (c < 10)
+        /// for unknown reason on Xeon E5645.
+
         if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
             x *= 10;
@@ -340,6 +348,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             break;
     }
 
+    /// See note about undefined behaviour above.
     if (std::is_signed_v<T> && negative)
         x = -x;
 }

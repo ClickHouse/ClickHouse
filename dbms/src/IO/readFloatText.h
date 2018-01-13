@@ -190,33 +190,66 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 template <size_t N, typename T>
 void readIntTextUpToNChars(T & x, ReadBuffer & buf)
 {
-    if (unlikely(buf.eof()))
-        return;
-
     bool negative = false;
 
-    if (std::is_signed_v<T> && *buf.position() == '-')
+    if (std::is_signed_v<T> && !buf.eof() && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
     }
 
-    for (size_t i = 0; !buf.eof(); ++i)
+    auto finalize = [&]
     {
-        if ((*buf.position() & 0xF0) == 0x30)
+        if (std::is_signed_v<T> && negative)
+            x = -x;
+    };
+
+    if (buf.position() + N <= buf.buffer().end())
+    {
+        for (size_t i = 0; i < N; ++i)
         {
-            if (likely(i < N))
+            if ((*buf.position() & 0xF0) == 0x30)
             {
                 x *= 10;
                 x += *buf.position() & 0x0F;
+                ++buf.position();
             }
-            ++buf.position();
+            else
+            {
+                finalize();
+                return;
+            }
         }
-        else
-            break;
+
+        while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+            ++buf.position();
+
+        finalize();
+        return;
     }
-    if (std::is_signed_v<T> && negative)
-        x = -x;
+    else
+    {
+        for (size_t i = 0; i < N; ++i)
+        {
+            if (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+            {
+                x *= 10;
+                x += *buf.position() & 0x0F;
+                ++buf.position();
+            }
+            else
+            {
+                finalize();
+                return;
+            }
+        }
+
+        while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+            ++buf.position();
+
+        finalize();
+        return;
+    }
 }
 
 
