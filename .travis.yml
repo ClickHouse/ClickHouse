@@ -15,5 +15,5 @@ addons:
 
 script:
   # Minimizing compile time.
-  - env TEST_RUN=1 CMAKE_FLAGS="-DUNBUNDLED=1 -DENABLE_CAPNP=0 -DUSE_EMBEDDED_COMPILER=0" EXTRAPACKAGES="libboost-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzookeeper-mt-dev libsparsehash-dev librdkafka-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libzstd-dev libre2-dev libunwind-dev" ./release --pbuilder
+  - env TEST_RUN=1 PBUILDER_OPT="--timeout 30m" CMAKE_FLAGS="-DUNBUNDLED=1 -DENABLE_CAPNP=0 -DUSE_EMBEDDED_COMPILER=0" EXTRAPACKAGES="libboost-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzookeeper-mt-dev libsparsehash-dev librdkafka-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libzstd-dev libre2-dev libunwind-dev" ./release --pbuilder
 # libcapnp-dev - system is too old for us
