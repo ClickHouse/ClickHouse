@@ -267,9 +267,8 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 }
 
 
-/// Inline is Ok because this method is called only from readFloatTextFastImpl.
 template <size_t N, typename T>
-static void ALWAYS_INLINE readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
+static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 {
     /// In optimistic case we can skip bound checking for first loop.
     if (buf.position() + N <= buf.buffer().end())
