@@ -1,5 +1,6 @@
 #include <type_traits>
 #include <IO/ReadHelpers.h>
+#include <Core/Defines.h>
 #include <common/shift10.h>
 #include <common/likely.h>
 #include <double-conversion/double-conversion.h>
@@ -15,7 +16,8 @@
   * Precise method always returns a number that is the closest machine representable number to the input.
   *
   * Fast method is faster (up to 3 times) and usually return the same value,
-  *  but in rare cases result may differ by lest significant bit from precise method.
+  *  but in rare cases result may differ by lest significant bit (for Float32)
+  *  and by up to two least significant bits (for Float64) from precise method.
   * Also fast method may parse some garbage as some other unspecified garbage.
   *
   * Simple method is little faster for cases of parsing short (few digit) integers, but less precise and slower in other cases.
@@ -265,8 +267,9 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 }
 
 
+/// Inline is Ok because this method is called only from readFloatTextFastImpl.
 template <size_t N, typename T>
-void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
+static void ALWAYS_INLINE readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 {
     /// In optimistic case we can skip bound checking for first loop.
     if (buf.position() + N <= buf.buffer().end())
