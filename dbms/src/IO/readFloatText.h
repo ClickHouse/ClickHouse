@@ -224,6 +224,8 @@ template <typename T, typename ReturnType>
 ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
+
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     auto prev_count = in.count();
@@ -240,6 +242,15 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     int before_point_additional_exponent = 0;
     if (read_digits > significant_digits_before_point)
         before_point_additional_exponent = read_digits - significant_digits_before_point;
+    else
+    {
+        /// Shortcut for the common case when there is an integer that fit in Int64.
+        if (read_digits && (in.eof() || *in.position() < '.'))
+        {
+            x = before_point;
+            return ReturnType(true);
+        }
+    }
 
     if (checkChar('.', in))
     {
@@ -266,9 +277,9 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (exponent)
         x = shift10(x, exponent);
 
-    auto read_characters = in.count() - prev_count;
+    auto total_read_characters = in.count() - prev_count;
 
-    if (read_characters == 0)
+    if (total_read_characters == 0)
     {
         if constexpr (throw_exception)
             throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
@@ -278,9 +289,9 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     /// Denormals. At most one character is read before denormal and it is '-'.
     /// Note that it also can be '+' and '0', but we don't support this case and the behaviour is implementation specific.
-    if (!in.eof() && read_characters <= 1 && before_point == 0 && after_point_exponent == 0)
+    if (!in.eof() && *in.position() >= '.')
     {
-        bool negative = read_characters == 1;
+        bool negative = total_read_characters == 1;
 
         if (*in.position() == 'i' || *in.position() == 'I')
         {
