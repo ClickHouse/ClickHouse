@@ -1,3 +1,4 @@
 #!/bin/sh
 
 ccache -M 32G
+ccache --show-stats
