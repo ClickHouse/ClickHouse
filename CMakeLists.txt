@@ -265,6 +265,8 @@ include (cmake/find_boost.cmake)
 # openssl, zlib before poco
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
+include (cmake/find_ltdl.cmake) # for odbc
+include (contrib/poco/cmake/FindODBC.cmake) # for poco
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
 include (cmake/find_sparsehash.cmake)

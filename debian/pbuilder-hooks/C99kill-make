@@ -2,4 +2,4 @@
 
 # Try stop parralell build after timeout
 
-killall make gcc gcc-7 g++-7 clang-5.0 clang++-5.0
+killall make gcc gcc-7 g++-7 clang-5.0 clang++-5.0 || true

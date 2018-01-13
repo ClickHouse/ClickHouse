@@ -30,3 +30,6 @@ clickhouse-client -q "SELECT toDateTime(1);"
 
 
 service clickhouse-server stop
+
+# Test debug symbols
+gdb -ex quit --args /usr/bin/clickhouse-server
