@@ -43,7 +43,8 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
+  - ccache -s
+  - ccache -M 16G
   - mkdir build
   - cd build
-  - which $CXX
   - cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` -DUNBUNDLED=1 && make -j `nproc || grep -c ^processor /proc/cpuinfo` clickhouse-bundle
