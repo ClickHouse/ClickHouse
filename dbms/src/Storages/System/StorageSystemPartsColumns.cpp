@@ -141,9 +141,9 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
                 columns[j++]->insertDefault();
             }
 
-            columns[j++]->insert(part->getColumnCompressedSize(column.name));
-            columns[j++]->insert(part->getColumnUncompressedSize(column.name));
-            columns[j++]->insert(part->getColumnMrkSize(column.name));
+            columns[j++]->insert(static_cast<UInt64>(part->getColumnCompressedSize(column.name)));
+            columns[j++]->insert(static_cast<UInt64>(part->getColumnUncompressedSize(column.name)));
+            columns[j++]->insert(static_cast<UInt64>(part->getColumnMrkSize(column.name)));
 
             if (has_state_column)
                 columns[j++]->insert(part->stateString());
