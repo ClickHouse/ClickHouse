@@ -3,12 +3,35 @@
 #include <common/shift10.h>
 #include <double-conversion/double-conversion.h>
 
+#include <common/iostream_debug_helpers.h>
+
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
   * Precise method always returns a number that is the closest machine representable number to the input.
   * Fast method is faster and usually return the same value, but result may differ from precise method.
   * Simple method is even faster for cases of parsing short (few digit) integers, but less precise and slower in other cases.
+  *
+  * For performance test, look at 'read_float_perf' test.
+  *
+  * For precision test:
+
+CREATE TABLE test.floats ENGINE = Log AS SELECT reinterpretAsFloat32(reinterpretAsString(toUInt32(number))) AS x FROM numbers(0x100000000);
+
+WITH
+    toFloat32(toString(x)) AS y,
+    reinterpretAsUInt32(reinterpretAsString(x)) AS bin_x,
+    reinterpretAsUInt32(reinterpretAsString(y)) AS bin_y,
+    abs(bin_x - bin_y) AS diff
+SELECT
+    diff,
+    count()
+FROM test.floats
+WHERE NOT isNaN(x)
+GROUP BY diff
+ORDER BY diff ASC
+LIMIT 100
+
   */
 
 
@@ -200,6 +223,7 @@ void readIntTextUpToNChars(T & x, ReadBuffer & buf)
 
     auto finalize = [&]
     {
+        /// Note that this is undefined behaviour in case of overflow.
         if (std::is_signed_v<T> && negative)
             x = -x;
     };
@@ -306,7 +330,12 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         x = before_point;
 
     if (after_point)
-        x += shift10(after_point, after_point_exponent);
+    {
+        if (x >= 0)
+            x += shift10(after_point, after_point_exponent);
+        else
+            x -= shift10(after_point, after_point_exponent);
+    }
 
     if (exponent)
         x = shift10(x, exponent);
