@@ -1,18 +1,18 @@
-SET group_by_two_level_threshold = 1;
+SET group_by_two_level_threshold = 1, max_threads = 1;
 
-SELECT 
-    k, 
+SELECT
+    k,
     anyLast(s)
-FROM 
+FROM
 (
-    SELECT 
-        123456789 AS k, 
+    SELECT
+        123456789 AS k,
         'Hello 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890' AS s
-    UNION ALL 
-    SELECT 
-        234567890, 
+    UNION ALL
+    SELECT
+        234567890,
         'World 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890'
-) 
+)
 GROUP BY k
     WITH TOTALS
 HAVING length(anyLast(s)) > 0
@@ -42,4 +42,5 @@ ORDER BY k;
  *  and bug doesn't trigger.
  *
  * We use ORDER BY for result of the test to be deterministic.
+ * max_threads = 1 for deterministic order of result in subquery and the value of 'anyLast'.
  */
