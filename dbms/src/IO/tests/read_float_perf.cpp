@@ -10,14 +10,85 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressedReadBuffer.h>
 
+/** How to test:
+
+# Prepare data
+
+$ clickhouse-local --query="SELECT number FROM system.numbers LIMIT 10000000" > numbers1.tsv
+$ clickhouse-local --query="SELECT number % 10 FROM system.numbers LIMIT 10000000" > numbers1.tsv
+$ clickhouse-local --query="SELECT number % 10 FROM system.numbers LIMIT 10000000" > numbers2.tsv
+$ clickhouse-local --query="SELECT number / 1000 FROM system.numbers LIMIT 10000000" > numbers3.tsv
+$ clickhouse-local --query="SELECT rand64() / 1000 FROM system.numbers LIMIT 10000000" > numbers4.tsv
+$ clickhouse-local --query="SELECT rand64() / 0xFFFFFFFF FROM system.numbers LIMIT 10000000" > numbers5.tsv
+$ clickhouse-local --query="SELECT log(rand64()) FROM system.numbers LIMIT 10000000" > numbers6.tsv
+$ clickhouse-local --query="SELECT 1 / rand64() FROM system.numbers LIMIT 10000000" > numbers7.tsv
+$ clickhouse-local --query="SELECT exp(rand() / 0xFFFFFF) FROM system.numbers LIMIT 10000000" > numbers8.tsv
+$ clickhouse-local --query="SELECT number FROM system.numbers LIMIT 10000000" > numbers1.tsv
+$ clickhouse-local --query="SELECT toString(rand64(1)) || toString(rand64(2)) || toString(rand64(3)) || toString(rand64(4)) FROM system.numbers LIMIT 10000000" > numbers9.tsv
+$ clickhouse-local --query="SELECT toString(rand64(1)) || toString(rand64(2)) || '.' || toString(rand64(3)) || toString(rand64(4)) FROM system.numbers LIMIT 10000000" > numbers10.tsv
+
+# Run test
+
+$ for i in {1..10}; do echo $i; time ./read_float_perf < numbers$i.tsv; done
+
+  */
+
 
 using namespace DB;
+
+
+
+template <size_t N, typename T>
+void readIntTextUpToNChars(T & x, ReadBuffer & buf)
+{
+    bool negative = false;
+    x = 0;
+
+    for (size_t i = 0; !buf.eof(); ++i)
+    {
+        switch (*buf.position())
+        {
+            case '+':
+                break;
+            case '-':
+                if (std::is_signed_v<T>)
+                    negative = true;
+                else
+                    throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                break;
+            case '0': [[fallthrough]];
+            case '1': [[fallthrough]];
+            case '2': [[fallthrough]];
+            case '3': [[fallthrough]];
+            case '4': [[fallthrough]];
+            case '5': [[fallthrough]];
+            case '6': [[fallthrough]];
+            case '7': [[fallthrough]];
+            case '8': [[fallthrough]];
+            case '9':
+                if (i < N)
+                {
+                    x *= 10;
+                    x += *buf.position() - '0';
+                }
+                break;
+            default:
+                if (negative)
+                    x = -x;
+                return;
+        }
+        ++buf.position();
+    }
+    if (negative)
+        x = -x;
+}
+
 
 template <typename T>
 void readFloatTextFast(T & x, ReadBuffer & in)
 {
-    static constexpr int MIN_EXPONENT = -323;
-    static constexpr int MAX_EXPONENT = 308;
+    static constexpr ssize_t MIN_EXPONENT = -323;
+    static constexpr ssize_t MAX_EXPONENT = 308;
 
     static const T powers10[] =
     {
@@ -59,24 +130,34 @@ void readFloatTextFast(T & x, ReadBuffer & in)
 
     Int64 before_point = 0;
     UInt64 after_point = 0;
-    Int8 after_point_power = 0;
-    Int16 exponent = 0;
+    ssize_t after_point_power = 0;
+    ssize_t exponent = 0;
 
-    readIntText(before_point, in);
+    constexpr size_t significant_digits = std::numeric_limits<UInt64>::digits10;
+    readIntTextUpToNChars<significant_digits>(before_point, in);
+    size_t read_digits = in.count() - prev_count;
+
+    size_t before_point_additional_exponent = 0;
+    if (read_digits > significant_digits)
+        before_point_additional_exponent = read_digits - significant_digits;
 
     if (checkChar('.', in))
     {
         auto after_point_count = in.count();
-        readIntText(after_point, in);
-        after_point_power = after_point_count - in.count();
+        readIntTextUpToNChars<significant_digits>(after_point, in);
+        size_t read_digits = in.count() - after_point_count;
+        after_point_power = read_digits > significant_digits ? -significant_digits : -read_digits;
     }
 
     if (checkChar('e', in) || checkChar('E', in))
     {
-        readIntText(exponent, in);
+        readIntTextUpToNChars<4>(exponent, in);
     }
 
     x = before_point;
+
+    if (before_point_additional_exponent)
+        x *= powers10[before_point_additional_exponent - MIN_EXPONENT];
 
     if (after_point)
         x += after_point * powers10[after_point_power - MIN_EXPONENT];
@@ -91,13 +172,14 @@ void readFloatTextFast(T & x, ReadBuffer & in)
             x *= powers10[exponent - MIN_EXPONENT];
     }
 
-    /// Denormals. At most one character is read and it is '-'. Note that it also can be '+', but we don't support this case.
     auto read_characters = in.count() - prev_count;
-    if (unlikely(
-        read_characters <= 1
-        && before_point == 0
-        && after_point_power == 0
-        && !in.eof()))
+
+    if (read_characters == 0)
+        throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+
+    /// Denormals. At most one character is read before denormal and it is '-'.
+    /// Note that it also can be '+' and '0', but we don't support this case and the behaviour is implementation specific.
+    if (!in.eof() && read_characters <= 1 && before_point == 0 && after_point_power == 0)
     {
         bool negative = read_characters == 1;
 
