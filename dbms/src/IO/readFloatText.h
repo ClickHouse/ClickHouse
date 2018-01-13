@@ -9,13 +9,22 @@
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
+  *
+  * Neither of methods support hexadecimal numbers (0xABC), binary exponent (1p100), leading plus sign.
+  *
   * Precise method always returns a number that is the closest machine representable number to the input.
-  * Fast method is faster and usually return the same value, but result may differ from precise method.
-  * Simple method is even faster for cases of parsing short (few digit) integers, but less precise and slower in other cases.
+  *
+  * Fast method is faster (up to 3 times) and usually return the same value,
+  *  but in rare cases result may differ by lest significant bit from precise method.
+  * Also fast method may parse some garbage as some other unspecified garbage.
+  *
+  * Simple method is little faster for cases of parsing short (few digit) integers, but less precise and slower in other cases.
+  * It's not recommended to use simple method and it is left only for reference.
   *
   * For performance test, look at 'read_float_perf' test.
   *
-  * For precision test:
+  * For precision test.
+  * Parse all existing Float32 numbers:
 
 CREATE TABLE test.floats ENGINE = Log AS SELECT reinterpretAsFloat32(reinterpretAsString(toUInt32(number))) AS x FROM numbers(0x100000000);
 
@@ -28,6 +37,51 @@ SELECT
     diff,
     count()
 FROM test.floats
+WHERE NOT isNaN(x)
+GROUP BY diff
+ORDER BY diff ASC
+LIMIT 100
+
+  * Here are the results:
+  *
+    Precise:
+    ┌─diff─┬────count()─┐
+    │    0 │ 4278190082 │
+    └──────┴────────────┘
+    (100% roundtrip property)
+
+    Fast:
+    ┌─diff─┬────count()─┐
+    │    0 │ 3685260580 │
+    │    1 │  592929502 │
+    └──────┴────────────┘
+    (The difference is 1 in least significant bit in 13.8% of numbers.)
+
+    Simple:
+    ┌─diff─┬────count()─┐
+    │    0 │ 2169879994 │
+    │    1 │ 1807178292 │
+    │    2 │  269505944 │
+    │    3 │   28826966 │
+    │    4 │    2566488 │
+    │    5 │     212878 │
+    │    6 │      18276 │
+    │    7 │       1214 │
+    │    8 │         30 │
+    └──────┴────────────┘
+
+  * Parse random Float64 numbers:
+
+WITH
+    rand64() AS bin_x,
+    reinterpretAsFloat64(reinterpretAsString(bin_x)) AS x,
+    toFloat64(toString(x)) AS y,
+    reinterpretAsUInt64(reinterpretAsString(y)) AS bin_y,
+    abs(bin_x - bin_y) AS diff
+SELECT
+    diff,
+    count()
+FROM numbers(100000000)
 WHERE NOT isNaN(x)
 GROUP BY diff
 ORDER BY diff ASC
@@ -212,7 +266,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
 
 template <size_t N, typename T>
-void readUIntTextUpToNChars(T & x, ReadBuffer & buf)
+void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 {
     /// In optimistic case we can skip bound checking for first loop.
     if (buf.position() + N <= buf.buffer().end())
@@ -283,7 +337,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     auto count_after_sign = in.count();
 
     constexpr int significant_digits = std::numeric_limits<UInt64>::digits10;
-    readUIntTextUpToNChars<significant_digits>(before_point, in);
+    readUIntTextUpToNSignificantDigits<significant_digits>(before_point, in);
 
     int read_digits = in.count() - count_after_sign;
 
@@ -308,15 +362,22 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (checkChar('.', in))
     {
         auto after_point_count = in.count();
-        readUIntTextUpToNChars<significant_digits>(after_point, in);
-        int read_digits = in.count() - after_point_count;
-        after_point_exponent = read_digits > significant_digits ? -significant_digits : -read_digits;
+
+        while (!in.eof() && *in.position() == '0')
+            ++in.position();
+
+        auto after_leading_zeros_count = in.count();
+        auto after_point_num_leading_zeros = after_leading_zeros_count - after_point_count;
+
+        readUIntTextUpToNSignificantDigits<significant_digits>(after_point, in);
+        int read_digits = in.count() - after_leading_zeros_count;
+        after_point_exponent = (read_digits > significant_digits ? -significant_digits : -read_digits) - after_point_num_leading_zeros;
     }
 
     if (checkChar('e', in) || checkChar('E', in))
     {
         bool exponent_negative = checkChar('-', in);
-        readUIntTextUpToNChars<4>(exponent, in);
+        readUIntTextUpToNSignificantDigits<4>(exponent, in);
         if (exponent_negative)
             exponent = -exponent;
     }
