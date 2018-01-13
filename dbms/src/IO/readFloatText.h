@@ -201,12 +201,15 @@ void readIntTextUpToNChars(T & x, ReadBuffer & buf)
         negative = true;
     }
 
-    for (size_t i = 0; !buf.eof() && i < N; ++i)
+    for (size_t i = 0; !buf.eof(); ++i)
     {
         if ((*buf.position() & 0xF0) == 0x30)
         {
-            x *= 10;
-            x += *buf.position() & 0x0F;
+            if (likely(i < N))
+            {
+                x *= 10;
+                x += *buf.position() & 0x0F;
+            }
             ++buf.position();
         }
         else
