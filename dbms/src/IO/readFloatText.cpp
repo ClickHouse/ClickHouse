@@ -46,4 +46,25 @@ void assertNaN(ReadBuffer & buf)
         throw Exception("Cannot parse NaN.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
+
+template void readFloatTextPrecise<Float32>(Float32 &, ReadBuffer &);
+template void readFloatTextPrecise<Float64>(Float64 &, ReadBuffer &);
+template bool tryReadFloatTextPrecise<Float32>(Float32 &, ReadBuffer &);
+template bool tryReadFloatTextPrecise<Float64>(Float64 &, ReadBuffer &);
+
+template void readFloatTextFast<Float32>(Float32 &, ReadBuffer &);
+template void readFloatTextFast<Float64>(Float64 &, ReadBuffer &);
+template bool tryReadFloatTextFast<Float32>(Float32 &, ReadBuffer &);
+template bool tryReadFloatTextFast<Float64>(Float64 &, ReadBuffer &);
+
+template void readFloatTextSimple<Float32>(Float32 &, ReadBuffer &);
+template void readFloatTextSimple<Float64>(Float64 &, ReadBuffer &);
+template bool tryReadFloatTextSimple<Float32>(Float32 &, ReadBuffer &);
+template bool tryReadFloatTextSimple<Float64>(Float64 &, ReadBuffer &);
+
+template void readFloatText<Float32>(Float32 &, ReadBuffer &);
+template void readFloatText<Float64>(Float64 &, ReadBuffer &);
+template bool tryReadFloatText<Float32>(Float32 &, ReadBuffer &);
+template bool tryReadFloatText<Float64>(Float64 &, ReadBuffer &);
+
 }
