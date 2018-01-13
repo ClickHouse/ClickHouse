@@ -439,7 +439,7 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
     }
 
     static const double_conversion::StringToDoubleConverter converter(
-        double_conversion::StringToDoubleConverter::NO_FLAGS,
+        double_conversion::StringToDoubleConverter::ALLOW_TRAILING_JUNK,
         0, 0, nullptr, nullptr);
 
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
