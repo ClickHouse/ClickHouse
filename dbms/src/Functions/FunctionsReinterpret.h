@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/memcpySmall.h>
 
 
 namespace DB
@@ -43,70 +44,65 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const IDataType * type = &*arguments[0];
-        if (!type->isValueRepresentedByNumber())
-            throw Exception("Cannot reinterpret " + type->getName() + " as String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        const IDataType & type = *arguments[0];
 
-        return std::make_shared<DataTypeString>();
+        if (type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            return std::make_shared<DataTypeFixedString>(type.getSizeOfValueInMemory());
+        if (type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            return std::make_shared<DataTypeString>();
+        throw Exception("Cannot reinterpret " + type.getName() + " as String because it is not contiguous in memory", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    template <typename T>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    void executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
-        if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        size_t rows = src.size();
+        ColumnFixedString::Chars_t & data_to = dst.getChars();
+        data_to.resize(n * rows);
+
+        ColumnFixedString::Offset offset = 0;
+        for (size_t i = 0; i < rows; ++i)
         {
-            auto col_to = ColumnString::create();
-
-            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
-            ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            size_t size = vec_from.size();
-            data_to.resize(size * (sizeof(T) + 1));
-            offsets_to.resize(size);
-            int pos = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                memcpy(&data_to[pos], &vec_from[i], sizeof(T));
-
-                int len = sizeof(T);
-                while (len > 0 && data_to[pos + len - 1] == '\0')
-                    --len;
-
-                pos += len;
-                data_to[pos++] = '\0';
-
-                offsets_to[i] = pos;
-            }
-            data_to.resize(pos);
-
-            block.getByPosition(result).column = std::move(col_to);
+            StringRef data = src.getDataAt(i);
+            memcpySmallAllowReadWriteOverflow15(&data_to[offset], data.data, n);
+            offset += n;
         }
-        else
+    }
+
+    void executeToString(const IColumn & src, ColumnString & dst)
+    {
+        size_t rows = src.size();
+        ColumnString::Chars_t & data_to = dst.getChars();
+        ColumnString::Offsets & offsets_to = dst.getOffsets();
+        offsets_to.resize(rows);
+
+        ColumnString::Offset offset = 0;
+        for (size_t i = 0; i < rows; ++i)
         {
-            return false;
+            StringRef data = src.getDataAt(i);
+            data_to.resize(offset + data.size + 1);
+            memcpySmallAllowReadWriteOverflow15(&data_to[offset], data.data, data.size);
+            offset += data.size;
+            data_to[offset] = 0;
+            ++offset;
+            offsets_to[i] = offset;
         }
-
-        return true;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!( executeType<UInt8>(block, arguments, result)
-            || executeType<UInt16>(block, arguments, result)
-            || executeType<UInt32>(block, arguments, result)
-            || executeType<UInt64>(block, arguments, result)
-            || executeType<Int8>(block, arguments, result)
-            || executeType<Int16>(block, arguments, result)
-            || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)
-            || executeType<Float32>(block, arguments, result)
-            || executeType<Float64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        const IColumn & src = *block.getByPosition(arguments[0]).column;
+        MutableColumnPtr dst = block.getByPosition(result).type->createColumn();
+
+        if (ColumnFixedString * dst_concrete = typeid_cast<ColumnFixedString *>(dst.get()))
+            executeToFixedString(src, *dst_concrete, dst_concrete->getN());
+        else if (ColumnString * dst_concrete = typeid_cast<ColumnString *>(dst.get()))
+            executeToString(src, *dst_concrete);
+        else
+            throw Exception("Illegal column " + src.getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
