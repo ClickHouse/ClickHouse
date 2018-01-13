@@ -201,7 +201,7 @@ void readIntTextUpToNChars(T & x, ReadBuffer & buf)
         negative = true;
     }
 
-    for (size_t i = 0; !buf.eof(); ++i)
+    for (size_t i = 0; !buf.eof() && i < N; ++i)
     {
         if ((*buf.position() & 0xF0) == 0x30)
         {
