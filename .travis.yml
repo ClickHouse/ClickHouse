@@ -35,6 +35,10 @@ matrix:
       env:
         - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0
 
+      before_script:
+        # fix gcc after clang
+        - export CC=clang-5.0
+        - export CXX=clang++-5.0
 
 before_install:
     - eval "${MATRIX_EVAL}"
