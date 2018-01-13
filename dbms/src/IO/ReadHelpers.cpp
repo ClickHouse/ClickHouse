@@ -4,6 +4,7 @@
 #include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <common/find_first_symbols.h>
 #include <stdlib.h>
