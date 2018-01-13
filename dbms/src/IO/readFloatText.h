@@ -272,20 +272,21 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     ssize_t after_point_power = 0;
     ssize_t exponent = 0;
 
-    constexpr size_t significant_digits = std::numeric_limits<UInt64>::digits10;
-    readIntTextUpToNChars<significant_digits>(before_point, in);
+    constexpr size_t significant_digits_before_point = std::numeric_limits<decltype(before_point)>::digits10;
+    readIntTextUpToNChars<significant_digits_before_point>(before_point, in);
     size_t read_digits = in.count() - prev_count;
 
     size_t before_point_additional_exponent = 0;
-    if (read_digits > significant_digits)
-        before_point_additional_exponent = read_digits - significant_digits;
+    if (read_digits > significant_digits_before_point)
+        before_point_additional_exponent = read_digits - significant_digits_before_point;
 
     if (checkChar('.', in))
     {
         auto after_point_count = in.count();
-        readIntTextUpToNChars<significant_digits>(after_point, in);
+        constexpr size_t significant_digits_after_point = std::numeric_limits<decltype(after_point)>::digits10;
+        readIntTextUpToNChars<significant_digits_after_point>(after_point, in);
         size_t read_digits = in.count() - after_point_count;
-        after_point_power = read_digits > significant_digits ? -significant_digits : -read_digits;
+        after_point_power = read_digits > significant_digits_after_point ? -significant_digits_after_point : -read_digits;
     }
 
     if (checkChar('e', in) || checkChar('E', in))
