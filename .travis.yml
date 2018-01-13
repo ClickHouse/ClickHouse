@@ -4,9 +4,10 @@ dist: trusty
 os: linux
 
 cache:
-  ccache: true
   directories:
   - /var/cache/pbuilder
+before_cache:
+  - rm -rf /var/cache/pbuilder/build
 
 addons:
   apt:
