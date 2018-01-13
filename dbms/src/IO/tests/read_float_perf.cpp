@@ -117,6 +117,115 @@ void readFloatTextFast(T & x, ReadBuffer & in)
 }
 
 
+template <typename T, typename ReturnType = void>
+ReturnType readFloatTextRough(T & x, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    bool negative = false;
+    x = 0;
+    bool after_point = false;
+    double power_of_ten = 1;
+
+    if (buf.eof())
+    {
+        if (throw_exception)
+            throwReadAfterEOF();
+        else
+            return ReturnType(false);
+    }
+
+    while (!buf.eof())
+    {
+        switch (*buf.position())
+        {
+            case '+':
+                break;
+            case '-':
+                negative = true;
+                break;
+            case '.':
+                after_point = true;
+                break;
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
+            case '8':
+            case '9':
+                if (after_point)
+                {
+                    power_of_ten /= 10;
+                    x += (*buf.position() - '0') * power_of_ten;
+                }
+                else
+                {
+                    x *= 10;
+                    x += *buf.position() - '0';
+                }
+                break;
+            case 'e':
+            case 'E':
+            {
+                ++buf.position();
+                Int32 exponent = 0;
+                bool res = exceptionPolicySelector<throw_exception>(readIntText<Int32>, tryReadIntText<Int32>, exponent, buf);
+                if (res)
+                {
+                    x *= exp10(exponent);
+                    if (negative)
+                        x = -x;
+                }
+                return ReturnType(res);
+            }
+
+            case 'i':
+            case 'I':
+            {
+                bool res = exceptionPolicySelector<throw_exception>(assertInfinity, parseInfinity, buf);
+                if (res)
+                {
+                    x = std::numeric_limits<T>::infinity();
+                    if (negative)
+                        x = -x;
+                }
+                return ReturnType(res);
+            }
+
+            case 'n':
+            case 'N':
+            {
+                bool res = exceptionPolicySelector<throw_exception>(assertNaN, parseNaN, buf);
+                if (res)
+                {
+                    x = std::numeric_limits<T>::quiet_NaN();
+                    if (negative)
+                        x = -x;
+                }
+                return ReturnType(res);
+            }
+
+            default:
+            {
+                if (negative)
+                    x = -x;
+                return ReturnType(true);
+            }
+        }
+        ++buf.position();
+    }
+
+    if (negative)
+        x = -x;
+
+    return ReturnType(true);
+}
+
+
 int main(int, char **)
 try
 {
