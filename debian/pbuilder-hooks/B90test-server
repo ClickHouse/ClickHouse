@@ -20,6 +20,8 @@ dpkg-reconfigure -f noninteractive tzdata
 service clickhouse-server start
 sleep 3
 
+# TODO: remove me or make only on error:
+tail -n100 /var/log/clickhouse-server/*
 
 clickhouse-client -q "SELECT * from system.build_options;"
 clickhouse-client -q "SELECT toDateTime(1);"
