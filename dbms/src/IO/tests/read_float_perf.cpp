@@ -43,8 +43,8 @@ using namespace DB;
 template <typename T, void F(T&, ReadBuffer&)>
 void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
 {
-    Float64 sum = 0;
-    Float64 x = 0;
+    T sum = 0;
+    T x = 0;
 
     Stopwatch watch;
 
