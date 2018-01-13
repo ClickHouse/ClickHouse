@@ -5,7 +5,9 @@
 
 #include <Core/Types.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressedReadBuffer.h>
 
 
@@ -117,23 +119,16 @@ void readFloatTextFast(T & x, ReadBuffer & in)
 }
 
 
-template <typename T, typename ReturnType = void>
-ReturnType readFloatTextRough(T & x, ReadBuffer & buf)
+template <typename T>
+void readFloatTextRough(T & x, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
     bool negative = false;
     x = 0;
     bool after_point = false;
     double power_of_ten = 1;
 
     if (buf.eof())
-    {
-        if (throw_exception)
-            throwReadAfterEOF();
-        else
-            return ReturnType(false);
-    }
+        throwReadAfterEOF();
 
     while (!buf.eof())
     {
@@ -173,47 +168,38 @@ ReturnType readFloatTextRough(T & x, ReadBuffer & buf)
             {
                 ++buf.position();
                 Int32 exponent = 0;
-                bool res = exceptionPolicySelector<throw_exception>(readIntText<Int32>, tryReadIntText<Int32>, exponent, buf);
-                if (res)
-                {
-                    x *= exp10(exponent);
-                    if (negative)
-                        x = -x;
-                }
-                return ReturnType(res);
+                readIntText(exponent, buf);
+                x *= exp10(exponent);
+                if (negative)
+                    x = -x;
+                return;
             }
 
             case 'i':
             case 'I':
             {
-                bool res = exceptionPolicySelector<throw_exception>(assertInfinity, parseInfinity, buf);
-                if (res)
-                {
-                    x = std::numeric_limits<T>::infinity();
-                    if (negative)
-                        x = -x;
-                }
-                return ReturnType(res);
+                assertInfinity(buf);
+                x = std::numeric_limits<T>::infinity();
+                if (negative)
+                    x = -x;
+                return;
             }
 
             case 'n':
             case 'N':
             {
-                bool res = exceptionPolicySelector<throw_exception>(assertNaN, parseNaN, buf);
-                if (res)
-                {
-                    x = std::numeric_limits<T>::quiet_NaN();
-                    if (negative)
-                        x = -x;
-                }
-                return ReturnType(res);
+                assertNaN(buf);
+                x = std::numeric_limits<T>::quiet_NaN();
+                if (negative)
+                    x = -x;
+                return;
             }
 
             default:
             {
                 if (negative)
                     x = -x;
-                return ReturnType(true);
+                return;
             }
         }
         ++buf.position();
@@ -221,8 +207,6 @@ ReturnType readFloatTextRough(T & x, ReadBuffer & buf)
 
     if (negative)
         x = -x;
-
-    return ReturnType(true);
 }
 
 
@@ -230,6 +214,7 @@ int main(int, char **)
 try
 {
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
+    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
     Float64 sum = 0;
     Float64 x = 0;
@@ -242,7 +227,8 @@ try
         sum += x;
     }
 
-    std::cout << sum << std::endl;
+    writeFloatText(sum, out);
+    writeChar('\n', out);
     return 0;
 }
 catch (const Exception & e)
