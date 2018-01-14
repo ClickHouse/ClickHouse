@@ -718,8 +718,11 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
         NullSink sink;
         readJSONStringInto(sink, buf);
     }
-    else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+') /// skip number
+    else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+' || *buf.position() == '.') /// skip number
     {
+        if (*buf.position() == '+')
+            ++buf.position();
+
         double v;
         if (!tryReadFloatText(v, buf))
             throw Exception("Expected a number field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
