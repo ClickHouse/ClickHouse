@@ -55,23 +55,30 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
     size_t num_excessive_digits = 0;
     ssize_t position_of_point = -1;
     bool in_leading_zeros = true;
-    bool in_exponent = false;
-    bool exponent_is_negative = false;
     int exponent = 0;
     size_t position_after_digits = 0;
+
+    if (in.eof())
+    {
+        if constexpr (throw_exception)
+            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+        else
+            return false;
+    }
+
+    if (*in.position() == '-')
+    {
+        negative = true;
+        ++in.position();
+    }
+
+    auto count_after_sign = in.count();
 
     while (!in.eof())
     {
         if ((*in.position() & 0xF0) == 0x30)
         {
-            if (unlikely(in_exponent))
-            {
-                auto digit = *in.position() & 0x0F;
-
-                exponent *= 10;
-                exponent += digit;
-            }
-            else if (num_significant_digits < max_significant_digits)
+            if (num_significant_digits < max_significant_digits)
             {
                 auto digit = *in.position() & 0x0F;
 
@@ -86,24 +93,58 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
             else
                 ++num_excessive_digits;
         }
-        else if (*in.position() == '-')
-        {
-            if (unlikely(in_exponent))
-                exponent_is_negative = true;
-            else
-                negative = true;
-        }
         else if (*in.position() == '.')
         {
             position_of_point = in.count();
         }
-        else if (*in.position() == 'e' || *in.position() == 'E')
+        else
+            break;
+
+        ++in.position();
+    }
+
+    position_after_digits = in.count();
+
+    if (!in.eof() && (*in.position() == 'e' || *in.position() == 'E'))
+    {
+        ++in.position();
+
+        bool exponent_is_negative = false;
+
+        if (*in.position() == '-')
         {
-            in_exponent = true;
-            if (!position_after_digits)
-                position_after_digits = in.count();
+            exponent_is_negative = true;
+            ++in.position();
         }
-        else if (*in.position() == 'i' || *in.position() == 'I')
+
+        while (!in.eof() && (*in.position() & 0xF0) == 0x30)
+        {
+            auto digit = *in.position() & 0x0F;
+
+            exponent *= 10;
+            exponent += digit;
+
+            ++in.position();
+        }
+
+        if (exponent_is_negative)
+            exponent = -exponent;
+    }
+
+    auto num_characters_without_sign = in.count() - count_after_sign;
+
+    /// Denormals. At most one character is read before denormal and it is '-'.
+    if (num_characters_without_sign == 0)
+    {
+        if (in.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return false;
+        }
+
+        if (*in.position() == 'i' || *in.position() == 'I')
         {
             if (assertOrParseInfinity<throw_exception>(in))
             {
@@ -127,23 +168,22 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
         }
         else
         {
-            if (!position_after_digits)
-                position_after_digits = in.count();
-            break;
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return false;
         }
-
-        ++in.position();
     }
-
-    if (exponent_is_negative)
-        exponent = -exponent;
 
     exponent += num_excessive_digits;
 
     if (position_of_point != -1)
         exponent -= position_after_digits - position_of_point - 1;
 
-    x = shift10(digits, exponent);
+    if (exponent)
+        x = shift10(digits, exponent);
+    else
+        x = digits;
 
     if (negative)
         x = -x;
