@@ -8,10 +8,7 @@ cache:
   ccache: true
   timeout: 1000
   directories:
-  - /var/cache/pbuilder
-
-before_cache:
-  - rm -rf /var/cache/pbuilder/build
+  - /var/cache/pbuilder/ccache
 
 addons:
   apt:
