@@ -150,6 +150,7 @@ target_link_libraries (clickhouse_common_io
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
     ${Poco_Data_LIBRARY}
+    ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
 )
 
@@ -159,7 +160,6 @@ target_link_libraries (dbms
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
     ${METROHASH_LIBRARIES}
-    ${ZLIB_LIBRARIES}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
@@ -176,7 +176,7 @@ if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
 endif ()
 
 if (Poco_DataODBC_FOUND)
-    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY} ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
 endif()
 
 if (Poco_MongoDB_FOUND)

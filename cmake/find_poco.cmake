@@ -27,8 +27,6 @@ else ()
     set (POCO_STATIC ${MAKE_STATIC_LIBRARIES} CACHE BOOL "")
     set (POCO_VERBOSE_MESSAGES 1 CACHE BOOL "")
 
-    include (${ClickHouse_SOURCE_DIR}/cmake/find_ltdl.cmake)
-    include (${ClickHouse_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake)
 
     # used in internal compiler
     list (APPEND Poco_INCLUDE_DIRS
@@ -45,7 +43,7 @@ else ()
     if (ODBC_FOUND)
         set (Poco_DataODBC_FOUND 1)
         set (Poco_DataODBC_LIBRARY PocoDataODBC)
-        list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
+        list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIBRARY})
         set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
     endif ()
 
