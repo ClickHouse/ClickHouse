@@ -8,3 +8,9 @@ set_target_properties(util-clickhouse-compressor PROPERTIES OUTPUT_NAME "clickho
 
 add_executable (zstd_test zstd_test.cpp)
 target_link_libraries (zstd_test ${ZSTD_LIBRARY} Threads::Threads)
+
+add_executable (mutator mutator.cpp)
+target_link_libraries (mutator clickhouse_common_io)
+
+add_executable (decompress_perf decompress_perf.cpp)
+target_link_libraries (decompress_perf clickhouse_common_io)
