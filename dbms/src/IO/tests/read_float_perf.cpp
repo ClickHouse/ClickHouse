@@ -52,6 +52,7 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
     constexpr int max_significant_digits = std::numeric_limits<UInt64>::digits10;
 
     size_t num_significant_digits = 0;
+    size_t num_excessive_digits = 0;
     ssize_t position_of_point = -1;
     bool in_leading_zeros = true;
     bool in_exponent = false;
@@ -82,6 +83,8 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
                 if (!in_leading_zeros)
                     ++num_significant_digits;
             }
+            else
+                ++num_excessive_digits;
         }
         else if (*in.position() == '-')
         {
@@ -135,10 +138,15 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
     if (exponent_is_negative)
         exponent = -exponent;
 
+    exponent += num_excessive_digits;
+
     if (position_of_point != -1)
         exponent -= position_after_digits - position_of_point - 1;
 
     x = shift10(digits, exponent);
+
+    if (negative)
+        x = -x;
 
     return ReturnType(true);
 }
