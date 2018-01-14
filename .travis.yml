@@ -15,5 +15,4 @@ addons:
     packages: [ pbuilder, fakeroot, debhelper ]
 
 script:
-  # Minimizing compile time.
-  - env TEST_RUN=1 TEST_OPT=--no-long PBUILDER_OPT="--timeout 35m" CCACHE_SIZE=6G DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 CCACHEDIR=$HOME/.ccache CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Debug -DUNBUNDLED=1 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DUSE_EMBEDDED_COMPILER=0" EXTRAPACKAGES="psmisc gdb clang-5.0 libc++abi-dev libc++-dev libboost-dev libboost-program-options-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzookeeper-mt-dev libsparsehash-dev librdkafka-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libzstd-dev libre2-dev" ./release --pbuilder
+  - utils/travis/pbuilder.sh
