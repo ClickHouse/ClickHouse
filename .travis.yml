@@ -1,11 +1,5 @@
 language: cpp
 
-cache:
-  ccache: true
-  timeout: 1000
-  directories:
-  - /var/cache/pbuilder/ccache
-
 matrix:
   include:
     - os: linux
