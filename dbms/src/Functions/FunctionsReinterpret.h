@@ -46,11 +46,74 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-            return std::make_shared<DataTypeFixedString>(type.getSizeOfValueInMemory());
         if (type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
             return std::make_shared<DataTypeString>();
         throw Exception("Cannot reinterpret " + type.getName() + " as String because it is not contiguous in memory", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    void executeToString(const IColumn & src, ColumnString & dst)
+    {
+        size_t rows = src.size();
+        ColumnString::Chars_t & data_to = dst.getChars();
+        ColumnString::Offsets & offsets_to = dst.getOffsets();
+        offsets_to.resize(rows);
+
+        ColumnString::Offset offset = 0;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            StringRef data = src.getDataAt(i);
+
+            /// Cut trailing zero bytes.
+            while (data.size && data.data[data.size - 1] == 0)
+                --data.size;
+
+            data_to.resize(offset + data.size + 1);
+            memcpySmallAllowReadWriteOverflow15(&data_to[offset], data.data, data.size);
+            offset += data.size;
+            data_to[offset] = 0;
+            ++offset;
+            offsets_to[i] = offset;
+        }
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const IColumn & src = *block.getByPosition(arguments[0]).column;
+        MutableColumnPtr dst = block.getByPosition(result).type->createColumn();
+
+        if (ColumnString * dst_concrete = typeid_cast<ColumnString *>(dst.get()))
+            executeToString(src, *dst_concrete);
+        else
+            throw Exception("Illegal column " + src.getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+        block.getByPosition(result).column = std::move(dst);
+    }
+};
+
+
+template <typename Name>
+class FunctionReinterpretAsFixedStringImpl : public IFunction
+{
+public:
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsFixedStringImpl>(); };
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const IDataType & type = *arguments[0];
+
+        if (type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            return std::make_shared<DataTypeFixedString>(type.getSizeOfValueInMemory());
+        throw Exception("Cannot reinterpret " + type.getName() + " as FixedString because it is not fixed size and contiguous in memory", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     void executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
@@ -68,26 +131,6 @@ public:
         }
     }
 
-    void executeToString(const IColumn & src, ColumnString & dst)
-    {
-        size_t rows = src.size();
-        ColumnString::Chars_t & data_to = dst.getChars();
-        ColumnString::Offsets & offsets_to = dst.getOffsets();
-        offsets_to.resize(rows);
-
-        ColumnString::Offset offset = 0;
-        for (size_t i = 0; i < rows; ++i)
-        {
-            StringRef data = src.getDataAt(i);
-            data_to.resize(offset + data.size + 1);
-            memcpySmallAllowReadWriteOverflow15(&data_to[offset], data.data, data.size);
-            offset += data.size;
-            data_to[offset] = 0;
-            ++offset;
-            offsets_to[i] = offset;
-        }
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -97,8 +140,6 @@ public:
 
         if (ColumnFixedString * dst_concrete = typeid_cast<ColumnFixedString *>(dst.get()))
             executeToFixedString(src, *dst_concrete, dst_concrete->getN());
-        else if (ColumnString * dst_concrete = typeid_cast<ColumnString *>(dst.get()))
-            executeToString(src, *dst_concrete);
         else
             throw Exception("Illegal column " + src.getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
@@ -202,6 +243,7 @@ struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
 struct NameReinterpretAsDateTime    { static constexpr auto name = "reinterpretAsDateTime"; };
 struct NameReinterpretAsString      { static constexpr auto name = "reinterpretAsString"; };
+struct NameReinterpretAsFixedString      { static constexpr auto name = "reinterpretAsFixedString"; };
 
 using FunctionReinterpretAsUInt8 = FunctionReinterpretStringAs<DataTypeUInt8,       NameReinterpretAsUInt8>;
 using FunctionReinterpretAsUInt16 = FunctionReinterpretStringAs<DataTypeUInt16,     NameReinterpretAsUInt16>;
@@ -217,6 +259,7 @@ using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,     
 using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime, NameReinterpretAsDateTime>;
 
 using FunctionReinterpretAsString = FunctionReinterpretAsStringImpl<NameReinterpretAsString>;
+using FunctionReinterpretAsFixedString = FunctionReinterpretAsStringImpl<NameReinterpretAsFixedString>;
 
 
 }
