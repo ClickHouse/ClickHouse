@@ -12,8 +12,6 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 
-#include <common/exp10.h>
-
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <common/StringRef.h>
@@ -25,6 +23,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
+
+#include <double-conversion/double-conversion.h>
 
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
@@ -255,15 +255,15 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                         return ReturnType(false);
                 }
                 break;
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
+            case '0': [[fallthrough]];
+            case '1': [[fallthrough]];
+            case '2': [[fallthrough]];
+            case '3': [[fallthrough]];
+            case '4': [[fallthrough]];
+            case '5': [[fallthrough]];
+            case '6': [[fallthrough]];
+            case '7': [[fallthrough]];
+            case '8': [[fallthrough]];
             case '9':
                 x *= 10;
                 x += *buf.position() - '0';
@@ -275,6 +275,9 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         }
         ++buf.position();
     }
+
+    /// NOTE Signed integer overflow is undefined behaviour. Consider we have '128' that is parsed as Int8 and overflowed.
+    /// We are happy if it is overflowed to -128 and then 'x = -x' does nothing. But UBSan will warn.
     if (negative)
         x = -x;
 
@@ -330,6 +333,11 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
+        /// This check is suddenly faster than
+        ///  unsigned char c = *buf.position() - '0';
+        ///  if (c < 10)
+        /// for unknown reason on Xeon E5645.
+
         if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
             x *= 10;
@@ -340,6 +348,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             break;
     }
 
+    /// See note about undefined behaviour above.
     if (std::is_signed_v<T> && negative)
         x = -x;
 }
@@ -351,148 +360,10 @@ void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 }
 
 
-template <bool throw_exception, typename ExcepFun, typename NoExcepFun, typename... Args>
-bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
-{
-    if constexpr (throw_exception)
-    {
-        excep_f(std::forward<Args>(args)...);
-        return true;
-    }
-    else
-        return no_excep_f(std::forward<Args>(args)...);
-};
+/// Look at readFloatText.h
+template <typename T> void readFloatText(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
 
-
-/// Returns true, iff parsed.
-bool parseInfinity(ReadBuffer & buf);
-bool parseNaN(ReadBuffer & buf);
-
-void assertInfinity(ReadBuffer & buf);
-void assertNaN(ReadBuffer & buf);
-
-
-/// Rough: not exactly nearest machine representable number is returned.
-/// Some garbage may be successfully parsed, examples: '.' parsed as 0; 123Inf parsed as inf.
-template <typename T, typename ReturnType>
-ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    bool negative = false;
-    x = 0;
-    bool after_point = false;
-    double power_of_ten = 1;
-
-    if (buf.eof())
-    {
-        if (throw_exception)
-            throwReadAfterEOF();
-        else
-            return ReturnType(false);
-    }
-
-    while (!buf.eof())
-    {
-        switch (*buf.position())
-        {
-            case '+':
-                break;
-            case '-':
-                negative = true;
-                break;
-            case '.':
-                after_point = true;
-                break;
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
-                if (after_point)
-                {
-                    power_of_ten /= 10;
-                    x += (*buf.position() - '0') * power_of_ten;
-                }
-                else
-                {
-                    x *= 10;
-                    x += *buf.position() - '0';
-                }
-                break;
-            case 'e':
-            case 'E':
-            {
-                ++buf.position();
-                Int32 exponent = 0;
-                bool res = exceptionPolicySelector<throw_exception>(readIntText<Int32>, tryReadIntText<Int32>, exponent, buf);
-                if (res)
-                {
-                    x *= exp10(exponent);
-                    if (negative)
-                        x = -x;
-                }
-                return ReturnType(res);
-            }
-
-            case 'i':
-            case 'I':
-            {
-                bool res = exceptionPolicySelector<throw_exception>(assertInfinity, parseInfinity, buf);
-                if (res)
-                {
-                    x = std::numeric_limits<T>::infinity();
-                    if (negative)
-                        x = -x;
-                }
-                return ReturnType(res);
-            }
-
-            case 'n':
-            case 'N':
-            {
-                bool res = exceptionPolicySelector<throw_exception>(assertNaN, parseNaN, buf);
-                if (res)
-                {
-                    x = std::numeric_limits<T>::quiet_NaN();
-                    if (negative)
-                        x = -x;
-                }
-                return ReturnType(res);
-            }
-
-            default:
-            {
-                if (negative)
-                    x = -x;
-                return ReturnType(true);
-            }
-        }
-        ++buf.position();
-    }
-
-    if (negative)
-        x = -x;
-
-    return ReturnType(true);
-}
-
-template <typename T>
-inline bool tryReadFloatText(T & x, ReadBuffer & buf)
-{
-    return readFloatTextImpl<T, bool>(x, buf);
-}
-
-template <typename T>
-inline void readFloatText(T & x, ReadBuffer & buf)
-{
-    readFloatTextImpl<T, void>(x, buf);
-}
 
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
