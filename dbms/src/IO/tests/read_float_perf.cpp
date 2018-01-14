@@ -54,7 +54,6 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
     size_t num_significant_digits = 0;
     size_t num_excessive_digits = 0;
     ssize_t position_of_point = -1;
-    bool in_leading_zeros = true;
     int exponent = 0;
     size_t position_after_digits = 0;
 
@@ -74,9 +73,20 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
 
     auto count_after_sign = in.count();
 
-    while (!in.eof())
+    while (!in.eof() && (*in.position() == '0'))
+        ++in.position();
+
+    if (!in.eof() && (*in.position() == '.'))
     {
-        if ((*in.position() & 0xF0) == 0x30)
+        position_of_point = in.count();
+        ++in.position();
+
+        while (!in.eof() && (*in.position() == '0'))
+            ++in.position();
+
+        auto position_before_significant_digits = in.count();
+
+        while (!in.eof() && (*in.position() & 0xF0) == 0x30)
         {
             if (num_significant_digits < max_significant_digits)
             {
@@ -85,22 +95,57 @@ ReturnType readFloatTextFastImpl2(T & x, ReadBuffer & in)
                 digits *= 10;
                 digits += digit;
 
-                if (digit)
-                    in_leading_zeros = false;
-                if (!in_leading_zeros)
-                    ++num_significant_digits;
+                ++num_significant_digits;
             }
-            else
-                ++num_excessive_digits;
+
+            ++in.position();
         }
-        else if (*in.position() == '.')
+
+        num_excessive_digits = in.count() - position_before_significant_digits - num_significant_digits;
+    }
+    else
+    {
+        auto position_before_significant_digits = in.count();
+
+        while (!in.eof() && (*in.position() & 0xF0) == 0x30)
+        {
+            if (num_significant_digits < max_significant_digits)
+            {
+                auto digit = *in.position() & 0x0F;
+
+                digits *= 10;
+                digits += digit;
+
+                ++num_significant_digits;
+            }
+
+            ++in.position();
+        }
+
+        if (!in.eof() && (*in.position() == '.'))
         {
             position_of_point = in.count();
+            ++in.position();
+
+            while (!in.eof() && (*in.position() & 0xF0) == 0x30)
+            {
+                if (num_significant_digits < max_significant_digits)
+                {
+                    auto digit = *in.position() & 0x0F;
+
+                    digits *= 10;
+                    digits += digit;
+
+                    ++num_significant_digits;
+                }
+
+                ++in.position();
+            }
+
+            num_excessive_digits = in.count() - position_before_significant_digits - num_significant_digits - 1;
         }
         else
-            break;
-
-        ++in.position();
+            num_excessive_digits = in.count() - position_before_significant_digits - num_significant_digits;
     }
 
     position_after_digits = in.count();
