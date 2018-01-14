@@ -9,6 +9,11 @@ cache:
 matrix:
   include:
     - os: linux
+
+      cache:
+        ccache: true
+        timeout: 1000
+
       addons:
         apt:
           sources:
@@ -23,12 +28,18 @@ matrix:
 
     # We need to have gcc7 headers to compile c++17 code on clang
     - os: linux
+
+      cache:
+        ccache: true
+        timeout: 1000
+
       addons:
         apt:
           sources:
             - ubuntu-toolchain-r-test
             - llvm-toolchain-trusty-5.0
           packages: [ g++-7, clang-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo ]
+
       env:
         - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0
 
@@ -44,6 +55,11 @@ matrix:
     - os: linux
 
       sudo: required
+
+      cache:
+        timeout: 1000
+        directories:
+        - /var/cache/pbuilder/ccache
 
       addons:
         apt:
