@@ -12,6 +12,10 @@
 #include <emmintrin.h>
 #endif
 
+#if __SSSE3__
+#include <tmmintrin.h>
+#endif
+
 
 /** for i in *.bin; do ./decompress_perf < $i > /dev/null; done
   */
@@ -22,9 +26,9 @@ namespace LZ4
 namespace
 {
 
-template <size_t N> void copy(UInt8 * dst, const UInt8 * src);
-template <size_t N> void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
-template <size_t N> void copyOverlap(UInt8 * op, const UInt8 *& match, const size_t offset);
+template <size_t N> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
+template <size_t N> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
+template <size_t N, bool USE_SHUFFLE> [[maybe_unused]] void copyOverlap(UInt8 * op, const UInt8 *& match, const size_t offset);
 
 
 inline void copy8(UInt8 * dst, const UInt8 * src)
@@ -60,9 +64,37 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift2[offset];
 }
 
+inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+#ifdef __SSSE3__
+
+    static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
+    {
+        0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
+        0, 0, 0, 0, 0, 0, 0, 0, /* offset = 1 */
+        0, 1, 0, 1, 0, 1, 0, 1,
+        0, 1, 2, 0, 1, 2, 0, 1,
+        0, 1, 2, 3, 0, 1, 2, 3,
+        0, 1, 2, 3, 4, 0, 1, 2,
+        0, 1, 2, 3, 4, 5, 0, 1,
+        0, 1, 2, 3, 4, 5, 6, 0,
+    };
+
+    unalignedStore(op, _mm_shuffle_pi8(
+        unalignedLoad<__m64>(match),
+        unalignedLoad<__m64>(masks + 8 * offset)));
+
+    match += masks[offset];
+
+#else
+    copyOverlap8(op, match, offset);
+#endif
+}
+
 template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); };
 template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); };
-template <> void inline copyOverlap<8>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); };
+template <> void inline copyOverlap<8, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); };
+template <> void inline copyOverlap<8, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8Shuffle(op, match, offset); };
 
 
 #if __SSE2__
@@ -95,7 +127,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 
     /// 16 % n - 8 % n
     static constexpr int shift3[]
-        = { 0,  0,  0, -1,  0, -2,  2,  1,  0, -1, -2, -3, -4, -5, -6, -7 };
+        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7 };
 
     op[0] = match[0];
     op[1] = match[1];
@@ -109,14 +141,51 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift3[offset];
 }
 
+inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+#ifdef __SSSE3__
+
+    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
+    {
+        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
+        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
+    };
+
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
+        _mm_shuffle_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
+            _mm_load_si128(reinterpret_cast<const __m128i *>(masks) + offset)));
+
+    match += masks[offset];
+
+#else
+    copyOverlap16(op, match, offset);
+#endif
+}
+
 template <> void inline copy<16>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); };
 template <> void inline wildCopy<16>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); };
-template <> void inline copyOverlap<16>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16(op, match, offset); };
+template <> void inline copyOverlap<16, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16(op, match, offset); };
+template <> void inline copyOverlap<16, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16Shuffle(op, match, offset); };
 
 #endif
 
 
-template <size_t copy_amount>
+template <size_t copy_amount, bool use_shuffle>
 void NO_INLINE decompressImpl(
      const char * const source,
      char * const dest,
@@ -178,7 +247,7 @@ void NO_INLINE decompressImpl(
 
         if (unlikely(offset < copy_amount))
         {
-            copyOverlap<copy_amount>(op, match, offset);
+            copyOverlap<copy_amount, use_shuffle>(op, match, offset);
         }
         else
         {
@@ -205,12 +274,13 @@ void decompress(
     size_t source_size,
     size_t dest_size)
 {
-#if __SSE2__
-    if (dest_size / source_size >= 16)
-        decompressImpl<16>(source, dest, dest_size);
+    decompressImpl<16, true>(source, dest, dest_size);
+    (void) source_size;
+
+/*    if (dest_size / source_size >= 16)
+        decompressImpl<16, true>(source, dest, dest_size);
     else
-#endif
-        decompressImpl<8>(source, dest, dest_size);
+        decompressImpl<8, true>(source, dest, dest_size);*/
 }
 
 
