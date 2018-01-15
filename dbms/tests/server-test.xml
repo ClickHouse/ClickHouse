@@ -7,7 +7,6 @@
         <size>10M</size>
         <count>1</count>
     </logger>
-    <listen_host>::</listen_host>
     <http_port>58123</http_port>
     <tcp_port>59000</tcp_port>
     <interserver_http_port>59009</interserver_http_port>
