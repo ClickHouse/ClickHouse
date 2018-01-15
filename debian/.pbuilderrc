@@ -157,6 +157,8 @@ case "$ARCH" in
         ;;
 esac
 
+# will test symbols
+EXTRAPACKAGES+=" gdb "
 
 export CCACHE_PREFIX=
 
