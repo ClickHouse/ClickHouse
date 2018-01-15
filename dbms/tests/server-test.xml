@@ -2,8 +2,8 @@
 <yandex>
     <logger>
         <level>trace</level>
-        <log>/tmp/cliclkouse/log/clickhouse-server.log</log>
-        <errorlog>/tmp/cliclkouse/log/clickhouse-server.err.log</errorlog>
+        <log>/tmp/clickhouse/log/clickhouse-server.log</log>
+        <errorlog>/tmp/clickhouse/log/clickhouse-server.err.log</errorlog>
         <size>10M</size>
         <count>1</count>
     </logger>
@@ -12,8 +12,8 @@
     <tcp_port>59000</tcp_port>
     <interserver_http_port>59009</interserver_http_port>
     <keep_alive_timeout>3</keep_alive_timeout>
-    <path>/tmp/cliclkouse/data/</path>
-    <tmp_path>/tmp/cliclkouse/tmp/</tmp_path>
+    <path>/tmp/clickhouse/data/</path>
+    <tmp_path>/tmp/clickhouse/tmp/</tmp_path>
     <users_config>users.xml</users_config>
     <mark_cache_size>5368709120</mark_cache_size>
     <default_profile>default</default_profile>
@@ -45,5 +45,5 @@
     <distributed_ddl>
         <path>/clickhouse/task_queue/ddl</path>
     </distributed_ddl>
-    <format_schema_path>/tmp/cliclkouse/data/format_schemas/</format_schema_path>
+    <format_schema_path>/tmp/clickhouse/data/format_schemas/</format_schema_path>
 </yandex>
