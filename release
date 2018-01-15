@@ -88,5 +88,5 @@ else
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
         sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc
     fi
-    pdebuild --configfile $CURDIR/debian/.pbuilderrc
+    pdebuild --configfile $CURDIR/debian/.pbuilderrc -- $PBUILDER_OPT
 fi
