@@ -759,7 +759,8 @@ void MergeTreeDataPart::loadRowsCount()
 
             if (!(rows_count <= rows_approx && rows_approx < rows_count + storage.index_granularity))
                 throw Exception(
-                    "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows",
+                    "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows, expected "
+                    + toString(rows_approx) + "+-" + toString(storage.index_granularity) + " rows according to the index",
                     ErrorCodes::LOGICAL_ERROR);
 
             return;
