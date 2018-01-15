@@ -172,7 +172,7 @@ try
         << ", checksum: " << hash.first << "_" << hash.second
         << "\n";
 
-    decompressing_in.getStatistics().print();
+//    decompressing_in.getStatistics().print();
 
     return 0;
 }
