@@ -13,7 +13,7 @@ rm -rf $DATADIR
 mkdir -p $LOGDIR
 
 # Start a local clickhouse server which will be used to run tests
-PATH=$PATH:$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server \
+#PATH=$PATH:$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server \
   $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse-server --config-file=$CURDIR/server-test.xml > $LOGDIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
@@ -33,6 +33,7 @@ export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=$CURDIR/server-test.xml}
 if [ -n "$*" ]; then
     $*
 else
-    PATH=$PATH:$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server \
-      $CURDIR/clickhouse-test -c "$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse-client --config $CURDIR/clickhouse-client.xml" --tmp $DATADIR/tmp --queries $CURDIR/queries 
+    $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse-client --config $CURDIR/clickhouse-client.xml -q 'SELECT * from system.build_options;'
+    #PATH=$PATH:$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server \
+      $CURDIR/clickhouse-test -c "$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse-client --config $CURDIR/clickhouse-client.xml" --tmp $DATADIR/tmp --queries $CURDIR/queries $TEST_OPT
 fi
