@@ -4,12 +4,12 @@
 
 #include <string.h>
 #include <city.h>
-#include <lz4.h>
 #include <zstd.h>
 
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/LZ4_decompress_faster.h>
 #include <common/unaligned.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -99,8 +99,7 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
 
     if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
     {
-        if (LZ4_decompress_fast(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed) < 0)
-            throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
+        LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed);
     }
     else if (method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
     {
