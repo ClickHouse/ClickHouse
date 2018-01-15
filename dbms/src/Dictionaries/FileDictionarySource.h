@@ -35,6 +35,9 @@ public:
     bool isModified() const override { return getLastModification() > last_modification; }
     bool supportsSelectiveLoad() const override { return false; }
 
+    ///Not supported for FileDictionarySource
+    bool hasUpdateField() const override { return false; }
+
     DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
 
     std::string toString() const override;

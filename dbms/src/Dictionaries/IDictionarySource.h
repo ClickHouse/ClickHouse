@@ -39,6 +39,9 @@ public:
     /// indicates whether the source has been modified since last load* operation
     virtual bool isModified() const = 0;
 
+    /// Returns true if update field is defined
+    virtual bool hasUpdateField() const = 0;
+
     virtual DictionarySourcePtr clone() const = 0;
 
     /// returns an informal string describing the source

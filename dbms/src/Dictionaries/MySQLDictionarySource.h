@@ -44,9 +44,13 @@ public:
 
     bool supportsSelectiveLoad() const override;
 
+    bool hasUpdateField() const override;
+
     DictionarySourcePtr clone() const override;
 
     std::string toString() const override;
+
+    void setDate();
 
 private:
     static std::string quoteForLike(const std::string s);
@@ -57,15 +61,20 @@ private:
     std::string doInvalidateQuery(const std::string & request) const;
 
     Poco::Logger * log;
+
+    std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string db;
     const std::string table;
     const std::string where;
+    const std::string update_field;
+    std::string date;
     const bool dont_check_update_time;
     Block sample_block;
     mutable mysqlxx::PoolWithFailover pool;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
+    std::string load_all_query_update;
     LocalDateTime last_modification;
     std::string invalidate_query;
     mutable std::string invalidate_query_response;
