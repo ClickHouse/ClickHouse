@@ -52,6 +52,9 @@ public:
     /// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
     bool isModified() const override { return true; }
 
+    ///Not yet supported
+    bool hasUpdateField() const override { return false; }
+
     DictionarySourcePtr clone() const override { return std::make_unique<MongoDBDictionarySource>(*this); }
 
     std::string toString() const override;

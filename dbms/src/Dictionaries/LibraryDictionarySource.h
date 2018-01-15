@@ -47,6 +47,9 @@ public:
 
     bool supportsSelectiveLoad() const override;
 
+    ///Not yet supported
+    bool hasUpdateField() const override { return false; }
+
     DictionarySourcePtr clone() const override;
 
     std::string toString() const override;

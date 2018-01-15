@@ -36,6 +36,9 @@ public:
     bool isModified() const override { return true; }
     bool supportsSelectiveLoad() const override { return true; }
 
+    ///Not yet supported
+    bool hasUpdateField() const override { return false; }
+
     DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;

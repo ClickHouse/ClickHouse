@@ -41,8 +41,11 @@ ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     Block & sample_block, const Context & context)
     : log(&Logger::get("ExecutableDictionarySource")),
+    update_time{std::chrono::system_clock::now()},
     dict_struct{dict_struct_},
     command{config.getString(config_prefix + ".command")},
+    update_field{config.getString(config_prefix + ".update_field", "")},
+    date{"0000-00-00 00:00:00"},
     format{config.getString(config_prefix + ".format")},
     sample_block{sample_block},
     context(context)
@@ -51,6 +54,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other)
     : log(&Logger::get("ExecutableDictionarySource")),
+    update_time{other.update_time},
     dict_struct{other.dict_struct},
     command{other.command},
     format{other.format},
@@ -59,12 +63,56 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
+void ExecutableDictionarySource::setDate()
+{
+    if (!hasUpdateField())
+        return;
+    else if ((hasUpdateField() && date == "0000-00-00 00:00:00")) {
+        auto tmp_time = update_time;
+        update_time = std::chrono::system_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(update_time - tmp_time);
+        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - duration.count() - 1;
+        char buffer [80];
+        struct tm * timeinfo;
+        timeinfo = localtime (&hr_time);
+        strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", timeinfo);
+        std::string str_time(buffer);
+        date = str_time;
+    }
+    else {
+        auto tmp_time = update_time;
+        update_time = std::chrono::system_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(update_time - tmp_time);
+        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - duration.count() - 1;
+        char buffer [80];
+        struct tm * timeinfo;
+        timeinfo = localtime (&hr_time);
+        strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", timeinfo);
+        std::string str_time(buffer);
+        date = str_time;
+        command_update = command + update_field + date;
+    }
+}
+
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
-    auto process = ShellCommand::execute(command);
-    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
+    setDate();
+
+    if (!command_update.empty())
+    {
+        auto process = ShellCommand::execute(command_update);
+        auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+
+        return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
+    }
+    else
+    {
+        auto process = ShellCommand::execute(command);
+        auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+
+        return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
+    }
 }
 
 
@@ -171,6 +219,14 @@ bool ExecutableDictionarySource::isModified() const
 bool ExecutableDictionarySource::supportsSelectiveLoad() const
 {
     return true;
+}
+
+bool ExecutableDictionarySource::hasUpdateField() const
+{
+    if(update_field.empty())
+        return false;
+    else
+        return true;
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const
