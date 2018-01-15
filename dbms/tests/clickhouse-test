@@ -156,7 +156,11 @@ def main(args):
                         print "{0:70}".format(name + ": "),
                         sys.stdout.flush()
 
-                        if not args.zookeeper and 'zookeeper' in name:
+                        if args.skip and any(s in name for s in args.skip):
+                            report_testcase.append(et.Element("skipped", attrib = {"message": "skip"}))
+                            print(MSG_SKIPPED + " - skip")
+                            skipped_total += 1
+                        elif not args.zookeeper and 'zookeeper' in name:
                             report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
                             print(MSG_SKIPPED + " - no zookeeper")
                             skipped_total += 1
@@ -323,6 +327,7 @@ if __name__ == '__main__':
     parser.add_argument('--order', default = 'desc', help = 'Run order (asc, desc, random)')
     parser.add_argument('--testname', action = 'store_true', default = None, dest = 'testname', help = 'Make query with test name before test run')
 
+    parser.add_argument('--skip', nargs='+', help = "Skip these tests")
     parser.add_argument('--no-long', action = 'store_false', default = None, dest = 'no_long', help = 'Do not run long tests')
     group = parser.add_mutually_exclusive_group(required = False)
     group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
