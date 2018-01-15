@@ -184,6 +184,8 @@ template <> void inline copyOverlap<16, true>(UInt8 * op, const UInt8 *& match, 
 
 #endif
 
+/// See also https://stackoverflow.com/a/30669632
+
 
 template <size_t copy_amount, bool use_shuffle>
 void NO_INLINE decompressImpl(
@@ -220,12 +222,12 @@ void NO_INLINE decompressImpl(
 
         UInt8 * copy_end = op + length;
 
-        wildCopy<copy_amount>(op, ip, copy_end);
+        wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         ip += length;
         op = copy_end;
 
-        if (copy_end > output_end)
+        if (copy_end >= output_end)
             return;
 
         /// Get match offset.
@@ -245,6 +247,10 @@ void NO_INLINE decompressImpl(
 
         copy_end = op + length;
 
+        /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
+          * The worst case when offset = 1 and length = 4
+          */
+
         if (unlikely(offset < copy_amount))
         {
             copyOverlap<copy_amount, use_shuffle>(op, match, offset);
@@ -257,7 +263,7 @@ void NO_INLINE decompressImpl(
 
         op += copy_amount;
 
-        copy<copy_amount>(op, match);
+        copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
             wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end);
 
