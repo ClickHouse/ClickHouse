@@ -100,7 +100,6 @@ else ()
         clickhouse-extract-from-config-lib
         clickhouse-compressor-lib
         clickhouse-format-lib
-        dbms
     )
 
     add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
