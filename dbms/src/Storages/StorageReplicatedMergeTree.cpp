@@ -34,7 +34,7 @@
 #include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/DirectoryIterator.h>

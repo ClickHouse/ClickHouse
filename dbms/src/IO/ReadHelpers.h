@@ -16,7 +16,7 @@
 #include <Core/UUID.h>
 #include <common/StringRef.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
 

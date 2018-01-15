@@ -3,7 +3,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/SimpleCache.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>

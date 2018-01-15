@@ -7,7 +7,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 
 
 namespace DB
