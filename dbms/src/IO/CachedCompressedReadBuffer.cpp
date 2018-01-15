@@ -1,5 +1,6 @@
 #include <IO/CachedCompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/CompressedStream.h>
 
 
 namespace DB
@@ -45,7 +46,7 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         if (owned_cell->compressed_size)
         {
-            owned_cell->data.resize(size_decompressed);
+            owned_cell->data.resize(size_decompressed + ADDITIONAL_BYTES_AT_END_OF_DECOMPRESSED_BUFFER);
             decompress(owned_cell->data.m_data, size_decompressed, size_compressed_without_checksum);
 
             /// Put data into cache.

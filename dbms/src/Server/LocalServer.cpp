@@ -111,7 +111,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 
     /// Alias for previous one, required for clickhouse-client compability
     _options.addOption(
-        Poco::Util::Option("format", "", "Default ouput format")
+        Poco::Util::Option("format", "", "Default output format")
             .required(false)
             .repeatable(false)
             .argument("[TSV]", true)
