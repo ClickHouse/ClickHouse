@@ -176,7 +176,7 @@ if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
 endif ()
 
 if (Poco_DataODBC_FOUND)
-    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY} ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
+    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
 endif()
 
 if (Poco_MongoDB_FOUND)
