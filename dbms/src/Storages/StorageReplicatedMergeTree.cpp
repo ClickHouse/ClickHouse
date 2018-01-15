@@ -1787,7 +1787,11 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             /// You need to load new entries into the queue before you select parts to merge.
             ///  (so we know which parts are already going to be merged).
             /// We must select parts for merge under the mutex because other threads (OPTIMIZE queries) could push new merges.
-            pullLogsToQueue();
+            if (merge_selecting_logs_pulling_is_required)
+            {
+                pullLogsToQueue();
+                merge_selecting_logs_pulling_is_required = false;
+            }
 
             /// If many merges is already queued, then will queue only small enough merges.
             /// Otherwise merge queue could be filled with only large merges,
@@ -1809,10 +1813,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                 now = std::chrono::steady_clock::now();
 
                 if (max_parts_size_for_merge > 0
-                    && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge)
-                    && createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate))
+                    && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge))
                 {
-                    success = true;
+                    merge_selecting_logs_pulling_is_required = true;
+                    success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate);
                 }
             }
         }
@@ -2406,6 +2410,9 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
             return handle_noop(disable_reason);
         }
+
+        /// It is important to pull new logs (even if creation of the entry fails due to network error)
+        merge_selecting_logs_pulling_is_required = true;
 
         if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return handle_noop("Can't create merge queue node in ZooKeeper");
