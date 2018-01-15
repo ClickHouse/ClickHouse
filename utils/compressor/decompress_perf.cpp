@@ -82,7 +82,7 @@ protected:
         }
         else
         {
-            own_compressed_buffer.resize(size_compressed);
+            own_compressed_buffer.resize(size_compressed + ADDITIONAL_BYTES_AT_END_OF_DECOMPRESSED_BUFFER);
             compressed_buffer = &own_compressed_buffer[0];
             compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
         }
@@ -127,7 +127,7 @@ private:
         if (!size_compressed)
             return false;
 
-        memory.resize(size_decompressed + 15);
+        memory.resize(size_decompressed + ADDITIONAL_BYTES_AT_END_OF_DECOMPRESSED_BUFFER);
         working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
 
         decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
