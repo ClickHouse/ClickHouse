@@ -337,7 +337,7 @@ if __name__ == '__main__':
         args.queries = 'queries'
         if args.tmp is None:
             args.tmp = args.queries
-    else:
+    elif args.queries is None:
         args.queries = '/usr/share/clickhouse-test/queries'
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
