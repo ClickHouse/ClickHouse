@@ -9,15 +9,15 @@ namespace LZ4
 {
 
 /** There are many implementation details of LZ4 decompression loop, that affect performance.
-  * For example: copy by 8 or by 16 bytes at once; use shuffle instruction to replicate match or not.
+  * For example: copy by 8 or by 16 (SSE2) bytes at once; use shuffle (SSSE3) instruction to replicate match or not.
   *
-  * The optimal algorithm is dependent:
+  * The optimal algorithm is dependent on:
   *
-  * - on CPU architecture
+  * 1. CPU architecture.
   * (example: on Skylake it's almost always better to copy by 16 bytes and use shuffle,
   *  but on Westmere using shuffle is worse and copy by 16 bytes is better only for high compression ratios)
   *
-  * - on data distribution
+  * 2. Data distribution.
   * (example: when compression ratio is higher than 10.20,
   *  it's usually better to copy by 16 bytes rather than 8).
   *
@@ -49,22 +49,22 @@ struct PerformanceStatistics
         double count = 0;
         double sum = 0;
 
-        double adjusted_count() const
+        double adjustedCount() const
         {
             return count - NUM_INVOCATIONS_TO_THROW_OFF;
         }
 
         double mean() const
         {
-            return sum / adjusted_count();
+            return sum / adjustedCount();
         }
 
         /// For better convergence, we don't use proper estimate of stddev.
-        /// We want to eventually choose between two algorithms even in case
+        /// We want to eventually separate between two algorithms even in case
         ///  when there is no statistical significant difference between them.
         double sigma() const
         {
-            return mean() / sqrt(adjusted_count());
+            return mean() / sqrt(adjustedCount());
         }
 
         void update(double seconds, double bytes)
@@ -80,8 +80,8 @@ struct PerformanceStatistics
             /// If there is a variant with not enough statistics, always choose it.
             /// And in that case prefer variant with less number of invocations.
 
-            if (adjusted_count() < 2)
-                return adjusted_count() - 1;
+            if (adjustedCount() < 2)
+                return adjustedCount() - 1;
             else
                 return std::normal_distribution<>(mean(), sigma())(rng);
         }
