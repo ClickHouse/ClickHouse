@@ -139,7 +139,9 @@ target_link_libraries (clickhouse_common_io
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
     ${Poco_Data_LIBRARY}
+    ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
 )
 
 target_link_libraries (dbms
@@ -149,11 +151,9 @@ target_link_libraries (dbms
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
     ${METROHASH_LIBRARIES}
-    ${ZLIB_LIBRARIES}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
-    ${Boost_SYSTEM_LIBRARY}
     ${BTRIE_LIBRARIES}
 )
 
@@ -163,6 +163,10 @@ endif ()
 
 if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
     target_include_directories (clickhouse_common_io BEFORE PUBLIC ${ZOOKEEPER_INCLUDE_DIR})
+endif ()
+
+if (NOT USE_INTERNAL_BOOST_LIBRARY)
+    target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
 if (Poco_DataODBC_FOUND)

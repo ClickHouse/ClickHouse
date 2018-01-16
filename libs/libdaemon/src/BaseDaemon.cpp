@@ -208,6 +208,9 @@ size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & co
         unw_word_t ip;
         unw_get_reg(&cursor, UNW_REG_IP, &ip);
         out_frames[i] = reinterpret_cast<void*>(ip);
+
+        /// NOTE This triggers "AddressSanitizer: stack-buffer-overflow". Looks like false positive.
+        /// It's Ok, because we use this method if the program is crashed nevertheless.
         if (!unw_step(&cursor))
             break;
     }
