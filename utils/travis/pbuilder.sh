@@ -3,6 +3,8 @@
 set -e
 set -x
 
+df -h
+
 env TEST_RUN=1 \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \

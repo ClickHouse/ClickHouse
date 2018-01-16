@@ -9,8 +9,13 @@ set -x
 
 TEST_TRUE=${TEST_TRUE:=false}
 
+# clean not used ~600mb
+[ -n "$TRAVIS" ] && rm -rf .git contrib/poco/openssl
+
 ccache -s
 ccache -M 4G
+df -h
+
 mkdir -p build
 cd build
 cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` \
