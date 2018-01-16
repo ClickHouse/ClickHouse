@@ -202,7 +202,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         0, 0, nullptr, nullptr);
 
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
-    static constexpr int MAX_LENGTH = 310;
+    static constexpr int MAX_LENGTH = 316;
 
     if (buf.position() + MAX_LENGTH <= buf.buffer().end())
     {
