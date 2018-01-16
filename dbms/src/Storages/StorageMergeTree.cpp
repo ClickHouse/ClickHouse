@@ -441,6 +441,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     for (auto & transaction : transactions)
         transaction->commit();
 
+    /// Recalculate columns size (not only for the modified column)
     data.recalculateColumnSizes();
 }
 
