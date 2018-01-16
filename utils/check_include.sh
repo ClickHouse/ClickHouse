@@ -10,7 +10,7 @@ inc="-I. \
 -I./build/contrib/libre2 \
 -I./contrib/libfarmhash \
 -I./contrib/libmetrohash/src \
--I./contrib/libdouble-conversion \
+-I./contrib/double-conversion \
 -I./contrib/libcityhash/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
