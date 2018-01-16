@@ -149,9 +149,6 @@ def main(args):
                     report_testcase = et.Element("testcase", attrib = {"name": name})
 
                     try:
-                        if args.testname:
-                            clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-                            clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
                         print "{0:70}".format(name + ": "),
                         sys.stdout.flush()
@@ -180,6 +177,11 @@ def main(args):
                                 report_testcase.append(et.Element("skipped", attrib = {"message": message}))
                                 print(MSG_SKIPPED + " - " + message)
                             else:
+
+                                if args.testname:
+                                    clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                                    clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
+
                                 reference_file = os.path.join(suite_dir, name) + '.reference'
                                 stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
