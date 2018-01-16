@@ -3,6 +3,8 @@
 set -e
 set -x
 
+df -h
+
 env TEST_RUN=1 \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
@@ -13,9 +15,9 @@ env TEST_RUN=1 \
     PBUILDER_OPT="--timeout 35m" \
     `# clang faster than gcc` \
     DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 \
-    CCACHE_SIZE=6G CCACHEDIR=$HOME/.ccache \
+    CCACHE_SIZE=4G CCACHEDIR=$HOME/.ccache \
     `# Disable all features` \
-    CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Debug -DUNBUNDLED=1 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DUSE_EMBEDDED_COMPILER=0" \
+    CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Debug -DUNBUNDLED=1 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DUSE_EMBEDDED_COMPILER=0 -DCMAKE_C_FLAGS_ADD='-O0 -g0' -DCMAKE_CXX_FLAGS_ADD='-O0 -g0'" \
     `# Use all possible contrib libs from system` \
     `# psmisc - killall` \
     `# gdb - symbol test in pbuilder` \

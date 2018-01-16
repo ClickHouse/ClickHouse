@@ -9,13 +9,19 @@ set -x
 
 TEST_TRUE=${TEST_TRUE:=false}
 
+# clean not used ~600mb
+[ -n "$TRAVIS" ] && rm -rf .git contrib/poco/openssl
+
 ccache -s
-ccache -M 6G
+ccache -M 4G
+df -h
+
 mkdir -p build
 cd build
 cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` \
-    `# Does not optimize to speedup build` \
-    -DCMAKE_C_FLAGS_ADD=-O0 -DCMAKE_CXX_FLAGS_ADD=-O0 \
+    `# Does not optimize to speedup build, skip debug info to use less disk` \
+    -DCMAKE_C_FLAGS_ADD="-O0 -g0" -DCMAKE_CXX_FLAGS_ADD="-O0 -g0" \
+    `# ignore ccache disabler on trusty` \
     -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
     `# Use all possible contrib libs from system` \
     -DUNBUNDLED=1 \

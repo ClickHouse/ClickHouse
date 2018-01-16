@@ -5,4 +5,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We should have correct env vars from shell_config.sh to run this test
 
-python $CURDIR/00411_accurate_number_comparison.python
+python $CURDIR/00411_long_accurate_number_comparison.python
