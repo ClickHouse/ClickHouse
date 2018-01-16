@@ -10,12 +10,12 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressedStream.h>
 #include <IO/WriteHelpers.h>
+#include <IO/LZ4_decompress_faster.h>
 #include <IO/copyData.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/memcpySmall.h>
-#include <Common/LZ4_decompress_faster.h>
 #include <common/unaligned.h>
 
 
@@ -42,7 +42,8 @@ protected:
     /// Points to memory, holding compressed block.
     char * compressed_buffer = nullptr;
 
-    LZ4::Stat stat;
+    LZ4::StreamStatistics stream_stat;
+    LZ4::PerformanceStatistics perf_stat;
 
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
     {
@@ -82,7 +83,7 @@ protected:
         }
         else
         {
-            own_compressed_buffer.resize(size_compressed + ADDITIONAL_BYTES_AT_END_OF_DECOMPRESSED_BUFFER);
+            own_compressed_buffer.resize(size_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
             compressed_buffer = &own_compressed_buffer[0];
             compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
         }
@@ -97,7 +98,7 @@ protected:
         if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
         {
             //LZ4::statistics(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed, stat);
-            LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed);
+            LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
         }
         else
             throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
@@ -110,7 +111,8 @@ public:
     {
     }
 
-    LZ4::Stat getStatistics() const { return stat; }
+    LZ4::StreamStatistics getStreamStatistics() const { return stream_stat; }
+    LZ4::PerformanceStatistics getPerformanceStatistics() const { return perf_stat; }
 };
 
 
@@ -127,7 +129,7 @@ private:
         if (!size_compressed)
             return false;
 
-        memory.resize(size_decompressed + ADDITIONAL_BYTES_AT_END_OF_DECOMPRESSED_BUFFER);
+        memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
         working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
 
         decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
@@ -173,6 +175,19 @@ try
         << "\n";
 
 //    decompressing_in.getStatistics().print();
+
+    LZ4::PerformanceStatistics perf_stat = decompressing_in.getPerformanceStatistics();
+
+    for (size_t i = 0; i < LZ4::PerformanceStatistics::NUM_ELEMENTS; ++i)
+    {
+        const LZ4::PerformanceStatistics::Element & elem = perf_stat.data[i];
+
+        std::cerr << "Variant " << i << ": "
+            << "count: " << elem.count
+            << ", mean ns/b: " << 1000000000.0 * elem.mean()
+            << ", sigma ns/b: " << 1000000000.0 * elem.sigma()
+            << "\n";
+    }
 
     return 0;
 }
