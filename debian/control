@@ -36,8 +36,7 @@ Description: debugging symbols for clickhouse-common
 
 Package: clickhouse-server
 Architecture: any
-Pre-Depends: clickhouse-common (= ${binary:Version})
-Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common (= ${binary:Version}), adduser, tzdata
 Replaces: clickhouse-server-common
 Provides: clickhouse-server-common
 Conflicts: clickhouse-server-common
@@ -49,8 +48,7 @@ Description: Server binary for clickhouse
 
 Package: clickhouse-client
 Architecture: any
-Pre-Depends: clickhouse-common (= ${binary:Version})
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
 Description: Client binary for clickhouse
