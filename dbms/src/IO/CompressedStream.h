@@ -49,7 +49,4 @@ enum class CompressionMethodByte : uint8_t
     ZSTD     = 0x90,
 };
 
-/// This is required for faster LZ4 decompression method.
-constexpr size_t ADDITIONAL_BYTES_AT_END_OF_DECOMPRESSED_BUFFER = 15;
-
 }

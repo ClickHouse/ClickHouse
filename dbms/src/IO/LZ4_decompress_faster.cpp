@@ -1,8 +1,11 @@
 #include <string.h>
 #include <iostream>
+#include <random>
+#include <algorithm>
 
-#include <Common/LZ4_decompress_faster.h>
+#include <IO/LZ4_decompress_faster.h>
 #include <Core/Defines.h>
+#include <Common/Stopwatch.h>
 
 #include <common/likely.h>
 #include <common/Types.h>
@@ -278,10 +281,41 @@ void decompress(
     const char * const source,
     char * const dest,
     size_t source_size,
-    size_t dest_size)
+    size_t dest_size,
+    PerformanceStatistics & statistics)
 {
-    decompressImpl<16, true>(source, dest, dest_size);
-    (void) source_size;
+    if (source_size == 0 || dest_size == 0)
+        return;
+
+    /// Don't run timer if the block is too small.
+
+    if (dest_size >= 32768)
+    {
+        size_t best_variant = statistics.select();
+
+        /// Run the selected method and measure time.
+
+        Stopwatch watch;
+
+        if (best_variant == 0)
+            decompressImpl<8, false>(source, dest, dest_size);
+        if (best_variant == 1)
+            decompressImpl<8, true>(source, dest, dest_size);
+        if (best_variant == 2)
+            decompressImpl<16, false>(source, dest, dest_size);
+        if (best_variant == 3)
+            decompressImpl<16, true>(source, dest, dest_size);
+
+        watch.stop();
+
+        /// Update performance statistics.
+
+        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);
+    }
+    else
+    {
+        decompressImpl<8, false>(source, dest, dest_size);
+    }
 
 /*    if (dest_size / source_size >= 16)
         decompressImpl<16, true>(source, dest, dest_size);
@@ -290,13 +324,13 @@ void decompress(
 }
 
 
-void Stat::literal(size_t length)
+void StreamStatistics::literal(size_t length)
 {
     ++num_tokens;
     sum_literal_lengths += length;
 }
 
-void Stat::match(size_t length, size_t offset)
+void StreamStatistics::match(size_t length, size_t offset)
 {
     ++num_tokens;
     sum_match_lengths += length;
@@ -306,7 +340,7 @@ void Stat::match(size_t length, size_t offset)
     count_match_replicate_itself += offset < length;
 }
 
-void Stat::print() const
+void StreamStatistics::print() const
 {
     std::cerr
         << "Num tokens: " << num_tokens
@@ -319,11 +353,11 @@ void Stat::print() const
         << "\n";
 }
 
-Stat statistics(
+void statistics(
     const char * const source,
     char * const dest,
     size_t dest_size,
-    Stat & stat)
+    StreamStatistics & stat)
 {
     const UInt8 * ip = (UInt8 *)source;
     UInt8 * op = (UInt8 *)dest;
@@ -354,7 +388,7 @@ Stat statistics(
         op += length;
 
         if (op > output_end)
-            return stat;
+            return;
 
         size_t offset = unalignedLoad<UInt16>(ip);
         ip += 2;
