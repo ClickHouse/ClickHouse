@@ -378,7 +378,25 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     if (checkChar('e', in) || checkChar('E', in))
     {
-        bool exponent_negative = checkChar('-', in);
+        if (in.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return false;
+        }
+
+        bool exponent_negative = false;
+        if (*in.position() == '-')
+        {
+            exponent_negative = true;
+            ++in.position();
+        }
+        else if (*in.position() == '+')
+        {
+            ++in.position();
+        }
+
         readUIntTextUpToNSignificantDigits<4>(exponent, in);
         if (exponent_negative)
             exponent = -exponent;
