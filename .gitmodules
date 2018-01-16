@@ -22,3 +22,6 @@
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest.git
+[submodule "contrib/capnproto"]
+	path = contrib/capnproto
+	url = https://github.com/capnproto/capnproto.git

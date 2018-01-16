@@ -10,7 +10,6 @@ if (ENABLE_ICU)
 
     find_path (ICU_INCLUDE_DIR NAMES unicode/unistr.h PATHS ${ICU_INCLUDE_PATHS})
     if (ICU_INCLUDE_DIR AND ICU_LIBS)
-        include_directories (${ICU_INCLUDE_DIR})
         set(USE_ICU 1)
     endif ()
 endif ()

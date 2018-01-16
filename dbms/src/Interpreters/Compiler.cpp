@@ -4,7 +4,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/ShellCommand.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>

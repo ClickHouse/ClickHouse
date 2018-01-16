@@ -28,7 +28,7 @@
 #ifndef DOUBLE_CONVERSION_DOUBLE_H_
 #define DOUBLE_CONVERSION_DOUBLE_H_
 
-#include "diy-fp.h"
+#include <double-conversion/diy-fp.h>
 
 namespace double_conversion {
 
@@ -99,7 +99,7 @@ class Double {
   }
 
   double PreviousDouble() const {
-    if (d64_ == (kInfinity | kSignMask)) return -Double::Infinity();
+    if (d64_ == (kInfinity | kSignMask)) return -Infinity();
     if (Sign() < 0) {
       return Double(d64_ + 1).value();
     } else {
@@ -257,7 +257,7 @@ class Double {
         (biased_exponent << kPhysicalSignificandSize);
   }
 
-  DISALLOW_COPY_AND_ASSIGN(Double);
+  DC_DISALLOW_COPY_AND_ASSIGN(Double);
 };
 
 class Single {
@@ -394,7 +394,7 @@ class Single {
 
   const uint32_t d32_;
 
-  DISALLOW_COPY_AND_ASSIGN(Single);
+  DC_DISALLOW_COPY_AND_ASSIGN(Single);
 };
 
 }  // namespace double_conversion

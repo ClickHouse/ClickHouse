@@ -48,7 +48,7 @@
 #include <Dictionaries/IDictionary.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/formatAST.h>
 

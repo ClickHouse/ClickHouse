@@ -1,17 +1,16 @@
-#include <Common/ConfigProcessor.h>
+#include "ConfigProcessor.h"
+
 #include <sys/utsname.h>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
 #include <functional>
-
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
 #include <Poco/Util/XMLConfiguration.h>
-
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
