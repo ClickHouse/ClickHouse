@@ -149,9 +149,6 @@ def main(args):
                     report_testcase = et.Element("testcase", attrib = {"name": name})
 
                     try:
-                        if args.testname:
-                            clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-                            clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
                         print "{0:70}".format(name + ": "),
                         sys.stdout.flush()
@@ -180,6 +177,11 @@ def main(args):
                                 report_testcase.append(et.Element("skipped", attrib = {"message": message}))
                                 print(MSG_SKIPPED + " - " + message)
                             else:
+
+                                if args.testname:
+                                    clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                                    clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
+
                                 reference_file = os.path.join(suite_dir, name) + '.reference'
                                 stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
@@ -328,7 +330,7 @@ if __name__ == '__main__':
     parser.add_argument('--testname', action = 'store_true', default = None, dest = 'testname', help = 'Make query with test name before test run')
 
     parser.add_argument('--skip', nargs='+', help = "Skip these tests")
-    parser.add_argument('--no-long', action = 'store_false', default = None, dest = 'no_long', help = 'Do not run long tests')
+    parser.add_argument('--no-long', action = 'store_false', dest = 'no_long', help = 'Do not run long tests')
     group = parser.add_mutually_exclusive_group(required = False)
     group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
     group.add_argument('--no-zookeeper', action = 'store_false', default = None, dest = 'zookeeper', help = 'Do not run zookeeper related tests')
