@@ -17,7 +17,7 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    add_subdirectory (libdouble-conversion)
+    add_subdirectory (double-conversion)
 endif ()
 
 if (USE_INTERNAL_ZOOKEEPER_LIBRARY)
