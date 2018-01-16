@@ -1467,6 +1467,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
 
+    /// Recalculate columns size (not only for the modified column)
     data.recalculateColumnSizes();
 }
 
