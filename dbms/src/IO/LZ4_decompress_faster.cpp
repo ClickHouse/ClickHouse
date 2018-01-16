@@ -316,11 +316,6 @@ void decompress(
     {
         decompressImpl<8, false>(source, dest, dest_size);
     }
-
-/*    if (dest_size / source_size >= 16)
-        decompressImpl<16, true>(source, dest, dest_size);
-    else
-        decompressImpl<8, true>(source, dest, dest_size);*/
 }
 
 
