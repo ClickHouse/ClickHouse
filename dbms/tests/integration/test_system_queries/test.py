@@ -9,6 +9,7 @@ from contextlib import contextmanager
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.client import QueryRuntimeException
 
 
 @pytest.fixture(scope="module")
@@ -24,10 +25,12 @@ def started_cluster():
         instance.query('CREATE DATABASE dictionaries ENGINE = Dictionary')
         instance.query('CREATE TABLE dictionary_source (id UInt64, value UInt8) ENGINE = Memory')
         #print instance.query('SELECT * FROM system.dictionaries FORMAT Vertical')
+        print "Started ", instance.ip_address
 
         yield cluster
 
     finally:
+        pass
         cluster.shutdown()
 
 
@@ -54,13 +57,21 @@ def test_SYSTEM_RELOAD_DICTIONARY(started_cluster):
 def test_DROP_DNS_CACHE(started_cluster):
     instance = cluster.instances['ch1']
 
-    with pytest.raises(Exception):
-        instance.query("SELECT * FROM remote('aperol', 'system', 'one')")
+    instance.exec_in_container(['bash', '-c', 'echo 127.255.255.255 lost_host > /etc/hosts'], privileged=True, user='root')
 
-    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 aperol >> /etc/hosts'], privileged=True, user='root')
+    with pytest.raises(QueryRuntimeException):
+        instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
+
+    instance.query("CREATE TABLE distributed_lost_host (dummy UInt8) ENGINE = Distributed(lost_host_cluster, 'system', 'one')")
+    with pytest.raises(QueryRuntimeException):
+        instance.query("SELECT * FROM distributed_lost_host")
+
+    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 lost_host > /etc/hosts'], privileged=True, user='root')
     instance.query("SYSTEM DROP DNS CACHE")
 
-    instance.query("SELECT * FROM remote('aperol', 'system', 'one')")
+    instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
+    instance.query("SELECT * FROM distributed_lost_host")
+    assert TSV(instance.query("SELECT DISTINCT host_name, host_address FROM system.clusters")) == TSV("lost_host\t127.0.0.1\n")
 
 
 if __name__ == '__main__':

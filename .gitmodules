@@ -25,3 +25,6 @@
 [submodule "contrib/capnproto"]
 	path = contrib/capnproto
 	url = https://github.com/capnproto/capnproto.git
+[submodule "contrib/double-conversion"]
+	path = contrib/double-conversion
+	url = https://github.com/google/double-conversion.git
