@@ -35,5 +35,5 @@ if [ -n "$*" ]; then
 else
     $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse-client --config $CURDIR/client-test.xml -q 'SELECT * from system.build_options;'
     PATH=$PATH:$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server \
-      $CURDIR/clickhouse-test --binary $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse --clientconfig $CURDIR/client-test.xml --tmp $DATADIR/tmp --queries $CURDIR/queries $TEST_OPT
+      $CURDIR/clickhouse-test --binary $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse --configclient $CURDIR/client-test.xml --configserver $CURDIR/server-test.xml --tmp $DATADIR/tmp --queries $CURDIR/queries $TEST_OPT
 fi
