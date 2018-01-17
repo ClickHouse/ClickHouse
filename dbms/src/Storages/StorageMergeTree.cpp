@@ -286,7 +286,8 @@ bool StorageMergeTree::merge(
     bool aggressive,
     const String & partition_id,
     bool final,
-    bool deduplicate)
+    bool deduplicate,
+    const Settings & settings)
 {
     /// Clear old parts. It does not matter to do it more frequently than each second.
     if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
@@ -336,8 +337,9 @@ bool StorageMergeTree::merge(
     /// Logging
     Stopwatch stopwatch;
 
+    time_t time_of_merge = settings.optimize_time_of_merge ? static_cast<time_t>(settings.optimize_time_of_merge) : time(nullptr);
     auto new_part = merger.mergePartsToTemporaryPart(
-        future_part, *merge_entry_ptr, aio_threshold, time(nullptr), merging_tagger->reserved_space.get(), deduplicate);
+        future_part, *merge_entry_ptr, aio_threshold, time_of_merge, merging_tagger->reserved_space.get(), deduplicate);
 
     merger.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
@@ -383,7 +385,8 @@ bool StorageMergeTree::mergeTask()
     try
     {
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-        return merge(aio_threshold, false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/); ///TODO: read deduplicate option from table config
+        ///TODO: read deduplicate option from table config
+        return merge(aio_threshold, false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context.getSettingsRef());
     }
     catch (Exception & e)
     {
@@ -454,7 +457,7 @@ bool StorageMergeTree::optimize(
     String partition_id;
     if (partition)
         partition_id = data.getPartitionIDFromQuery(partition, context);
-    return merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate);
+    return merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate, context.getSettingsRef());
 }
 
 

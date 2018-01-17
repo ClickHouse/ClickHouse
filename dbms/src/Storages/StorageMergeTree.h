@@ -142,7 +142,7 @@ private:
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate, const Settings & settings);
 
     bool mergeTask();
 };

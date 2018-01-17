@@ -75,7 +75,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
         return Block();
 
     /// Additional initialization.
-    if (!current_path.data)
+    if (is_first)
     {
         size_t max_size_of_aggregate_state = 0;
         for (const auto & pattern : params.patterns)
@@ -125,7 +125,10 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
         TSortCursor next_cursor = queue.top();
 
         StringRef next_path = next_cursor->all_columns[path_column_num]->getDataAt(next_cursor->pos);
-        bool path_differs = is_first || next_path != current_path;
+        bool path_differs = is_first || next_path != StringRef(current_path);
+
+        if (path_differs)
+            ++different_paths;
 
         is_first = false;
 
@@ -134,8 +137,11 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
         bool is_new_key = path_differs || next_time != current_time;
 
         if (is_new_key)
+            ++different_keys;
+
+        if (is_new_key)
         {
-            /// Accumulate the row that has maximum version in the previous group of rows wit the same key:
+            /// Accumulate the row that has maximum version in the previous group of rows with the same key:
             if (started_rows)
                 accumulateRow(current_selected_row);
 
@@ -160,6 +166,8 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
             if (will_be_new_key)
             {
+                ++different_new_keys;
+
                 if (started_rows)
                 {
                     finishCurrentRow(merged_columns);
@@ -180,7 +188,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
                 current_time_rounded = next_time_rounded;
             }
 
-            current_path = next_path;
+            current_path = next_path.toString();
             current_time = next_time;
         }
 
@@ -213,6 +221,12 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
         accumulateRow(current_selected_row);
         finishCurrentRow(merged_columns);
     }
+
+    LOG_DEBUG(log, "(GraphiteMerge)"
+        << " time_of_merge=" << time_of_merge
+        << " different_paths=" << different_paths
+        << " different_keys=" << different_keys
+        << " different_new_keys=" << different_new_keys);
 
     finished = true;
 }

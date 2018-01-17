@@ -29,7 +29,7 @@ def started_cluster():
 
 def test_random_inserts(started_cluster):
     # Duration of the test, reduce it if don't want to wait
-    DURATION_SECONDS = 10# * 60
+    DURATION_SECONDS = 60# * 60
 
     node1.query("""
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, i UInt32, s String)
@@ -61,4 +61,4 @@ def test_random_inserts(started_cluster):
         res = node.query("SELECT count(), uniqExact(i), min(i), max(i) FROM simple")
         assert TSV(res) == TSV(answer), node.name + " : " + node.query("SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
 
-    node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")
+    #node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")
