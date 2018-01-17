@@ -899,36 +899,32 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
     Poco::Util::ServerApplication::defineOptions (_options);
 
     _options.addOption(
-        Poco::Util::Option ("config-file", "C", "load configuration from a given file")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("config-file")
-            );
+        Poco::Util::Option("config-file", "C", "load configuration from a given file")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("config-file"));
 
     _options.addOption(
-        Poco::Util::Option ("log-file", "L", "use given log file")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("logger.log")
-            );
+        Poco::Util::Option("log-file", "L", "use given log file")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("logger.log"));
 
     _options.addOption(
-        Poco::Util::Option ("errorlog-file", "E", "use given log file for errors only")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("logger.errorlog")
-            );
+        Poco::Util::Option("errorlog-file", "E", "use given log file for errors only")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("logger.errorlog"));
 
     _options.addOption(
-        Poco::Util::Option ("pid-file", "P", "use given pidfile")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("pid")
-            );
+        Poco::Util::Option("pid-file", "P", "use given pidfile")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("pid"));
 }
 
 bool isPidRunning(pid_t pid)
