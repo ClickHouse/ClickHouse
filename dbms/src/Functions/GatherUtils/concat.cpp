@@ -21,7 +21,7 @@ static void append(Source && source, Sink && sink)
     }
 }
 
-struct ArrayAppend : public GetArraySourceSelector<ArrayAppend>
+struct ArrayAppend : public ArraySourceSelector<ArrayAppend>
 {
     template <typename Source, typename Sink>
     static void selectImpl(Source && source, Sink && sink)
@@ -158,7 +158,7 @@ void NO_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & sources
     }
 }
 
-struct ArrayConcat : public GetArraySinkSelector<ArrayConcat>
+struct ArrayConcat : public ArraySinkSelector<ArrayConcat>
 {
     using Sources = std::vector<std::unique_ptr<IArraySource>>;
 

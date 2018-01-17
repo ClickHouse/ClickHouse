@@ -1,94 +1,79 @@
 #pragma once
 
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/ArraySourceVisitor.h>
+#include <Functions/GatherUtils/ArraySinkVisitor.h>
 #include <Core/TypeListNumber.h>
 
 namespace DB::GatherUtils
 {
 /// Base classes which selects template function implementation with concrete ArraySource or ArraySink
-/// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector
-///  or selectSourceSink for ArraySinkSourceSelector
-template <typename Base, typename ... Types>
-struct ArraySourceSelector;
+/// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector,
+///  selectSourceSink for ArraySinkSourceSelector and selectSourcePair for ArraySourcePairSelector
 
-template <typename Base, typename Type, typename ... Types>
-struct ArraySourceSelector<Base, Type, Types ...>
+template <typename Base, typename Tuple, int index, typename ... Args>
+void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
+{
+    if constexpr (index == std::tuple_size<Tuple>::value)
+        Base::selectImpl(args ...);
+    else
+        callSelectMemberFunctionWithTupleArgument<Base, Tuple, index + 1>(tuple, args ..., std::get<index>(tuple));
+}
+
+template <typename Base, typename ... Args>
+struct ArraySourceSelectorVisitor : public ArraySourceVisitorImpl<ArraySourceSelectorVisitor<Base, Args ...>>
+{
+    explicit ArraySourceSelectorVisitor(Args && ... args) : packed_args(args ...) {}
+
+    using Tuple = std::tuple<Args && ...>;
+
+    template <typename Source>
+    void visitImpl(Source & source)
+    {
+        callSelectMemberFunctionWithTupleArgument<Base, Tuple, 0>(packed_args, source);
+    }
+
+    Tuple packed_args;
+};
+
+template <typename Base>
+struct ArraySourceSelector
 {
     template <typename ... Args>
     static void select(IArraySource & source, Args && ... args)
     {
-        if (auto array = typeid_cast<NumericArraySource<Type> *>(&source))
-            Base::selectImpl(*array, args ...);
-        else if (auto nullable_array = typeid_cast<NullableArraySource<NumericArraySource<Type>> *>(&source))
-            Base::selectImpl(*nullable_array, args ...);
-        else if (auto const_array = typeid_cast<ConstSource<NumericArraySource<Type>> *>(&source))
-            Base::selectImpl(*const_array, args ...);
-        else if (auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<NumericArraySource<Type>>> *>(&source))
-            Base::selectImpl(*const_nullable_array, args ...);
-        else
-            ArraySourceSelector<Base, Types ...>::select(source, args ...);
+        ArraySourceSelectorVisitor<Base, Args ...> visitor(args ...);
+        source.accept(visitor);
     }
 };
 
-template <typename Base>
-struct ArraySourceSelector<Base>
+
+template <typename Base, typename ... Args>
+struct ArraySinkSelectorVisitor : public ArraySinkVisitorImpl<ArraySinkSelectorVisitor<Base, Args ...>>
 {
-    template <typename ... Args>
-    static void select(IArraySource & source, Args && ... args)
+    explicit ArraySinkSelectorVisitor(Args && ... args) : packed_args(args ...) {}
+
+    using Tuple = std::tuple<Args && ...>;
+
+    template <typename Sink>
+    void visitImpl(Sink & sink)
     {
-        if (auto array = typeid_cast<GenericArraySource *>(&source))
-            Base::selectImpl(*array, args ...);
-        else if (auto nullable_array = typeid_cast<NullableArraySource<GenericArraySource> *>(&source))
-            Base::selectImpl(*nullable_array, args ...);
-        else if (auto const_array = typeid_cast<ConstSource<GenericArraySource> *>(&source))
-            Base::selectImpl(*const_array, args ...);
-        else if (auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<GenericArraySource>> *>(&source))
-            Base::selectImpl(*const_nullable_array, args ...);
-        else
-            throw Exception(std::string("Unknown ArraySource type: ") + demangle(typeid(source).name()), ErrorCodes::LOGICAL_ERROR);
+        callSelectMemberFunctionWithTupleArgument<Base, Tuple, 0>(packed_args, sink);
     }
+
+    Tuple packed_args;
 };
 
 template <typename Base>
-using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector,
-        typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
-
-template <typename Base, typename ... Types>
-struct ArraySinkSelector;
-
-template <typename Base, typename Type, typename ... Types>
-struct ArraySinkSelector<Base, Type, Types ...>
+struct ArraySinkSelector
 {
     template <typename ... Args>
     static void select(IArraySink & sink, Args && ... args)
     {
-        if (auto nullable_numeric_sink = typeid_cast<NullableArraySink<NumericArraySink<Type>> *>(&sink))
-            Base::selectImpl(*nullable_numeric_sink, args ...);
-        else if (auto numeric_sink = typeid_cast<NumericArraySink<Type> *>(&sink))
-            Base::selectImpl(*numeric_sink, args ...);
-        else
-            ArraySinkSelector<Base, Types ...>::select(sink, args ...);
+        ArraySinkSelectorVisitor<Base, Args ...> visitor(args ...);
+        sink.accept(visitor);
     }
 };
-
-template <typename Base>
-struct ArraySinkSelector<Base>
-{
-    template <typename ... Args>
-    static void select(IArraySink & sink, Args && ... args)
-    {
-        if (auto nullable_generic_sink = typeid_cast<NullableArraySink<GenericArraySink> *>(&sink))
-            Base::selectImpl(*nullable_generic_sink, args ...);
-        else if (auto generic_sink = typeid_cast<GenericArraySink *>(&sink))
-            Base::selectImpl(*generic_sink, args ...);
-        else
-            throw Exception(std::string("Unknown ArraySink type: ") + demangle(typeid(sink).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-};
-
-template <typename Base>
-using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector,
-        typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
 
 template <typename Base>
 struct ArraySinkSourceSelector
@@ -96,13 +81,13 @@ struct ArraySinkSourceSelector
     template <typename ... Args>
     static void select(IArraySource & source, IArraySink & sink, Args && ... args)
     {
-        GetArraySinkSelector<Base>::select(sink, source, args ...);
+        ArraySinkSelector<Base>::select(sink, source, args ...);
     }
 
     template <typename Sink, typename ... Args>
     static void selectImpl(Sink && sink, IArraySource & source, Args && ... args)
     {
-        GetArraySourceSelector<Base>::select(source, sink, args ...);
+        ArraySourceSelector<Base>::select(source, sink, args ...);
     }
 
     template <typename Source, typename Sink, typename ... Args>
@@ -118,13 +103,13 @@ struct ArraySourcePairSelector
     template <typename ... Args>
     static void select(IArraySource & first, IArraySource & second, Args && ... args)
     {
-        GetArraySourceSelector<Base>::select(first, second, args ...);
+        ArraySourceSelector<Base>::select(first, second, args ...);
     }
 
     template <typename FirstSource, typename ... Args>
     static void selectImpl(FirstSource && first, IArraySource & second, Args && ... args)
     {
-        GetArraySourceSelector<Base>::select(second, first, args ...);
+        ArraySourceSelector<Base>::select(second, first, args ...);
     }
 
     template <typename SecondSource, typename FirstSource, typename ... Args>
