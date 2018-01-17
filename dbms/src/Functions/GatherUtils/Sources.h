@@ -17,7 +17,7 @@ namespace DB::GatherUtils
 {
 
 template <typename T>
-struct NumericArraySource : public IArraySource
+struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
@@ -108,7 +108,6 @@ struct NumericArraySource : public IArraySource
     }
 };
 
-
 template <typename Base>
 struct ConstSource : public Base
 {
@@ -123,8 +122,6 @@ struct ConstSource : public Base
     {
     }
 
-    /// Constructors for NullableArraySource.
-
     template <typename ColumnType>
     ConstSource(const ColumnType & col, size_t total_rows) : Base(col), total_rows(total_rows)
     {
@@ -133,6 +130,18 @@ struct ConstSource : public Base
     template <typename ColumnType>
     ConstSource(const ColumnType & col, const ColumnUInt8 & null_map, size_t total_rows) : Base(col, null_map), total_rows(total_rows)
     {
+    }
+
+    virtual ~ConstSource() = default;
+
+    virtual void accept(ArraySourceVisitor & visitor) // override
+    {
+        if constexpr (std::is_base_of<IArraySource, Base>::value)
+            visitor.visit(*this);
+        else
+            throw Exception(
+                    "accept(ArraySourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
+                    + " because " + demangle(typeid(Base).name()) + " is not derived from IArraySource ");
     }
 
     void next()
@@ -155,17 +164,16 @@ struct ConstSource : public Base
         return total_rows * Base::getSizeForReserve();
     }
 
-    size_t getColumnSize() const // overrides for IArraySource
+    size_t getColumnSize() const
     {
         return total_rows;
     }
 
-    bool isConst() const // overrides for IArraySource
+    bool isConst() const
     {
         return true;
     }
 };
-
 
 struct StringSource
 {
@@ -368,7 +376,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
 using StringSources = std::vector<std::unique_ptr<IStringSource>>;
 
 
-struct GenericArraySource : public IArraySource
+struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
 {
     using Slice = GenericArraySlice;
     using Column = ColumnArray;
@@ -473,6 +481,8 @@ struct NullableArraySource : public ArraySource
             : ArraySource(arr), null_map(null_map.getData())
     {
     }
+
+    void accept(ArraySourceVisitor & visitor) override { visitor.visit(*this); }
 
     Slice getWhole() const
     {

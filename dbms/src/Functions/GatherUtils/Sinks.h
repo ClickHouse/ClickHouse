@@ -15,7 +15,7 @@ namespace DB::GatherUtils
 {
 
 template <typename T>
-struct NumericArraySink : public IArraySink
+struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
 {
     typename ColumnVector<T>::Container & elements;
     typename ColumnArray::Offsets & offsets;
@@ -129,7 +129,7 @@ struct FixedStringSink
 };
 
 
-struct GenericArraySink : public IArraySink
+struct GenericArraySink : public ArraySinkImpl<GenericArraySink>
 {
     IColumn & elements;
     ColumnArray::Offsets & offsets;
@@ -175,6 +175,8 @@ struct NullableArraySink : public ArraySink
             : ArraySink(arr, column_size), null_map(null_map.getData())
     {
     }
+
+    void accept(ArraySinkVisitor & visitor) override { visitor.visit(*this); }
 
     void reserve(size_t num_elements)
     {
