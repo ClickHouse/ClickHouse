@@ -80,7 +80,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
         return Block();
 
     /// Additional initialization.
-    if (!current_path.data)
+    if (is_first)
     {
         size_t max_size_of_aggregate_state = 0;
         for (const auto & pattern : params.patterns)
@@ -125,7 +125,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
         SortCursor next_cursor = queue.top();
 
         StringRef next_path = next_cursor->all_columns[path_column_num]->getDataAt(next_cursor->pos);
-        bool path_differs = is_first || next_path != current_path;
+        bool path_differs = is_first || next_path != StringRef(current_path);
 
         is_first = false;
 
@@ -135,7 +135,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
 
         if (is_new_key)
         {
-            /// Accumulate the row that has maximum version in the previous group of rows wit the same key:
+            /// Accumulate the row that has maximum version in the previous group of rows with the same key:
             if (started_rows)
                 accumulateRow(current_selected_row);
 
@@ -180,7 +180,8 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
                 current_time_rounded = next_time_rounded;
             }
 
-            current_path = next_path;
+            /// We must make copy of next_path to avoid dangling pointers after fetchNextBlock
+            current_path = next_path.toString();
             current_time = next_time;
         }
 
