@@ -641,6 +641,9 @@ void BaseDaemon::buildLoggers()
             errorlog->open();
         }
 
+        /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
+        /// We don't need this configuration parameter.
+
         if (config().getBool("logger.use_syslog", false) || config().getBool("dynamic_layer_selection", false))
         {
             Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
