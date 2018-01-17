@@ -8,6 +8,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/NextGenReplication/StorageNextGenReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -88,7 +89,8 @@ public:
                         String engine_name = storage->getName();
 
                         if (!dynamic_cast<StorageMergeTree *>(&*storage) &&
-                            !dynamic_cast<StorageReplicatedMergeTree *>(&*storage))
+                            !dynamic_cast<StorageReplicatedMergeTree *>(&*storage) &&
+                            !dynamic_cast<StorageNextGenReplicatedMergeTree *>(&*storage))
                             continue;
 
                         storages[std::make_pair(database_name, iterator->name())] = storage;
@@ -180,6 +182,7 @@ public:
 
             info.data = nullptr;
 
+            /// TODO: get rid of dynamic_cast and use a virtual call?
             if (auto merge_tree = dynamic_cast<StorageMergeTree *>(&*info.storage))
             {
                 info.data = &merge_tree->getData();
@@ -187,6 +190,10 @@ public:
             else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(&*info.storage))
             {
                 info.data = &replicated_merge_tree->getData();
+            }
+            else if (auto ng_replicated_merge_tree = dynamic_cast<StorageNextGenReplicatedMergeTree *>(&*info.storage))
+            {
+                info.data = &ng_replicated_merge_tree->getData();
             }
             else
             {

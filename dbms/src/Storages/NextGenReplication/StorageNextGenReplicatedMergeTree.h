@@ -58,6 +58,8 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override { return data.getColumn(column_name); }
     bool hasColumn(const String & column_name) const override { return data.hasColumn(column_name); }
 
+    MergeTreeData & getData() { return data; }
+    const MergeTreeData & getData() const { return data; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -120,9 +122,12 @@ private:
         String name;
         State state;
     };
+    friend bool operator<(Part::State, Part::State);
 
     mutable std::mutex parts_mutex;
     std::map<MergeTreePartInfo, Part> parts;
+    /// We have seen all blocks with numbers <= low_watermark. Set by part_set_updating_thread.
+    std::unordered_map<String, Int64> low_watermark_by_partition;
 
     void initPartSet();
 
@@ -142,5 +147,10 @@ private:
 
     friend class NextGenReplicatedBlockOutputStream;
 };
+
+inline bool operator<(StorageNextGenReplicatedMergeTree::Part::State left, StorageNextGenReplicatedMergeTree::Part::State right)
+{
+    return static_cast<int>(left) < static_cast<int>(right);
+}
 
 }
