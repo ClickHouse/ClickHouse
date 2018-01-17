@@ -76,10 +76,11 @@ using Poco::Util::AbstractConfiguration;
 
 constexpr char BaseDaemon::DEFAULT_GRAPHITE_CONFIG_NAME[];
 
-/** Для передачи информации из обработчика сигнала для обработки в другом потоке.
-  * Если при получении сигнала надо делать что-нибудь серьёзное (например, вывести сообщение в лог),
-  *  то передать нужную информацию через pipe в другой поток и сделать там всю работу
-  *  - один из немногих безопасных способов сделать это.
+/** For transferring information from signal handler to a separate thread.
+  * If you need to do something serious in case of a signal (example: write a message to the log),
+  *  then sending information to a separate thread through pipe and doing all the stuff asynchronously
+  *  - is probably the only safe method for doing it.
+  * (Because it's only safe to use reentrant functions in signal handlers.)
   */
 struct Pipe
 {
@@ -127,8 +128,8 @@ struct Pipe
 Pipe signal_pipe;
 
 
-/** Устанавливает обработчик сигнала по умолчанию, и отправляет себе сигнал sig.
-  * Вызывается изнутри пользовательского обработчика сигнала, чтобы записать core dump.
+/** Reset signal handler to the default and send signal to itself.
+  * It's called from user signal handler to write core dump.
   */
 static void call_default_signal_handler(int sig)
 {
@@ -150,7 +151,7 @@ static void writeSignalIDtoSignalPipe(int sig)
     out.next();
 }
 
-/** Обработчик сигналов HUP / USR1 */
+/** Signal handler for HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t * info, void * context)
 {
     writeSignalIDtoSignalPipe(sig);
@@ -164,7 +165,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 
 thread_local bool already_signal_handled = false;
 
-/** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
+/** Handler for "fault" signals. Send data about fault to separate thread to write into log.
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
@@ -182,7 +183,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     out.next();
 
-    /// Время, за которое читающий из pipe поток должен попытаться успеть вывести в лог stack trace.
+    /// The time that is usually enough for separate thread to print info into log.
     ::sleep(10);
 
     call_default_signal_handler(sig);
@@ -219,10 +220,11 @@ size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & co
 }
 #endif
 
-/** Получает информацию через pipe.
-  * При получении сигнала HUP / USR1 закрывает лог-файлы.
-  * При получении информации из std::terminate, выводит её в лог.
-  * При получении других сигналов, выводит информацию в лог.
+
+/** The thread that read info about signal or std::terminate from pipe.
+  * On HUP / USR1, close log files (for new files to be opened later).
+  * On information about std::terminate, write it to log.
+  * On other signals, write info to log.
   */
 class SignalListener : public Poco::Runnable
 {
@@ -309,7 +311,7 @@ private:
 
         if (sig == SIGSEGV)
         {
-            /// Выводим информацию об адресе и о причине.
+            /// Print info about address and reason.
             if (nullptr == info.si_addr)
                 LOG_ERROR(log, "Address: NULL pointer.");
             else
@@ -363,7 +365,7 @@ private:
             {
                 for (int i = 0; i < frames_size; ++i)
                 {
-                    /// Делаем demangling имён. Имя находится в скобках, до символа '+'.
+                    /// Perform demangling of names. Name is in parentheses, before '+' character.
 
                     char * name_start = nullptr;
                     char * name_end = nullptr;
@@ -399,10 +401,10 @@ private:
 };
 
 
-/** Для использования с помощью std::set_terminate.
-  * Собирает чуть больше информации, чем __gnu_cxx::__verbose_terminate_handler,
-  *  и отправляет её в pipe. Другой поток читает из pipe и выводит её в лог.
-  * См. исходники в libstdc++-v3/libsupc++/vterminate.cc
+/** To use with std::set_terminate.
+  * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
+  *  and send it to pipe. Other thread will read this info from pipe and asynchronously write it to log.
+  * Look at libstdc++-v3/libsupc++/vterminate.cc for example.
   */
 static void terminate_handler()
 {
@@ -415,7 +417,6 @@ static void terminate_handler()
 
     terminating = true;
 
-    /// Сюда записываем информацию для логгирования.
     std::stringstream log;
 
     std::type_info * t = abi::__cxa_current_exception_type();
@@ -519,11 +520,11 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 
 void BaseDaemon::reloadConfiguration()
 {
-    /** Если программа запущена не в режиме демона, и не указан параметр config-file,
-      *  то будем использовать параметры из файла config.xml в текущей директории,
-      *  но игнорировать заданные в нём параметры логгирования.
-      * (Чтобы при запуске с минимумом параметров, лог выводился в консоль.)
-      * При этом, параметры логгирования, заданные в командной строке, не игнорируются.
+    /** If the program is not run in daemon mode and 'config-file' is not specified,
+      *  then we use config from 'config.xml' file in current directory,
+      *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
+      *  instead of using files specified in config.xml.
+      * (It's convenient to log in console when you start server without any command line parameters.)
       */
     std::string log_command_line_option = config().getString("logger.log", "");
     config_path = config().getString("config-file", "config.xml");
@@ -536,7 +537,7 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-/// Для создания и уничтожения unique_ptr, который в заголовочном файле объявлен от incomplete type.
+/// For creating and destroying unique_ptr of incomplete type.
 BaseDaemon::BaseDaemon() = default;
 
 
@@ -575,10 +576,9 @@ void BaseDaemon::wakeup()
 }
 
 
-/// Строит необходимые логгеры
 void BaseDaemon::buildLoggers()
 {
-    /// Сменим директорию для лога
+    /// Change path for logging.
     if (config().hasProperty("logger.log") && !log_to_console)
     {
         std::string path = createDirectory(config().getString("logger.log"));
@@ -600,10 +600,10 @@ void BaseDaemon::buildLoggers()
     {
         std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
 
-        // splitter
+        // Split log and error log.
         Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
-        // set up two channel chains
+        // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
@@ -641,6 +641,9 @@ void BaseDaemon::buildLoggers()
             errorlog->open();
         }
 
+        /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
+        /// We don't need this configuration parameter.
+
         if (config().getBool("logger.use_syslog", false) || config().getBool("dynamic_layer_selection", false))
         {
             Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
@@ -658,7 +661,7 @@ void BaseDaemon::buildLoggers()
     }
     else
     {
-        // Выводим на консоль
+        // Print to the terminal.
         Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
@@ -670,14 +673,14 @@ void BaseDaemon::buildLoggers()
         logger().warning("Logging to console");
     }
 
-    // Уровни для всех
+    // Global logging level (it can be overridden for specific loggers).
     logger().setLevel(config().getString("logger.level", "trace"));
 
-    // Прикрутим к корневому логгеру
+    // Attach to the root logger.
     Logger::root().setLevel(logger().getLevel());
     Logger::root().setChannel(logger().getChannel());
 
-    // Уровни для явно указанных логгеров
+    // Explicitly specified log levels for specific loggers.
     AbstractConfiguration::Keys levels;
     config().keys("logger.levels", levels);
 
@@ -712,15 +715,13 @@ void BaseDaemon::initialize(Application & self)
 
     if (is_daemon)
     {
-        /** При создании pid файла и поиске конфигурации, будем интерпретировать относительные пути
-          * от директории запуска программы.
+        /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
         std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
 
-    /// Считаем конфигурацию
     reloadConfiguration();
 
     /// This must be done before creation of any files (including logs).
@@ -737,12 +738,12 @@ void BaseDaemon::initialize(Application & self)
 
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config);
 
-    /// В случае падения - сохраняем коры
+    /// Write core dump on crash.
     {
         struct rlimit rlim;
         if (getrlimit(RLIMIT_CORE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
-        /// 1 GiB. Если больше - они слишком долго пишутся на диск.
+        /// 1 GiB by default. If more - it writes to disk too long.
         rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
 
         if (setrlimit(RLIMIT_CORE, &rlim))
@@ -751,7 +752,7 @@ void BaseDaemon::initialize(Application & self)
         #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER)
             throw Poco::Exception(message);
         #else
-            /// Не работает под address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
+            /// It doesn't work under address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
             std::cerr << message << std::endl;
         #endif
         }
@@ -772,10 +773,10 @@ void BaseDaemon::initialize(Application & self)
 
     if (is_daemon)
     {
-        /** Переназначим stdout, stderr в отдельные файлы в директориях с логами.
-          * Некоторые библиотеки пишут в stderr в случае ошибок или в отладочном режиме,
-          *  и этот вывод иногда имеет смысл смотреть даже когда программа запущена в режиме демона.
-          * Делаем это до buildLoggers, чтобы ошибки во время инициализации логгера, попали в эти файлы.
+        /** Redirect stdout, stderr to separate files in the log directory.
+          * Some libraries write to stderr in case of errors in debug mode,
+          *  and this output makes sense even if the program is run in daemon mode.
+          * We have to do it before buildLoggers, for errors on logger initialization will be written to these files.
           */
         if (!log_path.empty())
         {
@@ -788,7 +789,7 @@ void BaseDaemon::initialize(Application & self)
                 throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
         }
 
-        /// Создадим pid-file.
+        /// Create pid file.
         if (is_daemon && config().has("pid"))
             pid.seed(config().getString("pid"));
     }
@@ -797,9 +798,8 @@ void BaseDaemon::initialize(Application & self)
 
     if (is_daemon)
     {
-        /** Сменим директорию на ту, куда надо писать core файлы.
-          * Делаем это после buildLoggers, чтобы не менять текущую директорию раньше.
-          * Это важно, если конфиги расположены в текущей директории.
+        /** Change working directory to the directory to write core dumps.
+          * We have to do it after buildLoggers, because there is the case when config files was in current directory.
           */
 
         std::string core_path = config().getString("core_path", "");
@@ -819,7 +819,6 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to " + core_path);
     }
 
-    /// Ставим terminate_handler
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
@@ -829,7 +828,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot block signal.");
     }
 
-    /// Ставим обработчики сигналов
+    /// Setup signal handlers.
     auto add_signal_handler =
         [](const std::vector<int> & signals, signal_function handler)
         {
@@ -856,11 +855,10 @@ void BaseDaemon::initialize(Application & self)
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
-    /// Ставим ErrorHandler для потоков
+    /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    /// Выведем ревизию демона
     logRevision();
 
     signal_listener.reset(new SignalListener(*this));
@@ -877,14 +875,14 @@ void BaseDaemon::logRevision() const
     Logger::root().information("Starting daemon with revision " + Poco::NumberFormatter::format(ClickHouseRevision::get()));
 }
 
-/// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
+/// Makes server shutdown if at least one Poco::Task have failed.
 void BaseDaemon::exitOnTaskError()
 {
     Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
     getTaskManager().addObserver(obs);
 }
 
-/// Используется при exitOnTaskError()
+/// Used for exitOnTaskError()
 void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 {
     task_failed = true;
@@ -899,36 +897,32 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
     Poco::Util::ServerApplication::defineOptions (_options);
 
     _options.addOption(
-        Poco::Util::Option ("config-file", "C", "load configuration from a given file")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("config-file")
-            );
+        Poco::Util::Option("config-file", "C", "load configuration from a given file")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("config-file"));
 
     _options.addOption(
-        Poco::Util::Option ("log-file", "L", "use given log file")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("logger.log")
-            );
+        Poco::Util::Option("log-file", "L", "use given log file")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("logger.log"));
 
     _options.addOption(
-        Poco::Util::Option ("errorlog-file", "E", "use given log file for errors only")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("logger.errorlog")
-            );
+        Poco::Util::Option("errorlog-file", "E", "use given log file for errors only")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("logger.errorlog"));
 
     _options.addOption(
-        Poco::Util::Option ("pid-file", "P", "use given pidfile")
-            .required (false)
-            .repeatable (false)
-            .argument ("<file>")
-            .binding("pid")
-            );
+        Poco::Util::Option("pid-file", "P", "use given pidfile")
+            .required(false)
+            .repeatable(false)
+            .argument("<file>")
+            .binding("pid"));
 }
 
 bool isPidRunning(pid_t pid)
@@ -940,9 +934,7 @@ bool isPidRunning(pid_t pid)
 
 void BaseDaemon::PID::seed(const std::string & file_)
 {
-    /// переведём путь в абсолютный
-    auto file_path = Poco::Path(file_).absolute();
-    file = file_path.toString();
+    file = Poco::Path(file_).absolute().toString();
     Poco::File poco_file(file);
 
     if (poco_file.exists())

@@ -213,7 +213,8 @@ private:
     /** Check constraints and quotas.
       * But only those that can be tested within each separate source.
       */
-    bool checkLimits();
+    bool checkDataSizeLimits();
+    bool checkTimeLimits();
     void checkQuota(Block & block);
 
     /// Gather information about the approximate total number of rows from all children.
