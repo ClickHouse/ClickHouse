@@ -7,12 +7,9 @@
 namespace DB
 {
 
-class StorageCatBoostPool : private ext::shared_ptr_helper<StorageCatBoostPool>, public IStorage
+class StorageCatBoostPool : public ext::shared_ptr_helper<StorageCatBoostPool>, public IStorage
 {
 public:
-    static StoragePtr create(const Context & context,
-                             const String & column_description_file_name, const String & data_description_file_name);
-
     std::string getName() const override { return "CatBoostPool"; }
 
     std::string getTableName() const override { return table_name; }
@@ -48,7 +45,8 @@ private:
 
     ColumnTypesMap getColumnTypesMap() const
     {
-        return {
+        return
+        {
                 {"Target", DatasetColumnType::Target},
                 {"Num", DatasetColumnType::Num},
                 {"Categ", DatasetColumnType::Categ},

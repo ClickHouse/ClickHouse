@@ -24,9 +24,11 @@
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # use only clang:
-# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="clang-5.0" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0" DIST=artful pdebuild --configfile debian/.pbuilderrc
 # clang+asan:
-# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="clang-5.0" CMAKE_FLAGS="-DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0 libc++abi-dev libc++-dev" CMAKE_FLAGS="-DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# clang+tsan:
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0 libc++abi-dev libc++-dev" CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Tsan" DIST=artful pdebuild --configfile debian/.pbuilderrc
 # without sse for old systems and some VM:
 # env DH_VERBOSE=1 CMAKE_FLAGS="-DHAVE_SSE41=0 -DHAVE_SSE42=0 -DHAVE_POPCNT=0 -DHAVE_SSE2_INTRIN=0 -DSSE2FLAG=' ' -DHAVE_SSE42_INTRIN=0 -DSSE4FLAG=' ' -DHAVE_PCLMULQDQ_INTRIN=0 -DPCLMULFLAG=' '" DIST=artful pdebuild --configfile debian/.pbuilderrc
 
@@ -129,39 +131,43 @@ case "$DIST" in
         # ccache broken
         ;;
     *)
-        CCACHEDIR=/var/cache/pbuilder/ccache
+        CCACHEDIR=${CCACHEDIR:="/var/cache/pbuilder/ccache"}
         ;;
 esac
 
+# old systems with default gcc <= 6
 case "$DIST" in
-    "trusty" | "xenial" | "experimental" | "unstable" )
+    "trusty" | "xenial" | "stable" )
         export DEB_CC=gcc-7
         export DEB_CXX=g++-7
         ;;
 esac
 
 case "$DIST" in
-    "bionic" | "artful" )
+    "bionic" | "artful" | "experimental" | "unstable" | "testing" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
         ;;
 esac
 
+# bundled zookeepeer have broken asm
 case "$ARCH" in
     "arm64")
         EXTRAPACKAGES+=" libzookeeper-mt-dev "
         ;;
 esac
 
+# will test symbols
+EXTRAPACKAGES+=" gdb "
 
 export CCACHE_PREFIX=
 
 export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
-sudo mkdir -p /var/cache/pbuilder/ccache
-sudo chmod -R a+rwx /var/cache/pbuilder/ccache
-# chown -R 1234:1234 /var/cache/pbuilder/ccache
+[ -n "$CCACHEDIR" ] && sudo mkdir -p $CCACHEDIR
+[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR
+# chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
 # echo "DEBOOTSTRAPOPTS = ${DEBOOTSTRAPOPTS[@]}"
 

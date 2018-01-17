@@ -1,7 +1,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 
 #include <ext/range.h>

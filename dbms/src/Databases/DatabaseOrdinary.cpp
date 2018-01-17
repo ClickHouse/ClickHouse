@@ -5,7 +5,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -427,7 +427,8 @@ void DatabaseOrdinary::shutdown()
         tables_snapshot = tables;
     }
 
-    for (const auto & kv: tables_snapshot) {
+    for (const auto & kv: tables_snapshot)
+    {
         kv.second->shutdown();
     }
 

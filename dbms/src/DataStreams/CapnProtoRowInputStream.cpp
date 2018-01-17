@@ -36,46 +36,48 @@ CapnProtoRowInputStream::NestedField split(const Block & header, size_t i)
 
 Field convertNodeToField(capnp::DynamicValue::Reader value)
 {
-    switch (value.getType()) {
-    case capnp::DynamicValue::UNKNOWN:
-        throw Exception("Unknown field type");
-    case capnp::DynamicValue::VOID:
-        return Field();
-    case capnp::DynamicValue::BOOL:
-      return UInt64(value.as<bool>() ? 1 : 0);
-    case capnp::DynamicValue::INT:
-      return Int64((value.as<int64_t>()));
-    case capnp::DynamicValue::UINT:
-        return UInt64(value.as<uint64_t>());
-    case capnp::DynamicValue::FLOAT:
-      return Float64(value.as<double>());
-    case capnp::DynamicValue::TEXT:
+    switch (value.getType())
     {
-        auto arr = value.as<capnp::Text>();
-        return String(arr.begin(), arr.size());
+        case capnp::DynamicValue::UNKNOWN:
+            throw Exception("Unknown field type");
+        case capnp::DynamicValue::VOID:
+            return Field();
+        case capnp::DynamicValue::BOOL:
+            return UInt64(value.as<bool>() ? 1 : 0);
+        case capnp::DynamicValue::INT:
+            return Int64((value.as<int64_t>()));
+        case capnp::DynamicValue::UINT:
+            return UInt64(value.as<uint64_t>());
+        case capnp::DynamicValue::FLOAT:
+            return Float64(value.as<double>());
+        case capnp::DynamicValue::TEXT:
+        {
+            auto arr = value.as<capnp::Text>();
+            return String(arr.begin(), arr.size());
+        }
+        case capnp::DynamicValue::DATA:
+        {
+            auto arr = value.as<capnp::Data>().asChars();
+            return String(arr.begin(), arr.size());
+        }
+        case capnp::DynamicValue::LIST:
+        {
+            auto listValue = value.as<capnp::DynamicList>();
+            Array res(listValue.size());
+            for (auto i : kj::indices(listValue))
+            res[i] = convertNodeToField(listValue[i]);
+            return res;
+        }
+        case capnp::DynamicValue::ENUM:
+            return UInt64(value.as<capnp::DynamicEnum>().getRaw());
+        case capnp::DynamicValue::STRUCT:
+            throw Exception("STRUCT type not supported, read individual fields instead");
+        case capnp::DynamicValue::CAPABILITY:
+            throw Exception("CAPABILITY type not supported");
+        case capnp::DynamicValue::ANY_POINTER:
+            throw Exception("ANY_POINTER type not supported");
     }
-    case capnp::DynamicValue::DATA:
-    {
-        auto arr = value.as<capnp::Data>().asChars();
-        return String(arr.begin(), arr.size());
-    }
-    case capnp::DynamicValue::LIST:
-    {
-        auto listValue = value.as<capnp::DynamicList>();
-        Array res(listValue.size());
-        for (auto i : kj::indices(listValue))
-          res[i] = convertNodeToField(listValue[i]);
-        return res;
-    }
-    case capnp::DynamicValue::ENUM:
-        return UInt64(value.as<capnp::DynamicEnum>().getRaw());
-    case capnp::DynamicValue::STRUCT:
-        throw Exception("STRUCT type not supported, read individual fields instead");
-    case capnp::DynamicValue::CAPABILITY:
-        throw Exception("CAPABILITY type not supported");
-    case capnp::DynamicValue::ANY_POINTER:
-        throw Exception("ANY_POINTER type not supported");
-    }
+    return Field();
 }
 
 capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::string & field)
@@ -172,19 +174,21 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns)
 
     for (auto action : actions)
     {
-        switch (action.type) {
-        case Action::READ: {
-            auto & col = columns[action.column];
-            Field value = convertNodeToField(stack.back().get(action.field));
-            col->insert(value);
-            break;
-        }
-        case Action::POP:
-            stack.pop_back();
-            break;
-        case Action::PUSH:
-            stack.push_back(stack.back().get(action.field).as<capnp::DynamicStruct>());
-            break;
+        switch (action.type)
+        {
+            case Action::READ:
+            {
+                auto & col = columns[action.column];
+                Field value = convertNodeToField(stack.back().get(action.field));
+                col->insert(value);
+                break;
+            }
+            case Action::POP:
+                stack.pop_back();
+                break;
+            case Action::PUSH:
+                stack.push_back(stack.back().get(action.field).as<capnp::DynamicStruct>());
+                break;
         }
     }
 

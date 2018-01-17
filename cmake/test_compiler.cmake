@@ -7,8 +7,12 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 # clang4 : -no-pie cause error
 # clang6 : -no-pie cause warning
 
+    if (MAKE_STATIC_LIBRARIES)
+        set (TEST_FLAG "-Wl,-Bstatic -stdlib=libc++ -lc++ -lc++abi -Wl,-Bdynamic")
+    else ()
+        set (TEST_FLAG "-stdlib=libc++ -lc++ -lc++abi")
+    endif ()
 
-    set (TEST_FLAG "-lc++ -lc++abi")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 
     check_cxx_source_compiles("

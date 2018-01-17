@@ -3,7 +3,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
 #include <Interpreters/Context.h>
@@ -150,13 +150,14 @@ void StorageDistributedDirectoryMonitor::run()
 
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
-    const auto pool_factory = [&storage, &name] (const std::string & host, const UInt16 port,
+    auto timeouts = ConnectionTimeouts::getTCPTimeouts(storage.context.getSettingsRef());
+    const auto pool_factory = [&storage, &name, &timeouts] (const std::string & host, const UInt16 port,
                                                  const std::string & user, const std::string & password,
                                                  const std::string & default_database)
     {
         return std::make_shared<ConnectionPool>(
             1, host, port, default_database,
-            user, password,
+            user, password, timeouts,
             storage.getName() + '_' + name);
     };
 

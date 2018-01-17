@@ -20,6 +20,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ConnectionTimeouts.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
@@ -33,7 +34,7 @@
 #include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -1466,6 +1467,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
 
+    /// Recalculate columns size (not only for the modified column)
     data.recalculateColumnSizes();
 }
 
@@ -2124,8 +2126,9 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     Stopwatch stopwatch;
 
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
     MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
-        part_name, replica_path, address.host, address.replication_port, to_detached);
+        part_name, replica_path, address.host, address.replication_port, timeouts, to_detached);
 
     if (!to_detached)
     {
@@ -2363,7 +2366,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         if (!partition)
         {
             selected = merger.selectPartsToMerge(
-                future_merged_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
+                future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
         }
         else
         {
@@ -3094,11 +3097,12 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
 
+    auto timeouts = ConnectionTimeouts::getTCPTimeouts(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        "", "", "ClickHouse replica");
+        "", "", timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), context, &settings);
     NullBlockOutputStream output;

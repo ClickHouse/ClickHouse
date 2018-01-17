@@ -1,6 +1,3 @@
-*** Without PARTITION BY and ORDER BY ***
-1
-2
 *** Replicated with sampling ***
 1
 *** Replacing with implicit version ***

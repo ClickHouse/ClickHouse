@@ -3,7 +3,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/SimpleCache.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -75,8 +75,8 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
 
     resolved_address = resolveSocketAddress(parsed_host_port.first, parsed_host_port.second);
-    host_name = host_port_;
-    port = clickhouse_port;
+    host_name = parsed_host_port.first;
+    port = parsed_host_port.second;
     is_local = isLocal(*this, clickhouse_port);
 }
 
@@ -210,10 +210,8 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                     settings.distributed_connections_pool_size,
                     address.host_name, address.port, address.resolved_address,
                     address.default_database, address.user, address.password,
-                    "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
-                    saturate(settings.connect_timeout, settings.limits.max_execution_time),
-                    saturate(settings.receive_timeout, settings.limits.max_execution_time),
-                    saturate(settings.send_timeout, settings.limits.max_execution_time)));
+                    ConnectionTimeouts::getTCPTimeouts(settings).getSaturated(settings.limits.max_execution_time),
+                    "server", Protocol::Compression::Enable, Protocol::Encryption::Disable));
 
                 info.pool = std::make_shared<ConnectionPoolWithFailover>(
                         std::move(pools), settings.load_balancing, settings.connections_with_failover_max_tries);
@@ -289,10 +287,8 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port, replica.resolved_address,
                         replica.default_database, replica.user, replica.password,
-                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
-                        saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
-                        saturate(settings.receive_timeout, settings.limits.max_execution_time),
-                        saturate(settings.send_timeout, settings.limits.max_execution_time)));
+                        ConnectionTimeouts::getTCPTimeouts(settings).getSaturated(settings.limits.max_execution_time),
+                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable));
                 }
             }
 
@@ -348,10 +344,8 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port, replica.resolved_address,
                         replica.default_database, replica.user, replica.password,
-                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
-                        saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
-                        saturate(settings.receive_timeout, settings.limits.max_execution_time),
-                        saturate(settings.send_timeout, settings.limits.max_execution_time)));
+                        ConnectionTimeouts::getHTTPTimeouts(settings).getSaturated(settings.limits.max_execution_time),
+                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable));
             }
         }
 

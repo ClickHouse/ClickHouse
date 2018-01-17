@@ -100,7 +100,7 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
         }
     }
 
-    if (is_first_select_inside_union_all && (hasAsterisk()))
+    if (is_first_select_inside_union_all && hasAsterisk())
     {
         basicInit(input);
 
@@ -667,7 +667,7 @@ void InterpreterSelectQuery::executeSingleQuery()
             if (query.limit_length && hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
                 executePreLimit();
 
-            if (union_within_single_query || stream_with_non_joined_data || need_second_distinct_pass)
+            if (stream_with_non_joined_data || need_second_distinct_pass)
                 union_within_single_query = true;
 
             /// To execute LIMIT BY we should merge all streams together.
