@@ -1,20 +1,21 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -o errexit
 set -o pipefail
 
-CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOTDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
-DATADIR=${DATADIR:=/tmp/clickhouse}
-LOGDIR=${LOGDIR:=$DATADIR/log}
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
+DATA_DIR=${DATA_DIR:=/tmp/clickhouse}
+LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
+BUILD_DIR=${BUILD_DIR:="$ROOT_DIR/build${BUILD_TYPE}"}
 
-rm -rf $DATADIR
+rm -rf $DATA_DIR
 
-mkdir -p $LOGDIR
+mkdir -p $LOG_DIR
 
 # Start a local clickhouse server which will be used to run tests
-#PATH=$PATH:$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server \
-  $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse-server --config-file=$CURDIR/server-test.xml > $LOGDIR/stdout 2>&1 &
+#PATH=$PATH:$BUILD_DIR/dbms/src/Server \
+  $BUILD_DIR/dbms/src/Server/clickhouse-server --config-file=$CUR_DIR/server-test.xml > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
 
@@ -22,18 +23,18 @@ sleep 3
 function finish {
   kill $CH_PID || true
   wait
-  tail -n 50 $LOGDIR/stdout
-  rm -rf $DATADIR
+  tail -n 50 $LOG_DIR/stdout
+  rm -rf $DATA_DIR
 }
 trap finish EXIT
 
 # Do tests
-export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=$CURDIR/server-test.xml}
-#cd $CURDIR
+export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=$CUR_DIR/server-test.xml}
+#cd $CUR_DIR
 if [ -n "$*" ]; then
     $*
 else
-    $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse-client --config $CURDIR/client-test.xml -q 'SELECT * from system.build_options;'
-    PATH=$PATH:$ROOTDIR/build${BUILD_TYPE}/dbms/src/Server \
-      $CURDIR/clickhouse-test --binary $ROOTDIR/build${BUILD_TYPE}/dbms/src/Server/clickhouse --configclient $CURDIR/client-test.xml --configserver $CURDIR/server-test.xml --tmp $DATADIR/tmp --queries $CURDIR/queries $TEST_OPT
+    $BUILD_DIR/dbms/src/Server/clickhouse-client --config $CUR_DIR/client-test.xml -q 'SELECT * from system.build_options;'
+    PATH=$PATH:$BUILD_DIR/dbms/src/Server \
+      $CUR_DIR/clickhouse-test --binary $BUILD_DIR/dbms/src/Server/clickhouse --configclient $CUR_DIR/client-test.xml --configserver $CUR_DIR/server-test.xml --tmp $DATA_DIR/tmp --queries $CUR_DIR/queries $TEST_OPT
 fi
