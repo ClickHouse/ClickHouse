@@ -165,8 +165,8 @@ export CCACHE_PREFIX=
 export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
-sudo mkdir -p $CCACHEDIR
-sudo chmod -R a+rwx $CCACHEDIR
+[ -n "$CCACHEDIR" ] && sudo mkdir -p $CCACHEDIR
+[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR
 # chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
 # echo "DEBOOTSTRAPOPTS = ${DEBOOTSTRAPOPTS[@]}"

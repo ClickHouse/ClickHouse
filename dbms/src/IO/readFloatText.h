@@ -202,7 +202,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         0, 0, nullptr, nullptr);
 
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
-    static constexpr int MAX_LENGTH = 310;
+    static constexpr int MAX_LENGTH = 316;
 
     if (buf.position() + MAX_LENGTH <= buf.buffer().end())
     {
@@ -378,7 +378,25 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 
     if (checkChar('e', in) || checkChar('E', in))
     {
-        bool exponent_negative = checkChar('-', in);
+        if (in.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            else
+                return false;
+        }
+
+        bool exponent_negative = false;
+        if (*in.position() == '-')
+        {
+            exponent_negative = true;
+            ++in.position();
+        }
+        else if (*in.position() == '+')
+        {
+            ++in.position();
+        }
+
         readUIntTextUpToNSignificantDigits<4>(exponent, in);
         if (exponent_negative)
             exponent = -exponent;
