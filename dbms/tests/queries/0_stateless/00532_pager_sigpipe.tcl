@@ -2,7 +2,7 @@ set timeout -1
 
 log_user 0
 
-spawn clickhouse-client --pager=head
+spawn sh -c $::env(CLICKHOUSE_CLIENT) --pager=head
 
 expect ":) "
 

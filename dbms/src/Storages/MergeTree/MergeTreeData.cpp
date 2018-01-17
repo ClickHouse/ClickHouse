@@ -32,7 +32,7 @@
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
 #include <Common/localBackup.h>
@@ -276,6 +276,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
         if (sign_column.empty())
             throw Exception("Logical error: Sign column for storage CollapsingMergeTree is empty", ErrorCodes::LOGICAL_ERROR);
 
+        bool miss_column = true;
         for (const auto & column : columns)
         {
             if (column.name == sign_column)
@@ -284,9 +285,12 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                     throw Exception("Sign column (" + sign_column + ")"
                         " for storage CollapsingMergeTree must have type Int8."
                         " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                miss_column = false;
                 break;
             }
         }
+        if (miss_column)
+            throw Exception("Sign column " + sign_column + " does not exist in table declaration.");
     }
     else if (!sign_column.empty())
         throw Exception("Sign column for MergeTree cannot be specified in all modes except Collapsing.", ErrorCodes::LOGICAL_ERROR);
@@ -311,6 +315,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             throw Exception("Version column for MergeTree cannot be specified in all modes except Replacing.",
                 ErrorCodes::LOGICAL_ERROR);
 
+        bool miss_column = true;
         for (const auto & column : columns)
         {
             if (column.name == version_column)
@@ -324,9 +329,12 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                     throw Exception("Version column (" + version_column + ")"
                         " for storage ReplacingMergeTree must have type of UInt family or Date or DateTime."
                         " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                miss_column = false;
                 break;
             }
         }
+        if (miss_column)
+            throw Exception("Version column " + version_column + " does not exist in table declaration.");
     }
 
     /// TODO Checks for Graphite mode.

@@ -17,25 +17,9 @@ struct DictionaryStructure;
 struct IDictionaryBase;
 class ExternalDictionaries;
 
-class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
+class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
 public:
-    static StoragePtr create(const String & table_name_,
-        Context & context_,
-        const ASTCreateQuery & query,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
-
-    static StoragePtr create(const String & table_name,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
-        const DictionaryStructure & dictionary_structure,
-        const String & dictionary_name);
-
     std::string getName() const override { return "Dictionary"; }
     std::string getTableName() const override { return table_name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }

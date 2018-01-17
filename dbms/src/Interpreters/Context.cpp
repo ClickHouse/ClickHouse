@@ -45,7 +45,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
@@ -1348,15 +1348,21 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 }
 
 
+void Context::reloadClusterConfig()
+{
+    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+    auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+    shared->clusters = std::make_unique<Clusters>(config, settings);
+}
+
+
 Clusters & Context::getClusters() const
 {
+    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+    if (!shared->clusters)
     {
-        std::lock_guard<std::mutex> lock(shared->clusters_mutex);
-        if (!shared->clusters)
-        {
-            auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-            shared->clusters = std::make_unique<Clusters>(config, settings);
-        }
+        auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        shared->clusters = std::make_unique<Clusters>(config, settings);
     }
 
     return *shared->clusters;

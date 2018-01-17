@@ -8,10 +8,11 @@
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageFactory.h>
+
 #include <Storages/VirtualColumnFactory.h>
 
 #include <Common/typeid_cast.h>
-#include "StorageReplicatedMergeTree.h"
 
 
 namespace DB
@@ -186,6 +187,19 @@ void StorageMaterializedView::shutdown()
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
     return global_context.getTable(target_database_name, target_table_name);
+}
+
+
+void registerStorageMaterializedView(StorageFactory & factory)
+{
+    factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
+    {
+        /// Pass local_context here to convey setting for inner table
+        return StorageMaterializedView::create(
+            args.table_name, args.database_name, args.local_context, args.query,
+            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.attach);
+    });
 }
 
 }

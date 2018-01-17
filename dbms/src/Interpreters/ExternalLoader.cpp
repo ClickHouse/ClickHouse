@@ -1,5 +1,5 @@
 #include <Interpreters/ExternalLoader.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>

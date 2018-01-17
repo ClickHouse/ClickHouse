@@ -244,12 +244,14 @@ void ComplexKeyHashedDictionary::loadData()
         element_count += rows;
 
         const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
-            [&] (const size_t attribute_idx) {
+            [&] (const size_t attribute_idx)
+            {
                 return block.safeGetByPosition(attribute_idx).column;
             });
 
         const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
-            [&] (const size_t attribute_idx) {
+            [&] (const size_t attribute_idx)
+            {
                 return block.safeGetByPosition(keys_size + attribute_idx).column;
             });
 

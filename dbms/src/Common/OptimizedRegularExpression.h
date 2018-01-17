@@ -85,7 +85,7 @@ public:
     unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
 
     /// Get the regexp re2 or nullptr if the pattern is trivial (for output to the log).
-    const std::unique_ptr<RegexType>& getRE2() const { return re2; }
+    const std::unique_ptr<RegexType> & getRE2() const { return re2; }
 
     static void analyze(const std::string & regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 

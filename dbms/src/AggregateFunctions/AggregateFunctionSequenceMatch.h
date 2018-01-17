@@ -338,7 +338,8 @@ protected:
         std::stack<backtrack_info> back_stack;
 
         /// backtrack if possible
-        const auto do_backtrack = [&] {
+        const auto do_backtrack = [&]
+        {
             while (!back_stack.empty())
             {
                 auto & top = back_stack.top();

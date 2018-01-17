@@ -10,7 +10,6 @@ if (NOT USE_INTERNAL_POCO_LIBRARY)
 endif ()
 
 if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
-    #include_directories (${Poco_INCLUDE_DIRS})
 else ()
 
     set (USE_INTERNAL_POCO_LIBRARY 1)
@@ -28,8 +27,6 @@ else ()
     set (POCO_STATIC ${MAKE_STATIC_LIBRARIES} CACHE BOOL "")
     set (POCO_VERBOSE_MESSAGES 1 CACHE BOOL "")
 
-    include (${ClickHouse_SOURCE_DIR}/cmake/find_ltdl.cmake)
-    include (${ClickHouse_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake)
 
     # used in internal compiler
     list (APPEND Poco_INCLUDE_DIRS
@@ -45,8 +42,7 @@ else ()
 
     if (ODBC_FOUND)
         set (Poco_DataODBC_FOUND 1)
-        set (Poco_DataODBC_LIBRARY PocoDataODBC)
-        list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
+        set (Poco_DataODBC_LIBRARY PocoDataODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
         set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
     endif ()
 
@@ -72,8 +68,6 @@ else ()
     set (Poco_Net_LIBRARY PocoNet)
     set (Poco_Data_LIBRARY PocoData)
     set (Poco_XML_LIBRARY PocoXML)
-
-    #include_directories (BEFORE ${Poco_INCLUDE_DIRS})
 
 endif ()
 

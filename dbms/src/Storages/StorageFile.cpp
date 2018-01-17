@@ -1,14 +1,22 @@
 #include <Storages/StorageFile.h>
+#include <Storages/StorageFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <fcntl.h>
 
@@ -21,6 +29,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_IDENTIFIER;
 };
 
 
@@ -254,6 +264,61 @@ void StorageFile::rename(const String & new_path_to_db, const String & /*new_dat
     Poco::File(path).renameTo(path_new);
 
     path = std::move(path_new);
+}
+
+
+void registerStorageFile(StorageFactory & factory)
+{
+    factory.registerStorage("File", [](const StorageFactory::Arguments & args)
+    {
+        ASTs & engine_args = args.engine_args;
+
+        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+            throw Exception(
+                "Storage File requires 1 or 2 arguments: name of used format and source.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        String format_name = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+
+        int source_fd = -1;
+        String source_path;
+        if (engine_args.size() >= 2)
+        {
+            /// Will use FD if engine_args[1] is int literal or identifier with std* name
+
+            if (ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(engine_args[1].get()))
+            {
+                if (identifier->name == "stdin")
+                    source_fd = STDIN_FILENO;
+                else if (identifier->name == "stdout")
+                    source_fd = STDOUT_FILENO;
+                else if (identifier->name == "stderr")
+                    source_fd = STDERR_FILENO;
+                else
+                    throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+                                    ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
+
+            if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            {
+                auto type = literal->value.getType();
+                if (type == Field::Types::Int64)
+                    source_fd = static_cast<int>(literal->value.get<Int64>());
+                else if (type == Field::Types::UInt64)
+                    source_fd = static_cast<int>(literal->value.get<UInt64>());
+            }
+
+            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+            source_path = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        }
+
+        return StorageFile::create(
+            source_path, source_fd,
+            args.data_path, args.table_name, format_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.context);
+    });
 }
 
 }

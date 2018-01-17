@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Storages/StorageView.h>
+#include <Storages/StorageFactory.h>
 
 
 namespace DB
@@ -44,6 +45,20 @@ BlockInputStreams StorageView::read(
 {
     processed_stage = QueryProcessingStage::FetchColumns;
     return InterpreterSelectQuery(inner_query->clone(), context, column_names).executeWithoutUnion();
+}
+
+
+void registerStorageView(StorageFactory & factory)
+{
+    factory.registerStorage("View", [](const StorageFactory::Arguments & args)
+    {
+        if (args.query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
+
+        return StorageView::create(
+            args.table_name, args.database_name, args.query, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults);
+    });
 }
 
 }

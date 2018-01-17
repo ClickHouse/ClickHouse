@@ -131,16 +131,6 @@ protected:
     StorageDistributed(
         const std::string & name_,
         const NamesAndTypesList & columns_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
-    StorageDistributed(
-        const std::string & name_,
-        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
@@ -148,8 +138,8 @@ protected:
         const String & remote_table_,
         const String & cluster_name_,
         const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
+        const ASTPtr & sharding_key_,
+        const String & data_path_);
 };
 
 }

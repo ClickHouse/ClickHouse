@@ -1,7 +1,8 @@
 #include <Storages/StorageLog.h>
+#include <Storages/StorageFactory.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -10,10 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -28,8 +26,8 @@
 #include <Poco/DirectoryIterator.h>
 
 
-#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION     ".bin"
-#define DBMS_STORAGE_LOG_MARKS_FILE_NAME         "__marks.mrk"
+#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
+#define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
 
 
 namespace DB
@@ -42,6 +40,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -49,11 +48,10 @@ class LogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     LogBlockInputStream(
-        size_t block_size_, const Names & column_names_, StorageLog & storage_,
+        size_t block_size_, const NamesAndTypesList & columns_, StorageLog & storage_,
         size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
         : block_size(block_size_),
-        column_names(column_names_),
-        column_types(column_names.size()),
+        columns(columns_),
         storage(storage_),
         mark_number(mark_number_),
         rows_limit(rows_limit_),
@@ -68,8 +66,8 @@ public:
         std::stringstream res;
         res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
 
-        for (const auto & name : column_names)
-            res << ", " << name;
+        for (const auto & name_type : columns)
+            res << ", " << name_type.name;
 
         res << ")";
         return res.str();
@@ -80,8 +78,7 @@ protected:
 
 private:
     size_t block_size;
-    Names column_names;
-    DataTypes column_types;
+    NamesAndTypesList columns;
     StorageLog & storage;
     size_t mark_number;     /// from what mark to read data
     size_t rows_limit;      /// The maximum number of rows that can be read
@@ -105,7 +102,7 @@ private:
     using FileStreams = std::map<std::string, Stream>;
     FileStreams streams;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, bool read_offsets = true);
+    void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
 };
 
 
@@ -189,53 +186,25 @@ Block LogBlockInputStream::readImpl()
     if (Poco::DirectoryIterator(storage.getFullPath()) == Poco::DirectoryIterator())
         return res;
 
-    /// If the files are not open, then open them.
-    if (streams.empty())
-        for (size_t i = 0, size = column_names.size(); i < size; ++i)
-            column_types[i] = storage.getDataTypeByName(column_names[i]);
-
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
 
-    /// Pointers to offset columns, shared for columns from nested data structures
-    using OffsetColumns = std::map<std::string, ColumnPtr>;
-    OffsetColumns offset_columns;
-
-    for (size_t i = 0, size = column_names.size(); i < size; ++i)
+    for (const auto & name_type : columns)
     {
-        const auto & name = column_names[i];
-
-        MutableColumnPtr column;
-
-        bool read_offsets = true;
-
-        /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column_types[i].get()))
-        {
-            String nested_name = Nested::extractTableName(name);
-
-            if (offset_columns.count(nested_name) == 0)
-                offset_columns[nested_name] = ColumnArray::ColumnOffsets::create();
-            else
-                read_offsets = false; /// on previous iterations the offsets were already read by `readData`
-
-            column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
-        }
-        else
-            column = column_types[i]->createColumn();
+        MutableColumnPtr column = name_type.type->createColumn();
 
         try
         {
-            readData(name, *column_types[i], *column, max_rows_to_read, read_offsets);
+            readData(name_type.name, *name_type.type, *column, max_rows_to_read);
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name + " at " + storage.path + escapeForFileName(storage.name));
+            e.addMessage("while reading column " + name_type.name + " at " + storage.path + escapeForFileName(storage.name));
             throw;
         }
 
         if (column->size())
-            res.insert(ColumnWithTypeAndName(std::move(column), column_types[i], name));
+            res.insert(ColumnWithTypeAndName(std::move(column), name_type.type, name_type.name));
     }
 
     if (res)
@@ -250,17 +219,14 @@ Block LogBlockInputStream::readImpl()
         streams.clear();
     }
 
-    return res;
+    return Nested::flatten(res);
 }
 
 
-void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, bool with_offsets)
+void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
 {
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
-            return nullptr;
-
         String stream_name = IDataType::getFileNameForStream(name, path);
 
         const auto & file_it = storage.files.find(stream_name);
@@ -536,6 +502,8 @@ BlockInputStreams StorageLog::read(
     processed_stage = QueryProcessingStage::FetchColumns;
     loadMarks();
 
+    NamesAndTypesList columns = Nested::collect(getColumnsList().addTypes(column_names));
+
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     BlockInputStreams res;
@@ -558,7 +526,7 @@ BlockInputStreams StorageLog::read(
 
         res.emplace_back(std::make_shared<LogBlockInputStream>(
             max_block_size,
-            column_names,
+            columns,
             *this,
             mark_begin,
             rows_end - rows_begin,
@@ -580,6 +548,23 @@ bool StorageLog::checkData() const
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
+}
+
+
+void registerStorageLog(StorageFactory & factory)
+{
+    factory.registerStorage("Log", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return StorageLog::create(
+            args.data_path, args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.context.getSettings().max_compress_block_size);
+    });
 }
 
 }

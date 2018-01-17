@@ -20,6 +20,94 @@ import sys
 from recommonmark.parser import CommonMarkParser
 from recommonmark.transform import AutoStructify
 
+from docutils import nodes, transforms
+
+nodes._non_id_translate.update({
+    0x0410: u'A',       # @bayonet: cyrillic A
+    0x0411: u'B',       # @bayonet: cyrillic Б
+    0x0412: u'V',       # @bayonet: cyrillic В
+    0x0413: u'G',       # @bayonet: cyrillic Г
+    0x0414: u'D',       # @bayonet: cyrillic Д
+    0x0415: u'E',       # @bayonet: cyrillic Е
+    0x0416: u'ZH',      # @bayonet: cyrillic Ж
+    0x0417: u'Z',       # @bayonet: cyrillic З
+    0x0418: u'I',       # @bayonet: cyrillic И
+    0x0419: u'I',       # @bayonet: cyrillic Й
+    0x041A: u'K',       # @bayonet: cyrillic К
+    0x041B: u'L',       # @bayonet: cyrillic Л
+    0x041C: u'M',       # @bayonet: cyrillic М
+    0x041D: u'N',       # @bayonet: cyrillic Н
+    0x041E: u'O',       # @bayonet: cyrillic О
+    0x041F: u'P',       # @bayonet: cyrillic П
+    0x0420: u'R',       # @bayonet: cyrillic Р
+    0x0421: u'C',       # @bayonet: cyrillic С
+    0x0422: u'T',       # @bayonet: cyrillic Т
+    0x0423: u'U',       # @bayonet: cyrillic У
+    0x0424: u'PH',      # @bayonet: cyrillic Ф
+    0x0425: u'H',       # @bayonet: cyrillic Х
+    0x0426: u'CZ',      # @bayonet: cyrillic Ц
+    0x0427: u'CH',      # @bayonet: cyrillic Ч
+    0x0428: u'SH',      # @bayonet: cyrillic Ш
+    0x0429: u'SH',      # @bayonet: cyrillic Щ
+#    0x042A: u'',       # @bayonet: cyrillic Ъ
+    0x042B: u'Y',       # @bayonet: cyrillic Ы
+#    0x042C: u'',       # @bayonet: cyrillic Ь
+    0x042D: u'E',       # @bayonet: cyrillic Э
+    0x042E: u'YU',      # @bayonet: cyrillic Ю
+    0x042F: u'YA',      # @bayonet: cyrillic Я
+    0x0430: u'a',       # @bayonet: cyrillic а
+    0x0431: u'b',       # @bayonet: cyrillic б
+    0x0432: u'v',       # @bayonet: cyrillic в
+    0x0433: u'g',       # @bayonet: cyrillic г
+    0x0434: u'd',       # @bayonet: cyrillic д
+    0x0435: u'e',       # @bayonet: cyrillic е
+    0x0436: u'zh',      # @bayonet: cyrillic ж
+    0x0437: u'z',       # @bayonet: cyrillic з
+    0x0438: u'i',       # @bayonet: cyrillic и
+    0x0439: u'i',       # @bayonet: cyrillic й
+    0x043A: u'k',       # @bayonet: cyrillic к
+    0x043B: u'l',       # @bayonet: cyrillic л
+    0x043C: u'm',       # @bayonet: cyrillic м
+    0x043D: u'n',       # @bayonet: cyrillic н
+    0x043E: u'o',       # @bayonet: cyrillic о
+    0x043F: u'p',       # @bayonet: cyrillic п
+    0x0440: u'r',       # @bayonet: cyrillic р
+    0x0441: u's',       # @bayonet: cyrillic с
+    0x0442: u't',       # @bayonet: cyrillic т
+    0x0443: u'u',       # @bayonet: cyrillic у
+    0x0444: u'ph',      # @bayonet: cyrillic ф
+    0x0445: u'h',       # @bayonet: cyrillic х
+    0x0446: u'cz',      # @bayonet: cyrillic ц
+    0x0447: u'ch',      # @bayonet: cyrillic ч
+    0x0448: u'sh',      # @bayonet: cyrillic ш
+    0x0449: u'sh',      # @bayonet: cyrillic щ
+#    0x044A: u'',       # @bayonet: cyrillic ъ
+    0x044B: u'y',       # @bayonet: cyrillic ы
+#    0x044C: u'',       # @bayonet: cyrillic ь
+    0x044D: u'e',       # @bayonet: cyrillic э
+    0x044E: u'yu',      # @bayonet: cyrillic ю
+    0x044F: u'ya',      # @bayonet: cyrillic я
+    0x0401: u'YO',      # @bayonet: cyrillic Ё
+    0x0451: u'yo'      # @bayonet: cyrillic ё
+})
+
+
+def autostructify_parse_ref(self, ref):
+    assert isinstance(ref, nodes.reference)
+    title = None
+    if len(ref.children) == 0:
+        title = ref['name']
+    elif isinstance(ref.children[0], nodes.Text):
+        title = ref.children[0].astext()
+    uri = ref['refuri']
+    if uri.find('://') != -1:
+        return (title, uri, None)
+    uri=uri.replace('.md','.html')
+    return (title, uri, None)
+
+
+AutoStructify.parse_ref = autostructify_parse_ref
+
 source_parsers = {
     '.md': CommonMarkParser,
 }

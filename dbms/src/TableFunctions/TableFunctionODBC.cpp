@@ -1,3 +1,6 @@
+#include <TableFunctions/TableFunctionODBC.h>
+
+#if Poco_DataODBC_FOUND
 #include <type_traits>
 #include <ext/scope_guard.h>
 
@@ -8,7 +11,6 @@
 #include <Storages/StorageODBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionODBC.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
@@ -122,3 +124,5 @@ void registerTableFunctionODBC(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionODBC>();
 }
 }
+
+#endif

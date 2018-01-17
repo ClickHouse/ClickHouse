@@ -182,9 +182,6 @@ void StorageMergeTree::alter(
         }
     }
 
-    if (primary_key_is_modified && data.merging_params.mode == MergeTreeData::MergingParams::Unsorted)
-        throw Exception("UnsortedMergeTree cannot have primary key", ErrorCodes::BAD_ARGUMENTS);
-
     if (primary_key_is_modified && supportsSampling())
         throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
@@ -444,6 +441,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     for (auto & transaction : transactions)
         transaction->commit();
 
+    /// Recalculate columns size (not only for the modified column)
     data.recalculateColumnSizes();
 }
 

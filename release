@@ -52,6 +52,9 @@ then
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
+    export DEB_CC=clang-5.0
+    export DEB_CXX=clang++-5.0
+    export EXTRAPACKAGES=clang-5.0
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
@@ -65,7 +68,7 @@ if [ -z "$THREAD_COUNT" ] ; then
     THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 fi
 
-CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1"
+CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 export CMAKE_FLAGS
 
 REVISION+=$VERSION_POSTFIX
@@ -79,10 +82,11 @@ if [ -z "$USE_PBUILDER" ] ; then
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
-    export DIST=artful
+    export DIST=${DIST:=artful}
+    export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
         sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc
     fi
-    pdebuild --configfile $CURDIR/debian/.pbuilderrc
+    pdebuild --configfile $CURDIR/debian/.pbuilderrc -- $PBUILDER_OPT
 fi
