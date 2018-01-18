@@ -92,7 +92,7 @@
 * Removed usage of GNU extensions from the code. Enabled `-Wextra` option. When building with `clang`, `libc++` is used instead of `libstdc++`.
 * Extracted `clickhouse_parsers` and `clickhouse_common_io` libraries to speed up builds of various tools.
 
-## Backwards incompatible changes:
+## Backward incompatible changes:
 
 * Marks format for tables of type `Log`, that contain `Nullable` columns, was changed in backward incompatible way. If you have these tables, you should convert them to `TinyLog` type before staring up new server version. To do that, you should replace `ENGINE = Log` to `ENGINE = TinyLog` in corresponding `.sql` file in `metadata` directory. If your table don't have `Nullable` columns or if type of your table is not `Log`, then no actions required.
 * Removed setting `experimental_allow_extended_storage_definition_syntax`. Now this feature is enabled by default.
@@ -137,7 +137,7 @@ This release contains bug fixes for the previous release 1.1.54310:
 * Added support for the Cap'n Proto input format.
 * You can now customize compression level when using the zstd algorithm.
 
-## Backwards incompatible changes:
+## Backward incompatible changes:
 * Creation of temporary tables with an engine other than Memory is forbidden.
 * Explicit creation of tables with the View or MaterializedView engine is forbidden.
 * During table creation, a new check verifies that the sampling key expression is included in the primary key.
