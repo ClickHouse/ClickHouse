@@ -22,7 +22,6 @@
 * Добавлена возможность указания количества consumers для `Kafka` (Marek Vavruša).
 * Добавлены функции `intExp2`, `intExp10`.
 * Добавлена агрегатная функция `sumKahan`.
-* Увеличена производительность агрегатных функций `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, `corr` за счёт уменьшения стойкости к вычислительной погрешности. Старые версии функций добавлены под именами `varSampStable`, `varPopStable`, `stddevSampStable`, `stddevPopStable`, `covarSampStable`, `covarPopStable`, `corrStable`.
 * Добавлены функции to*Number*OrNull, где *Number* - числовой тип.
 * Добавлена поддержка секции `WITH` для запроса `INSERT SELECT` (автор: zhang2014).
 * Добавлены настройки `http_connection_timeout`, `http_send_timeout`, `http_receive_timeout`. Настройки используются, в том числе, при скачивании кусков для репликации. Изменение этих настроек позволяет сделать более быстрый failover в случае перегруженной сети.
@@ -38,6 +37,7 @@
 * Увеличена производительность форматирования в текстовом виде и парсинга из текста значений типа `Date` и `DateTime`.
 * Увеличена производительность и точность парсинга чисел с плавающей запятой.
 * Уменьшено потребление памяти при `JOIN`, если левая и правая часть содержали столбцы с одинаковым именем, не входящие в `USING`.
+* Увеличена производительность агрегатных функций `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, `corr` за счёт уменьшения стойкости к вычислительной погрешности. Старые версии функций добавлены под именами `varSampStable`, `varPopStable`, `stddevSampStable`, `stddevPopStable`, `covarSampStable`, `covarPopStable`, `corrStable`.
 
 ## Исправления ошибок:
 
