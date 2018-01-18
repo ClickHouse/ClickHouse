@@ -112,6 +112,7 @@ StorageMaterializedView::StorageMaterializedView(
         try
         {
             InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
+            create_interpreter.setInternal(true);
             create_interpreter.execute();
         }
         catch (...)
