@@ -1118,7 +1118,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 if (!replica.empty())
                 {
                     do_fetch = true;
-                    LOG_DEBUG(log, "Preferring to fetch " << entry.new_part_name << " from replica");
+                    LOG_DEBUG(log, "Preffering to fetch " << entry.new_part_name << " from replica");
                 }
             }
         }
@@ -1151,59 +1151,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
             zkutil::Ops ops;
 
-            auto dump_part_for_investigation = [&] (const String & prefix)
-            {
-                LOG_WARNING(log, "Saving broken part " << part->name << " for investigation");
-
-                String investigation_relative_path = "detached/" + prefix + part->name;
-                String investigation_absolute_path = full_path + investigation_relative_path;
-
-                size_t dumped_parts = 0;
-                for (Poco::DirectoryIterator it(full_path + "/detached/"); it != Poco::DirectoryIterator(); ++it)
-                {
-                    if (startsWith(it.path().getFileName(), prefix))
-                        ++dumped_parts;
-                }
-
-                if (dumped_parts >= 10)
-                {
-                    LOG_DEBUG(log, "Too many dumped parts, " << dumped_parts);
-                    return;
-                }
-
-                if (Poco::File(investigation_absolute_path).exists())
-                {
-                    LOG_DEBUG(log, "Will not dump " << investigation_absolute_path << " already exists");
-                    return;
-                }
-
-                Poco::File(investigation_absolute_path).createDirectories();
-
-                {
-                    String entry_dump_path = investigation_absolute_path + "/log_entry.txt";
-                    WriteBufferFromFile wb(entry_dump_path);
-
-                    String entry_dump = entry.toString();
-                    wb.write(entry_dump.data(), entry_dump.size());
-                    wb.close();
-                }
-
-                String sources_absoulte_dir = full_path + investigation_relative_path + "/sources";
-                for (const auto & src_part : future_merged_part.parts){
-                    String part_path = src_part->getFullPath();
-                    part_path.pop_back();
-                    String dst_path = sources_absoulte_dir + "/" + src_part->name;
-
-                    LOG_DEBUG(log, "Copying source part " << part_path << " to " << dst_path);
-                    Poco::File(part_path).copyTo(dst_path);
-                }
-
-                String merged_part_relative_dir = investigation_relative_path + "/merged_" + part->name;
-                //String merged_part_absolute_dir = full_path + investigation_relative_path;
-                part->renameTo(merged_part_relative_dir, false);
-                part->is_temp = false;
-            };
-
             try
             {
                 /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
@@ -1217,11 +1164,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                     || e.code() == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART)
                 {
                     do_fetch = true;
-
-                    if (data.merging_params.mode == MergeTreeData::MergingParams::Mode::Graphite)
-                        dump_part_for_investigation("broken_graphite_");
-                    else
-                        part->remove();
+                    part->remove();
 
                     ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
@@ -1930,7 +1873,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                         future_merged_part, false,
                         max_parts_size_for_merge,
                         can_merge)
-                    && createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, 0, nullptr))
+                    && createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate))
                 {
                     success = true;
                     need_pull = true;
@@ -1953,8 +1896,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 }
 
 
-bool StorageReplicatedMergeTree::createLogEntryToMergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name, bool deduplicate, time_t time_of_merge,
-                                                            ReplicatedMergeTreeLogEntryData * out_log_entry)
+bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
+    const MergeTreeData::DataPartsVector & parts, const String & merged_name, bool deduplicate, ReplicatedMergeTreeLogEntryData * out_log_entry)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1984,7 +1927,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(const MergeTreeData:
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
     entry.deduplicate = deduplicate;
-    entry.create_time = time_of_merge ? time_of_merge : time(nullptr);
+    entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
         entry.parts_to_merge.push_back(part->name);
@@ -2333,18 +2276,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
             ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
         }
-
-        String investigation_path = full_path + "detached/broken_graphite_" + part->name;
-        String investigation_fetch_path = investigation_path + "/fetched_" + part->name;
-
-        if (Poco::File(investigation_path).exists() && !Poco::File(investigation_fetch_path).exists())
-        {
-            String src_path = part->getFullPath();
-            src_path.pop_back();
-
-            LOG_DEBUG(log, "Copying fetched part " << src_path << " to " << investigation_fetch_path);
-            Poco::File(src_path).copyTo(investigation_fetch_path);
-        }
     }
     else
     {
@@ -2558,10 +2489,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             return false;
         }
 
-        const Settings & settings = context.getSettingsRef();
-        time_t time_of_merge = settings.optimize_time_of_merge ? static_cast<time_t>(settings.optimize_time_of_merge) : time(nullptr);
-
-        if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, time_of_merge, &merge_entry))
+        if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return false;
     }
 

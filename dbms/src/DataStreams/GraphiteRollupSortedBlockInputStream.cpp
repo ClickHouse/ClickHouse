@@ -127,17 +127,11 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
         StringRef next_path = next_cursor->all_columns[path_column_num]->getDataAt(next_cursor->pos);
         bool path_differs = is_first || next_path != StringRef(current_path);
 
-        if (path_differs)
-            ++different_paths;
-
         is_first = false;
 
         time_t next_time = next_cursor->all_columns[time_column_num]->get64(next_cursor->pos);
         /// Is new key before rounding.
         bool is_new_key = path_differs || next_time != current_time;
-
-        if (is_new_key)
-            ++different_keys;
 
         if (is_new_key)
         {
@@ -166,8 +160,6 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
             if (will_be_new_key)
             {
-                ++different_new_keys;
-
                 if (started_rows)
                 {
                     finishCurrentRow(merged_columns);
@@ -188,6 +180,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
                 current_time_rounded = next_time_rounded;
             }
 
+            /// We must make copy of next_path to avoid dangling pointers after fetchNextBlock
             current_path = next_path.toString();
             current_time = next_time;
         }
@@ -221,12 +214,6 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
         accumulateRow(current_selected_row);
         finishCurrentRow(merged_columns);
     }
-
-    LOG_DEBUG(log, "(GraphiteMerge)"
-        << " time_of_merge=" << time_of_merge
-        << " different_paths=" << different_paths
-        << " different_keys=" << different_keys
-        << " different_new_keys=" << different_new_keys);
 
     finished = true;
 }

@@ -309,8 +309,7 @@ struct Settings
     /* Timeout for flushing data from streaming storages. */ \
     M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS) \
     /* Schema identifier (used by schema-based formats) */ \
-    M(SettingString, format_schema, "") \
-    M(SettingInt64, optimize_time_of_merge, 0)
+    M(SettingString, format_schema, "")
 
 
     /// Possible limits for query execution.

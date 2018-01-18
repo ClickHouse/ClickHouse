@@ -424,8 +424,11 @@ private:
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
       */
-    bool createLogEntryToMergeParts(const MergeTreeData::DataPartsVector & parts, const String & merged_name, bool deduplicate, time_t time_of_merge,
-                                        ReplicatedMergeTreeLogEntryData * out_log_entry);
+    bool createLogEntryToMergeParts(
+        const MergeTreeData::DataPartsVector & parts,
+        const String & merged_name,
+        bool deduplicate,
+        ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
     /// Exchange parts.
 
