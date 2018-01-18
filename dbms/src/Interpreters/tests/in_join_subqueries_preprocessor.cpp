@@ -1163,11 +1163,12 @@ bool run()
     return performTests(entries);
 }
 
+static DB::Context context = DB::Context::createGlobal();
+
 TestResult check(const TestEntry & entry)
 {
     try
     {
-        DB::Context context = DB::Context::createGlobal();
 
         auto storage_distributed_visits = StorageDistributedFake::create("remote_db", "remote_visits", entry.shard_count);
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);
@@ -1218,10 +1219,12 @@ TestResult check(const TestEntry & entry)
         bool res = equals(ast_input, ast_expected);
         std::string output = DB::queryToString(ast_input);
 
+        context.detachDatabase("test");
         return TestResult(res, output);
     }
     catch (DB::Exception & e)
     {
+        context.detachDatabase("test");
         return TestResult(false, e.displayText());
     }
 }
