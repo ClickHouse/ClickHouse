@@ -29,8 +29,7 @@ clickhouse-client -q "SELECT toDateTime(1);"
 
 TEST_TRUE=${TEST_TRUE:=true}
 
-# --no-shard because default server listen only :: and 127.0.0.1
-[ -n "$TEST_RUN" ] && clickhouse-test --no-shard --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ $TEST_OPT || $TEST_TRUE
+[ -n "$TEST_RUN" ] && clickhouse-test --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ $TEST_OPT || $TEST_TRUE
 
 
 service clickhouse-server stop
