@@ -533,7 +533,7 @@ void BaseDaemon::reloadConfiguration()
         config().removeConfiguration(last_configuration);
     last_configuration = loaded_config.configuration.duplicate();
     config().add(last_configuration, PRIO_DEFAULT, false);
-    log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
+    log_to_console = config().getBool("logger.console", false) || isatty(STDIN_FILENO) || log_command_line_option.empty();
 }
 
 
@@ -579,7 +579,7 @@ void BaseDaemon::wakeup()
 void BaseDaemon::buildLoggers()
 {
     /// Change path for logging.
-    if (config().hasProperty("logger.log") && !log_to_console)
+    if (config().hasProperty("logger.log"))
     {
         std::string path = createDirectory(config().getString("logger.log"));
         if (config().getBool("application.runAsDaemon", false)
