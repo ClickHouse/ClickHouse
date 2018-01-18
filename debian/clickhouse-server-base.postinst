@@ -8,8 +8,13 @@ CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 
 
 if [ "$1" = configure ]; then
-    if [ -x "/etc/init.d/clickhouse-server" ]; then
-        update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+    if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
+        /bin/systemctl daemon-reload
+        /bin/systemctl enable clickhouse-server
+    else
+        if [ -x "/etc/init.d/clickhouse-server" ]; then
+            update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+        fi
     fi
 
     # Make sure the administrative user exists
