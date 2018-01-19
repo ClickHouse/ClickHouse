@@ -2,8 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "util/util.h"
-#include "re2/stringpiece.h"
+#include <stdarg.h>
+#include <stdio.h>
+
+#include "util/strutil.h"
+
+#ifdef _WIN32
+#define snprintf _snprintf
+#define vsnprintf _vsnprintf
+#endif
 
 namespace re2 {
 
@@ -12,16 +19,16 @@ namespace re2 {
 //    Copies 'src' to 'dest', escaping dangerous characters using
 //    C-style escape sequences.  'src' and 'dest' should not overlap.
 //    Returns the number of bytes written to 'dest' (not including the \0)
-//    or -1 if there was insufficient space.
+//    or (size_t)-1 if there was insufficient space.
 // ----------------------------------------------------------------------
-int CEscapeString(const char* src, int src_len, char* dest,
-                  int dest_len) {
+static size_t CEscapeString(const char* src, size_t src_len,
+                            char* dest, size_t dest_len) {
   const char* src_end = src + src_len;
-  int used = 0;
+  size_t used = 0;
 
   for (; src < src_end; src++) {
-    if (dest_len - used < 2)   // Need space for two letter escape
-      return -1;
+    if (dest_len - used < 2)   // space for two-character escape
+      return (size_t)-1;
 
     unsigned char c = *src;
     switch (c) {
@@ -36,9 +43,9 @@ int CEscapeString(const char* src, int src_len, char* dest,
         // digit then that digit must be escaped too to prevent it being
         // interpreted as part of the character code by C.
         if (c < ' ' || c > '~') {
-          if (dest_len - used < 4) // need space for 4 letter escape
-            return -1;
-          sprintf(dest + used, "\\%03o", c);
+          if (dest_len - used < 5)   // space for four-character escape + \0
+            return (size_t)-1;
+          snprintf(dest + used, 5, "\\%03o", c);
           used += 4;
         } else {
           dest[used++] = c; break;
@@ -47,51 +54,111 @@ int CEscapeString(const char* src, int src_len, char* dest,
   }
 
   if (dest_len - used < 1)   // make sure that there is room for \0
-    return -1;
+    return (size_t)-1;
 
   dest[used] = '\0';   // doesn't count towards return value though
   return used;
 }
 
-
 // ----------------------------------------------------------------------
 // CEscape()
 //    Copies 'src' to result, escaping dangerous characters using
-//    C-style escape sequences.  'src' and 'dest' should not overlap. 
+//    C-style escape sequences.  'src' and 'dest' should not overlap.
 // ----------------------------------------------------------------------
 string CEscape(const StringPiece& src) {
-  const int dest_length = src.size() * 4 + 1; // Maximum possible expansion
-  char* dest = new char[dest_length];
-  const int len = CEscapeString(src.data(), src.size(),
-                                dest, dest_length);
-  string s = string(dest, len);
+  const size_t dest_len = src.size() * 4 + 1; // Maximum possible expansion
+  char* dest = new char[dest_len];
+  const size_t used = CEscapeString(src.data(), src.size(),
+                                    dest, dest_len);
+  string s = string(dest, used);
   delete[] dest;
   return s;
 }
 
-string PrefixSuccessor(const StringPiece& prefix) {
+void PrefixSuccessor(string* prefix) {
   // We can increment the last character in the string and be done
   // unless that character is 255, in which case we have to erase the
   // last character and increment the previous character, unless that
   // is 255, etc. If the string is empty or consists entirely of
   // 255's, we just return the empty string.
-  bool done = false;
-  string limit(prefix.data(), prefix.size());
-  int index = limit.length() - 1;
-  while (!done && index >= 0) {
-    if ((limit[index]&255) == 255) {
-      limit.erase(index);
-      index--;
+  while (!prefix->empty()) {
+    char& c = prefix->back();
+    if (c == '\xff') {  // char literal avoids signed/unsigned.
+      prefix->pop_back();
     } else {
-      limit[index]++;
-      done = true;
+      ++c;
+      break;
     }
   }
-  if (!done) {
-    return "";
-  } else {
-    return limit;
+}
+
+static void StringAppendV(string* dst, const char* format, va_list ap) {
+  // First try with a small fixed size buffer
+  char space[1024];
+
+  // It's possible for methods that use a va_list to invalidate
+  // the data in it upon use.  The fix is to make a copy
+  // of the structure before using it and use that copy instead.
+  va_list backup_ap;
+  va_copy(backup_ap, ap);
+  int result = vsnprintf(space, sizeof(space), format, backup_ap);
+  va_end(backup_ap);
+
+  if ((result >= 0) && (static_cast<size_t>(result) < sizeof(space))) {
+    // It fit
+    dst->append(space, result);
+    return;
   }
+
+  // Repeatedly increase buffer size until it fits
+  int length = sizeof(space);
+  while (true) {
+    if (result < 0) {
+      // Older behavior: just try doubling the buffer size
+      length *= 2;
+    } else {
+      // We need exactly "result+1" characters
+      length = result+1;
+    }
+    char* buf = new char[length];
+
+    // Restore the va_list before we use it again
+    va_copy(backup_ap, ap);
+    result = vsnprintf(buf, length, format, backup_ap);
+    va_end(backup_ap);
+
+    if ((result >= 0) && (result < length)) {
+      // It fit
+      dst->append(buf, result);
+      delete[] buf;
+      return;
+    }
+    delete[] buf;
+  }
+}
+
+string StringPrintf(const char* format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  string result;
+  StringAppendV(&result, format, ap);
+  va_end(ap);
+  return result;
+}
+
+void SStringPrintf(string* dst, const char* format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  dst->clear();
+  StringAppendV(dst, format, ap);
+  va_end(ap);
+}
+
+void StringAppendF(string* dst, const char* format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  StringAppendV(dst, format, ap);
+  va_end(ap);
 }
 
 }  // namespace re2

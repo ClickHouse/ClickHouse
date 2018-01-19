@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#ifndef RE2_FILTERED_RE2_H_
+#define RE2_FILTERED_RE2_H_
+
 // The class FilteredRE2 is used as a wrapper to multiple RE2 regexps.
 // It provides a prefilter mechanism that helps in cutting down the
 // number of regexps that need to be actually searched.
@@ -18,20 +21,19 @@
 // indices of strings that were found in the text to get the actual
 // regexp matches.
 
-#ifndef RE2_FILTERED_RE2_H_
-#define RE2_FILTERED_RE2_H_
-
+#include <string>
 #include <vector>
+
 #include "re2/re2.h"
 
 namespace re2 {
-using std::vector;
 
 class PrefilterTree;
 
 class FilteredRE2 {
  public:
   FilteredRE2();
+  explicit FilteredRE2(int min_atom_len);
   ~FilteredRE2();
 
   // Uses RE2 constructor to create a RE2 object (re). Returns
@@ -47,7 +49,7 @@ class FilteredRE2 {
   // the search text should be lowercased first to find matching
   // strings from the set of strings returned by Compile.  Call after
   // all Add calls are done.
-  void Compile(vector<string>* strings_to_match);
+  void Compile(std::vector<string>* strings_to_match);
 
   // Returns the index of the first matching regexp.
   // Returns -1 on no match. Can be called prior to Compile.
@@ -59,16 +61,24 @@ class FilteredRE2 {
   // Returns -1 on no match. Compile has to be called before
   // calling this.
   int FirstMatch(const StringPiece& text,
-                 const vector<int>& atoms) const;
+                 const std::vector<int>& atoms) const;
 
   // Returns the indices of all matching regexps, after first clearing
   // matched_regexps.
   bool AllMatches(const StringPiece& text,
-                  const vector<int>& atoms,
-                  vector<int>* matching_regexps) const;
+                  const std::vector<int>& atoms,
+                  std::vector<int>* matching_regexps) const;
+
+  // Returns the indices of all potentially matching regexps after first
+  // clearing potential_regexps.
+  // A regexp is potentially matching if it passes the filter.
+  // If a regexp passes the filter it may still not match.
+  // A regexp that does not pass the filter is guaranteed to not match.
+  void AllPotentials(const std::vector<int>& atoms,
+                     std::vector<int>* potential_regexps) const;
 
   // The number of regexps added.
-  int NumRegexps() const { return re2_vec_.size(); }
+  int NumRegexps() const { return static_cast<int>(re2_vec_.size()); }
 
  private:
 
@@ -79,11 +89,11 @@ class FilteredRE2 {
   void PrintPrefilter(int regexpid);
 
   // Useful for testing and debugging.
-  void RegexpsGivenStrings(const vector<int>& matched_atoms,
-                           vector<int>* passed_regexps);
+  void RegexpsGivenStrings(const std::vector<int>& matched_atoms,
+                           std::vector<int>* passed_regexps);
 
   // All the regexps in the FilteredRE2.
-  vector<RE2*> re2_vec_;
+  std::vector<RE2*> re2_vec_;
 
   // Has the FilteredRE2 been compiled using Compile()
   bool compiled_;
@@ -91,9 +101,8 @@ class FilteredRE2 {
   // An AND-OR tree of string atoms used for filtering regexps.
   PrefilterTree* prefilter_tree_;
 
-  //DISALLOW_EVIL_CONSTRUCTORS(FilteredRE2);
-  FilteredRE2(const FilteredRE2&);
-  void operator=(const FilteredRE2&);
+  FilteredRE2(const FilteredRE2&) = delete;
+  FilteredRE2& operator=(const FilteredRE2&) = delete;
 };
 
 }  // namespace re2

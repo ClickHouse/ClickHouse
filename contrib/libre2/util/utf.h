@@ -14,8 +14,9 @@
  * This file and rune.cc have been converted to compile as C++ code
  * in name space re2.
  */
-#ifndef RE2_UTIL_UTF_H__
-#define RE2_UTIL_UTF_H__
+
+#ifndef UTIL_UTF_H_
+#define UTIL_UTF_H_
 
 #include <stdint.h>
 
@@ -40,4 +41,4 @@ char* utfrune(const char*, Rune);
 
 }  // namespace re2
 
-#endif  // RE2_UTIL_UTF_H__
+#endif  // UTIL_UTF_H_
