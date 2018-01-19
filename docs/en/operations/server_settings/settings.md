@@ -449,7 +449,7 @@ Keys for server/client settings:
 - verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Acceptable values: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `` true``, `` false``.  |
-- cipherList - Поддерживаемые OpenSSL-шифры. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
+- cipherList - Supported OpenSSL-ciphers. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
 - cacheSessions – Enables or disables caching sessions. Must be used in combination with ``sessionIdContext``. Acceptable values: `` true``, `` false``.
 - sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended, since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
 - sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
