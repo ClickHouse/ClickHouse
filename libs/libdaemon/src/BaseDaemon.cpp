@@ -591,9 +591,6 @@ void BaseDaemon::buildLoggers()
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    if (config().hasProperty("logger.errorlog"))
-    if (config().hasProperty("logger.log"))
-
     // Split log and error log.
     Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
@@ -656,7 +653,7 @@ void BaseDaemon::buildLoggers()
         syslog_channel->open();
     }
 
-    if (config().getBool("logger.console", false) || isatty(STDIN_FILENO))
+    if (config().getBool("logger.console", false) || (!config().hasProperty("logger.console") && isatty(STDIN_FILENO)))
     {
         Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
