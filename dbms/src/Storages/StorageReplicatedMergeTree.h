@@ -256,7 +256,11 @@ private:
     /// A thread that selects parts to merge.
     std::thread merge_selecting_thread;
     Poco::Event merge_selecting_event;
-    std::mutex merge_selecting_mutex; /// It is taken for each iteration of the selection of parts to merge.
+    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
+    std::mutex merge_selecting_mutex;
+    /// If true then new entries might added to the queue, so we must pull logs before selecting parts for merge.
+    /// Is used only to avoid superfluous pullLogsToQueue() calls
+    bool merge_selecting_logs_pulling_is_required = true;
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
