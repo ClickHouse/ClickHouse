@@ -3,6 +3,7 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/ArraySourceVisitor.h>
 #include <Functions/GatherUtils/ArraySinkVisitor.h>
+#include <Functions/GatherUtils/ValueSourceVisitor.h>
 #include <Core/TypeListNumber.h>
 
 namespace DB::GatherUtils
@@ -75,6 +76,34 @@ struct ArraySinkSelector
     }
 };
 
+
+template <typename Base, typename ... Args>
+struct ValueSourceSelectorVisitor : public ValueSourceVisitorImpl<ValueSourceSelectorVisitor<Base, Args ...>>
+{
+    explicit ValueSourceSelectorVisitor(Args && ... args) : packed_args(args ...) {}
+
+    using Tuple = std::tuple<Args && ...>;
+
+    template <typename Source>
+    void visitImpl(Source & source)
+    {
+        callSelectMemberFunctionWithTupleArgument<Base, Tuple, 0>(packed_args, source);
+    }
+
+    Tuple packed_args;
+};
+
+template <typename Base>
+struct ValueSourceSelector
+{
+    template <typename ... Args>
+    static void select(IValueSource & source, Args && ... args)
+    {
+        ValueSourceSelectorVisitor<Base, Args ...> visitor(args ...);
+        source.accept(visitor);
+    }
+};
+
 template <typename Base>
 struct ArraySinkSourceSelector
 {
@@ -116,6 +145,49 @@ struct ArraySourcePairSelector
     static void selectImpl(SecondSource && second, FirstSource && first, Args && ... args)
     {
         Base::selectSourcePair(first, second, args ...);
+    }
+};
+
+template <typename Base>
+struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValueSourceSelectorBySink<Base>>
+{
+    template <typename Sink, typename ... Args>
+    static void selectImpl(Sink && sink, IArraySource & array_source, IValueSource & value_source, Args && ... args)
+    {
+        using SynkType = typename std::decay<Sink>::type;
+        using ArraySource = typename SynkType::CompatibleArraySource;
+        using ValueSource = typename SynkType::CompatibleValueSource;
+
+        auto checkType = [] (auto source_ptr)
+        {
+            if (source_ptr == nullptr)
+                throw Exception(demangle(typeid(Base).name()) + " expected "
+                            + demangle(typeid(typename SynkType::CompatibleArraySource).name())
+                            + " or " + demangle(typeid(ConstSource<typename SynkType::CompatibleArraySource>).name())
+                            + " or " + demangle(typeid(typename SynkType::CompatibleValueSource).name()) +
+                            + " or " + demangle(typeid(ConstSource<typename SynkType::CompatibleValueSource>).name())
+                            + " but got " + demangle(typeid(*source_ptr).name()), ErrorCodes::LOGICAL_ERROR);
+        };
+        auto checkTypeAndCallConcat = [& sink, & checkType, & args ...] (auto array_source_ptr, auto value_source_ptr)
+        {
+            checkType(array_source_ptr);
+            checkType(value_source_ptr);
+
+            Base::selectArrayAndValueSourceBySink(*array_source_ptr, *value_source_ptr, sink, args ...);
+        };
+
+        if (array_source.isConst() && value_source.isConst())
+            checkTypeAndCallConcat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
+                                   typeid_cast<ConstSource<ValueSource> *>(&value_source));
+        else if(array_source.isConst())
+            checkTypeAndCallConcat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
+                                   typeid_cast<ValueSource *>(&value_source));
+        else if (value_source.isConst())
+            checkTypeAndCallConcat(typeid_cast<ArraySource *>(&array_source),
+                                   typeid_cast<ConstSource<ValueSource> *>(&value_source));
+        else
+            checkTypeAndCallConcat(typeid_cast<ArraySource *>(&array_source),
+                                   typeid_cast<ValueSource *>(&value_source));
     }
 };
 

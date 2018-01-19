@@ -129,7 +129,7 @@ struct ConstSource : public Base
     }
 
     template <typename ColumnType>
-    ConstSource(const ColumnType & col, const ColumnUInt8 & null_map, size_t total_rows) : Base(col, null_map), total_rows(total_rows)
+    ConstSource(const ColumnType & col, const NullMap & null_map, size_t total_rows) : Base(col, null_map), total_rows(total_rows)
     {
     }
 
@@ -486,10 +486,10 @@ struct NullableArraySource : public ArraySource
     using ArraySource::row_num;
     using ArraySource::offsets;
 
-    const ColumnUInt8::Container & null_map;
+    const NullMap & null_map;
 
-    NullableArraySource(const ColumnArray & arr, const ColumnUInt8 & null_map)
-            : ArraySource(arr), null_map(null_map.getData())
+    NullableArraySource(const ColumnArray & arr, const NullMap & null_map)
+            : ArraySource(arr), null_map(null_map)
     {
     }
 
@@ -583,7 +583,7 @@ struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 
     size_t getSizeForReserve() const
     {
-        return 0;   /// Simple numeric columns are resized before fill, no need to reserve.
+        return total_rows;
     }
 
     Slice getWhole() const
@@ -625,7 +625,7 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 
     size_t getSizeForReserve() const
     {
-        return 0;   /// Simple numeric columns are resized before fill, no need to reserve.
+        return total_rows;
     }
 
     Slice getWhole() const
@@ -638,7 +638,7 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 };
 
 template <typename ValueSource>
-struct NullableValueSource : public IValueSource
+struct NullableValueSource : public ValueSource
 {
     using Slice = NullableSlice<typename ValueSource::Slice>;
     using ValueSource::row_num;

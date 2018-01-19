@@ -20,21 +20,15 @@ namespace  DB::GatherUtils
 template <typename T>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 {
-    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
-    if (sink.elements.size() < sink.current_offset + slice.size)
-        sink.elements.resize(sink.current_offset + slice.size);
-    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
-    /// TODO: Implement more efficient memcpy without overflow.
-    memcpy(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
+    sink.elements.resize(sink.current_offset + slice.size);
+    memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
     sink.current_offset += slice.size;
 }
 
 template <typename T, typename U>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
-    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
-    if (sink.elements.size() < sink.current_offset + slice.size)
-        sink.elements.resize(sink.current_offset + slice.size);
+    sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
         sink.elements[sink.current_offset] = slice.data[i];
@@ -70,9 +64,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
 template <typename T>
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, NumericArraySink<T> & sink)
 {
-    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
-    if (sink.elements.size() < sink.current_offset + slice.size)
-        sink.elements.resize(sink.current_offset + slice.size);
+    sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
         Field field;
@@ -96,29 +88,26 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 template <typename Slice, typename ArraySink>
 inline ALWAYS_INLINE void writeSlice(const NullableSlice<Slice> & slice, NullableArraySink<ArraySink> & sink)
 {
-    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
-    if (sink.null_map.size() < sink.current_offset + slice.size)
-        sink.null_map.resize(sink.current_offset + slice.size);
-    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
-    /// TODO: Implement more efficient memcpy without overflow.
+    sink.null_map.resize(sink.current_offset + slice.size);
+
     if (slice.size == 1) /// Always true for ValueSlice.
         sink.null_map[sink.current_offset] = *slice.null_map;
-    memcpy(&sink.null_map[sink.current_offset], slice.null_map, slice.size * sizeof(UInt8));
+    else
+        memcpySmallAllowReadWriteOverflow15(&sink.null_map[sink.current_offset], slice.null_map, slice.size * sizeof(UInt8));
+
     writeSlice(static_cast<const Slice &>(slice), static_cast<ArraySink &>(sink));
 }
 
 template <typename Slice, typename ArraySink>
 inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<ArraySink> & sink)
 {
-    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
-    if (sink.null_map.size() < sink.current_offset + slice.size)
-        sink.null_map.resize(sink.current_offset + slice.size);
-    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
-    /// TODO: Implement more efficient memcpy without overflow.
+    sink.null_map.resize(sink.current_offset + slice.size);
+
     if (slice.size == 1) /// Always true for ValueSlice.
         sink.null_map[sink.current_offset] = 0;
     else
         memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
+
     writeSlice(slice, static_cast<ArraySink &>(sink));
 }
 
@@ -126,10 +115,7 @@ inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<Arra
 template <typename T, typename U>
 void writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
 {
-    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
-    if (sink.elements.size() < sink.current_offset + 1)
-        sink.elements.resize(sink.current_offset + 1);
-
+    sink.elements.resize(sink.current_offset + 1);
     sink.elements[sink.current_offset] = slice.value;
     ++sink.current_offset;
 }
@@ -150,9 +136,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArr
 template <typename T>
 inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, NumericArraySink<T> & sink)
 {
-    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
-    if (sink.elements.size() < sink.current_offset + 1)
-        sink.elements.resize(sink.current_offset + 1);
+    sink.elements.resize(sink.current_offset + 1);
 
     Field field;
     slice.elements->get(slice.position, field);
@@ -526,6 +510,92 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnU
         data[row] = static_cast<UInt8>(sliceHas<all>(first.getWhole(), second.getWhole()) ? 1 : 0);
         first.next();
         second.next();
+    }
+}
+
+template <typename ArraySource, typename ValueSource, typename Sink>
+void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
+{
+    const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
+    const NullMap * size_null_map = size_nullable ? &size_nullable->getNullMapData() : nullptr;
+    const IColumn * size_nested_column = size_nullable ? &size_nullable->getNestedColumn() : &size_column;
+
+    while (!sink.isEnd())
+    {
+        size_t row_num = array_source.rowNum();
+        bool has_size = !size_null_map || (size_null_map && (*size_null_map)[row_num]);
+
+        if (has_size)
+        {
+            auto size = size_nested_column->getInt(row_num);
+            auto array_size = array_source.getElementSize();
+
+            if (size >= 0)
+            {
+                if (array_size <= size)
+                {
+                    writeSlice(array_source.getWhole(), sink);
+                    for (auto i : ext::range(size, array_size))
+                        writeSlice(value_source.getWhole(), sink);
+                }
+                else
+                    writeSlice(array_source.getSliceFromLeft(0, size), sink);
+            }
+            else
+            {
+                if (array_size <= -size)
+                {
+                    for (auto i : ext::range(-size, array_size))
+                        writeSlice(value_source.getWhole(), sink);
+                    writeSlice(array_source.getWhole(), sink);
+                }
+                else
+                    writeSlice(array_source.getSliceFromLeft(0, -size), sink);
+            }
+        }
+        else
+            writeSlice(array_source.getWhole(), sink);
+
+        value_source.next();
+        array_source.next();
+        sink.next();
+    }
+}
+
+template <typename ArraySource, typename ValueSource, typename Sink>
+void resizeConstantSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const ssize_t size)
+{
+    while (!sink.isEnd())
+    {
+        size_t row_num = array_source.rowNum();
+        auto array_size = array_source.getElementSize();
+
+        if (size >= 0)
+        {
+            if (array_size <= size)
+            {
+                writeSlice(array_source.getWhole(), sink);
+                for (auto i : ext::range(size, array_size))
+                    writeSlice(value_source.getWhole(), sink);
+            }
+            else
+                writeSlice(array_source.getSliceFromLeft(0, size), sink);
+        }
+        else
+        {
+            if (array_size <= -size)
+            {
+                for (auto i : ext::range(-size, array_size))
+                    writeSlice(value_source.getWhole(), sink);
+                writeSlice(array_source.getWhole(), sink);
+            }
+            else
+                writeSlice(array_source.getSliceFromLeft(0, -size), sink);
+        }
+
+        value_source.next();
+        array_source.next();
+        sink.next();
     }
 }
 

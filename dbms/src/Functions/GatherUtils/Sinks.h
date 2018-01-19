@@ -15,8 +15,27 @@ namespace DB::GatherUtils
 {
 
 template <typename T>
+struct NumericArraySource;
+
+struct GenericArraySource;
+
+template <typename ArraySource>
+struct NullableArraySource;
+
+template <typename T>
+struct NumericValueSource;
+
+struct GenericValueSource;
+
+template <typename ArraySource>
+struct NullableValueSource;
+
+template <typename T>
 struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
 {
+    using CompatibleArraySource = NumericArraySource<T>;
+    using CompatibleValueSource = NumericValueSource<T>;
+
     typename ColumnVector<T>::Container & elements;
     typename ColumnArray::Offsets & offsets;
 
@@ -131,6 +150,9 @@ struct FixedStringSink
 
 struct GenericArraySink : public ArraySinkImpl<GenericArraySink>
 {
+    using CompatibleArraySource = GenericArraySource;
+    using CompatibleValueSource = GenericValueSource;
+
     IColumn & elements;
     ColumnArray::Offsets & offsets;
 
@@ -169,10 +191,13 @@ struct GenericArraySink : public ArraySinkImpl<GenericArraySink>
 template <typename ArraySink>
 struct NullableArraySink : public ArraySink
 {
-    ColumnUInt8::Container & null_map;
+    using CompatibleArraySource = NullableArraySource<typename ArraySink::CompatibleArraySource>;
+    using CompatibleValueSource = NullableValueSource<typename ArraySink::CompatibleValueSource>;
 
-    NullableArraySink(ColumnArray & arr, ColumnUInt8 & null_map, size_t column_size)
-            : ArraySink(arr, column_size), null_map(null_map.getData())
+    NullMap & null_map;
+
+    NullableArraySink(ColumnArray & arr, NullMap & null_map, size_t column_size)
+            : ArraySink(arr, column_size), null_map(null_map)
     {
     }
 

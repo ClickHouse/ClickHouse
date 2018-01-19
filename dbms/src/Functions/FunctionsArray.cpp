@@ -2726,7 +2726,8 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     if (!block.getByPosition(arguments[1]).type->equals(*return_nested_type))
         appended_column = castColumn(block.getByPosition(arguments[1]), return_nested_type, context);
 
-    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+    std::unique_ptr<GatherUtils::IArraySource> array_source;
+    std::unique_ptr<GatherUtils::IValueSource> value_source;
 
     size_t size = array_column->size();
     bool is_const = false;
@@ -2738,7 +2739,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     }
 
     if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
-        sources.push_back(GatherUtils::createArraySource(*argument_column_array, is_const, size));
+        array_source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
     else
         throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
@@ -2750,18 +2751,11 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
         appended_column = const_appended_column->getDataColumnPtr();
     }
 
-    auto offsets = ColumnArray::ColumnOffsets::create(appended_column->size());
-    for (size_t i : ext::range(0, offsets->size()))
-        offsets->getElement(i) = i + 1;
-
-    ColumnArray::Ptr appended_array_column = ColumnArray::create(appended_column, std::move(offsets));
-    sources.push_back(GatherUtils::createArraySource(*appended_array_column, is_appended_const, size));
+    value_source = GatherUtils::createValueSource(*appended_column, is_appended_const, size);
 
     auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
-    if (push_front)
-        sources[0].swap(sources[1]);
-    GatherUtils::concat(sources, *sink);
+    GatherUtils::push(*array_source, *value_source, *sink, push_front);
 
     block.getByPosition(result).column = std::move(result_column);
 }

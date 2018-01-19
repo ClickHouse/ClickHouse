@@ -4,7 +4,7 @@
 
 namespace DB::GatherUtils
 {
-/// Creates IArraySource from ColumnArray
+/// Creates IValueSource from Column
 
 template <typename... Types>
 struct ValueSourceCreator;
@@ -12,7 +12,7 @@ struct ValueSourceCreator;
 template <typename Type, typename... Types>
 struct ValueSourceCreator<Type, Types...>
 {
-    static std::unique_ptr<IValueSource> create(const IColumn & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
+    static std::unique_ptr<IValueSource> create(const IColumn & col, const NullMap * null_map, bool is_const, size_t total_rows)
     {
         if (auto column_vector = typeid_cast<const ColumnVector<Type> *>(&col))
         {
@@ -23,8 +23,8 @@ struct ValueSourceCreator<Type, Types...>
                 return std::make_unique<NullableValueSource<NumericValueSource<Type>>>(*column_vector, *null_map);
             }
             if (is_const)
-                return std::make_unique<ConstSource<NullableValueSource<Type>>>(*column_vector, total_rows);
-            return std::make_unique<NumericArraySource<Type>>(*column_vector);
+                return std::make_unique<ConstSource<NumericValueSource<Type>>>(*column_vector, total_rows);
+            return std::make_unique<NumericValueSource<Type>>(*column_vector);
         }
 
         return ValueSourceCreator<Types...>::create(col, null_map, is_const, total_rows);
@@ -34,7 +34,7 @@ struct ValueSourceCreator<Type, Types...>
 template <>
 struct ValueSourceCreator<>
 {
-    static std::unique_ptr<IValueSource> create(const IColumn & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
+    static std::unique_ptr<IValueSource> create(const IColumn & col, const NullMap * null_map, bool is_const, size_t total_rows)
     {
         if (null_map)
         {
@@ -48,12 +48,12 @@ struct ValueSourceCreator<>
     }
 };
 
-std::unique_ptr<IArraySource> createValueSource(const IColumn & col, bool is_const, size_t total_rows)
+std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows)
 {
     using Creator = typename ApplyTypeListForClass<ValueSourceCreator, TypeListNumbers>::Type;
     if (auto column_nullable = typeid_cast<const ColumnNullable *>(&col))
     {
-        return Creator::create(column_nullable->getNestedColumn(), &column_nullable->getNullMapColumn(), is_const, total_rows);
+        return Creator::create(column_nullable->getNestedColumn(), &column_nullable->getNullMapData(), is_const, total_rows);
     }
     return Creator::create(col, nullptr, is_const, total_rows);
 }
