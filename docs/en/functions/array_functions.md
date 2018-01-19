@@ -39,7 +39,7 @@ Accepts an empty array and returns a one-element array that is equal to the defa
 Returns an array of numbers from 0 to N-1.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
-## array(x1, ...), оператор \[x1, ...\]
+## array(x1, ...), operator \[x1, ...\]
 
 Creates an array from the function arguments.
 The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn't clear which type of array to create. That is, you can't use this function to create an empty array (to do that, use the 'emptyArray\*' function described above).
