@@ -19,7 +19,7 @@ if [ "$1" = configure ]; then
         /bin/systemctl daemon-reload
         /bin/systemctl enable clickhouse-server
     else
-        # If you downgrading to version older 1.1.54337 run: systemctl disable clickhouse-server
+        # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
         if [ -x "/etc/init.d/clickhouse-server" ]; then
             update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
         fi
@@ -72,7 +72,6 @@ Please fix this and reinstall this package." >&2
         # only for compatibility for old metrika user, remove string after 2017-06-01
         su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R ug+rw ${CLICKHOUSE_LOGDIR}
     fi
-
 
     # Clean old dynamic compilation results
     if [ -d "${CLICKHOUSE_DATADIR}/build" ]; then
