@@ -93,29 +93,81 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
     sink.current_offset += slice.size;
 }
 
-template <typename ArraySlice, typename ArraySink>
-inline ALWAYS_INLINE void writeSlice(const NullableArraySlice<ArraySlice> & slice, NullableArraySink<ArraySink> & sink)
+template <typename Slice, typename ArraySink>
+inline ALWAYS_INLINE void writeSlice(const NullableSlice<Slice> & slice, NullableArraySink<ArraySink> & sink)
 {
     /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
     if (sink.null_map.size() < sink.current_offset + slice.size)
         sink.null_map.resize(sink.current_offset + slice.size);
     /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
     /// TODO: Implement more efficient memcpy without overflow.
+    if (slice.size == 1) /// Always true for ValueSlice.
+        sink.null_map[sink.current_offset] = *slice.null_map;
     memcpy(&sink.null_map[sink.current_offset], slice.null_map, slice.size * sizeof(UInt8));
-    writeSlice(static_cast<const ArraySlice &>(slice), static_cast<ArraySink &>(sink));
+    writeSlice(static_cast<const Slice &>(slice), static_cast<ArraySink &>(sink));
 }
 
-template <typename ArraySlice, typename ArraySink>
-inline ALWAYS_INLINE void writeSlice(const ArraySlice & slice, NullableArraySink<ArraySink> & sink)
+template <typename Slice, typename ArraySink>
+inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<ArraySink> & sink)
 {
     /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
     if (sink.null_map.size() < sink.current_offset + slice.size)
         sink.null_map.resize(sink.current_offset + slice.size);
     /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
     /// TODO: Implement more efficient memcpy without overflow.
-    memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
+    if (slice.size == 1) /// Always true for ValueSlice.
+        sink.null_map[sink.current_offset] = 0;
+    else
+        memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
     writeSlice(slice, static_cast<ArraySink &>(sink));
 }
+
+
+template <typename T, typename U>
+void writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
+{
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
+    if (sink.elements.size() < sink.current_offset + 1)
+        sink.elements.resize(sink.current_offset + 1);
+
+    sink.elements[sink.current_offset] = slice.value;
+    ++sink.current_offset;
+}
+
+/// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericValueSlice, GenericArraySink).
+inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArraySink & sink)
+{
+    if (typeid(slice.elements) == typeid(static_cast<const IColumn *>(&sink.elements)))
+    {
+        sink.elements.insertFrom(*slice.elements, slice.position);
+        ++sink.current_offset;
+    }
+    else
+        throw Exception("Function writeSlice expect same column types for GenericValueSlice and GenericArraySink.",
+                        ErrorCodes::LOGICAL_ERROR);
+}
+
+template <typename T>
+inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, NumericArraySink<T> & sink)
+{
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
+    if (sink.elements.size() < sink.current_offset + 1)
+        sink.elements.resize(sink.current_offset + 1);
+
+    Field field;
+    slice.elements->get(slice.position, field);
+    sink.elements.push_back(applyVisitor(FieldVisitorConvertToNumber<T>(), field));
+    ++sink.current_offset;
+}
+
+template <typename T>
+inline ALWAYS_INLINE void writeSlice(const NumericValueSlice<T> & slice, GenericArraySink & sink)
+{
+    Field field = static_cast<typename NearestFieldType<T>::Type>(slice.value);
+    sink.elements.insert(field);
+    ++sink.current_offset;
+}
+
 
 
 template <typename SourceA, typename SourceB, typename Sink>
@@ -131,6 +183,54 @@ void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
         sink.next();
         src_a.next();
         src_b.next();
+    }
+}
+
+template <typename Source, typename Sink>
+void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Sink && sink)
+{
+    size_t sources_num = array_sources.size();
+    std::vector<char> is_const(sources_num);
+
+    auto checkAndGetSizeToReserve = [] (auto source, IArraySource * array_source)
+    {
+        if (source == nullptr)
+            throw Exception("Concat function expected " + demangle(typeid(Source).name()) + " or "
+                            + demangle(typeid(ConstSource<Source>).name()) + " but got "
+                            + demangle(typeid(*array_source).name()), ErrorCodes::LOGICAL_ERROR);
+        return source->getSizeForReserve();
+    };
+
+    size_t size_to_reserve = 0;
+    for (auto i : ext::range(0, sources_num))
+    {
+        auto & source = array_sources[i];
+        is_const[i] = source->isConst();
+        if (is_const[i])
+            size_to_reserve += checkAndGetSizeToReserve(typeid_cast<ConstSource<Source> *>(source.get()), source.get());
+        else
+            size_to_reserve += checkAndGetSizeToReserve(typeid_cast<Source *>(source.get()), source.get());
+    }
+
+    sink.reserve(size_to_reserve);
+
+    auto writeNext = [& sink] (auto source)
+    {
+        writeSlice(source->getWhole(), sink);
+        source->next();
+    };
+
+    while (!sink.isEnd())
+    {
+        for (auto i : ext::range(0, sources_num))
+        {
+            auto & source = array_sources[i];
+            if (is_const[i])
+                writeNext(static_cast<ConstSource<Source> *>(source.get()));
+            else
+                writeNext(static_cast<Source *>(source.get()));
+        }
+        sink.next();
     }
 }
 
@@ -396,21 +496,21 @@ bool sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & 
 }
 
 template <bool all, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const FirstArraySlice & first, NullableArraySlice<SecondArraySlice> & second)
+bool sliceHas(const FirstArraySlice & first, NullableSlice<SecondArraySlice> & second)
 {
     auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
     return impl(first, second, nullptr, second.null_map);
 }
 
 template <bool all, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableArraySlice<FirstArraySlice> & first, SecondArraySlice & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, SecondArraySlice & second)
 {
     auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
     return impl(first, second, first.null_map, nullptr);
 }
 
 template <bool all, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableArraySlice<FirstArraySlice> & first, NullableArraySlice<SecondArraySlice> & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<SecondArraySlice> & second)
 {
     auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
     return impl(first, second, first.null_map, second.null_map);
