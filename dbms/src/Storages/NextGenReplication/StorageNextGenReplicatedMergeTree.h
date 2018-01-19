@@ -106,23 +106,63 @@ private:
 
     struct Part
     {
-        enum class State
+        MergeTreePartInfo info;
+        String name;
+
+        MergeTreeData::DataPartPtr local_part = nullptr;
+
+        enum class ZKState
         {
             Ephemeral,
             Virtual,
-            Preparing,
-            Prepared,
             MaybeCommitted,
             Committed,
-            Outdated,
-            Deleting,
+            /// TODO: deleting states
         };
 
-        MergeTreePartInfo info;
-        String name;
-        State state;
+        ZKState zk_state;
+
+        std::atomic<bool> in_progress = false;
+
+        Part(MergeTreePartInfo info_, String name_, ZKState zk_state_)
+            : info(std::move(info_))
+            , name(std::move(name_))
+            , zk_state(zk_state_)
+        {
+        }
+
+        Part(const MergeTreeData::DataPartPtr & existing_part, ZKState zk_state_)
+            : info(existing_part->info)
+            , name(existing_part->name)
+            , local_part(existing_part)
+            , zk_state(zk_state_)
+        {
+        }
+
+        struct InProgressGuard
+        {
+            Part * parent = nullptr;
+
+            void set(Part & parent_)
+            {
+                parent = &parent_;
+                parent->in_progress = true;
+            }
+            void reset()
+            {
+                if (parent)
+                {
+                    parent->in_progress = false;
+                    parent = nullptr;
+                }
+            }
+
+            InProgressGuard() = default;
+            InProgressGuard(Part & parent_) { set(parent_); }
+            ~InProgressGuard() { reset(); }
+        };
     };
-    friend bool operator<(Part::State, Part::State);
+    friend bool operator<(Part::ZKState, Part::ZKState);
 
     mutable std::mutex parts_mutex;
     std::map<MergeTreePartInfo, Part> parts;
@@ -148,7 +188,9 @@ private:
     friend class NextGenReplicatedBlockOutputStream;
 };
 
-inline bool operator<(StorageNextGenReplicatedMergeTree::Part::State left, StorageNextGenReplicatedMergeTree::Part::State right)
+inline bool operator<(
+    StorageNextGenReplicatedMergeTree::Part::ZKState left,
+    StorageNextGenReplicatedMergeTree::Part::ZKState right)
 {
     return static_cast<int>(left) < static_cast<int>(right);
 }

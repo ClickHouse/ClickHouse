@@ -365,6 +365,13 @@ public:
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertIfNeeded(Poco::Event * until = nullptr);
 
+    /// Add a prepared part and check that it is not obsolete (if it is, return nullptr).
+    /// TODO: does it make sense to leave an obsolete part? Ask.
+    DataPartPtr addPreCommittedPart(MutableDataPartPtr & part);
+    void removePreCommittedPart(const DataPartPtr & precommitted_part);
+    /// Returns true if the part is not obsolete.
+    bool commitPart(const DataPartPtr & precommitted_part);
+
     /// Renames temporary part to a permanent part and adds it to the working set.
     /// If increment != nullptr, part index is determing using increment. Otherwise part index remains unchanged.
     /// It is assumed that the part does not intersect with existing parts.

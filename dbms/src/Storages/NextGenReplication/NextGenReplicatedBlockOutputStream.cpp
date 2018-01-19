@@ -59,23 +59,40 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
         else
             part->name = part->info.getPartName();
 
-        Part * inserted_part = nullptr;
+        Part::InProgressGuard inserted_part;
         {
             std::lock_guard<std::mutex> lock(storage.parts_mutex);
-            auto insertion = storage.parts.emplace(
-                part->info, Part{part->info, part->name, Part::State::Ephemeral});
-            inserted_part = &insertion.first->second;
-            if (!insertion.second && inserted_part->state != Part::State::Ephemeral)
+
+            auto insertion = storage.parts.emplace(std::piecewise_construct,
+                std::forward_as_tuple(part->info),
+                std::forward_as_tuple(part->info, part->name, Part::ZKState::Ephemeral));
+
+            if (!insertion.second && insertion.first->second.zk_state != Part::ZKState::Ephemeral)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
             /// TODO check covering and covered parts;
+
+            inserted_part.set(insertion.first->second);
         }
 
-        MergeTreeData::Transaction transaction;
         {
             std::lock_guard<std::mutex> lock(storage.parts_mutex);
-            storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
-            inserted_part->state = Part::State::Prepared;
+            inserted_part.parent->local_part = storage.data.addPreCommittedPart(part);
+            if (!inserted_part.parent->local_part)
+                throw Exception("Part " + part->name + " is obsolete immediately after insertion.",
+                    ErrorCodes::LOGICAL_ERROR);
         }
+
+        SCOPE_EXIT(
+        {
+            if (inserted_part.parent)
+            {
+                std::lock_guard<std::mutex> lock(storage.parts_mutex);
+                storage.data.removePreCommittedPart(inserted_part.parent->local_part);
+                MergeTreePartInfo part_info = inserted_part.parent->info;
+                storage.parts.erase(part_info);
+                inserted_part.parent = nullptr;
+            }
+        });
 
         String part_path = parts_path + "/" + part->name;
 
@@ -112,17 +129,13 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
             {
                 {
                     std::lock_guard<std::mutex> lock(storage.parts_mutex);
-                    inserted_part->state = Part::State::MaybeCommitted;
-                    transaction.commit();
+                    storage.data.commitPart(inserted_part.parent->local_part);
+                    inserted_part.parent->zk_state = Part::ZKState::MaybeCommitted;
+                    inserted_part.reset();
                 }
 
                 throw Exception("Unknown status, client must retry. Reason: " + e.displayText(),
                     ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(storage.parts_mutex);
-                inserted_part->state = Part::State::Outdated;
             }
 
             throw;
@@ -130,13 +143,13 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
 
         {
             std::lock_guard<std::mutex> lock(storage.parts_mutex);
-            inserted_part->state = Part::State::Committed;
-            transaction.commit();
+            storage.data.commitPart(inserted_part.parent->local_part);
+            inserted_part.parent->zk_state = Part::ZKState::Committed;
+            inserted_part.reset();
         }
-        /// TODO: here we have no guarantee that there isn't any ephemeral part between the part that was
-        /// just inserted and the other parts. So we can schedule an incorrect merge.
-        /// Solution: store the max LSN seen by the part_set_updating_thread and don't schedule merges with
-        /// parts that are more recent than that LSN.
+
+        /// TODO: This may not be a good time to invoke merge selector because there may be ephemeral nodes
+        /// with earlier block num than the one currently inserted that we know nothing about.
         storage.merge_selecting_event->set();
 
         PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed());
