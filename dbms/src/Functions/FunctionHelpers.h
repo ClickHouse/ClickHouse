@@ -89,10 +89,10 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column);
 /// Returns the copy of a given block in which each column specified in
 /// the "arguments" parameter is replaced with its respective nested
 /// column if it is nullable.
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args);
 
 /// Similar function as above. Additionally transform the result type if needed.
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
 
 }
