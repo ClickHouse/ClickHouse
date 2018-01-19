@@ -65,6 +65,7 @@ generate_function_register(Array
   FunctionArrayHasAll
   FunctionArrayHasAny
   FunctionArrayIntersect
+  FunctionArrayResize
 )
 
 

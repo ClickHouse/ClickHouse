@@ -532,25 +532,27 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
 
             if (size >= 0)
             {
-                if (array_size <= size)
+                auto length = static_cast<size_t>(size);
+                if (array_size <= length)
                 {
                     writeSlice(array_source.getWhole(), sink);
-                    for (auto i : ext::range(size, array_size))
+                    for (size_t i = array_size; i < length; ++i)
                         writeSlice(value_source.getWhole(), sink);
                 }
                 else
-                    writeSlice(array_source.getSliceFromLeft(0, size), sink);
+                    writeSlice(array_source.getSliceFromLeft(0, length), sink);
             }
             else
             {
-                if (array_size <= -size)
+                auto length = static_cast<size_t>(-size);
+                if (array_size <= length)
                 {
-                    for (auto i : ext::range(-size, array_size))
+                    for (size_t i = array_size; i < length; ++i)
                         writeSlice(value_source.getWhole(), sink);
                     writeSlice(array_source.getWhole(), sink);
                 }
                 else
-                    writeSlice(array_source.getSliceFromLeft(0, -size), sink);
+                    writeSlice(array_source.getSliceFromRight(length, length), sink);
             }
         }
         else
@@ -567,30 +569,31 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 {
     while (!sink.isEnd())
     {
-        size_t row_num = array_source.rowNum();
         auto array_size = array_source.getElementSize();
 
         if (size >= 0)
         {
-            if (array_size <= size)
+            auto length = static_cast<size_t>(size);
+            if (array_size <= length)
             {
                 writeSlice(array_source.getWhole(), sink);
-                for (auto i : ext::range(size, array_size))
+                for (size_t i = array_size; i < length; ++i)
                     writeSlice(value_source.getWhole(), sink);
             }
             else
-                writeSlice(array_source.getSliceFromLeft(0, size), sink);
+                writeSlice(array_source.getSliceFromLeft(0, length), sink);
         }
         else
         {
-            if (array_size <= -size)
+            auto length = static_cast<size_t>(-size);
+            if (array_size <= length)
             {
-                for (auto i : ext::range(-size, array_size))
+                for (size_t i = array_size; i < length; ++i)
                     writeSlice(value_source.getWhole(), sink);
                 writeSlice(array_source.getWhole(), sink);
             }
             else
-                writeSlice(array_source.getSliceFromLeft(0, -size), sink);
+                writeSlice(array_source.getSliceFromRight(length, length), sink);
         }
 
         value_source.next();
