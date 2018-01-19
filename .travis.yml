@@ -15,7 +15,7 @@ matrix:
           packages: [ g++-7,            libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo ]
 
       env:
-        - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
+        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
 
       script:
         - utils/travis/normal.sh
@@ -36,7 +36,7 @@ matrix:
           packages: [ g++-7, clang-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo ]
 
       env:
-        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0"
+        - MATRIX_EVAL="export CC=clang-5.0 && export CXX=clang++-5.0"
 
       script:
         - utils/travis/normal.sh
@@ -56,7 +56,7 @@ matrix:
           packages: [ pbuilder, fakeroot, debhelper ]
 
       env:
-        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0"
+        - MATRIX_EVAL="export CC=clang-5.0 && export CXX=clang++-5.0"
 
       script:
         - utils/travis/pbuilder.sh
@@ -74,7 +74,7 @@ matrix:
         - brew link --overwrite gcc || true
 
       env:
-        - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
+        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
 
       script:
         - utils/travis/normal.sh
