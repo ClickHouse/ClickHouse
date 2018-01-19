@@ -12,6 +12,7 @@ if [ "$1" = configure ]; then
         # if old r.cd service present - remove it
         if [ -x "/etc/init.d/clickhouse-server" ]; then
             update-rc.d clickhouse-server remove
+            chmod -x /etc/init.d/clickhouse-server
             echo "Clickhouse init script migrated to systemd. Please manually stop old server and restart service: killall clickhouse-server && service clickhouse-server restart"
         fi
 
