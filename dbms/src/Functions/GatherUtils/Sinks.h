@@ -15,8 +15,27 @@ namespace DB::GatherUtils
 {
 
 template <typename T>
-struct NumericArraySink : public IArraySink
+struct NumericArraySource;
+
+struct GenericArraySource;
+
+template <typename ArraySource>
+struct NullableArraySource;
+
+template <typename T>
+struct NumericValueSource;
+
+struct GenericValueSource;
+
+template <typename ArraySource>
+struct NullableValueSource;
+
+template <typename T>
+struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
 {
+    using CompatibleArraySource = NumericArraySource<T>;
+    using CompatibleValueSource = NumericValueSource<T>;
+
     typename ColumnVector<T>::Container & elements;
     typename ColumnArray::Offsets & offsets;
 
@@ -129,8 +148,11 @@ struct FixedStringSink
 };
 
 
-struct GenericArraySink : public IArraySink
+struct GenericArraySink : public ArraySinkImpl<GenericArraySink>
 {
+    using CompatibleArraySource = GenericArraySource;
+    using CompatibleValueSource = GenericValueSource;
+
     IColumn & elements;
     ColumnArray::Offsets & offsets;
 
@@ -169,12 +191,17 @@ struct GenericArraySink : public IArraySink
 template <typename ArraySink>
 struct NullableArraySink : public ArraySink
 {
-    ColumnUInt8::Container & null_map;
+    using CompatibleArraySource = NullableArraySource<typename ArraySink::CompatibleArraySource>;
+    using CompatibleValueSource = NullableValueSource<typename ArraySink::CompatibleValueSource>;
 
-    NullableArraySink(ColumnArray & arr, ColumnUInt8 & null_map, size_t column_size)
-            : ArraySink(arr, column_size), null_map(null_map.getData())
+    NullMap & null_map;
+
+    NullableArraySink(ColumnArray & arr, NullMap & null_map, size_t column_size)
+            : ArraySink(arr, column_size), null_map(null_map)
     {
     }
+
+    void accept(ArraySinkVisitor & visitor) override { visitor.visit(*this); }
 
     void reserve(size_t num_elements)
     {
@@ -183,41 +210,5 @@ struct NullableArraySink : public ArraySink
     }
 };
 
-
-template <typename T>
-struct NumericSink
-{
-    T * begin;
-    T * pos;
-    T * end;
-
-    NumericSink(ColumnVector<T> & col, size_t column_size)
-    {
-        auto & container = col.getData();
-        container.resize(column_size);
-        begin = container.data();
-        pos = begin;
-        end = begin + container.size();
-    }
-
-    void next()
-    {
-        ++pos;
-    }
-
-    bool isEnd() const
-    {
-        return pos == end;
-    }
-
-    size_t rowNum() const
-    {
-        return pos - begin;
-    }
-
-    void reserve(size_t /*num_elements*/)
-    {
-    }
-};
 
 }

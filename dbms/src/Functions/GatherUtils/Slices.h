@@ -20,16 +20,27 @@ struct GenericArraySlice
 };
 
 template <typename Slice>
-struct NullableArraySlice : public Slice
+struct NullableSlice : public Slice
 {
     const UInt8 * null_map = nullptr;
 
-    NullableArraySlice() = default;
-    NullableArraySlice(const Slice & base) : Slice(base) {}
+    NullableSlice() = default;
+    NullableSlice(const Slice & base) : Slice(base) {}
 };
 
 template <typename T>
-using NumericSlice = const T *;
+struct NumericValueSlice
+{
+    T value;
+    static constexpr size_t size = 1;
+};
+
+struct GenericValueSlice
+{
+    const IColumn * elements;
+    size_t position;
+    static constexpr size_t size = 1;
+};
 
 }
 
