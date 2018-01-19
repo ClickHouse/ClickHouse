@@ -655,7 +655,7 @@ void BaseDaemon::buildLoggers()
         syslog_channel->open();
     }
 
-    if (config().getBool("logger.console", false) || (!config().hasProperty("logger.console") && !is_daemon && isatty(STDIN_FILENO)))
+    if (config().getBool("logger.console", false) || (!config().hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
     {
         Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
