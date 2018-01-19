@@ -1602,7 +1602,8 @@ namespace
 
             if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
             {
-                if (out_reason) *out_reason = "Quorum status condition is unsatisfied";
+                if (out_reason)
+                    *out_reason = "Quorum status condition is unsatisfied";
                 return false;
             }
         }
@@ -1619,7 +1620,8 @@ namespace
 
             if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
             {
-                if (out_reason) *out_reason = "Quorum 'last part' condition is unsatisfied";
+                if (out_reason) 
+                    *out_reason = "Quorum 'last part' condition is unsatisfied";
                 return false;
             }
         }
