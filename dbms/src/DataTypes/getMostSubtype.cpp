@@ -203,7 +203,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     /// Non-recursive rules
 
     /// For String and FixedString, the common type is FixedString.
-    /// For for different FixedStrings, the common type is Nothing.
+    /// For different FixedStrings, the common type is Nothing.
     /// No other types are compatible with Strings. TODO Enums?
     {
         bool have_string = false;
