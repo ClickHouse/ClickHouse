@@ -9,7 +9,7 @@ CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 
 if [ "$1" = configure ]; then
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
-        # if old r.cd service present - remove it
+        # if old rc.d service present - remove it
         if [ -x "/etc/init.d/clickhouse-server" ]; then
             update-rc.d clickhouse-server remove
             chmod -x /etc/init.d/clickhouse-server
