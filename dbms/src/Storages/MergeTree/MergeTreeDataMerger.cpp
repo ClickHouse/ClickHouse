@@ -157,7 +157,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
     if (data_parts.empty())
     {
-        if (out_disable_reason) *out_disable_reason = "There are no parts in the table";
+        if (out_disable_reason)
+            *out_disable_reason = "There are no parts in the table";
         return false;
     }
 
@@ -210,7 +211,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
     if (parts_to_merge.empty())
     {
-        if (out_disable_reason) *out_disable_reason = "There are no need to merge parts according to merge selector algorithm";
+        if (out_disable_reason)
+            *out_disable_reason = "There are no need to merge parts according to merge selector algorithm";
         return false;
     }
 
@@ -246,7 +248,8 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
 
     if (!final && parts.size() == 1)
     {
-        if (out_disable_reason) *out_disable_reason = "There is only one part inside partition";
+        if (out_disable_reason)
+            *out_disable_reason = "There is only one part inside partition";
         return false;
     }
 
@@ -286,7 +289,8 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
                 << "% on overhead); suppressing similar warnings for the next hour");
         }
 
-        if (out_disable_reason) *out_disable_reason = "Insufficient available disk space, required " +
+        if (out_disable_reason)
+            *out_disable_reason = "Insufficient available disk space, required " +
                 formatReadableSizeWithDecimalSuffix(required_disk_space);
 
         return false;
