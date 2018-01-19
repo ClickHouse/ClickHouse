@@ -660,7 +660,7 @@ void BaseDaemon::buildLoggers()
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log->setChannel(file);
-
+        logger().warning("Logging to console");
         split->addChannel(log);
     }
 
