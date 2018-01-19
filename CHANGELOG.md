@@ -14,7 +14,7 @@
 * Added the `system.models` table with information about loaded `CatBoost` machine learning models.
 * Added the `mysql` and `odbc` table functions along with the corresponding `MySQL` and `ODBC` table engines for working with foreign databases. This feature is in the beta stage.
 * Added the possibility to pass an argument of type `AggregateFunction` for the `groupArray` aggregate function (so you can create an array of states of some aggregate function).
-* Removed restrictions on various combinations of aggregate function combinators. For example, you can use `avgForEachIf` as well as `avgIfForEach` aggregate functions that have different behaviors.
+* Removed restrictions on various combinations of aggregate function combinators. For example, you can use `avgForEachIf` as well as `avgIfForEach` aggregate functions, which have different behaviors.
 * The `-ForEach` aggregate function combinator is extended for the case of aggregate functions of multiple arguments.
 * Added support for aggregate functions of `Nullable` arguments even for cases when the function returns a non-`Nullable` result (added with the contribution of Silviu Caragea). Examples: `groupArray`, `groupUniqArray`, `topK`.
 * Added the `max_client_network_bandwidth` command line parameter for `clickhouse-client` (Kirill Shvakov).
@@ -32,12 +32,12 @@
 
 ## Performance optimizations:
 
-* Improved performance of `min`, `max`, `any`, `anyLast`, `anyHeavy`, `argMin`, `argMax` aggregate functions for a String argument.
+* Improved performance of `min`, `max`, `any`, `anyLast`, `anyHeavy`, `argMin`, `argMax` aggregate functions for String arguments.
 * Improved performance of `isInfinite`, `isFinite`, `isNaN`, `roundToExp2` functions.
 * Improved performance of parsing and formatting values of type `Date` and `DateTime` in text formats.
 * Improved performance and precision of parsing floating point numbers.
-* Lowered memory usage for `JOIN` in the case when the left and right hands have columns with identical names that are not contained in `USING`.
-* Improved performance of `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, `corr` aggregate functions in terms of the cost of reducing computational stability. The old functions are available under the names: `varSampStable`, `varPopStable`, `stddevSampStable`, `stddevPopStable`, `covarSampStable`, `covarPopStable`, `corrStable`.
+* Lowered memory usage for `JOIN` in the case when the left and right parts have columns with identical names that are not contained in `USING`.
+* Improved performance of `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, and `corr` aggregate functions by reducing computational stability. The old functions are available under the names: `varSampStable`, `varPopStable`, `stddevSampStable`, `stddevPopStable`, `covarSampStable`, `covarPopStable`, `corrStable`.
 
 ## Bug fixes:
 
@@ -45,16 +45,16 @@
 * Fixed a bug that could lead to incorrect interpretation of the `WHERE` clause for `CREATE MATERIALIZED VIEW` queries with `POPULATE`.
 * Fixed a bug in using the `root_path` parameter in the `zookeeper_servers` configuration.
 * Fixed unexpected results of passing the `Date` argument to `toStartOfDay`.
-* Fixed the arithmetic of the `addMonths`, `subtractMonths` and `INTERVAL n MONTH` functions in cases when the result has a year that is earlier than in the argument.
+* Fixed the `addMonths` and `subtractMonths` functions and the arithmetic for `INTERVAL n MONTH` in cases when the result has the previous year.
 * Added missing support for the `UUID` data type for `DISTINCT`, `JOIN`, and `uniq` aggregate functions and external dictionaries (Evgeniy Ivanov). Support for `UUID` is still incomplete.
-* Fixed `SummingMergeTree` behavior in cases of rows summed to zero.
+* Fixed `SummingMergeTree` behavior in cases when the rows summed to zero.
 * Various fixes for the `Kafka` engine (Marek Vavruša).
-* Fixed incorrect behaviour of the `Join` table engine (Amos Bird).
+* Fixed incorrect behavior of the `Join` table engine (Amos Bird).
 * Fixed incorrect allocator behavior under FreeBSD and OS X.
 * The `extractAll` function now supports empty matches.
 * Fixed an error that blocked usage of `libressl` instead of `openssl`.
 * Fixed the `CREATE TABLE AS SELECT` query from temporary tables.
-* Fixed non-atomicity of updating the replication queue. This could lead to desync of replicas until the server restarts.
+* Fixed non-atomicity of updating the replication queue. This could lead to replicas being out of sync until the server restarts.
 * Fixed possible overflow in `gcd`, `lcm` and `modulo` (`%` operator) (Maks Skorokhod).
 * `-preprocessed` files are now created after changing `umask` (`umask` can be changed in the config).
 * Fixed a bug in the background check of parts (`MergeTreePartChecker`) when using a custom partition key.
@@ -80,7 +80,7 @@
 
 ## Build improvements:
 
-* Builds use `pbuilder`. The build process is almost independent of the build host environment.
+* Builds use `pbuilder`. The build process is almost completely independent of the build host environment.
 * A single build is used for different OS versions. Packages and binaries have been made compatible with a wide range of Linux systems.
 * Added the `clickhouse-test` package. It can be used to run functional tests.
 * The source tarball can now be published to the repository. It can be used to reproduce the build without using GitHub.
@@ -96,7 +96,7 @@
 
 * The format for marks in `Log` type tables that contain `Nullable` columns was changed in a backward incompatible way. If you have these tables, you should convert them to the `TinyLog` type before starting up the new server version. To do this, replace `ENGINE = Log` with `ENGINE = TinyLog` in the corresponding `.sql` file in the `metadata` directory. If your table doesn't have `Nullable` columns or if the type of your table is not `Log`, then you don't need to do anything.
 * Removed the `experimental_allow_extended_storage_definition_syntax` setting. Now this feature is enabled by default.
-* To avoid confusion, `runningIncome` function has been renamed to `runningDifferenceStartingWithFirstValue`.
+* To avoid confusion, the `runningIncome` function has been renamed to `runningDifferenceStartingWithFirstValue`.
 * Removed the `FROM ARRAY JOIN arr` syntax when ARRAY JOIN is specified directly after FROM with no table (Amos Bird).
 * Removed the `BlockTabSeparated` format that was used solely for demonstration purposes.
 * Changed the serialization format of intermediate states of the aggregate functions `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, and `corr`. If you have stored states of these aggregate functions in tables (using the AggregateFunction data type or materialized views with corresponding states), please write to clickhouse-feedback@yandex-team.com.
