@@ -2,7 +2,6 @@
 
 #include <type_traits>
 #include <Common/HashTable/HashSet.h>
-#include <Common/HashTable/HashMap.h>
 
 
 /** A hash table that allows you to clear the table in O(1).
