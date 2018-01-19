@@ -526,14 +526,12 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    std::string log_command_line_option = config().getString("logger.log", "");
     config_path = config().getString("config-file", "config.xml");
     loaded_config = ConfigProcessor(config_path, false, true).loadConfig(/* allow_zk_includes = */ true);
     if (last_configuration != nullptr)
         config().removeConfiguration(last_configuration);
     last_configuration = loaded_config.configuration.duplicate();
     config().add(last_configuration, PRIO_DEFAULT, false);
-    log_to_console = config().getBool("logger.console", false) || isatty(STDIN_FILENO) || log_command_line_option.empty();
 }
 
 
@@ -593,15 +591,16 @@ void BaseDaemon::buildLoggers()
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    if (config().hasProperty("logger.errorlog") && !log_to_console)
-        createDirectory(config().getString("logger.errorlog"));
+    if (config().hasProperty("logger.errorlog"))
+    if (config().hasProperty("logger.log"))
 
-    if (config().hasProperty("logger.log") && !log_to_console)
+    // Split log and error log.
+    Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
+
+    if (config().hasProperty("logger.log"))
     {
+        createDirectory(config().getString("logger.log"));
         std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
-
-        // Split log and error log.
-        Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
         // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
@@ -618,60 +617,59 @@ void BaseDaemon::buildLoggers()
         log->setChannel(log_file);
         split->addChannel(log);
         log_file->open();
-
-        if (config().hasProperty("logger.errorlog"))
-        {
-            std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
-            Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
-            level->setLevel(Message::PRIO_NOTICE);
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
-            pf->setProperty("times", "local");
-            Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
-            error_log_file = new FileChannel;
-            error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.errorlog")).absolute().toString());
-            error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
-            error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-            error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
-            error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
-            error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
-            error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
-            errorlog->setChannel(error_log_file);
-            level->setChannel(errorlog);
-            split->addChannel(level);
-            errorlog->open();
-        }
-
-        /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
-        /// We don't need this configuration parameter.
-
-        if (config().getBool("logger.use_syslog", false) || config().getBool("dynamic_layer_selection", false))
-        {
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
-            pf->setProperty("times", "local");
-            Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
-            syslog_channel = new Poco::SyslogChannel(commandName(), Poco::SyslogChannel::SYSLOG_CONS | Poco::SyslogChannel::SYSLOG_PID, Poco::SyslogChannel::SYSLOG_DAEMON);
-            log->setChannel(syslog_channel);
-            split->addChannel(log);
-            syslog_channel->open();
-        }
-
-        split->open();
-        logger().close();
-        logger().setChannel(split);
     }
-    else
+
+    if (config().hasProperty("logger.errorlog"))
     {
-        // Print to the terminal.
+        createDirectory(config().getString("logger.errorlog"));
+        std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
+        Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
+        level->setLevel(Message::PRIO_NOTICE);
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
+        pf->setProperty("times", "local");
+        Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
+        error_log_file = new FileChannel;
+        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.errorlog")).absolute().toString());
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
+        error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
+        errorlog->setChannel(error_log_file);
+        level->setChannel(errorlog);
+        split->addChannel(level);
+        errorlog->open();
+    }
+
+    /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
+    /// We don't need this configuration parameter.
+
+    if (config().getBool("logger.use_syslog", false) || config().getBool("dynamic_layer_selection", false))
+    {
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
+        pf->setProperty("times", "local");
+        Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
+        syslog_channel = new Poco::SyslogChannel(commandName(), Poco::SyslogChannel::SYSLOG_CONS | Poco::SyslogChannel::SYSLOG_PID, Poco::SyslogChannel::SYSLOG_DAEMON);
+        log->setChannel(syslog_channel);
+        split->addChannel(log);
+        syslog_channel->open();
+    }
+
+    if (config().getBool("logger.console", false) || isatty(STDIN_FILENO))
+    {
         Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log->setChannel(file);
 
-        logger().close();
-        logger().setChannel(log);
-        logger().warning("Logging to console");
+        split->addChannel(log);
     }
+
+    split->open();
+    logger().close();
+    logger().setChannel(split);
 
     // Global logging level (it can be overridden for specific loggers).
     logger().setLevel(config().getString("logger.level", "trace"));
