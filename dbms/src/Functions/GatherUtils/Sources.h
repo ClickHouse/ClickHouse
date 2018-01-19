@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Functions/GatherUtils/IArraySource.h>
+#include <Functions/GatherUtils/IValueSource.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -17,7 +18,7 @@ namespace DB::GatherUtils
 {
 
 template <typename T>
-struct NumericArraySource : public IArraySource
+struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
@@ -108,7 +109,6 @@ struct NumericArraySource : public IArraySource
     }
 };
 
-
 template <typename Base>
 struct ConstSource : public Base
 {
@@ -123,16 +123,36 @@ struct ConstSource : public Base
     {
     }
 
-    /// Constructors for NullableArraySource.
-
     template <typename ColumnType>
     ConstSource(const ColumnType & col, size_t total_rows) : Base(col), total_rows(total_rows)
     {
     }
 
     template <typename ColumnType>
-    ConstSource(const ColumnType & col, const ColumnUInt8 & null_map, size_t total_rows) : Base(col, null_map), total_rows(total_rows)
+    ConstSource(const ColumnType & col, const NullMap & null_map, size_t total_rows) : Base(col, null_map), total_rows(total_rows)
     {
+    }
+
+    virtual ~ConstSource() = default;
+
+    virtual void accept(ArraySourceVisitor & visitor) // override
+    {
+        if constexpr (std::is_base_of<IArraySource, Base>::value)
+            visitor.visit(*this);
+        else
+            throw Exception(
+                    "accept(ArraySourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
+                    + " because " + demangle(typeid(Base).name()) + " is not derived from IArraySource ");
+    }
+
+    virtual void accept(ValueSourceVisitor & visitor) // override
+    {
+        if constexpr (std::is_base_of<IValueSource, Base>::value)
+            visitor.visit(*this);
+        else
+            throw Exception(
+                    "accept(ValueSourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
+                    + " because " + demangle(typeid(Base).name()) + " is not derived from IValueSource ");
     }
 
     void next()
@@ -155,17 +175,16 @@ struct ConstSource : public Base
         return total_rows * Base::getSizeForReserve();
     }
 
-    size_t getColumnSize() const // overrides for IArraySource
+    size_t getColumnSize() const
     {
         return total_rows;
     }
 
-    bool isConst() const // overrides for IArraySource
+    bool isConst() const
     {
         return true;
     }
 };
-
 
 struct StringSource
 {
@@ -368,7 +387,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
 using StringSources = std::vector<std::unique_ptr<IStringSource>>;
 
 
-struct GenericArraySource : public IArraySource
+struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
 {
     using Slice = GenericArraySlice;
     using Column = ColumnArray;
@@ -462,17 +481,19 @@ struct GenericArraySource : public IArraySource
 template <typename ArraySource>
 struct NullableArraySource : public ArraySource
 {
-    using Slice = NullableArraySlice<typename ArraySource::Slice>;
+    using Slice = NullableSlice<typename ArraySource::Slice>;
     using ArraySource::prev_offset;
     using ArraySource::row_num;
     using ArraySource::offsets;
 
-    const ColumnUInt8::Container & null_map;
+    const NullMap & null_map;
 
-    NullableArraySource(const ColumnArray & arr, const ColumnUInt8 & null_map)
-            : ArraySource(arr), null_map(null_map.getData())
+    NullableArraySource(const ColumnArray & arr, const NullMap & null_map)
+            : ArraySource(arr), null_map(null_map)
     {
     }
+
+    void accept(ArraySourceVisitor & visitor) override { visitor.visit(*this); }
 
     Slice getWhole() const
     {
@@ -529,46 +550,111 @@ struct NullableArraySource : public ArraySource
 
 
 template <typename T>
-struct NumericSource
+struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 {
-    using Slice = NumericSlice<T>;
+    using Slice = NumericValueSlice<T>;
     using Column = ColumnVector<T>;
 
     const T * begin;
-    const T * pos;
-    const T * end;
+    size_t total_rows;
+    size_t row_num = 0;
 
-    explicit NumericSource(const Column & col)
+    explicit NumericValueSource(const Column & col)
     {
         const auto & container = col.getData();
         begin = container.data();
-        pos = begin;
-        end = begin + container.size();
+        total_rows = container.size();
     }
 
     void next()
     {
-        ++pos;
+        ++row_num;
     }
 
     bool isEnd() const
     {
-        return pos == end;
+        return row_num == total_rows;
     }
 
     size_t rowNum() const
     {
-        return pos - begin;
+        return row_num;
     }
 
     size_t getSizeForReserve() const
     {
-        return 0;   /// Simple numeric columns are resized before fill, no need to reserve.
+        return total_rows;
     }
 
     Slice getWhole() const
     {
-        return pos;
+        Slice slice;
+        slice.value = begin[row_num];
+        return slice;
+    }
+};
+
+struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
+{
+    using Slice = GenericValueSlice;
+
+    const IColumn * column;
+    size_t total_rows;
+    size_t row_num = 0;
+
+    explicit GenericValueSource(const IColumn & col)
+    {
+        column = &col;
+        total_rows = col.size();
+    }
+
+    void next()
+    {
+        ++row_num;
+    }
+
+    bool isEnd() const
+    {
+        return row_num == total_rows;
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
+    }
+
+    size_t getSizeForReserve() const
+    {
+        return total_rows;
+    }
+
+    Slice getWhole() const
+    {
+        Slice slice;
+        slice.elements = column;
+        slice.position = row_num;
+        return slice;
+    }
+};
+
+template <typename ValueSource>
+struct NullableValueSource : public ValueSource
+{
+    using Slice = NullableSlice<typename ValueSource::Slice>;
+    using ValueSource::row_num;
+
+    const NullMap & null_map;
+
+    template <typename Column>
+    explicit NullableValueSource(const Column & col, const NullMap & null_map) : ValueSource(col), null_map(null_map) {}
+
+    void accept(ValueSourceVisitor & visitor) override { visitor.visit(*this); }
+
+    Slice getWhole() const
+    {
+        Slice slice = ValueSource::getWhole();
+        slice.null_map = null_map.data() + row_num;
+        return slice;
     }
 };
 

@@ -5,6 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <Functions/GatherUtils/IValueSource.h>
 #include <Functions/GatherUtils/IArraySource.h>
 #include <Functions/GatherUtils/IArraySink.h>
 
@@ -30,9 +31,10 @@ namespace DB::GatherUtils
 {
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows);
+std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows);
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size);
 
-void concat(std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink);
+void concat(const std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink);
 
 void sliceFromLeftConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset);
 
@@ -48,5 +50,10 @@ void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const ICol
 
 void sliceHas(IArraySource & first, IArraySource & second, bool all, ColumnUInt8 & result);
 
+void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_back);
+
+void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column);
+
+void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size);
 }
 

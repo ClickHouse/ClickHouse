@@ -41,7 +41,7 @@ struct TypeList<THead, TTail...>
     }
 };
 
-/// Append Type to TypeList
+/// Prepend Type to TypeList
 /// Usage:
 ///     using TypeListWithType = typename AppendToTypeList<Type, ConcreteTypeList>::Type;
 template <typename TypeToPrepend, typename List, typename ... Types>
@@ -54,6 +54,21 @@ template <typename TypeToPrepend, typename ... Types>
 struct PrependToTypeList<TypeToPrepend, TypeList<>, Types ...>
 {
     using Type = TypeList<TypeToPrepend, Types ...>;
+};
+
+/// Append Type to TypeList
+/// Usage:
+///     using TypeListWithType = typename AppendToTypeList<Type, ConcreteTypeList>::Type;
+template <typename TypeToAppend, typename List, typename ... Types>
+struct AppendToTypeList
+{
+    using Type = typename AppendToTypeList<TypeToAppend, typename List::Tail, Types ..., typename List::Head>::Type;
+};
+
+template <typename TypeToAppend, typename ... Types>
+struct AppendToTypeList<TypeToAppend, TypeList<>, Types ...>
+{
+    using Type = TypeList<Types ..., TypeToAppend>;
 };
 
 /// Apply TypeList as variadic template argument of Class.
@@ -69,6 +84,40 @@ template <template <typename ...> typename Class, typename ... Types>
 struct ApplyTypeListForClass<Class, TypeList<>, Types ...>
 {
     using Type = Class<Types ...>;
+};
+
+/// TypeList concatenation.
+/// Usage:
+///     using ResultTypeList = typename TypeListConcat<LeftList, RightList>::Type;
+template <typename TypeListLeft, typename TypeListRight>
+struct TypeListConcat
+{
+    using Type = typename TypeListConcat<
+            typename AppendToTypeList<typename TypeListRight::Head, TypeListLeft>::Type,
+            typename TypeListRight::Tail>::Type;
+};
+
+template <typename TypeListLeft>
+struct TypeListConcat<TypeListLeft, TypeList<>>
+{
+    using Type = TypeListLeft;
+};
+
+/// TypeList Map function.
+/// Usage:
+///     using ResultTypeList = typename TypeListMap<Function, TypeListArgs>::Type;
+template <template <typename> typename Function, typename TypeListArgs>
+struct TypeListMap
+{
+    using Type = typename PrependToTypeList<
+            Function<typename TypeListArgs::Head>,
+            typename TypeListMap<Function, typename TypeListArgs::Tail>::Type>::Type;
+};
+
+template <template <typename> typename Function>
+struct TypeListMap<Function, TypeList<>>
+{
+    using Type = TypeList<>;
 };
 
 }
