@@ -266,8 +266,8 @@ include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
 include (cmake/find_ltdl.cmake) # for odbc
-if (EXISTS "contrib/poco/cmake/FindODBC.cmake")
-    include (contrib/poco/cmake/FindODBC.cmake) # for poco
+if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake)
+    include (${CMAKE_CURRENT_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake) # for poco
 endif ()
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
