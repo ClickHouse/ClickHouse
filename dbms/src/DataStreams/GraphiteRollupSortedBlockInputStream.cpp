@@ -99,8 +99,8 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
             if (i != time_column_num && i != value_column_num && i != version_column_num)
                 unmodified_column_numbers.push_back(i);
 
-        if (current_selected_row.empty())
-            current_selected_row.columns.resize(num_columns);
+        if (current_subgroup_newest_row.empty())
+            current_subgroup_newest_row.columns.resize(num_columns);
     }
 
     merge(merged_columns, queue);
@@ -125,44 +125,44 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
         SortCursor next_cursor = queue.top();
 
         StringRef next_path = next_cursor->all_columns[path_column_num]->getDataAt(next_cursor->pos);
-        bool path_differs = is_first || next_path != StringRef(current_path);
+        bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;
 
-        time_t next_time = next_cursor->all_columns[time_column_num]->get64(next_cursor->pos);
+        time_t next_row_time = next_cursor->all_columns[time_column_num]->get64(next_cursor->pos);
         /// Is new key before rounding.
-        bool is_new_key = path_differs || next_time != current_time;
+        bool is_new_key = new_path || next_row_time != current_time;
 
         if (is_new_key)
         {
             /// Accumulate the row that has maximum version in the previous group of rows with the same key:
             if (started_rows)
-                accumulateRow(current_selected_row);
+                accumulateRow(current_subgroup_newest_row);
 
             const Graphite::Pattern * next_pattern = current_pattern;
-            if (path_differs)
+            if (new_path)
                 next_pattern = selectPatternForPath(next_path);
 
             time_t next_time_rounded;
             if (next_pattern)
             {
-                UInt32 precision = selectPrecision(next_pattern->retentions, next_time);
-                next_time_rounded = roundTimeToPrecision(date_lut, next_time, precision);
+                UInt32 precision = selectPrecision(next_pattern->retentions, next_row_time);
+                next_time_rounded = roundTimeToPrecision(date_lut, next_row_time, precision);
             }
             else
             {
                 /// If no pattern has matched - take the value as-is.
-                next_time_rounded = next_time;
+                next_time_rounded = next_row_time;
             }
 
             /// Key will be new after rounding. It means new result row.
-            bool will_be_new_key = path_differs || next_time_rounded != current_time_rounded;
+            bool will_be_new_key = new_path || next_time_rounded != current_time_rounded;
 
             if (will_be_new_key)
             {
                 if (started_rows)
                 {
-                    finishCurrentRow(merged_columns);
+                    finishCurrentGroup(merged_columns);
 
                     /// We have enough rows - return, but don't advance the loop. At the beginning of the
                     /// next call to merge() the same next_cursor will be processed once more and
@@ -174,24 +174,27 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
                 /// At this point previous row has been fully processed, so we can advance the loop
                 /// (substitute current_* values for next_*, advance the cursor).
 
-                startNextRow(merged_columns, next_cursor, next_pattern);
+                startNextGroup(merged_columns, next_cursor, next_pattern);
                 ++started_rows;
 
                 current_time_rounded = next_time_rounded;
             }
 
-            /// We must make copy of next_path to avoid dangling pointers after fetchNextBlock
-            current_path = next_path.toString();
-            current_time = next_time;
+            current_time = next_row_time;
         }
 
         /// Within all rows with same key, we should leave only one row with maximum version;
         /// and for rows with same maximum version - only last row.
         UInt64 next_version = next_cursor->all_columns[version_column_num]->get64(next_cursor->pos);
-        if (is_new_key || next_version >= current_max_version)
+        if (is_new_key || next_version >= current_subgroup_max_version)
         {
-            current_max_version = next_version;
-            setRowRef(current_selected_row, next_cursor);
+            current_subgroup_max_version = next_version;
+            setRowRef(current_subgroup_newest_row, next_cursor);
+
+            /// Small hack: group and subgroups have the same path, so we can set current_group_path here instead of startNextGroup
+            /// But since we keep in memory current_subgroup_newest_row's block, we could use StringRef for current_group_path and don't
+            ///  make deep copy of the path.
+            current_group_path = next_path;
         }
 
         queue.pop();
@@ -211,17 +214,19 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
     /// Write result row for the last group.
     if (started_rows)
     {
-        accumulateRow(current_selected_row);
-        finishCurrentRow(merged_columns);
+        accumulateRow(current_subgroup_newest_row);
+        finishCurrentGroup(merged_columns);
     }
 
     finished = true;
 }
 
 
-void GraphiteRollupSortedBlockInputStream::startNextRow(MutableColumns & merged_columns, SortCursor & cursor, const Graphite::Pattern * next_pattern)
+template <typename TSortCursor>
+void GraphiteRollupSortedBlockInputStream::startNextGroup(MutableColumns & merged_columns, TSortCursor & cursor,
+                                                          const Graphite::Pattern * next_pattern)
 {
-    /// Copy unmodified column values.
+    /// Copy unmodified column values (including path column).
     for (size_t i = 0, size = unmodified_column_numbers.size(); i < size; ++i)
     {
         size_t j = unmodified_column_numbers[i];
@@ -238,11 +243,11 @@ void GraphiteRollupSortedBlockInputStream::startNextRow(MutableColumns & merged_
 }
 
 
-void GraphiteRollupSortedBlockInputStream::finishCurrentRow(MutableColumns & merged_columns)
+void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & merged_columns)
 {
     /// Insert calculated values of the columns `time`, `value`, `version`.
     merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
-    merged_columns[version_column_num]->insert(current_max_version);
+    merged_columns[version_column_num]->insert(current_subgroup_max_version);
 
     if (aggregate_state_created)
     {
@@ -252,7 +257,7 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentRow(MutableColumns & mer
     }
     else
         merged_columns[value_column_num]->insertFrom(
-            *current_selected_row.columns[value_column_num], current_selected_row.row_num);
+            *current_subgroup_newest_row.columns[value_column_num], current_subgroup_newest_row.row_num);
 }
 
 
