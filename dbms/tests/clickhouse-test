@@ -19,6 +19,7 @@ from time import sleep
 from errno import ESRCH
 from termcolor import colored
 from random import random
+import commands
 
 
 OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
@@ -69,33 +70,32 @@ def main(args):
                 report_root.append(report_suite)
                 report_file.write(et.tostring(report_root, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
 
-
-    if args.zookeeper is None:
-        try:
-            check_call(['grep', '-q', '<zookeeper', '/etc/clickhouse-server/config-preprocessed.xml'])
-            args.zookeeper = True
-        except CalledProcessError:
-            args.zookeeper = False
-
-    if args.shard is None:
-        try:
-            check_call(['grep', '-qE', '"127.0.0.2|<listen_host>::</listen_host>"', '/etc/clickhouse-server/config-preprocessed.xml'])
-            args.shard = True
-        except CalledProcessError:
-            # TODO: false here after setting <listen_host>::1</listen_host>
-            args.shard = True
-
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
-
-    passed_total = 0
-    skipped_total = 0
-    failures_total = 0
 
     # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
+
+    # TODO ! use clickhouse-extract-from-config here:
+    if args.zookeeper is None:
+        code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        if int(out) > 0:
+            args.zookeeper = True
+        else:
+            args.zookeeper = False
+
+    if args.shard is None:
+        code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
+        if out:
+            args.shard = True
+        else:
+            args.shard = False
+
+    passed_total = 0
+    skipped_total = 0
+    failures_total = 0
 
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
@@ -319,7 +319,8 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', help = 'Path to tmp dir')
     parser.add_argument('-b', '--binary', default = 'clickhouse', help = 'Main clickhouse binary')
     parser.add_argument('-c', '--client', help = 'Client program')
-    parser.add_argument('--clientconfig', help = 'Client config (if you use not default ports)')
+    parser.add_argument('--configclient', help = 'Client config (if you use not default ports)')
+    parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help = 'Preprocessed server config')
     parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
     parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
@@ -350,6 +351,6 @@ if __name__ == '__main__':
 
     if args.client is None:
         args.client = args.binary + '-client'
-        if args.clientconfig:
-            args.client += ' -c' + args.clientconfig
+        if args.configclient:
+            args.client += ' -c' + args.configclient
     main(args)

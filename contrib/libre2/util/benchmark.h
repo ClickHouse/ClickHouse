@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef RE2_UTIL_BENCHMARK_H__
-#define RE2_UTIL_BENCHMARK_H__
+#ifndef UTIL_BENCHMARK_H_
+#define UTIL_BENCHMARK_H_
+
+#include <stdint.h>
 
 namespace testing {
 struct Benchmark {
@@ -14,7 +16,7 @@ struct Benchmark {
   int hi;
   int threadlo;
   int threadhi;
-  
+
   void Register();
   Benchmark(const char* name, void (*f)(int)) { Clear(name); fn = f; Register(); }
   Benchmark(const char* name, void (*f)(int, int), int l, int h) { Clear(name); fnr = f; lo = l; hi = h; Register(); }
@@ -23,7 +25,7 @@ struct Benchmark {
 };
 }  // namespace testing
 
-void SetBenchmarkBytesProcessed(long long);
+void SetBenchmarkBytesProcessed(int64_t);
 void StopBenchmarkTiming();
 void StartBenchmarkTiming();
 void BenchmarkMemoryUsage();
@@ -38,4 +40,4 @@ int NumCPUs();
 	::testing::Benchmark* _benchmark_##f = \
 	(new ::testing::Benchmark(#f, f, lo, hi))
 
-#endif  // RE2_UTIL_BENCHMARK_H__
+#endif  // UTIL_BENCHMARK_H_

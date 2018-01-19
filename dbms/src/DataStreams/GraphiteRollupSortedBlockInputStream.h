@@ -175,7 +175,6 @@ private:
     ColumnNumbers unmodified_column_numbers;
 
     time_t time_of_merge;
-
     /// All data has been read.
     bool finished = false;
 
@@ -183,7 +182,7 @@ private:
     UInt64 current_max_version = 0;
 
     bool is_first = true;
-    StringRef current_path;
+    String current_path;
     time_t current_time = 0;
     time_t current_time_rounded = 0;
 

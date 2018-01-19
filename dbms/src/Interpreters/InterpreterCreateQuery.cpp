@@ -600,6 +600,10 @@ BlockIO InterpreterCreateQuery::execute()
 
 void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 {
+    /// Internal queries (initiated by the server itself) always have access to everything.
+    if (internal)
+        return;
+
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.limits.readonly;
 
