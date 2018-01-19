@@ -9,7 +9,7 @@ import re
 import urllib2
 
 # Directory or URL where Unicode tables reside.
-_UNICODE_DIR = "http://www.unicode.org/Public/6.3.0/ucd"
+_UNICODE_DIR = "http://www.unicode.org/Public/10.0.0/ucd"
 
 # Largest valid Unicode code value.
 _RUNE_MAX = 0x10FFFF

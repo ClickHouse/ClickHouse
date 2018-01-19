@@ -11,8 +11,10 @@
  * REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
  * OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
  */
+
 #include <stdarg.h>
 #include <string.h>
+
 #include "util/utf.h"
 
 namespace re2 {
@@ -133,7 +135,7 @@ runetochar(char *str, const Rune *rune)
 	 */
 	c = *rune;
 	if(c <= Rune1) {
-		str[0] = c;
+		str[0] = static_cast<char>(c);
 		return 1;
 	}
 
@@ -142,7 +144,7 @@ runetochar(char *str, const Rune *rune)
 	 *	0080-07FF => T2 Tx
 	 */
 	if(c <= Rune2) {
-		str[0] = T2 | (c >> 1*Bitx);
+		str[0] = T2 | static_cast<char>(c >> 1*Bitx);
 		str[1] = Tx | (c & Maskx);
 		return 2;
 	}
@@ -161,9 +163,9 @@ runetochar(char *str, const Rune *rune)
 	 *	0800-FFFF => T3 Tx Tx
 	 */
 	if (c <= Rune3) {
-		str[0] = T3 |  (c >> 2*Bitx);
+		str[0] = T3 | static_cast<char>(c >> 2*Bitx);
 		str[1] = Tx | ((c >> 1*Bitx) & Maskx);
-		str[2] = Tx |  (c & Maskx);
+		str[2] = Tx | (c & Maskx);
 		return 3;
 	}
 
@@ -171,7 +173,7 @@ runetochar(char *str, const Rune *rune)
 	 * four character sequence (21-bit value)
 	 *     10000-1FFFFF => T4 Tx Tx Tx
 	 */
-	str[0] = T4 | (c >> 3*Bitx);
+	str[0] = T4 | static_cast<char>(c >> 3*Bitx);
 	str[1] = Tx | ((c >> 2*Bitx) & Maskx);
 	str[2] = Tx | ((c >> 1*Bitx) & Maskx);
 	str[3] = Tx | (c & Maskx);
