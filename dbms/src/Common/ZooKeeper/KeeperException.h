@@ -41,6 +41,16 @@ inline bool isHardwareErrorCode(int32_t zk_return_code)
     return isUnrecoverableErrorCode(zk_return_code) || isTemporaryErrorCode(zk_return_code);
 }
 
+/// Valid errors sent from server
+inline bool isUserError(int32_t zk_return_code)
+{
+    return zk_return_code == ZNONODE
+           || zk_return_code == ZBADVERSION
+           || zk_return_code == ZNOCHILDRENFOREPHEMERALS
+           || zk_return_code == ZNODEEXISTS
+           || zk_return_code == ZNOTEMPTY;
+}
+
 
 class KeeperException : public DB::Exception
 {

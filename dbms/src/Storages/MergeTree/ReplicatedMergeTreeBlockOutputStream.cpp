@@ -177,8 +177,48 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
     /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
+    /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
-    AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper);    /// 2 RTT
+    auto acl = zookeeper->getDefaultACL();
+
+    /// Deduplication stuff
+    bool deduplicate_block = !block_id.empty();
+    String block_id_path;
+    zkutil::Ops deduplication_check_ops;
+    zkutil::Ops * deduplication_check_ops_ptr = nullptr;
+
+    if (deduplicate_block)
+    {
+        block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
+
+        /// Lets check for duplicates in advance, to avoid superflous block numbers allocation
+        deduplication_check_ops.emplace_back(std::make_unique<zkutil::Op::Create>(block_id_path, "", acl, zkutil::CreateMode::Persistent));
+        deduplication_check_ops.emplace_back(std::make_unique<zkutil::Op::Remove>(block_id_path, -1));
+        deduplication_check_ops_ptr = &deduplication_check_ops;
+    }
+
+    /// 2 RTT
+    AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, deduplication_check_ops_ptr);
+    if (!block_number_lock.isCreated())
+    {
+        zkutil::MultiTransactionInfo & info = block_number_lock.precheck_info;
+
+        if (!info.empty() && info.code != ZOK)
+        {
+            if (deduplicate_block && info.code == ZNODEEXISTS && info.getFailedOp().getPath() == block_id_path)
+            {
+                LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (skip the insertion)");
+                part->is_duplicate = true;
+                last_block_is_duplicate = true;
+                return;
+            }
+
+            throw Exception("Cannot allocate block number in ZooKeeper: " + info.getException().displayText(), ErrorCodes::KEEPER_EXCEPTION);
+        }
+
+        throw Exception("Cannot allocate block number in ZooKeeper", ErrorCodes::KEEPER_EXCEPTION);
+    }
+
     Int64 block_number = block_number_lock.getNumber();
 
     /// Set part attributes according to part_number. Prepare an entry for log.
@@ -207,15 +247,17 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     /// Information about the part.
     zkutil::Ops ops;
-    auto acl = zookeeper->getDefaultACL();
 
-    if (!block_id.empty())
+    if (deduplicate_block)
+    {
+        /// Make final duplicate check and commit block_id
         ops.emplace_back(
             std::make_unique<zkutil::Op::Create>(
-                storage.zookeeper_path + "/blocks/" + block_id,
+                block_id_path,
                 toString(block_number),  /// We will able to know original part number for duplicate blocks, if we want.
                 acl,
                 zkutil::CreateMode::Persistent));
+    }
 
     /// Information about the part, in the replica data.
 
@@ -291,62 +333,66 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     MergeTreeData::Transaction transaction; /// If you can not add a part to ZK, we'll remove it back from the working set.
     storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
-    try
+    zkutil::MultiTransactionInfo info;
+    zookeeper->tryMultiUnsafe(ops, info); /// 1 RTT
+
+    if (info.code == ZOK)
     {
-        auto code = zookeeper->tryMulti(ops);   /// 1 RTT
-        if (code == ZOK)
+        transaction.commit();
+        storage.merge_selecting_event.set();
+    }
+    else if (zkutil::isUserError(info.code))
+    {
+        String failed_op_path = info.getFailedOp().getPath();
+
+        if (info.code == ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
-            transaction.commit();
-            storage.merge_selecting_event.set();
+            /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
+            LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+
+            part->is_duplicate = true;
+            transaction.rollback();
+            last_block_is_duplicate = true;
         }
-        else if (code == ZNODEEXISTS)
+        else if (info.code == ZNODEEXISTS && failed_op_path == quorum_info.status_path)
         {
-            /// If the block with such ID already exists in the table, rollback its insertion.
-            if (!block_id.empty() && zookeeper->exists(storage.zookeeper_path + "/blocks/" + block_id))
-            {
-                LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+            transaction.rollback();
 
-                part->is_duplicate = true;
-                transaction.rollback();
-                last_block_is_duplicate = true;
-            }
-            else if (zookeeper->exists(quorum_info.status_path))
-            {
-                transaction.rollback();
-
-                throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
-            }
-            else
-            {
-                /// if the node with the quorum existed, but was quickly removed.
-
-                throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                    + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
-            }
+            throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
         }
         else
         {
-            throw Exception("Unexpected error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+            /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
+            transaction.rollback();
+            throw Exception("Unexpected logical error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
+                            + zkutil::ZooKeeper::error2string(info.code) + ", path " + failed_op_path,
+                            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
     }
-    catch (const zkutil::KeeperException & e)
+    else if (zkutil::isTemporaryErrorCode(info.code))
     {
         /** If the connection is lost, and we do not know if the changes were applied, you can not delete the local part
-            *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-            */
-        if (e.code == ZOPERATIONTIMEOUT ||
-            e.code == ZCONNECTIONLOSS)
-        {
-            transaction.commit();
-            storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+          *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
+          */
+        transaction.commit();
+        storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
-            /// We do not know whether or not data has been inserted.
-            throw Exception("Unknown status, client must retry. Reason: " + e.displayText(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
-        }
-
-        throw;
+        /// We do not know whether or not data has been inserted.
+        throw Exception("Unknown status, client must retry. Reason: " + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
     }
+    else if (zkutil::isUnrecoverableErrorCode(info.code))
+    {
+        transaction.rollback();
+        throw Exception("Unrecoverable network error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
+                        + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+    }
+    else
+    {
+        transaction.rollback();
+        throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
+                        + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+    }
+
 
     if (quorum)
     {

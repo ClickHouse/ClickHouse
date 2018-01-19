@@ -30,11 +30,26 @@ public:
     };
 
     AbandonableLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_)
+        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, zkutil::Ops * precheck_ops = nullptr)
         : zookeeper(zookeeper_), path_prefix(path_prefix_)
     {
+        String abandonable_path = temp_path + "/abandonable_lock-";
+
         /// Let's create an secondary ephemeral node.
-        holder_path = zookeeper.create(temp_path + "/abandonable_lock-", "", zkutil::CreateMode::EphemeralSequential);
+        if (!precheck_ops || precheck_ops->empty())
+        {
+            holder_path = zookeeper.create(abandonable_path, "", zkutil::CreateMode::EphemeralSequential);
+        }
+        else
+        {
+            precheck_ops->emplace_back(std::make_unique<zkutil::Op::Create>(
+                abandonable_path, "", zookeeper.getDefaultACL(), zkutil::CreateMode::EphemeralSequential));
+
+            if (zookeeper.tryMultiUnsafe(*precheck_ops, precheck_info) != ZOK)
+                return;
+
+            holder_path = precheck_info.op_results->back().value;
+        }
 
         /// Write the path to the secondary node in the main node.
         path = zookeeper.create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);
@@ -51,19 +66,27 @@ public:
         std::swap(holder_path, rhs.holder_path);
     }
 
+    bool isCreated() const
+    {
+        return !holder_path.empty() && !path.empty();
+    }
+
     String getPath() const
     {
+        checkCreated();
         return path;
     }
 
     /// Parse the number at the end of the path.
     UInt64 getNumber() const
     {
+        checkCreated();
         return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
     }
 
     void unlock()
     {
+        checkCreated();
         zookeeper.remove(path);
         zookeeper.remove(holder_path);
         holder_path = "";
@@ -72,8 +95,15 @@ public:
     /// Adds actions equivalent to `unlock()` to the list.
     void getUnlockOps(zkutil::Ops & ops)
     {
+        checkCreated();
         ops.emplace_back(std::make_unique<zkutil::Op::Remove>(path, -1));
         ops.emplace_back(std::make_unique<zkutil::Op::Remove>(holder_path, -1));
+    }
+
+    void checkCreated() const
+    {
+        if (!isCreated())
+            throw Exception("AbandonableLock is not created", ErrorCodes::LOGICAL_ERROR);
     }
 
     ~AbandonableLockInZooKeeper()
@@ -127,6 +157,11 @@ private:
     String path_prefix;
     String path;
     String holder_path;
+
+public:
+    /// Contains information about execution of passed precheck ops and block-creation payload
+    /// TODO: quite ugly interface to handle precheck ops
+    zkutil::MultiTransactionInfo precheck_info;
 };
 
 }
