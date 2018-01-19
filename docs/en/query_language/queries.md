@@ -457,8 +457,9 @@ Displays a list of tables
 - tables from the current database, or from the 'db' database if "FROM db" is specified.
 - all tables, or tables whose name matches the pattern, if "LIKE 'pattern'" is specified.
 
-This query is identical to: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`
-Смотрите также раздел "Оператор LIKE".
+This query is identical to: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`.
+
+See the section "LIKE operator" also.
 
 ## SHOW PROCESSLIST
 
@@ -1102,7 +1103,7 @@ Example:
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
-    any(Title) AS title -- для каждого домена достаём первый попавшийся заголовок страницы
+    any(Title) AS title -- getting the first occurred page header for each domain.
 FROM hits
 GROUP BY domain
 ```
