@@ -13,6 +13,8 @@ struct IValueSource
     {
         throw Exception("Accept not implemented for " + demangle(typeid(*this).name()));
     }
+
+    virtual bool isConst() const { return false; }
 };
 
 template <typename Derived>
