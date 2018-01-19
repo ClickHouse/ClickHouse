@@ -30,9 +30,10 @@ namespace DB::GatherUtils
 {
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows);
+std::unique_ptr<IArraySource> createValueSource(const IColumn & col, bool is_const, size_t total_rows);
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size);
 
-void concat(std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink);
+void concat(const std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink);
 
 void sliceFromLeftConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset);
 
