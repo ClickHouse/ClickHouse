@@ -91,9 +91,6 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
     /// If there are Nothing types, result is Nothing
     {
-        DataTypes non_nothing_types;
-        non_nothing_types.reserve(types.size());
-
         for (const auto & type : types)
             if (typeid_cast<const DataTypeNothing *>(type.get()))
                 return getNothingOrThrow(" because some of them are Nothing");
