@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#ifndef RE2_UTIL_TEST_H__
-#define RE2_UTIL_TEST_H__
+#ifndef UTIL_TEST_H_
+#define UTIL_TEST_H_
 
 #include "util/util.h"
 #include "util/flags.h"
+#include "util/logging.h"
 
 #define TEST(x, y) \
 	void x##y(void); \
@@ -31,27 +32,15 @@ class TestRegisterer {
 #define EXPECT_GE CHECK_GE
 #define EXPECT_FALSE(x) CHECK(!(x))
 
-#define ARRAYSIZE arraysize
-
-#define EXPECT_TRUE_M(x, y) CHECK(x) << (y)
-#define EXPECT_FALSE_M(x, y) CHECK(!(x)) << (y)
-#define ASSERT_TRUE_M(x, y) CHECK(x) << (y)
-#define ASSERT_EQUALS(x, y) CHECK_EQ(x, y)
-
-const bool UsingMallocCounter = false;
 namespace testing {
 class MallocCounter {
  public:
-  MallocCounter(int x) { } 
+  MallocCounter(int x) {}
   static const int THIS_THREAD_ONLY = 0;
   long long HeapGrowth() { return 0; }
   long long PeakHeapGrowth() { return 0; }
-  void Reset() { }
+  void Reset() {}
 };
 }  // namespace testing
 
-namespace re2 {
-int64 VirtualProcessSize();
-} // namespace re2
-
-#endif  // RE2_UTIL_TEST_H__
+#endif  // UTIL_TEST_H_

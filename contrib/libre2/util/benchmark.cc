@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <algorithm>
+#include <chrono>
+
 #include "util/util.h"
 #include "util/flags.h"
 #include "util/benchmark.h"
@@ -9,8 +15,11 @@
 
 DEFINE_string(test_tmpdir, "/var/tmp", "temp directory");
 
+#ifdef _WIN32
+#define snprintf _snprintf
+#endif
+
 using testing::Benchmark;
-using namespace re2;
 
 static Benchmark* benchmarks[10000];
 static int nbenchmarks;
@@ -24,19 +33,17 @@ void Benchmark::Register() {
 	nbenchmarks++;
 }
 
-static int64 nsec() {
-	struct timeval tv;
-	if(gettimeofday(&tv, 0) < 0)
-		return -1;
-	return (int64)tv.tv_sec*1000*1000*1000 + tv.tv_usec*1000;
+static int64_t nsec() {
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-static int64 bytes;
-static int64 ns;
-static int64 t0;
-static int64 items;
+static int64_t bytes;
+static int64_t ns;
+static int64_t t0;
+static int64_t items;
 
-void SetBenchmarkBytesProcessed(long long x) {
+void SetBenchmarkBytesProcessed(int64_t x) {
 	bytes = x;
 }
 
@@ -74,7 +81,7 @@ static void runN(Benchmark *b, int n, int siz) {
 		b->fnr(n, siz);
 	else {
 		fprintf(stderr, "%s: missing function\n", b->name);
-		exit(2);
+		abort();
 	}
 	if(t0 != 0)
 		ns += nsec() - t0;
@@ -105,11 +112,11 @@ void RunBench(Benchmark* b, int nthread, int siz) {
 	while(ns < (int)1e9 && n < (int)1e9) {
 		last = n;
 		if(ns/n == 0)
-			n = 1e9;
+			n = (int)1e9;
 		else
-			n = 1e9 / (ns/n);
+			n = (int)1e9 / static_cast<int>(ns/n);
 		
-		n = max(last+1, min(n+n/2, 100*last));
+		n = std::max(last+1, std::min(n+n/2, 100*last));
 		n = round(n);
 		runN(b, n, siz);
 	}
@@ -146,7 +153,7 @@ int main(int argc, const char** argv) {
 		Benchmark* b = benchmarks[i];
 		if(match(b->name, argc, argv))
 			for(int j = b->threadlo; j <= b->threadhi; j++)
-				for(int k = max(b->lo, 1); k <= max(b->hi, 1); k<<=1)
+				for(int k = std::max(b->lo, 1); k <= std::max(b->hi, 1); k<<=1)
 					RunBench(b, j, k);
 	}
 }
