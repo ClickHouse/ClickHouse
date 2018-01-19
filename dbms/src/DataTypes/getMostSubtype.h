@@ -8,7 +8,7 @@ namespace DB
 
 /** Get data type that covers intersection of all possible values of passed data types.
   * DataTypeNothing is the most common subtype for all types.
-  * Examples: most common subtype for UInt16, UInt8 and Int8 - Unt16.
+  * Examples: most common subtype for UInt16, UInt8 and Int8 - UInt16.
   * Examples: most common subtype for Array(UInt8), Int8 is Nothing
   *
   * If force_support_conversion is true, returns type which may be used to convert each argument to.
