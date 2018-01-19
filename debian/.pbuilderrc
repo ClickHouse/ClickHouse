@@ -1,3 +1,6 @@
+#
+# sudo apt install pbuilder fakeroot debhelper debian-archive-keyring debian-keyring
+#
 # ubuntu:
 # prepare old (trusty or earlier) host system:
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
@@ -58,7 +61,8 @@ DEBIAN_MIRROR="deb.debian.org"
 UBUNTU_MIRROR="mirror.yandex.ru"
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
-: ${DIST:="$(lsb_release --short --codename)"}
+HOST_DIST=`lsb_release --short --codename`
+: ${DIST:="$HOST_DIST"}
 
 # Optionally change Debian codenames in $DIST to their aliases.
 case "$DIST" in
@@ -100,8 +104,16 @@ if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
         OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
     fi
     # APTKEYRINGS=/usr/share/keyrings/debian-archive-keyring.gpg
-    # sudo apt install debian-archive-keyring
-    DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-archive-keyring.gpg' )
+
+    case "$HOST_DIST" in
+       "trusty" )
+            DEBOOTSTRAPOPTS+=( '--no-check-gpg' )
+        ;;
+        *)
+            DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-archive-keyring.gpg' )
+            # DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-keyring.gpg' )
+    esac
+
 elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     # Ubuntu configuration
     OSNAME=ubuntu
