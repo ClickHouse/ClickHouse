@@ -55,6 +55,9 @@ matrix:
         apt:
           packages: [ pbuilder, fakeroot, debhelper ]
 
+      env:
+        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0"
+
       script:
         - utils/travis/pbuilder.sh
 
@@ -81,4 +84,5 @@ matrix:
     - os: osx
 
 before_install:
+    - echo "${MATRIX_EVAL}"
     - eval "${MATRIX_EVAL}"
