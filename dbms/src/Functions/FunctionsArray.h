@@ -1641,6 +1641,30 @@ public:
     FunctionArrayHasAny(const Context & context) : FunctionArrayHasAllAny(context, false, name) {}
 };
 
+
+class FunctionArrayResize : public IFunction
+{
+public:
+    static constexpr auto name = "arrayResize";
+    static FunctionPtr create(const Context & context);
+    FunctionArrayResize(const Context & context) : context(context) {};
+
+    String getName() const override;
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
+    const Context & context;
+};
+
 struct NameHas { static constexpr auto name = "has"; };
 struct NameIndexOf { static constexpr auto name = "indexOf"; };
 struct NameCountEqual { static constexpr auto name = "countEqual"; };

@@ -20,6 +20,6 @@ struct ArrayPush : public ArrayAndValueSourceSelectorBySink<ArrayPush>
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front)
 {
-    return ArrayPush::select(sink, array_source, value_source, push_front);
+    ArrayPush::select(sink, array_source, value_source, push_front);
 }
 }
