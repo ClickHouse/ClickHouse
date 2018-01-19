@@ -576,17 +576,19 @@ void BaseDaemon::wakeup()
 
 void BaseDaemon::buildLoggers()
 {
+    bool is_daemon = config().getBool("application.runAsDaemon", false);
+
     /// Change path for logging.
     if (config().hasProperty("logger.log"))
     {
         std::string path = createDirectory(config().getString("logger.log"));
-        if (config().getBool("application.runAsDaemon", false)
+        if (is_daemon
             && chdir(path.c_str()) != 0)
             throw Poco::Exception("Cannot change directory to " + path);
     }
     else
     {
-        if (config().getBool("application.runAsDaemon", false)
+        if (is_daemon
             && chdir("/tmp") != 0)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
@@ -653,7 +655,7 @@ void BaseDaemon::buildLoggers()
         syslog_channel->open();
     }
 
-    if (config().getBool("logger.console", false) || (!config().hasProperty("logger.console") && isatty(STDIN_FILENO)))
+    if (config().getBool("logger.console", false) || (!config().hasProperty("logger.console") && !is_daemon && isatty(STDIN_FILENO)))
     {
         Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
