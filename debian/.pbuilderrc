@@ -160,8 +160,6 @@ esac
 # will test symbols
 EXTRAPACKAGES+=" gdb "
 
-export CCACHE_PREFIX=
-
 export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
