@@ -1646,7 +1646,7 @@ namespace
     }
 
 
-    /// If any of the parts is already going to be merge into a larger one, do not agree to merge it.
+    /// If any of the parts is already going to be merged into a larger one, do not agree to merge it.
     bool partsWillNotBeMergedOrDisabled(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
                                         ReplicatedMergeTreeQueue & queue, String * out_reason = nullptr)
     {
