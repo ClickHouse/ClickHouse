@@ -1,5 +1,5 @@
 
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
+if (ARCH_FREEBSD)
     set (PATH_SHARE "/usr/local/share" CACHE STRING "")
 else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
