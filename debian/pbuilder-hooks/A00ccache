@@ -1,8 +1,10 @@
 #!/bin/sh
 
-mkdir -p $CCACHEDIR
-chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
-chmod -R a+rwx $CCACHEDIR
+if [ -n "$CCACHEDIR" ]; then
+    mkdir -p $CCACHEDIR
+    chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
+    chmod -R a+rwx $CCACHEDIR
+fi
 
 CCACHE_SIZE=${CCACHE_SIZE:=32G}
 ccache --show-stats
