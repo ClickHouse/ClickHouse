@@ -1,6 +1,7 @@
 language: generic
 
 matrix:
+  fast_finish: true
   include:
     - os: linux
 
