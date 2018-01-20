@@ -4,6 +4,8 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
+#include <Poco/Logger.h>
+#include <Poco/NullChannel.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Interpreters/Context.h>
@@ -12,7 +14,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -49,6 +51,13 @@ LocalServer::~LocalServer()
 void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
+
+    // Turn off server logging to stderr
+    if (config().has("silent"))
+    {
+        Poco::Logger::root().setLevel("none");
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+    }
 }
 
 
@@ -66,14 +75,21 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
     /// Arguments that define first query creating initial table:
     /// (If structure argument is omitted then initial query is not generated)
     _options.addOption(
-        Poco::Util::Option("structure", "S", "Structe of initial table(list columns names with their types)")
+        Poco::Util::Option("structure", "S", "Structure of initial table(list columns names with their types)")
             .required(false)
             .repeatable(false)
             .argument("[name Type]")
             .binding("table-structure"));
 
+    /// Turn off logging
     _options.addOption(
-        Poco::Util::Option("table", "N", "Name of intial table")
+        Poco::Util::Option("silent", "s", "Quiet mode, print only errors")
+            .required(false)
+            .repeatable(false)
+            .binding("silent"));
+
+    _options.addOption(
+        Poco::Util::Option("table", "N", "Name of initial table")
             .required(false)
             .repeatable(false)
             .argument("[table]")
@@ -87,10 +103,10 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
             .binding("table-file"));
 
     _options.addOption(
-        Poco::Util::Option("input-format", "if", "Input format of intial table data")
+        Poco::Util::Option("input-format", "if", "Input format of initial table data")
             .required(false)
             .repeatable(false)
-            .argument("[TSV]")
+            .argument("<TSV>")
             .binding("table-data-format"));
 
     /// List of queries to execute
@@ -98,7 +114,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
         Poco::Util::Option("query", "q", "Queries to execute")
             .required(false)
             .repeatable(false)
-            .argument("<query>", true)
+            .argument("<query>")
             .binding("query"));
 
     /// Default Output format
@@ -109,9 +125,9 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
             .argument("[TSV]", true)
             .binding("output-format"));
 
-    /// Alias for previous one, required for clickhouse-client compability
+    /// Alias for previous one, required for clickhouse-client compatibility
     _options.addOption(
-        Poco::Util::Option("format", "", "Default ouput format")
+        Poco::Util::Option("format", "", "Default output format")
             .required(false)
             .repeatable(false)
             .argument("[TSV]", true)
@@ -304,7 +320,7 @@ try
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server enviroment
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
-      *  if such tables will not be dropped, clickhouse-server can not load them due to security reasons.
+      *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     const std::string default_database = "_local";
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));

@@ -6,12 +6,25 @@
 // The main changes are the addition of the HitLimit method and
 // compilation as PCRE in namespace re2.
 
+#include <assert.h>
+#include <ctype.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits>
+#include <string>
+#include <utility>
+
 #include "util/util.h"
 #include "util/flags.h"
+#include "util/logging.h"
 #include "util/pcre.h"
+#include "util/strutil.h"
 
-#if __GNUC__ > 5
+// Silence warnings about the wacky formatting in the operator() functions.
+// Note that we test for Clang first because it defines __GNUC__ as well.
+#if defined(__clang__)
+#elif defined(__GNUC__) && __GNUC__ >= 6
 #pragma GCC diagnostic ignored "-Wmisleading-indentation"
 #endif
 
@@ -25,6 +38,42 @@
 DEFINE_int32(regexp_stack_limit, 256<<10, "default PCRE stack limit (bytes)");
 DEFINE_int32(regexp_match_limit, 1000000,
              "default PCRE match limit (function calls)");
+
+#ifndef USEPCRE
+
+// Fake just enough of the PCRE API to allow this file to build. :)
+
+struct pcre_extra {
+  int flags;
+  int match_limit;
+  int match_limit_recursion;
+};
+
+#define PCRE_EXTRA_MATCH_LIMIT 0
+#define PCRE_EXTRA_MATCH_LIMIT_RECURSION 0
+#define PCRE_ANCHORED 0
+#define PCRE_NOTEMPTY 0
+#define PCRE_ERROR_NOMATCH 1
+#define PCRE_ERROR_MATCHLIMIT 2
+#define PCRE_ERROR_RECURSIONLIMIT 3
+#define PCRE_INFO_CAPTURECOUNT 0
+
+void pcre_free(void*) {
+}
+
+pcre* pcre_compile(const char*, int, const char**, int*, const unsigned char*) {
+  return NULL;
+}
+
+int pcre_exec(const pcre*, const pcre_extra*, const char*, int, int, int, int*, int) {
+  return 0;
+}
+
+int pcre_fullinfo(const pcre*, const pcre_extra*, int, void*) {
+  return 0;
+}
+
+#endif
 
 namespace re2 {
 
@@ -117,7 +166,7 @@ pcre* PCRE::Compile(Anchor anchor) {
   //    ANCHOR_BOTH     Tack a "\z" to the end of the original pattern
   //                    and use a pcre anchored match.
 
-  const char* error;
+  const char* error = "";
   int eoffset;
   pcre* re;
   if (anchor != ANCHOR_BOTH) {
@@ -181,8 +230,8 @@ bool PCRE::FullMatchFunctor::operator ()(const StringPiece& text,
   if (&a15 == &no_more_args) goto done; args[n++] = &a15;
 done:
 
-  int consumed;
-  int vec[kVecSize];
+  size_t consumed;
+  int vec[kVecSize] = {};
   return re.DoMatchImpl(text, ANCHOR_BOTH, &consumed, args, n, vec, kVecSize);
 }
 
@@ -224,8 +273,8 @@ bool PCRE::PartialMatchFunctor::operator ()(const StringPiece& text,
   if (&a15 == &no_more_args) goto done; args[n++] = &a15;
 done:
 
-  int consumed;
-  int vec[kVecSize];
+  size_t consumed;
+  int vec[kVecSize] = {};
   return re.DoMatchImpl(text, UNANCHORED, &consumed, args, n, vec, kVecSize);
 }
 
@@ -267,8 +316,8 @@ bool PCRE::ConsumeFunctor::operator ()(StringPiece* input,
   if (&a15 == &no_more_args) goto done; args[n++] = &a15;
 done:
 
-  int consumed;
-  int vec[kVecSize];
+  size_t consumed;
+  int vec[kVecSize] = {};
   if (pattern.DoMatchImpl(*input, ANCHOR_START, &consumed,
                           args, n, vec, kVecSize)) {
     input->remove_prefix(consumed);
@@ -316,8 +365,8 @@ bool PCRE::FindAndConsumeFunctor::operator ()(StringPiece* input,
   if (&a15 == &no_more_args) goto done; args[n++] = &a15;
 done:
 
-  int consumed;
-  int vec[kVecSize];
+  size_t consumed;
+  int vec[kVecSize] = {};
   if (pattern.DoMatchImpl(*input, UNANCHORED, &consumed,
                           args, n, vec, kVecSize)) {
     input->remove_prefix(consumed);
@@ -330,7 +379,7 @@ done:
 bool PCRE::Replace(string *str,
                  const PCRE& pattern,
                  const StringPiece& rewrite) {
-  int vec[kVecSize];
+  int vec[kVecSize] = {};
   int matches = pattern.TryMatch(*str, 0, UNANCHORED, true, vec, kVecSize);
   if (matches == 0)
     return false;
@@ -349,12 +398,12 @@ int PCRE::GlobalReplace(string *str,
                       const PCRE& pattern,
                       const StringPiece& rewrite) {
   int count = 0;
-  int vec[kVecSize];
+  int vec[kVecSize] = {};
   string out;
   size_t start = 0;
   bool last_match_was_empty_string = false;
 
-  for (; start <= str->length();) {
+  while (start <= str->size()) {
     // If the previous match was for the empty string, we shouldn't
     // just match again: we'll match in the same way and get an
     // infinite loop.  Instead, we do the match in a special way:
@@ -370,19 +419,20 @@ int PCRE::GlobalReplace(string *str,
       matches = pattern.TryMatch(*str, start, ANCHOR_START, false,
                                  vec, kVecSize);
       if (matches <= 0) {
-        if (start < str->length())
+        if (start < str->size())
           out.push_back((*str)[start]);
         start++;
         last_match_was_empty_string = false;
         continue;
       }
     } else {
-      matches = pattern.TryMatch(*str, start, UNANCHORED, true, vec, kVecSize);
+      matches = pattern.TryMatch(*str, start, UNANCHORED, true,
+                                 vec, kVecSize);
       if (matches <= 0)
         break;
     }
-    int matchstart = vec[0], matchend = vec[1];
-    assert(matchstart >= static_cast<int>(start));
+    size_t matchstart = vec[0], matchend = vec[1];
+    assert(matchstart >= start);
     assert(matchend >= matchstart);
 
     out.append(*str, start, matchstart - start);
@@ -395,8 +445,9 @@ int PCRE::GlobalReplace(string *str,
   if (count == 0)
     return 0;
 
-  if (start < str->length())
-    out.append(*str, start, str->length() - start);
+  if (start < str->size())
+    out.append(*str, start, str->size() - start);
+  using std::swap;
   swap(out, *str);
   return count;
 }
@@ -405,7 +456,7 @@ bool PCRE::Extract(const StringPiece &text,
                  const PCRE& pattern,
                  const StringPiece &rewrite,
                  string *out) {
-  int vec[kVecSize];
+  int vec[kVecSize] = {};
   int matches = pattern.TryMatch(text, 0, UNANCHORED, true, vec, kVecSize);
   if (matches == 0)
     return false;
@@ -424,7 +475,7 @@ string PCRE::QuoteMeta(const StringPiece& unquoted) {
   // that.  (This also makes it identical to the perl function of the
   // same name except for the null-character special case;
   // see `perldoc -f quotemeta`.)
-  for (int ii = 0; ii < unquoted.length(); ++ii) {
+  for (size_t ii = 0; ii < unquoted.size(); ++ii) {
     // Note that using 'isalnum' here raises the benchmark time from
     // 32ns to 58ns:
     if ((unquoted[ii] < 'a' || unquoted[ii] > 'z') &&
@@ -451,7 +502,7 @@ string PCRE::QuoteMeta(const StringPiece& unquoted) {
 /***** Actual matching and rewriting code *****/
 
 bool PCRE::HitLimit() {
-  return hit_limit_;
+  return hit_limit_ != 0;
 }
 
 void PCRE::ClearHitLimit() {
@@ -459,11 +510,11 @@ void PCRE::ClearHitLimit() {
 }
 
 int PCRE::TryMatch(const StringPiece& text,
-                 int startpos,
-                 Anchor anchor,
-                 bool empty_ok,
-                 int *vec,
-                 int vecsize) const {
+                   size_t startpos,
+                   Anchor anchor,
+                   bool empty_ok,
+                   int *vec,
+                   int vecsize) const {
   pcre* re = (anchor == ANCHOR_BOTH) ? re_full_ : re_partial_;
   if (re == NULL) {
     PCREPORT(ERROR) << "Matching against invalid re: " << *error_;
@@ -499,8 +550,8 @@ int PCRE::TryMatch(const StringPiece& text,
   int rc = pcre_exec(re,              // The regular expression object
                      &extra,
                      (text.data() == NULL) ? "" : text.data(),
-                     text.size(),
-                     startpos,
+                     static_cast<int>(text.size()),
+                     static_cast<int>(startpos),
                      options,
                      vec,
                      vecsize);
@@ -554,18 +605,13 @@ int PCRE::TryMatch(const StringPiece& text,
   return rc;
 }
 
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
 bool PCRE::DoMatchImpl(const StringPiece& text,
-                     Anchor anchor,
-                     int* consumed,
-                     const Arg* const* args,
-                     int n,
-                     int* vec,
-                     int vecsize) const {
+                       Anchor anchor,
+                       size_t* consumed,
+                       const Arg* const* args,
+                       int n,
+                       int* vec,
+                       int vecsize) const {
   assert((1 + n) * 3 <= vecsize);  // results + PCRE workspace
   int matches = TryMatch(text, 0, anchor, true, vec, vecsize);
   assert(matches >= 0);  // TryMatch never returns negatives
@@ -589,7 +635,17 @@ bool PCRE::DoMatchImpl(const StringPiece& text,
   for (int i = 0; i < n; i++) {
     const int start = vec[2*(i+1)];
     const int limit = vec[2*(i+1)+1];
-    if (!args[i]->Parse(text.data() + start, limit-start)) {
+
+    // Avoid invoking undefined behavior when text.data() happens
+    // to be null and start happens to be -1, the latter being the
+    // case for an unmatched subexpression. Even if text.data() is
+    // not null, pointing one byte before was a longstanding bug.
+    const char* addr = NULL;
+    if (start != -1) {
+      addr = text.data() + start;
+    }
+
+    if (!args[i]->Parse(addr, limit-start)) {
       // TODO: Should we indicate what the error was?
       return false;
     }
@@ -598,19 +654,15 @@ bool PCRE::DoMatchImpl(const StringPiece& text,
   return true;
 }
 
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
-
 bool PCRE::DoMatch(const StringPiece& text,
-                 Anchor anchor,
-                 int* consumed,
-                 const Arg* const args[],
-                 int n) const {
+                   Anchor anchor,
+                   size_t* consumed,
+                   const Arg* const args[],
+                   int n) const {
   assert(n >= 0);
-  size_t const vecsize = (1 + n) * 3;  // results + PCRE workspace
-                                       // (as for kVecSize)
-  int *vec = new int[vecsize];
+  const int vecsize = (1 + n) * 3;  // results + PCRE workspace
+                                    // (as for kVecSize)
+  int* vec = new int[vecsize];
   bool b = DoMatchImpl(text, anchor, consumed, args, n, vec, vecsize);
   delete[] vec;
   return b;
@@ -695,41 +747,52 @@ int PCRE::NumberOfCapturingGroups() const {
   if (re_partial_ == NULL) return -1;
 
   int result;
-  CHECK(pcre_fullinfo(re_partial_,       // The regular expression object
-                      NULL,              // We did not study the pattern
-                      PCRE_INFO_CAPTURECOUNT,
-                      &result) == 0);
+  int rc = pcre_fullinfo(re_partial_,       // The regular expression object
+                         NULL,              // We did not study the pattern
+                         PCRE_INFO_CAPTURECOUNT,
+                         &result);
+  if (rc != 0) {
+    PCREPORT(ERROR) << "Unexpected return code: " << rc;
+    return -1;
+  }
   return result;
 }
 
 
 /***** Parsers for various types *****/
 
-bool PCRE::Arg::parse_null(const char* str, int n, void* dest) {
+bool PCRE::Arg::parse_null(const char* str, size_t n, void* dest) {
   // We fail if somebody asked us to store into a non-NULL void* pointer
   return (dest == NULL);
 }
 
-bool PCRE::Arg::parse_string(const char* str, int n, void* dest) {
+bool PCRE::Arg::parse_string(const char* str, size_t n, void* dest) {
   if (dest == NULL) return true;
   reinterpret_cast<string*>(dest)->assign(str, n);
   return true;
 }
 
-bool PCRE::Arg::parse_stringpiece(const char* str, int n, void* dest) {
+bool PCRE::Arg::parse_stringpiece(const char* str, size_t n, void* dest) {
   if (dest == NULL) return true;
-  reinterpret_cast<StringPiece*>(dest)->set(str, n);
+  *(reinterpret_cast<StringPiece*>(dest)) = StringPiece(str, n);
   return true;
 }
 
-bool PCRE::Arg::parse_char(const char* str, int n, void* dest) {
+bool PCRE::Arg::parse_char(const char* str, size_t n, void* dest) {
   if (n != 1) return false;
   if (dest == NULL) return true;
   *(reinterpret_cast<char*>(dest)) = str[0];
   return true;
 }
 
-bool PCRE::Arg::parse_uchar(const char* str, int n, void* dest) {
+bool PCRE::Arg::parse_schar(const char* str, size_t n, void* dest) {
+  if (n != 1) return false;
+  if (dest == NULL) return true;
+  *(reinterpret_cast<signed char*>(dest)) = str[0];
+  return true;
+}
+
+bool PCRE::Arg::parse_uchar(const char* str, size_t n, void* dest) {
   if (n != 1) return false;
   if (dest == NULL) return true;
   *(reinterpret_cast<unsigned char*>(dest)) = str[0];
@@ -746,7 +809,7 @@ static const int kMaxNumberLength = 32;
 //      a. "str" if no termination is needed
 //      b. "buf" if the string was copied and null-terminated
 //      c. "" if the input was invalid and has no hope of being parsed
-static const char* TerminateNumber(char* buf, const char* str, int n) {
+static const char* TerminateNumber(char* buf, const char* str, size_t n) {
   if ((n > 0) && isspace(*str)) {
     // We are less forgiving than the strtoxxx() routines and do not
     // allow leading spaces.
@@ -769,9 +832,9 @@ static const char* TerminateNumber(char* buf, const char* str, int n) {
 }
 
 bool PCRE::Arg::parse_long_radix(const char* str,
-                               int n,
-                               void* dest,
-                               int radix) {
+                                 size_t n,
+                                 void* dest,
+                                 int radix) {
   if (n == 0) return false;
   char buf[kMaxNumberLength+1];
   str = TerminateNumber(buf, str, n);
@@ -786,16 +849,16 @@ bool PCRE::Arg::parse_long_radix(const char* str,
 }
 
 bool PCRE::Arg::parse_ulong_radix(const char* str,
-                                int n,
-                                void* dest,
-                                int radix) {
+                                  size_t n,
+                                  void* dest,
+                                  int radix) {
   if (n == 0) return false;
   char buf[kMaxNumberLength+1];
   str = TerminateNumber(buf, str, n);
   if (str[0] == '-') {
-   // strtoul() will silently accept negative numbers and parse
-   // them.  This module is more strict and treats them as errors.
-   return false;
+    // strtoul() will silently accept negative numbers and parse
+    // them.  This module is more strict and treats them as errors.
+    return false;
   }
 
   char* end;
@@ -809,74 +872,74 @@ bool PCRE::Arg::parse_ulong_radix(const char* str,
 }
 
 bool PCRE::Arg::parse_short_radix(const char* str,
-                                int n,
-                                void* dest,
-                                int radix) {
+                                  size_t n,
+                                  void* dest,
+                                  int radix) {
   long r;
-  if (!parse_long_radix(str, n, &r, radix)) return false; // Could not parse
-  if ((short)r != r) return false;       // Out of range
+  if (!parse_long_radix(str, n, &r, radix)) return false;  // Could not parse
+  if ((short)r != r) return false;                         // Out of range
   if (dest == NULL) return true;
-  *(reinterpret_cast<short*>(dest)) = r;
+  *(reinterpret_cast<short*>(dest)) = (short)r;
   return true;
 }
 
 bool PCRE::Arg::parse_ushort_radix(const char* str,
-                                 int n,
-                                 void* dest,
-                                 int radix) {
+                                   size_t n,
+                                   void* dest,
+                                   int radix) {
   unsigned long r;
-  if (!parse_ulong_radix(str, n, &r, radix)) return false; // Could not parse
-  if ((ushort)r != r) return false;                      // Out of range
+  if (!parse_ulong_radix(str, n, &r, radix)) return false;  // Could not parse
+  if ((unsigned short)r != r) return false;                 // Out of range
   if (dest == NULL) return true;
-  *(reinterpret_cast<unsigned short*>(dest)) = r;
+  *(reinterpret_cast<unsigned short*>(dest)) = (unsigned short)r;
   return true;
 }
 
 bool PCRE::Arg::parse_int_radix(const char* str,
-                              int n,
-                              void* dest,
-                              int radix) {
+                                size_t n,
+                                void* dest,
+                                int radix) {
   long r;
-  if (!parse_long_radix(str, n, &r, radix)) return false; // Could not parse
-  if ((int)r != r) return false;         // Out of range
+  if (!parse_long_radix(str, n, &r, radix)) return false;  // Could not parse
+  if ((int)r != r) return false;                           // Out of range
   if (dest == NULL) return true;
-  *(reinterpret_cast<int*>(dest)) = r;
+  *(reinterpret_cast<int*>(dest)) = (int)r;
   return true;
 }
 
 bool PCRE::Arg::parse_uint_radix(const char* str,
-                               int n,
-                               void* dest,
-                               int radix) {
+                                 size_t n,
+                                 void* dest,
+                                 int radix) {
   unsigned long r;
-  if (!parse_ulong_radix(str, n, &r, radix)) return false; // Could not parse
-  if ((uint)r != r) return false;                       // Out of range
+  if (!parse_ulong_radix(str, n, &r, radix)) return false;  // Could not parse
+  if ((unsigned int)r != r) return false;                   // Out of range
   if (dest == NULL) return true;
-  *(reinterpret_cast<unsigned int*>(dest)) = r;
+  *(reinterpret_cast<unsigned int*>(dest)) = (unsigned int)r;
   return true;
 }
 
 bool PCRE::Arg::parse_longlong_radix(const char* str,
-                                   int n,
-                                   void* dest,
-                                   int radix) {
+                                     size_t n,
+                                     void* dest,
+                                     int radix) {
   if (n == 0) return false;
   char buf[kMaxNumberLength+1];
   str = TerminateNumber(buf, str, n);
   char* end;
   errno = 0;
-  int64 r = strtoll(str, &end, radix);
+  long long r = strtoll(str, &end, radix);
   if (end != str + n) return false;   // Leftover junk
   if (errno) return false;
   if (dest == NULL) return true;
-  *(reinterpret_cast<int64*>(dest)) = r;
+  *(reinterpret_cast<long long*>(dest)) = r;
   return true;
 }
 
 bool PCRE::Arg::parse_ulonglong_radix(const char* str,
-                                    int n,
-                                    void* dest,
-                                    int radix) {
+                                      size_t n,
+                                      void* dest,
+                                      int radix) {
   if (n == 0) return false;
   char buf[kMaxNumberLength+1];
   str = TerminateNumber(buf, str, n);
@@ -887,26 +950,32 @@ bool PCRE::Arg::parse_ulonglong_radix(const char* str,
   }
   char* end;
   errno = 0;
-  uint64 r = strtoull(str, &end, radix);
+  unsigned long long r = strtoull(str, &end, radix);
   if (end != str + n) return false;   // Leftover junk
   if (errno) return false;
   if (dest == NULL) return true;
-  *(reinterpret_cast<uint64*>(dest)) = r;
+  *(reinterpret_cast<unsigned long long*>(dest)) = r;
   return true;
 }
 
-bool PCRE::Arg::parse_double(const char* str, int n, void* dest) {
+static bool parse_double_float(const char* str, size_t n, bool isfloat,
+                               void* dest) {
   if (n == 0) return false;
   static const int kMaxLength = 200;
   char buf[kMaxLength];
   if (n >= kMaxLength) return false;
   memcpy(buf, str, n);
   buf[n] = '\0';
-  errno = 0;
   char* end;
-  double r = strtod(buf, &end);
+  errno = 0;
+  double r;
+  if (isfloat) {
+    r = strtof(buf, &end);
+  } else {
+    r = strtod(buf, &end);
+  }
   if (end != buf + n) {
-#ifdef COMPILER_MSVC
+#ifdef _WIN32
     // Microsoft's strtod() doesn't handle inf and nan, so we have to
     // handle it explicitly.  Speed is not important here because this
     // code is only called in unit tests.
@@ -918,12 +987,12 @@ bool PCRE::Arg::parse_double(const char* str, int n, void* dest) {
     } else if ('+' == *i) {
       ++i;
     }
-    if (0 == stricmp(i, "inf") || 0 == stricmp(i, "infinity")) {
-      r = numeric_limits<double>::infinity();
+    if (0 == _stricmp(i, "inf") || 0 == _stricmp(i, "infinity")) {
+      r = std::numeric_limits<double>::infinity();
       if (!pos)
         r = -r;
-    } else if (0 == stricmp(i, "nan")) {
-      r = numeric_limits<double>::quiet_NaN();
+    } else if (0 == _stricmp(i, "nan")) {
+      r = std::numeric_limits<double>::quiet_NaN();
     } else {
       return false;
     }
@@ -933,42 +1002,47 @@ bool PCRE::Arg::parse_double(const char* str, int n, void* dest) {
   }
   if (errno) return false;
   if (dest == NULL) return true;
-  *(reinterpret_cast<double*>(dest)) = r;
+  if (isfloat) {
+    *(reinterpret_cast<float*>(dest)) = (float)r;
+  } else {
+    *(reinterpret_cast<double*>(dest)) = r;
+  }
   return true;
 }
 
-bool PCRE::Arg::parse_float(const char* str, int n, void* dest) {
-  double r;
-  if (!parse_double(str, n, &r)) return false;
-  if (dest == NULL) return true;
-  *(reinterpret_cast<float*>(dest)) = static_cast<float>(r);
-  return true;
+bool PCRE::Arg::parse_double(const char* str, size_t n, void* dest) {
+  return parse_double_float(str, n, false, dest);
 }
 
+bool PCRE::Arg::parse_float(const char* str, size_t n, void* dest) {
+  return parse_double_float(str, n, true, dest);
+}
 
-#define DEFINE_INTEGER_PARSERS(name)                                        \
-  bool PCRE::Arg::parse_##name(const char* str, int n, void* dest) {          \
-    return parse_##name##_radix(str, n, dest, 10);                          \
-  }                                                                         \
-  bool PCRE::Arg::parse_##name##_hex(const char* str, int n, void* dest) {    \
-    return parse_##name##_radix(str, n, dest, 16);                          \
-  }                                                                         \
-  bool PCRE::Arg::parse_##name##_octal(const char* str, int n, void* dest) {  \
-    return parse_##name##_radix(str, n, dest, 8);                           \
-  }                                                                         \
-  bool PCRE::Arg::parse_##name##_cradix(const char* str, int n, void* dest) { \
-    return parse_##name##_radix(str, n, dest, 0);                           \
+#define DEFINE_INTEGER_PARSER(name)                                           \
+  bool PCRE::Arg::parse_##name(const char* str, size_t n, void* dest) {       \
+    return parse_##name##_radix(str, n, dest, 10);                            \
+  }                                                                           \
+  bool PCRE::Arg::parse_##name##_hex(const char* str, size_t n, void* dest) { \
+    return parse_##name##_radix(str, n, dest, 16);                            \
+  }                                                                           \
+  bool PCRE::Arg::parse_##name##_octal(const char* str, size_t n,             \
+                                       void* dest) {                          \
+    return parse_##name##_radix(str, n, dest, 8);                             \
+  }                                                                           \
+  bool PCRE::Arg::parse_##name##_cradix(const char* str, size_t n,            \
+                                        void* dest) {                         \
+    return parse_##name##_radix(str, n, dest, 0);                             \
   }
 
-DEFINE_INTEGER_PARSERS(short);
-DEFINE_INTEGER_PARSERS(ushort);
-DEFINE_INTEGER_PARSERS(int);
-DEFINE_INTEGER_PARSERS(uint);
-DEFINE_INTEGER_PARSERS(long);
-DEFINE_INTEGER_PARSERS(ulong);
-DEFINE_INTEGER_PARSERS(longlong);
-DEFINE_INTEGER_PARSERS(ulonglong);
+DEFINE_INTEGER_PARSER(short);
+DEFINE_INTEGER_PARSER(ushort);
+DEFINE_INTEGER_PARSER(int);
+DEFINE_INTEGER_PARSER(uint);
+DEFINE_INTEGER_PARSER(long);
+DEFINE_INTEGER_PARSER(ulong);
+DEFINE_INTEGER_PARSER(longlong);
+DEFINE_INTEGER_PARSER(ulonglong);
 
-#undef DEFINE_INTEGER_PARSERS
+#undef DEFINE_INTEGER_PARSER
 
 }  // namespace re2

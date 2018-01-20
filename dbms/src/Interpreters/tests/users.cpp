@@ -1,4 +1,4 @@
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 #include <Interpreters/SecurityManager.h>
 
 #include <boost/filesystem.hpp>

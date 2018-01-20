@@ -35,13 +35,13 @@ Deletes the partition for the current week with event type 1. The same is true f
 
 Note: For old-style tables, the partition can be specified either as a number `201710` or a string `'201710'`. The syntax for the new style of tables is stricter with types (similar to the parser for the VALUES input format). In addition, ALTER TABLE FREEZE PARTITION uses exact match for new-style tables (not prefix match).
 
-In the `system.parts` table, the `partition` column should specify the value of the partition expression to use in ALTER queries (if quotas are removed). The `name` column should specify the name of the data part that has a new format.<br>
-Было: `20140317_20140323_2_2_0`<br>
-(минимальная дата - максимальная дата - номер минимального блока - номер максимального блока - уровень).<br>
-Стало: `201403_2_2_0`<br>
-(ID партиции - номер минимального блока - номер максимального блока - уровень).
+In the `system.parts` table, the `partition` column should specify the value of the partition expression to use in ALTER queries (if quotas are removed). The `name` column should specify the name of the data part that has a new format.
+
+Before: `20140317_20140323_2_2_0` (minimal data - maximal data - number of minimal block - number of maximal block - level).
+
+After: `201403_2_2_0` (partition ID - number of minimal block - number of maximal block - level).
 
 The partition ID is its string identifier (human-readable, if possible) that is used for the names of data parts in the file system and in ZooKeeper. You can specify it in ALTER queries in place of the partition key. Example: Partition key `toYYYYMM(EventDate)`; ALTER can specify either `PARTITION 201710` or `PARTITION ID '201710'`.
 
-There are more examples in the tests [`00502_custom_partitioning_local`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql)and[`00502_custom_partitioning_replicated_zookeeper`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+There are more examples in the tests [`00502_custom_partitioning_local`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 

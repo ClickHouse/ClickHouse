@@ -318,6 +318,7 @@ public:
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
+    void reloadClusterConfig();
     void setClustersConfig(const ConfigurationPtr & config);
 
     Compiler & getCompiler();

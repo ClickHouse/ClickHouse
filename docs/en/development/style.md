@@ -107,14 +107,11 @@
 
 16. If the block for if, for, while... expressions consists of a single statement, you don't need to use curly brackets. Place the statement on a separate line, instead. The same is true for a nested if, for, while... statement. But if the inner statement contains curly brackets or else, the external block should be written in curly brackets.
 
-   ```cpp
-    /// Если файлы не открыты, то открываем их.
-    if (streams.empty())
-        for (const auto & name : column_names)
-            streams.emplace(name, std::make_unique<Stream>(
-                 storage.files[name].data_file.path(),
-                storage.files[name].marks[mark_number].offset));
-   ```
+    ```cpp
+    /// Finish write.
+    for (auto & stream : streams)
+        stream.second->finalize();
+    ```
 
 17. There should be any spaces at the ends of lines.
 
@@ -286,7 +283,7 @@
 14. Do not start discussions in comments.
 
    ```
-   /// Зачем ты сделал эту фигню?
+   /// Why did you do this stuff?
    ```
 
 15. There's no need to write a comment at the end of a block describing what it was about.
@@ -383,7 +380,7 @@
 13. There is no difference in the names of local variables and class members (no prefixes required).
 
    ```
-   timer (не m_timer)
+   timer (not m_timer)
    ```
 
 14. Constants in enums use CamelCase beginning with an uppercase letter. ALL_CAPS is also allowed. If the enum is not local, use enum class.
@@ -452,7 +449,7 @@
    }
    else    /// If the calculations are already in progress, wait for results
        pool.wait();
-       
+
    if (exception)
        exception->rethrow();
    ```
@@ -563,7 +560,7 @@ This is not recommended, but it is allowed.
 
    ```cpp
    using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
-   
+
    /** Creates an aggregate function by name.
      */
    class AggregateFunctionFactory
@@ -691,7 +688,7 @@ This is not recommended, but it is allowed.
 
    The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
-6. Use `-Wall -Werror` compilation flags.
+6. Use `-Wall -Wextra -Werror` compilation flags.
 
 7. Use static linking with all libraries except those that are difficult to connect to statically (see the output of the 'ldd' command).
 

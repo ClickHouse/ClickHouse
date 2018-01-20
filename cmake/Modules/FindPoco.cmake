@@ -191,6 +191,10 @@ foreach( component ${components} )
     endif()
 endforeach()
 
+if(Poco_DataODBC_LIBRARY)
+    list(APPEND Poco_DataODBC_LIBRARY ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
+endif()
+
 if(DEFINED Poco_LIBRARIES)
     set(Poco_FOUND true)
 endif()
