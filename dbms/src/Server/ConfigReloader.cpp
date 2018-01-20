@@ -7,7 +7,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 
 
 namespace DB
@@ -53,11 +53,18 @@ void ConfigReloader::run()
 
     while (true)
     {
-        bool zk_changed = zk_node_cache.getChangedEvent().tryWait(std::chrono::milliseconds(reload_interval).count());
-        if (quit)
-            return;
+        try
+        {
+            bool zk_changed = zk_node_cache.getChangedEvent().tryWait(std::chrono::milliseconds(reload_interval).count());
+            if (quit)
+                return;
 
-        reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false);
+            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        }
     }
 }
 

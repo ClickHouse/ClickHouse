@@ -42,6 +42,7 @@ static void executeCreateQuery(
     ast_create_query.database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
+    interpreter.setInternal(true);
     if (pool)
         interpreter.setDatabaseLoadingThreadpool(*pool);
     interpreter.setForceRestoreData(has_force_restore_data_flag);

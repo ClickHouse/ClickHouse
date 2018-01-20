@@ -15,7 +15,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/config.h>
@@ -451,7 +451,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
+                if (try_listen && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
                     LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "

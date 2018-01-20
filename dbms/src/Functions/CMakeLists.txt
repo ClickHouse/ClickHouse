@@ -83,6 +83,11 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
     target_compile_options(clickhouse_functions PRIVATE "-g0")
 endif ()
 
+if (USE_ICU)
+    #target_link_libraries (clickhouse_functions ${ICU_LIBS})
+    target_include_directories (clickhouse_functions PRIVATE ${ICU_INCLUDE_DIR})
+endif ()
+
 if (USE_VECTORCLASS)
     target_include_directories (clickhouse_functions BEFORE PUBLIC ${VECTORCLASS_INCLUDE_DIR})
 endif ()

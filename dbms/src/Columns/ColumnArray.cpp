@@ -510,7 +510,7 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    auto res = ColumnArray::create(data);
+    auto res = ColumnArray::create(data->cloneEmpty());
 
     ssize_t nested_result_size_hint = 0;
     if (result_size_hint < 0)

@@ -2,13 +2,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#ifndef UTIL_LOGGING_H_
+#define UTIL_LOGGING_H_
+
 // Simplified version of Google's logging.
 
-#ifndef RE2_UTIL_LOGGING_H__
-#define RE2_UTIL_LOGGING_H__
-
-#include <unistd.h>  /* for write */
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ostream>
 #include <sstream>
+
+#include "util/util.h"
 
 // Debug-only checking.
 #define DCHECK(condition) assert(condition)
@@ -29,33 +34,37 @@
 #define CHECK_NE(x, y)	CHECK((x) != (y))
 
 #define LOG_INFO LogMessage(__FILE__, __LINE__)
-#define LOG_ERROR LOG_INFO
-#define LOG_WARNING LOG_INFO
+#define LOG_WARNING LogMessage(__FILE__, __LINE__)
+#define LOG_ERROR LogMessage(__FILE__, __LINE__)
 #define LOG_FATAL LogMessageFatal(__FILE__, __LINE__)
 #define LOG_QFATAL LOG_FATAL
 
-#define VLOG(x) if((x)>0){}else LOG_INFO.stream()
+// It seems that one of the Windows header files defines ERROR as 0.
+#ifdef _WIN32
+#define LOG_0 LOG_INFO
+#endif
 
 #ifdef NDEBUG
-#define DEBUG_MODE 0
 #define LOG_DFATAL LOG_ERROR
 #else
-#define DEBUG_MODE 1
 #define LOG_DFATAL LOG_FATAL
 #endif
 
 #define LOG(severity) LOG_ ## severity.stream()
 
+#define VLOG(x) if((x)>0){}else LOG_INFO.stream()
+
 class LogMessage {
  public:
-  LogMessage(const char* file, int line) : flushed_(false) {
+  LogMessage(const char* file, int line)
+      : flushed_(false) {
     stream() << file << ":" << line << ": ";
   }
   void Flush() {
     stream() << "\n";
     string s = str_.str();
-    int n = (int)s.size(); // shut up msvc
-    if(write(2, s.data(), n) < 0) {}  // shut up gcc
+    size_t n = s.size();
+    if (fwrite(s.data(), 1, n, stderr) < n) {}  // shut up gcc
     flushed_ = true;
   }
   ~LogMessage() {
@@ -63,24 +72,38 @@ class LogMessage {
       Flush();
     }
   }
-  ostream& stream() { return str_; }
- 
+  std::ostream& stream() { return str_; }
+
  private:
   bool flushed_;
   std::ostringstream str_;
-  DISALLOW_EVIL_CONSTRUCTORS(LogMessage);
+
+  LogMessage(const LogMessage&) = delete;
+  LogMessage& operator=(const LogMessage&) = delete;
 };
+
+// Silence "destructor never returns" warning for ~LogMessageFatal().
+// Since this is a header file, push and then pop to limit the scope.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4722)
+#endif
 
 class LogMessageFatal : public LogMessage {
  public:
   LogMessageFatal(const char* file, int line)
-    : LogMessage(file, line) { }
+      : LogMessage(file, line) {}
   ~LogMessageFatal() {
     Flush();
     abort();
   }
  private:
-  DISALLOW_EVIL_CONSTRUCTORS(LogMessageFatal);
+  LogMessageFatal(const LogMessageFatal&) = delete;
+  LogMessageFatal& operator=(const LogMessageFatal&) = delete;
 };
 
-#endif  // RE2_UTIL_LOGGING_H__
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+#endif  // UTIL_LOGGING_H_

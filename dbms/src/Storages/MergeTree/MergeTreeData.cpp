@@ -32,7 +32,7 @@
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
 #include <Common/localBackup.h>

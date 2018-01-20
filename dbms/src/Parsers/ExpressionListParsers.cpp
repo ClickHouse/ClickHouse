@@ -8,7 +8,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB

@@ -156,7 +156,7 @@ ORDER BY c DESC
 
 ```sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'ввв.яндекс.рф', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -170,7 +170,6 @@ LIMIT 10
 │ www.yandex     │  867767 │
 │ ███████.ru     │  313599 │
 │ mail.yandex.ru │  107147 │
-│ ввв.яндекс.рф  │  105668 │
 │ ██████.ru      │  100355 │
 │ █████████.ru   │   65040 │
 │ news.yandex.ru │   64515 │

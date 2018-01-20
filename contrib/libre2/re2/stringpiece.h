@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#ifndef RE2_STRINGPIECE_H_
+#define RE2_STRINGPIECE_H_
+
 // A string-like object that points to a sized piece of memory.
 //
 // Functions or methods may use const StringPiece& parameters to accept either
@@ -16,140 +19,145 @@
 //
 // Arghh!  I wish C++ literals were "string".
 
-#ifndef STRINGS_STRINGPIECE_H__
-#define STRINGS_STRINGPIECE_H__
-
+#include <stddef.h>
 #include <string.h>
-#include <cstddef>
+#include <algorithm>
 #include <iosfwd>
+#include <iterator>
 #include <string>
 
 namespace re2 {
 
 class StringPiece {
- private:
-  const char*   ptr_;
-  int           length_;
-
  public:
+  typedef char value_type;
+  typedef char* pointer;
+  typedef const char* const_pointer;
+  typedef char& reference;
+  typedef const char& const_reference;
+  typedef const char* const_iterator;
+  typedef const_iterator iterator;
+  typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
+  typedef const_reverse_iterator reverse_iterator;
+  typedef size_t size_type;
+  typedef ptrdiff_t difference_type;
+  static const size_type npos = static_cast<size_type>(-1);
+
   // We provide non-explicit singleton constructors so users can pass
   // in a "const char*" or a "string" wherever a "StringPiece" is
   // expected.
-  StringPiece() : ptr_(NULL), length_(0) { }
-  StringPiece(const char* str)
-    : ptr_(str), length_((str == NULL) ? 0 : static_cast<int>(strlen(str))) { }
+  StringPiece()
+      : data_(NULL), size_(0) {}
   StringPiece(const std::string& str)
-    : ptr_(str.data()), length_(static_cast<int>(str.size())) { }
-  StringPiece(const char* offset, int len) : ptr_(offset), length_(len) { }
+      : data_(str.data()), size_(str.size()) {}
+  StringPiece(const char* str)
+      : data_(str), size_(str == NULL ? 0 : strlen(str)) {}
+  StringPiece(const char* str, size_type len)
+      : data_(str), size_(len) {}
 
-  // data() may return a pointer to a buffer with embedded NULs, and the
-  // returned buffer may or may not be null terminated.  Therefore it is
-  // typically a mistake to pass data() to a routine that expects a NUL
-  // terminated string.
-  const char* data() const { return ptr_; }
-  int size() const { return length_; }
-  int length() const { return length_; }
-  bool empty() const { return length_ == 0; }
+  const_iterator begin() const { return data_; }
+  const_iterator end() const { return data_ + size_; }
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator(data_ + size_);
+  }
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator(data_);
+  }
 
-  void clear() { ptr_ = NULL; length_ = 0; }
-  void set(const char* data, int len) { ptr_ = data; length_ = len; }
+  size_type size() const { return size_; }
+  size_type length() const { return size_; }
+  bool empty() const { return size_ == 0; }
+
+  const_reference operator[](size_type i) const { return data_[i]; }
+  const_pointer data() const { return data_; }
+
+  void remove_prefix(size_type n) {
+    data_ += n;
+    size_ -= n;
+  }
+
+  void remove_suffix(size_type n) {
+    size_ -= n;
+  }
+
   void set(const char* str) {
-    ptr_ = str;
-    if (str != NULL)
-      length_ = static_cast<int>(strlen(str));
-    else
-      length_ = 0;
-  }
-  void set(const void* data, int len) {
-    ptr_ = reinterpret_cast<const char*>(data);
-    length_ = len;
+    data_ = str;
+    size_ = str == NULL ? 0 : strlen(str);
   }
 
-  char operator[](int i) const { return ptr_[i]; }
-
-  void remove_prefix(int n) {
-    ptr_ += n;
-    length_ -= n;
-  }
-
-  void remove_suffix(int n) {
-    length_ -= n;
-  }
-
-  int compare(const StringPiece& x) const {
-    int r = memcmp(ptr_, x.ptr_, std::min(length_, x.length_));
-    if (r == 0) {
-      if (length_ < x.length_) r = -1;
-      else if (length_ > x.length_) r = +1;
-    }
-    return r;
+  void set(const char* str, size_type len) {
+    data_ = str;
+    size_ = len;
   }
 
   std::string as_string() const {
-    return std::string(data(), size());
+    return std::string(data_, size_);
   }
+
   // We also define ToString() here, since many other string-like
   // interfaces name the routine that converts to a C++ string
   // "ToString", and it's confusing to have the method that does that
   // for a StringPiece be called "as_string()".  We also leave the
   // "as_string()" method defined here for existing code.
   std::string ToString() const {
-    return std::string(data(), size());
+    return std::string(data_, size_);
   }
 
-  void CopyToString(std::string* target) const;
-  void AppendToString(std::string* target) const;
+  void CopyToString(std::string* target) const {
+    target->assign(data_, size_);
+  }
 
-  // Does "this" start with "x"
+  void AppendToString(std::string* target) const {
+    target->append(data_, size_);
+  }
+
+  size_type copy(char* buf, size_type n, size_type pos = 0) const;
+  StringPiece substr(size_type pos = 0, size_type n = npos) const;
+
+  int compare(const StringPiece& x) const {
+    size_type min_size = std::min(size(), x.size());
+    if (min_size > 0) {
+      int r = memcmp(data(), x.data(), min_size);
+      if (r < 0) return -1;
+      if (r > 0) return 1;
+    }
+    if (size() < x.size()) return -1;
+    if (size() > x.size()) return 1;
+    return 0;
+  }
+
+  // Does "this" start with "x"?
   bool starts_with(const StringPiece& x) const {
-    return ((length_ >= x.length_) &&
-            (memcmp(ptr_, x.ptr_, x.length_) == 0));
+    return x.empty() ||
+           (size() >= x.size() && memcmp(data(), x.data(), x.size()) == 0);
   }
 
-  // Does "this" end with "x"
+  // Does "this" end with "x"?
   bool ends_with(const StringPiece& x) const {
-    return ((length_ >= x.length_) &&
-            (memcmp(ptr_ + (length_-x.length_), x.ptr_, x.length_) == 0));
+    return x.empty() ||
+           (size() >= x.size() &&
+            memcmp(data() + (size() - x.size()), x.data(), x.size()) == 0);
   }
 
-  // standard STL container boilerplate
-  typedef char value_type;
-  typedef const char* pointer;
-  typedef const char& reference;
-  typedef const char& const_reference;
-  typedef size_t size_type;
-  typedef ptrdiff_t difference_type;
-  static const size_type npos;
-  typedef const char* const_iterator;
-  typedef const char* iterator;
-  typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
-  typedef std::reverse_iterator<iterator> reverse_iterator;
-  iterator begin() const { return ptr_; }
-  iterator end() const { return ptr_ + length_; }
-  const_reverse_iterator rbegin() const {
-    return const_reverse_iterator(ptr_ + length_);
+  bool contains(const StringPiece& s) const {
+    return find(s) != npos;
   }
-  const_reverse_iterator rend() const {
-    return const_reverse_iterator(ptr_);
-  }
-  // STLS says return size_type, but Google says return int
-  int max_size() const { return length_; }
-  int capacity() const { return length_; }
 
-  int copy(char* buf, size_type n, size_type pos = 0) const;
+  size_type find(const StringPiece& s, size_type pos = 0) const;
+  size_type find(char c, size_type pos = 0) const;
+  size_type rfind(const StringPiece& s, size_type pos = npos) const;
+  size_type rfind(char c, size_type pos = npos) const;
 
-  int find(const StringPiece& s, size_type pos = 0) const;
-  int find(char c, size_type pos = 0) const;
-  int rfind(const StringPiece& s, size_type pos = npos) const;
-  int rfind(char c, size_type pos = npos) const;
-
-  StringPiece substr(size_type pos, size_type n = npos) const;
-  
-  static bool _equal(const StringPiece&, const StringPiece&);
+ private:
+  const_pointer data_;
+  size_type size_;
 };
 
 inline bool operator==(const StringPiece& x, const StringPiece& y) {
-  return StringPiece::_equal(x, y);
+  StringPiece::size_type len = x.size();
+  if (len != y.size()) return false;
+  return x.data() == y.data() || len == 0 ||
+         memcmp(x.data(), y.data(), len) == 0;
 }
 
 inline bool operator!=(const StringPiece& x, const StringPiece& y) {
@@ -157,9 +165,9 @@ inline bool operator!=(const StringPiece& x, const StringPiece& y) {
 }
 
 inline bool operator<(const StringPiece& x, const StringPiece& y) {
-  const int r = memcmp(x.data(), y.data(),
-                       std::min(x.size(), y.size()));
-  return ((r < 0) || ((r == 0) && (x.size() < y.size())));
+  StringPiece::size_type min_size = std::min(x.size(), y.size());
+  int r = min_size == 0 ? 0 : memcmp(x.data(), y.data(), min_size);
+  return (r < 0) || (r == 0 && x.size() < y.size());
 }
 
 inline bool operator>(const StringPiece& x, const StringPiece& y) {
@@ -174,9 +182,9 @@ inline bool operator>=(const StringPiece& x, const StringPiece& y) {
   return !(x < y);
 }
 
+// Allow StringPiece to be logged.
+std::ostream& operator<<(std::ostream& o, const StringPiece& p);
+
 }  // namespace re2
 
-// allow StringPiece to be logged
-extern std::ostream& operator<<(std::ostream& o, const re2::StringPiece& piece);
-
-#endif  // STRINGS_STRINGPIECE_H__
+#endif  // RE2_STRINGPIECE_H_

@@ -1,4 +1,4 @@
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>

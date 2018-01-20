@@ -43,7 +43,9 @@ With SELECT from an AggregatingMergeTree table, use GROUP BY and aggregate funct
 
 You can use AggregatingMergeTree tables for incremental data aggregation, including for aggregated materialized views.
 
-Пример:Creating a materialized AggregatingMergeTree view that tracks the 'test.visits' table:
+Example:
+
+Creating a materialized AggregatingMergeTree view that tracks the 'test.visits' table:
 
 ```sql
 CREATE MATERIALIZED VIEW test.basic
