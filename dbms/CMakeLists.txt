@@ -80,7 +80,7 @@ list (APPEND dbms_headers
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
-if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
+if (APPLE OR ARCH_FREEBSD)
     list(REMOVE_ITEM clickhouse_common_io_headers
         src/Common/AIO.h
         src/IO/WriteBufferAIO.h
