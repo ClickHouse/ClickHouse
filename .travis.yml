@@ -71,7 +71,7 @@ matrix:
         timeout: 1000
 
       before_install:
-        - brew install unixodbc libtool gettext zlib readline ccache gcc || true
+        - brew install unixodbc libtool gettext zlib readline poco librdkafka capnp double-conversion gperftools cityhash google-sparsehash re2 lz4 zstd ccache gcc || true
         - brew link --overwrite gcc || true
 
       env:
