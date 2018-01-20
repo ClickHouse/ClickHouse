@@ -3,6 +3,7 @@ option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test inste
 if (USE_INTERNAL_GTEST_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeLists.txt")
    message (WARNING "submodule contrib/googletest is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_GTEST_LIBRARY 0)
+   set (MISSING_INTERNAL_GTEST_LIBRARY 1)
 endif ()
 
 if (NOT USE_INTERNAL_GTEST_LIBRARY)
@@ -11,7 +12,7 @@ if (NOT USE_INTERNAL_GTEST_LIBRARY)
 endif ()
 
 if (GTEST_LIBRARY AND GTEST_INCLUDE_DIR)
-else ()
+elseif (NOT MISSING_INTERNAL_GTEST_LIBRARY)
     set (USE_INTERNAL_GTEST_LIBRARY 1)
     set (GTEST_LIBRARY gtest_main)
 endif ()

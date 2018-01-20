@@ -228,7 +228,7 @@ target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)
-    include (${PROJECT_SOURCE_DIR}/cmake/find_gtest.cmake)
+    include (${ClickHouse_SOURCE_DIR}/cmake/find_gtest.cmake)
 
     if (USE_INTERNAL_GTEST_LIBRARY)
         # Google Test from sources
