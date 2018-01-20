@@ -195,6 +195,10 @@ if(Poco_DataODBC_LIBRARY)
     list(APPEND Poco_DataODBC_LIBRARY ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
 endif()
 
+if(Poco_NetSSL_LIBRARY)
+    list(APPEND Poco_NetSSL_LIBRARY ${OPENSSL_LIBRARIES})
+endif()
+
 if(DEFINED Poco_LIBRARIES)
     set(Poco_FOUND true)
 endif()
