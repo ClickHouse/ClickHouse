@@ -142,6 +142,7 @@ target_link_libraries (clickhouse_common_io
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
+    ${CMAKE_DL_LIBS}
 )
 
 target_link_libraries (dbms
@@ -203,7 +204,6 @@ if (USE_RDKAFKA)
 endif ()
 
 target_link_libraries (dbms
-    ${CMAKE_DL_LIBS}
     Threads::Threads
 )
 
