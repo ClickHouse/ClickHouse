@@ -83,6 +83,5 @@ matrix:
   allow_failures:
     - os: osx
 
-before_install:
-    - echo "${MATRIX_EVAL}"
+before_script:
     - eval "${MATRIX_EVAL}"
