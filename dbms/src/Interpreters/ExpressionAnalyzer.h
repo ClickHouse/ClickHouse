@@ -312,6 +312,12 @@ private:
       * If create_ordered_set = true - create a data structure suitable for using the index.
       */
     void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set);
+
+    /***
+     * Create Set from a subuqery or a table expression in the query.
+     */
+    void tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name);
+
     void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
 
     /** Translate qualified names such as db.table.column, table.column, table_alias.column

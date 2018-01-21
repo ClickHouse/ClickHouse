@@ -277,6 +277,9 @@ public:
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }
 
+    /// Provides a hint that the storage engine may evaluate the IN-condition by using the index.
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */) const { return false; }
+
     /// Checks validity of the data
     virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
 
