@@ -95,8 +95,8 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
             ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
             tail = head_query.next_union_all;
 
-            interpreter->next_select_in_union_all = std::make_unique<InterpreterSelectQuery>(
-                head, context, required_column_names, to_stage, subquery_depth);
+            interpreter->next_select_in_union_all =
+                std::make_unique<InterpreterSelectQuery>(head, context, to_stage, subquery_depth);
             interpreter = interpreter->next_select_in_union_all.get();
         }
     }
@@ -119,10 +119,17 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
     }
     else
     {
-        if (!required_column_names.empty())
-            rewriteExpressionList(required_column_names);
-
         renameColumns();
+        if (!required_column_names.empty()) {
+            rewriteExpressionList(required_column_names);
+            
+            if (is_first_select_inside_union_all) {
+                for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
+                    p->query_analyzer.reset(new ExpressionAnalyzer(
+                        p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze));
+            }
+        }
+
         basicInit(input);
     }
 }
