@@ -48,6 +48,9 @@ if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
     set (ARCH_32 1)
     message (WARNING "Support for 32bit platforms is highly experimental")
 endif ()
+if (CMAKE_SYSTEM MATCHES "Linux")
+    set (ARCH_LINUX 1)
+endif ()
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set (ARCH_FREEBSD 1)
 endif ()
@@ -64,7 +67,10 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
 
-set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
+if (ARCH_LINUX)
+    set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
+endif ()
+
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
 
@@ -86,7 +92,7 @@ endif ()
 if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "amd64.*|x86_64.*|AMD64.*")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
-    if (CMAKE_SYSTEM MATCHES "Linux")
+    if (ARCH_LINUX)
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
     endif()
 endif ()
@@ -166,7 +172,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 include (cmake/test_compiler.cmake)
 
-if (CMAKE_SYSTEM MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if (ARCH_LINUX AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 
     option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
@@ -250,7 +256,7 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 # Using system libs can cause lot of warnings in includes.
-if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE) OR ARCH_32)
+if (UNBUNDLED OR NOT (ARCH_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 

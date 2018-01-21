@@ -1,6 +1,7 @@
 language: generic
 
 matrix:
+  fast_finish: true
   include:
     - os: linux
 
@@ -62,7 +63,7 @@ matrix:
         - utils/travis/pbuilder.sh
 
 
-# TODO: test and enable
+# Link problem
 #    - os: osx
 #      osx_image: xcode9.2
 #
@@ -71,7 +72,7 @@ matrix:
 #        timeout: 1000
 #
 #      before_install:
-#        - brew install unixodbc libtool gettext zlib readline ccache gcc || true
+#        - brew install unixodbc libtool gettext zlib readline poco librdkafka capnp double-conversion gperftools google-sparsehash re2 lz4 zstd ccache gcc || true
 #        - brew link --overwrite gcc || true
 #
 #      env:
@@ -84,6 +85,5 @@ matrix:
   allow_failures:
     - os: osx
 
-before_install:
-    - echo "${MATRIX_EVAL}"
+before_script:
     - eval "${MATRIX_EVAL}"
