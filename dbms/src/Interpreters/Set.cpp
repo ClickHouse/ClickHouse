@@ -177,8 +177,13 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
     }
 
     if (create_ordered_set)
+    {
+        if (!ordered_set_elements)
+            ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+
         for (size_t i = 0; i < rows; ++i)
             ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set for index works only for single key, not for tuples
+    }
 
     if (!checkSetSizeLimits())
     {
@@ -201,6 +206,20 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
     }
 
     return true;
+}
+
+
+void Set::makeOrderedSet()
+{
+    if (!ordered_set_elements)
+    {
+        ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+    }
+    else
+    {
+        std::sort(ordered_set_elements->begin(), ordered_set_elements->end());
+        ordered_set_elements->erase(std::unique(ordered_set_elements->begin(), ordered_set_elements->end()), ordered_set_elements->end());
+    }
 }
 
 
@@ -282,10 +301,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
     insertFromBlock(block, create_ordered_set);
 
     if (create_ordered_set)
-    {
-        std::sort(ordered_set_elements->begin(), ordered_set_elements->end());
-        ordered_set_elements->erase(std::unique(ordered_set_elements->begin(), ordered_set_elements->end()), ordered_set_elements->end());
-    }
+        makeOrderedSet();
 }
 
 
