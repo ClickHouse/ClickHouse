@@ -716,7 +716,8 @@ void BaseDaemon::initialize(Application & self)
         /// Parsing all args and converting to config layer
         /// Test: --1=1 --1=2 --3 5 7 8 -9 10 -11=12 14= 15== --16==17 --=18 --19=
         Poco::AutoPtr<Poco::Util::MapConfiguration> map_config = new Poco::Util::MapConfiguration;
-        for(auto &arg : argv()) {
+        for(auto &arg : argv())
+        {
             auto pos = arg.find('=');
             if (pos == std::string::npos || pos < 2)
                 continue;
