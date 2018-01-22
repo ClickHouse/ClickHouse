@@ -13,7 +13,9 @@ if (USE_INTERNAL_ZSTD_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
-    add_subdirectory (libre2)
+    set(RE2_BUILD_TESTING 0 CACHE INTERNAL "")
+    add_subdirectory (re2)
+    add_subdirectory (re2_st)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
