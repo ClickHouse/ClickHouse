@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>

@@ -7,11 +7,18 @@ This directory contains tests that involve several ClickHouse instances, custom 
 Prerequisites:
 * Ubuntu 14.04 (Trusty).
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
+
+You must install latest Docker from
+https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
+Don't use Docker from your system repository.
+
 * [pip](https://pypi.python.org/pypi/pip). To install: `sudo apt-get install python-pip`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
 * [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml`
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
+(You must close all your sessions (for example, restart your computer))
+To check, that you have access to Docker, run `docker ps`.
 
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 

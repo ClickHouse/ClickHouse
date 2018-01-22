@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Common/ZooKeeper/Types.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include "Types.h"
+#include "KeeperException.h"
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>

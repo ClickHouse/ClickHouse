@@ -26,7 +26,7 @@ default:
 	$(SPHINXBUILD) -b html $(SPHINXOPTS) en $(BUILDDIR)/docs/en
 	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru/single
 	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) en $(BUILDDIR)/docs/en/single
-	perl -pi -e 's|external\\" href=\\"[^#]+#|external\\" href=\\"#|g' $(BUILDDIR)/docs/ru/single/index.html $(BUILDDIR)/docs/en/single/index.html
+	perl -pi -e 's|external\\" href=\\"[^#":]+#|external\\" href=\\"#|g' $(BUILDDIR)/docs/ru/single/index.html $(BUILDDIR)/docs/en/single/index.html
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"

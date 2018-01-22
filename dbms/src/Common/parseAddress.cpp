@@ -35,7 +35,7 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
 
     if (port != end)
     {
-        UInt16 port_number = parse<UInt16>(port);
+        UInt16 port_number = parse<UInt16>(port + 1);
         return { std::string(begin, port), port_number };
     }
     else if (default_port)

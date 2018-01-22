@@ -103,6 +103,7 @@ private:
     const String destination_database;
     const String destination_table;
     bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
+    bool allow_materialized;
 
     Poco::Logger * log;
 
@@ -131,7 +132,7 @@ protected:
         const ColumnDefaults & column_defaults_,
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_);
+        const String & destination_database_, const String & destination_table_, bool allow_materialized_);
 };
 
 }
