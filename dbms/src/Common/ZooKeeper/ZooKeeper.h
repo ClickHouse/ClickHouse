@@ -36,7 +36,7 @@ const UInt32 BIG_SESSION_TIMEOUT = 600000;
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
 struct WatchContext;
-
+struct MultiTransactionInfo;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -200,6 +200,8 @@ public:
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
     int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
+    /// Like previous one, but does not throw any ZooKeeper exceptions
+    int32_t tryMultiUnsafe(const Ops & ops, MultiTransactionInfo & info);
     /// Use only with read-only operations.
     int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr, size_t * attempt = nullptr);
 
@@ -430,10 +432,6 @@ private:
 };
 
 
-/// Returns first op which op_result != ZOK or throws an exception
-size_t getFailedOpIndex(const OpResultsPtr & op_results);
-
-
 using ZooKeeperPtr = ZooKeeper::Ptr;
 
 
@@ -494,5 +492,42 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
+
+
+/// Simple structure to handle transaction execution results
+struct MultiTransactionInfo
+{
+    MultiTransactionInfo() = default;
+
+    const Ops * ops = nullptr;
+    int32_t code = ZOK;
+    OpResultsPtr op_results;
+
+    bool empty() const
+    {
+        return ops == nullptr;
+    }
+
+    bool hasFailedOp() const
+    {
+        return zkutil::isUserError(code);
+    }
+
+    const Op & getFailedOp() const
+    {
+        return *ops->at(getFailedOpIndex(op_results, code));
+    }
+
+    KeeperException getException() const
+    {
+        if (hasFailedOp())
+        {
+            size_t i = getFailedOpIndex(op_results, code);
+            return KeeperException("Transaction failed at op #" + std::to_string(i) + ": " + ops->at(i)->describe(), code);
+        }
+        else
+            return KeeperException(code);
+    }
+};
 
 }
