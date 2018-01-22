@@ -542,7 +542,7 @@ struct NullableArraySource : public ArraySource
         return slice;
     }
 
-    bool isNullable() const
+    bool isNullable() const override
     {
         return true;
     }

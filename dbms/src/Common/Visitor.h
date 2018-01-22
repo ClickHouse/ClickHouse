@@ -52,6 +52,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 template <typename ... Types>
 class Visitor;
 
@@ -83,6 +88,7 @@ public:
     virtual void visit(Type &) = 0;
 };
 
+
 template <typename Derived, typename VisitorBase, typename ... Types>
 class VisitorImplHelper;
 
@@ -91,19 +97,36 @@ class VisitorImplHelper<Derived, VisitorBase> : public VisitorBase
 {
 };
 
-template <typename Derived, typename VisitorBase, typename Type, typename ... Types>
-class VisitorImplHelper<Derived, VisitorBase, Type, Types ...>
-        : public VisitorImplHelper<Derived, VisitorBase, Types ...>
+template <typename Derived, typename VisitorBase, typename Type>
+class VisitorImplHelper<Derived, VisitorBase, Type> : public VisitorBase
 {
 public:
+    using VisitorBase::visit;
     void visit(Type & value) override { static_cast<Derived *>(this)->visitImpl(value); }
 
 protected:
     template <typename T>
     void visitImpl(Type &)
     {
-        throw Exception(std::string("visitImpl(") + demangle(typeid(T).name()) + " &)"
-                        + " is not implemented for class" + demangle(typeid(Derived).name()));
+        throw Exception("visitImpl(" + demangle(typeid(T).name()) + " &)" + " is not implemented for class"
+                        + demangle(typeid(Derived).name()), ErrorCodes::LOGICAL_ERROR);
+    }
+};
+
+template <typename Derived, typename VisitorBase, typename Type, typename ... Types>
+class VisitorImplHelper<Derived, VisitorBase, Type, Types ...>
+        : public VisitorImplHelper<Derived, VisitorBase, Types ...>
+{
+public:
+    using VisitorImplHelper<Derived, VisitorBase, Types ...>::visit;
+    void visit(Type & value) override { static_cast<Derived *>(this)->visitImpl(value); }
+
+protected:
+    template <typename T>
+    void visitImpl(Type &)
+    {
+        throw Exception("visitImpl(" + demangle(typeid(T).name()) + " &)" + " is not implemented for class"
+                        + demangle(typeid(Derived).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
 
