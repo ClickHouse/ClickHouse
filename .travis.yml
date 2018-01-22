@@ -72,14 +72,14 @@ matrix:
         timeout: 1000
 
       before_install:
-        - brew install unixodbc gcc ccache libtool gettext zlib readline double-conversion gperftools google-sparsehash lz4 zstd  || true
+        - brew install unixodbc gcc ccache libtool gettext zlib readline double-conversion gperftools google-sparsehash lz4 zstd || true
         - brew link --overwrite gcc || true
 
       env:
         - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
 
       script:
-        - utils/travis/normal.sh
+        - env CMAKE_FLAGS="-DUSE_INTERNAL_BOOST_LIBRARY=1" utils/travis/normal.sh
 
 
   allow_failures:
