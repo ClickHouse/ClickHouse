@@ -1469,169 +1469,158 @@ private:
 };
 
 
-class ClusterCopierApp : public Poco::Util::ServerApplication
+/// ClusterCopierApp
+
+
+void ClusterCopierApp::initialize(Poco::Util::Application & self)
 {
-public:
+    Poco::Util::Application::initialize(self);
 
-    void initialize(Poco::Util::Application & self) override
+    is_help = config().has("help");
+    if (is_help)
+        return;
+
+    config_xml_path = config().getString("config-file");
+    task_path = config().getString("task-path");
+    log_level = config().getString("log-level", "debug");
+    is_safe_mode = config().has("safe-mode");
+    if (config().has("copy-fault-probability"))
+        copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
+    base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
+
+    // process_id is '<hostname>#<pid>_<start_timestamp>'
+    process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
+    host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
+    process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
+    Poco::File(process_path).createDirectories();
+
+    setupLogging();
+
+    std::string stderr_path = process_path + "/stderr";
+    if (!freopen(stderr_path.c_str(), "a+", stderr))
+        throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
+}
+
+
+void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
+{
+    Poco::Util::HelpFormatter helpFormatter(options());
+    helpFormatter.setCommand(commandName());
+    helpFormatter.setHeader("Copies tables from one cluster to another");
+    helpFormatter.setUsage("--config-file <config-file> --task-path <task-path>");
+    helpFormatter.format(std::cerr);
+
+    stopOptionsProcessing();
+}
+
+
+void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
+{
+    options.addOption(Poco::Util::Option("config-file", "c", "path to config file with ZooKeeper config", true)
+                          .argument("config-file").binding("config-file"));
+    options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
+                          .argument("task-path").binding("task-path"));
+    options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
+                          .binding("safe-mode"));
+    options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
+                          .argument("copy-fault-probability").binding("copy-fault-probability"));
+    options.addOption(Poco::Util::Option("log-level", "", "sets log level")
+                          .argument("log-level").binding("log-level"));
+    options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consequitive copier launches will populate /base-dir/launch_id/* directories")
+                          .argument("base-dir").binding("base-dir"));
+
+    using Me = std::decay_t<decltype(*this)>;
+    options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
+                          .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
+}
+
+
+void ClusterCopierApp::setupLogging()
+{
+    Poco::AutoPtr<Poco::SplitterChannel> split_channel(new Poco::SplitterChannel);
+
+    Poco::AutoPtr<Poco::FileChannel> log_file_channel(new Poco::FileChannel);
+    log_file_channel->setProperty("path", process_path + "/log.log");
+    split_channel->addChannel(log_file_channel);
+    log_file_channel->open();
+
+    if (!config().getBool("application.runAsService", true))
     {
-        Poco::Util::Application::initialize(self);
-
-        is_help = config().has("help");
-        if (is_help)
-            return;
-
-        config_xml_path = config().getString("config-file");
-        task_path = config().getString("task-path");
-        log_level = config().getString("log-level", "debug");
-        is_safe_mode = config().has("safe-mode");
-        if (config().has("copy-fault-probability"))
-            copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
-        base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
-
-        // process_id is '<hostname>#<pid>_<start_timestamp>'
-        process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
-        host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
-        process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
-        Poco::File(process_path).createDirectories();
-
-        setupLogging();
-
-        std::string stderr_path = process_path + "/stderr";
-        if (!freopen(stderr_path.c_str(), "a+", stderr))
-            throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
+        Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
+        split_channel->addChannel(console_channel);
+        console_channel->open();
     }
 
-    void handleHelp(const std::string &, const std::string &)
-    {
-        Poco::Util::HelpFormatter helpFormatter(options());
-        helpFormatter.setCommand(commandName());
-        helpFormatter.setHeader("Copies tables from one cluster to another");
-        helpFormatter.setUsage("--config-file <config-file> --task-path <task-path>");
-        helpFormatter.format(std::cerr);
+    Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
+    formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
+    Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter));
+    formatting_channel->setChannel(split_channel);
+    split_channel->open();
 
-        stopOptionsProcessing();
-    }
+    Poco::Logger::root().setChannel(formatting_channel);
+    Poco::Logger::root().setLevel(log_level);
+}
 
-    void defineOptions(Poco::Util::OptionSet & options) override
-    {
-        options.addOption(Poco::Util::Option("config-file", "c", "path to config file with ZooKeeper config", true)
-                              .argument("config-file").binding("config-file"));
-        options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
-                              .argument("task-path").binding("task-path"));
-        options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
-                              .binding("safe-mode"));
-        options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
-                              .argument("copy-fault-probability").binding("copy-fault-probability"));
-        options.addOption(Poco::Util::Option("log-level", "", "sets log level")
-                              .argument("log-level").binding("log-level"));
-        options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consequitive copier launches will populate /base-dir/launch_id/* directories")
-                              .argument("base-dir").binding("base-dir"));
 
-        using Me = std::decay_t<decltype(*this)>;
-        options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
-                              .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
-    }
+void ClusterCopierApp::mainImpl()
+{
+    ConfigurationPtr zookeeper_configuration(new Poco::Util::XMLConfiguration(config_xml_path));
+    auto log = &logger();
 
-    void setupLogging()
-    {
-        Poco::AutoPtr<Poco::SplitterChannel> split_channel(new Poco::SplitterChannel);
+    StatusFile status_file(process_path + "/status");
 
-        Poco::AutoPtr<Poco::FileChannel> log_file_channel(new Poco::FileChannel);
-        log_file_channel->setProperty("path", process_path + "/log.log");
-        split_channel->addChannel(log_file_channel);
-        log_file_channel->open();
+    LOG_INFO(log, "Starting clickhouse-copier ("
+        << "id " << process_id << ", "
+        << "host_id " << host_id << ", "
+        << "path " << process_path << ", "
+        << "revision " << ClickHouseRevision::get() << ")");
 
-        if (!config().getBool("application.runAsService", true))
-        {
-            Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
-            split_channel->addChannel(console_channel);
-            console_channel->open();
-        }
+    auto context = std::make_unique<Context>(Context::createGlobal());
+    SCOPE_EXIT(context->shutdown());
 
-        Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
-        formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
-        Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter));
-        formatting_channel->setChannel(split_channel);
-        split_channel->open();
+    context->setGlobalContext(*context);
+    context->setApplicationType(Context::ApplicationType::LOCAL);
+    context->setPath(process_path);
 
-        Poco::Logger::root().setChannel(formatting_channel);
-        Poco::Logger::root().setLevel(log_level);
-    }
+    registerFunctions();
+    registerAggregateFunctions();
+    registerTableFunctions();
+    registerStorages();
 
-    int main(const std::vector<std::string> &) override
-    {
-        if (is_help)
-            return 0;
+    static const std::string default_database = "_local";
+    context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    context->setCurrentDatabase(default_database);
 
-        try
-        {
-            mainImpl();
-        }
-        catch (...)
-        {
-            std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-            auto code = getCurrentExceptionCode();
+    std::unique_ptr<ClusterCopier> copier(new ClusterCopier(
+        zookeeper_configuration, task_path, host_id, default_database, *context));
 
-            return (code) ? code : -1;
-        }
+    copier->setSafeMode(is_safe_mode);
+    copier->setCopyFaultProbability(copy_fault_probability);
+    copier->init();
+    copier->process();
+}
 
+
+int ClusterCopierApp::main(const std::vector<std::string> &)
+{
+    if (is_help)
         return 0;
-    }
 
-    void mainImpl()
+    try
     {
-        ConfigurationPtr zookeeper_configuration(new Poco::Util::XMLConfiguration(config_xml_path));
-        auto log = &logger();
+        mainImpl();
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = getCurrentExceptionCode();
 
-        StatusFile status_file(process_path + "/status");
-
-        LOG_INFO(log, "Starting clickhouse-copier ("
-            << "id " << process_id << ", "
-            << "host_id " << host_id << ", "
-            << "path " << process_path << ", "
-            << "revision " << ClickHouseRevision::get() << ")");
-
-        auto context = std::make_unique<Context>(Context::createGlobal());
-        SCOPE_EXIT(context->shutdown());
-
-        context->setGlobalContext(*context);
-        context->setApplicationType(Context::ApplicationType::LOCAL);
-        context->setPath(process_path);
-
-        registerFunctions();
-        registerAggregateFunctions();
-        registerTableFunctions();
-        registerStorages();
-
-        static const std::string default_database = "_local";
-        context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
-        context->setCurrentDatabase(default_database);
-
-        std::unique_ptr<ClusterCopier> copier(new ClusterCopier(
-            zookeeper_configuration, task_path, host_id, default_database, *context));
-
-        copier->setSafeMode(is_safe_mode);
-        copier->setCopyFaultProbability(copy_fault_probability);
-        copier->init();
-        copier->process();
+        return (code) ? code : -1;
     }
 
+    return 0;
+}
 
-private:
-
-    std::string config_xml_path;
-    std::string task_path;
-    std::string log_level = "debug";
-    bool is_safe_mode = false;
-    double copy_fault_probability = 0;
-    bool is_help = false;
-
-    std::string base_dir;
-    std::string process_path;
-    std::string process_id;
-    std::string host_id;
-};
 
 }
 

@@ -45,7 +45,7 @@ add_library (clickhouse-format-lib ${SPLIT_SHARED} Format.cpp)
 target_link_libraries (clickhouse-format-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-cluster-copier-lib ClusterCopier.cpp)
-target_link_libraries (clickhouse-cluster-copier-lib dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-cluster-copier-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 
 if (USE_EMBEDDED_COMPILER)
     link_directories (${LLVM_LIBRARY_DIRS})
@@ -70,8 +70,11 @@ if (CLICKHOUSE_SPLIT_BINARY)
     target_link_libraries (clickhouse-compressor clickhouse-compressor-lib)
     add_executable (clickhouse-format clickhouse-format.cpp)
     target_link_libraries (clickhouse-format clickhouse-format-lib dbms)
+    add_executable (clickhouse-cluster-copier clickhouse-cluster-copier.cpp)
+    target_link_libraries (clickhouse-cluster-copier clickhouse-cluster-copier-lib)
 
-    set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-extract-from-config clickhouse-format)
+    set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
+            clickhouse-extract-from-config clickhouse-format clickhouse-cluster-copier)
 
     if (USE_EMBEDDED_COMPILER)
         add_executable (clickhouse-clang clickhouse-clang.cpp)
