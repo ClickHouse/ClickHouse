@@ -179,7 +179,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
     if (create_ordered_set)
     {
         if (!ordered_set_elements)
-            ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+            ordered_set_elements = std::make_unique<OrderedSetElements>();
 
         for (size_t i = 0; i < rows; ++i)
             ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set for index works only for single key, not for tuples
@@ -213,7 +213,7 @@ void Set::makeOrderedSet()
 {
     if (!ordered_set_elements)
     {
-        ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+        ordered_set_elements = std::make_unique<OrderedSetElements>();
     }
     else
     {
@@ -292,7 +292,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
     }
 
     if (create_ordered_set)
-        ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+        ordered_set_elements = std::make_unique<OrderedSetElements>();
 
     Block block;
     for (size_t i = 0, size = types.size(); i < size; ++i)
