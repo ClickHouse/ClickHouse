@@ -1,6 +1,18 @@
+# ClickHouse release 1.1.54342, 2018-01-22
+
+This release contains bug fixes for the previous release 1.1.54342:
+* Fixed a regression in 1.1.54337: if the default user have readonly access, then the server refuse to start up with messages `Cannot create database in readonly mode`.
+* Fixed a regression in 1.1.54337: on the systems with `systemd` logs are always written to syslog regardless to the configuration; watchdog script still uses `init.d`.
+* Fixed a regression in 1.1.54337: wrong default configuration in the Docker image.
+* Fixed nondeterministic behaviour of GraphiteMergeTree (you can notice it in log messages `Data after merge is not byte-identical to data on another replicas`).
+* Fixed a bug that may lead to inconsistent merges after OPTIMIZE query to Replicated tables (you may notice it in log messages `Part ... intersects previous part`).
+* Buffer tables now work file in presense of MATERIALIZED columns in destination table (by zhang2014).
+* Fixed a bug in implementation of NULL.
+
 # ClickHouse release 1.1.54337, 2018-01-18
 
 ## New features:
+
 * Added support for storage of multidimensional arrays and tuples (`Tuple` data type) in tables.
 * Added support for table functions in `DESCRIBE` and `INSERT` queries. Added support for subqueries in `DESCRIBE`. Examples: `DESC TABLE remote('host', default.hits)`; `DESC TABLE (SELECT 1)`; `INSERT INTO TABLE FUNCTION remote('host', default.hits)`. Support for `INSERT INTO TABLE` syntax in addition to `INSERT INTO`.
 * Improved support for timezones. The `DateTime` data type can be annotated with the timezone that is used for parsing and formatting in text formats. Example: `DateTime('Europe/Moscow')`. When timezones are specified in functions for DateTime arguments, the return type will track the timezone, and the value will be displayed as expected.
@@ -100,6 +112,7 @@
 * Removed the `FROM ARRAY JOIN arr` syntax when ARRAY JOIN is specified directly after FROM with no table (Amos Bird).
 * Removed the `BlockTabSeparated` format that was used solely for demonstration purposes.
 * Changed the serialization format of intermediate states of the aggregate functions `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, and `corr`. If you have stored states of these aggregate functions in tables (using the AggregateFunction data type or materialized views with corresponding states), please write to clickhouse-feedback@yandex-team.com.
+* In previous server versions there was an undocumented feature: if an aggregate function depend on parameters, you still may specify it without parameters in AggregateFunction data type. Example: `AggregateFunction(quantiles, UInt64)` instead of `AggregateFunction(quantiles(0.5, 0.9), UInt64)`. This feature is lost. Despite it was undocumented feature, we plan to support it again in next releases.
 
 ## Please note when upgrading:
 * When doing a rolling update on a cluster, at the point when some of the replicas are running the old version of ClickHouse and some are running the new version, replication is temporarily stopped and the message `unknown parameter 'shard'` appears in the log. Replication will continue after all replicas of the cluster are updated.
