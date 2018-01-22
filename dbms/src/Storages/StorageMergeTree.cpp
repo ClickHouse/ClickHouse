@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_FILE_NAME;
+    extern const int CANNOT_ASSIGN_OPTIMIZE;
 }
 
 
@@ -186,9 +187,6 @@ void StorageMergeTree::alter(
         }
     }
 
-    if (primary_key_is_modified && data.merging_params.mode == MergeTreeData::MergingParams::Unsorted)
-        throw Exception("UnsortedMergeTree cannot have primary key", ErrorCodes::BAD_ARGUMENTS);
-
     if (primary_key_is_modified && supportsSampling())
         throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
@@ -290,7 +288,8 @@ bool StorageMergeTree::merge(
     bool aggressive,
     const String & partition_id,
     bool final,
-    bool deduplicate)
+    bool deduplicate,
+    String * out_disable_reason)
 {
     /// Clear old parts. It does not matter to do it more frequently than each second.
     if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
@@ -311,7 +310,7 @@ bool StorageMergeTree::merge(
     {
         std::lock_guard<std::mutex> lock(currently_merging_mutex);
 
-        auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+        auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
         {
             return !currently_merging.count(left) && !currently_merging.count(right);
         };
@@ -322,11 +321,11 @@ bool StorageMergeTree::merge(
         {
             size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
             if (max_parts_size_for_merge > 0)
-                selected = merger.selectPartsToMerge(future_part, aggressive, max_parts_size_for_merge, can_merge);
+                selected = merger.selectPartsToMerge(future_part, aggressive, max_parts_size_for_merge, can_merge, out_disable_reason);
         }
         else
         {
-            selected = merger.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
         if (!selected)
@@ -448,6 +447,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     for (auto & transaction : transactions)
         transaction->commit();
 
+    /// Recalculate columns size (not only for the modified column)
     data.recalculateColumnSizes();
 }
 
@@ -458,7 +458,16 @@ bool StorageMergeTree::optimize(
     String partition_id;
     if (partition)
         partition_id = data.getPartitionIDFromQuery(partition, context);
-    return merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate);
+
+    String disable_reason;
+    if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate, &disable_reason))
+    {
+        if (context.getSettingsRef().optimize_throw_if_noop)
+            throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+        return false;
+    }
+
+    return true;
 }
 
 

@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/String.h>

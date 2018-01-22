@@ -321,6 +321,7 @@ public:
     void setClustersConfig(const ConfigurationPtr & config, const String & config_name = "remote_servers");
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
+    void reloadClusterConfig();
 
     Compiler & getCompiler();
     QueryLog & getQueryLog();

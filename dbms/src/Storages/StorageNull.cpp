@@ -1,6 +1,9 @@
 #include <Storages/StorageNull.h>
 #include <Storages/StorageFactory.h>
 
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Databases/IDatabase.h>
+
 #include <IO/WriteHelpers.h>
 
 
@@ -25,6 +28,17 @@ void registerStorageNull(StorageFactory & factory)
         return StorageNull::create(args.table_name,
             args.columns, args.materialized_columns, args.alias_columns, args.column_defaults);
     });
+}
+
+void StorageNull::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+{
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+
+    params.apply(columns, materialized_columns, alias_columns, column_defaults);
+
+    context.getDatabase(database_name)->alterTable(
+        context, table_name,
+        columns, materialized_columns, alias_columns, column_defaults, {});
 }
 
 }

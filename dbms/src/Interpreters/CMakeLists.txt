@@ -1,5 +1,5 @@
 
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
+if (ARCH_FREEBSD)
     set (PATH_SHARE "/usr/local/share" CACHE STRING "")
 else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
@@ -7,6 +7,13 @@ endif ()
 
 set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
 set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
+
+# Disabling asan reporting for these tools
+if (CMAKE_BUILD_TYPE_UC STREQUAL "ASAN")
+    set(INTERNAL_COMPILER_EXECUTABLE "env ASAN_OPTIONS=detect_leaks=0 ${INTERNAL_COMPILER_EXECUTABLE}")
+    set(INTERNAL_LINKER_EXECUTABLE "env ASAN_OPTIONS=detect_leaks=0 ${INTERNAL_LINKER_EXECUTABLE}")
+endif ()
+
 set (INTERNAL_COMPILER_NO_WARNING OFF CACHE INTERNAL "")
 set (INTERNAL_COMPILER_HEADERS "${PATH_SHARE}/clickhouse/headers" CACHE STRING "")
 set (INTERNAL_COMPILER_HEADERS_ROOT "${INTERNAL_COMPILER_HEADERS}" CACHE STRING "")
@@ -32,7 +39,7 @@ string (REPLACE ${ClickHouse_SOURCE_DIR} ${INTERNAL_COMPILER_HEADERS} INTERNAL_B
 string (REPLACE ${ClickHouse_SOURCE_DIR} ${INTERNAL_COMPILER_HEADERS} INTERNAL_Poco_Foundation_INCLUDE_DIR ${Poco_Foundation_INCLUDE_DIR})
 string (REPLACE ${ClickHouse_SOURCE_DIR} ${INTERNAL_COMPILER_HEADERS} INTERNAL_Poco_Util_INCLUDE_DIR ${Poco_Util_INCLUDE_DIR})
 
-message (STATUS "Using internal compiler: headers=${INTERNAL_COMPILER_HEADERS} : ${INTERNAL_COMPILER_EXECUTABLE} ${INTERNAL_COMPILER_FLAGS}")
+message (STATUS "Using internal compiler: headers=${INTERNAL_COMPILER_HEADERS} : ${INTERNAL_COMPILER_EXECUTABLE} ${INTERNAL_COMPILER_FLAGS}; ${INTERNAL_LINKER_EXECUTABLE}")
 
 set (CONFIG_COMPILE ${ClickHouse_BINARY_DIR}/dbms/src/Interpreters/config_compile.h)
 configure_file (${ClickHouse_SOURCE_DIR}/dbms/src/Interpreters/config_compile.h.in ${CONFIG_COMPILE})

@@ -22,3 +22,12 @@
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest.git
+[submodule "contrib/capnproto"]
+	path = contrib/capnproto
+	url = https://github.com/capnproto/capnproto.git
+[submodule "contrib/double-conversion"]
+	path = contrib/double-conversion
+	url = https://github.com/google/double-conversion.git
+[submodule "contrib/re2"]
+	path = contrib/re2
+	url = https://github.com/google/re2.git

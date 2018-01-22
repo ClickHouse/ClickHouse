@@ -17,7 +17,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <ext/range.h>
 

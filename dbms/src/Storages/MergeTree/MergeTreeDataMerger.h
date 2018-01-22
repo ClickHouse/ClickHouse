@@ -20,7 +20,7 @@ class MergeTreeDataMerger
 {
 public:
     using CancellationHook = std::function<void()>;
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
 
     struct FuturePart
     {
@@ -65,7 +65,8 @@ public:
         FuturePart & future_part,
         bool aggressive,
         size_t max_total_size_to_merge,
-        const AllowedMergingPredicate & can_merge);
+        const AllowedMergingPredicate & can_merge,
+        String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
@@ -75,7 +76,8 @@ public:
         size_t available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
-        bool final);
+        bool final,
+        String * out_disable_reason = nullptr);
 
     /** Merge the parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space

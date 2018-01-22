@@ -24,7 +24,8 @@ If there is no `id` key in the dictionary, it returns the default value specifie
 ## dictGetTOrDefault
 
 `dictGetT('dict_name', 'attr_name', id, default)`
-Аналогично функциям dictGetT, но значение по умолчанию берётся из последнего аргумента функции.
+
+Similar to the functions dictGetT, but the default value is taken from the last argument of the function.
 
 ## dictIsIn
 

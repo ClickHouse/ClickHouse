@@ -557,17 +557,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 
         /// Also see InterpreterInsertQuery.
-        BlockOutputStreamPtr out =
-            std::make_shared<ProhibitColumnsBlockOutputStream>(
-                std::make_shared<AddingDefaultBlockOutputStream>(
-                    std::make_shared<MaterializingBlockOutputStream>(
-                        std::make_shared<PushingToViewsBlockOutputStream>(
-                            create.database, create.table, res,
-                            create.is_temporary ? context.getSessionContext() : context,
-                            query_ptr)),
-                    /// @note shouldn't these two contexts be session contexts in case of temporary table?
-                    columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)),
-                columns.materialized_columns);
+        BlockOutputStreamPtr out;
+
+        out = std::make_shared<PushingToViewsBlockOutputStream>(
+            create.database, create.table, res, create.is_temporary ? context.getSessionContext() : context, query_ptr);
+
+        out = std::make_shared<MaterializingBlockOutputStream>(out);
+
+        /// @note shouldn't these two contexts be session contexts in case of temporary table?
+        bool strict_insert_defaults = static_cast<bool>(context.getSettingsRef().strict_insert_defaults);
+        out = std::make_shared<AddingDefaultBlockOutputStream>(
+            out, columns.columns, columns.column_defaults, context, strict_insert_defaults);
+
+        if (!context.getSettingsRef().insert_allow_materialized_columns)
+            out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, columns.materialized_columns);
 
         BlockIO io;
         io.in_sample = as_select_sample;
@@ -597,6 +600,10 @@ BlockIO InterpreterCreateQuery::execute()
 
 void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 {
+    /// Internal queries (initiated by the server itself) always have access to everything.
+    if (internal)
+        return;
+
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.limits.readonly;
 

@@ -43,6 +43,11 @@ public:
         has_force_restore_data_flag = has_force_restore_data_flag_;
     }
 
+    void setInternal(bool internal_)
+    {
+        internal = internal_;
+    }
+
     struct ColumnsInfo
     {
         NamesAndTypesList columns;
@@ -71,5 +76,7 @@ private:
 
     /// Skip safety threshold when loading tables.
     bool has_force_restore_data_flag = false;
+    /// Is this an internal query - not from the user.
+    bool internal = false;
 };
 }
