@@ -299,6 +299,21 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
     ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster_without_replication")
 
 
+def test_macro(started_cluster):
+    instance = cluster.instances['ch2']
+    ddl_check_query(instance, "CREATE TABLE tab ON CLUSTER '{cluster}' (value UInt8) ENGINE = Memory")
+
+    for i in xrange(4):
+        insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO tab VALUES ({})".format(i))
+
+    ddl_check_query(instance, "CREATE TABLE distr ON CLUSTER '{cluster}' (value UInt8) ENGINE = Distributed('{cluster}', 'default', 'tab', value % 4)")
+
+    assert TSV(instance.query("SELECT value FROM distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV( cluster.instances['ch3'].query("SELECT value FROM distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+
+    ddl_check_query(instance, "DROP TABLE IF EXISTS distr ON CLUSTER '{cluster}'")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
+
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
        for name, instance in cluster.instances.items():
