@@ -295,38 +295,22 @@ String getDatabaseDotTable(const DatabaseAndTableName & db_and_table)
 }
 
 
-/// Detailed status of ZooKeeper multi operation
-struct MultiOpStatus
-{
-    int32_t code = ZOK;
-    int failed_op_index = 0;
-    zkutil::OpPtr failed_op;
-};
-
 /// Atomically checks that is_dirty node is not exists, and made the remaining op
 /// Returns relative number of failed operation in the second field (the passed op has 0 index)
-static MultiOpStatus checkNoNodeAndCommit(
+static void checkNoNodeAndCommit(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & checking_node_path,
-    zkutil::OpPtr && op)
+    zkutil::OpPtr && op,
+    zkutil::MultiTransactionInfo & info)
 {
     zkutil::Ops ops;
     ops.emplace_back(std::make_unique<zkutil::Op::Create>(checking_node_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
     ops.emplace_back(std::make_unique<zkutil::Op::Remove>(checking_node_path, -1));
     ops.emplace_back(std::move(op));
 
-    MultiOpStatus res;
-    zkutil::OpResultsPtr results;
-
-    res.code = zookeeper->tryMulti(ops, &results);
-    if (res.code != ZOK)
-    {
-        auto index = zkutil::getFailedOpIndex(results);
-        res.failed_op_index = static_cast<int>(index) - 2;
-        res.failed_op = ops.at(index)->clone();
-    }
-
-    return res;
+    zookeeper->tryMultiUnsafe(ops, info);
+    if (info.code != ZOK && !zkutil::isUserError(info.code))
+        throw info.getException();
 }
 
 
@@ -1133,17 +1117,18 @@ protected:
             String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
             auto op_create = std::make_unique<zkutil::Op::Create>(current_task_status_path, start_state, acl, zkutil::CreateMode::Persistent);
 
-            auto multi_status = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create));
+            zkutil::MultiTransactionInfo info;
+            checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create), info);
 
-            if (multi_status.code != ZOK)
+            if (info.code != ZOK)
             {
-                if (multi_status.failed_op_index < 0)
+                if (info.getFailedOp().getPath() == is_dirty_flag_path)
                 {
                     LOG_INFO(log, "Partition " << task_partition.name << " is dirty and will be dropped and refilled");
                     return false;
                 }
 
-                throw zkutil::KeeperException(multi_status.code, current_task_status_path);
+                throw zkutil::KeeperException(info.code, current_task_status_path);
             }
         }
 
@@ -1262,14 +1247,15 @@ protected:
         {
             String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
             auto op_set = std::make_unique<zkutil::Op::SetData>(current_task_status_path, state_finished, 0);
-            auto multi_status = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set));
+            zkutil::MultiTransactionInfo info;
+            checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set), info);
 
-            if (multi_status.code != ZOK)
+            if (info.code != ZOK)
             {
-                if (multi_status.failed_op_index < 0)
+                if (info.getFailedOp().getPath() == is_dirty_flag_path)
                     LOG_INFO(log, "Partition " << task_partition.name << " became dirty and will be dropped and refilled");
                 else
-                    LOG_INFO(log, "Someone made the node abandoned. Will refill partition. " << ::zerror(multi_status.code));
+                    LOG_INFO(log, "Someone made the node abandoned. Will refill partition. " << zkutil::ZooKeeper::error2string(info.code));
 
                 return false;
             }
