@@ -47,6 +47,7 @@
 #include <Poco/Message.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/Util/MapConfiguration.h>
 #include <Poco/ScopedLock.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
@@ -487,10 +488,13 @@ static void terminate_handler()
 static std::string createDirectory(const std::string & _path)
 {
     Poco::Path path(_path);
+    bool first_backslash = !_path.empty() && _path[0] == '/';
     std::string str;
     for(int j=0;j<path.depth();++j)
     {
-        str += "/";
+        /// Allow create relative paths
+        if (j > 0 || first_backslash)
+            str += "/";
         str += path[j];
 
         int res = ::mkdir(str.c_str(), 0700);
@@ -707,6 +711,27 @@ void BaseDaemon::initialize(Application & self)
 {
     task_manager.reset(new Poco::TaskManager);
     ServerApplication::initialize(self);
+
+    {
+        /// Parsing all args and converting to config layer
+        /// Test: --1=1 --1=2 --3 5 7 8 -9 10 -11=12 14= 15== --16==17 --=18 --19=
+        Poco::AutoPtr<Poco::Util::MapConfiguration> map_config = new Poco::Util::MapConfiguration;
+        for(auto &arg : argv()) {
+            auto pos = arg.find('=');
+            if (pos == std::string::npos || pos < 2)
+                continue;
+            auto key_start = arg.find_first_not_of('-');
+            if (key_start == std::string::npos)
+                continue;
+            auto key = arg.substr(key_start, pos - 2);
+            std::string value;
+            if (arg.size() > pos)
+                value = arg.substr(pos+1);
+
+            map_config->setString(key, value);
+        }
+        config().add(map_config,  -200); /// Highest priority
+    }
 
     bool is_daemon = config().getBool("application.runAsDaemon", false);
 

@@ -2,7 +2,6 @@
 
 #include "IServer.h"
 
-#include <common/logger_useful.h>
 #include <daemon/BaseDaemon.h>
 
 /** Server provides three interfaces:
@@ -43,17 +42,9 @@ public:
     }
 
 protected:
-    void initialize(Application & self) override
-    {
-        BaseDaemon::initialize(self);
-        logger().information("starting up");
-    }
+    void initialize(Application & self) override;
 
-    void uninitialize() override
-    {
-        logger().information("shutting down");
-        BaseDaemon::uninitialize();
-    }
+    void uninitialize() override;
 
     int main(const std::vector<std::string> & args) override;
 
