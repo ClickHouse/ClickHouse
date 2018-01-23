@@ -36,8 +36,8 @@ size_t getHostNameDifference(const std::string & local_hostname, const std::stri
 {
     size_t hostname_difference = 0;
     for (size_t i = 0; i < std::min(local_hostname.length(), host.length()); ++i)
-            if (local_hostname[i] != host[i])
-                ++hostname_difference;
+        if (local_hostname[i] != host[i])
+            ++hostname_difference;
     return hostname_difference;
 }
 
