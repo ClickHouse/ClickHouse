@@ -15,6 +15,3 @@ target_link_libraries(zkutil_zookeeper_holder clickhouse_common_zookeeper)
 
 add_executable (zk_many_watches_reconnect zk_many_watches_reconnect.cpp)
 target_link_libraries (zk_many_watches_reconnect clickhouse_common_zookeeper clickhouse_common_configprocessor)
-
-add_executable (zkutil_test_multi_exception zkutil_test_multi_exception.cpp)
-target_link_libraries (zkutil_test_multi_exception clickhouse_common_zookeeper gtest_main)
