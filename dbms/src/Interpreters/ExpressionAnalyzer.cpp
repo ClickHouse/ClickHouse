@@ -1542,7 +1542,7 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
             return;
     }
 
-    set->makeOrderedSet();
+    set->finalizeOrderedSet();
 
     prepared_sets[subquery_or_table_name.get()] = std::move(set);
 }
@@ -1563,7 +1563,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         {
             if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
             {
-                if (settings.try_primary_key_for_in_with_subqueries && storage->mayBenefitFromIndexForIn(args.children.at(0)))
+                if (settings.use_index_for_in_with_subqueries && storage->mayBenefitFromIndexForIn(args.children.at(0)))
                     tryMakeSetFromSubquery(arg);
             }
             else

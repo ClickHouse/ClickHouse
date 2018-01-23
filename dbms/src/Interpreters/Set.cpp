@@ -209,7 +209,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 }
 
 
-void Set::makeOrderedSet()
+void Set::finalizeOrderedSet()
 {
     if (!ordered_set_elements)
     {
@@ -301,7 +301,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
     insertFromBlock(block, create_ordered_set);
 
     if (create_ordered_set)
-        makeOrderedSet();
+        finalizeOrderedSet();
 }
 
 

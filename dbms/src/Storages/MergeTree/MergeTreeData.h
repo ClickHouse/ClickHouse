@@ -666,7 +666,7 @@ private:
     DataPartPtr getAnyPartInPartition(const String & partition_id, std::unique_lock<std::mutex> & data_parts_lock);
 
     /// Checks whether the column is in the primary key.
-    bool isIndexColumn(const ASTPtr & node) const;
+    bool isPrimaryKeyColumn(const ASTPtr &node) const;
 };
 
 }
