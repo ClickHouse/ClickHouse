@@ -17,9 +17,6 @@ else ()
     message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 5+ and GCC 7+.")
 endif ()
 
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
-    set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
-endif ()
 
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
@@ -51,6 +48,16 @@ if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
     set (ARCH_32 1)
     message (WARNING "Support for 32bit platforms is highly experimental")
 endif ()
+if (CMAKE_SYSTEM MATCHES "Linux")
+    set (ARCH_LINUX 1)
+endif ()
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+    set (ARCH_FREEBSD 1)
+endif ()
+
+if (ARCH_FREEBSD)
+    set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
+endif ()
 
 set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
@@ -60,7 +67,10 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
 
-set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
+if (ARCH_LINUX)
+    set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
+endif ()
+
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
 
@@ -82,7 +92,7 @@ endif ()
 if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "amd64.*|x86_64.*|AMD64.*")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
-    if (CMAKE_SYSTEM MATCHES "Linux")
+    if (ARCH_LINUX)
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
     endif()
 endif ()
@@ -154,7 +164,7 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
-if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND ARCH_FREEBSD))
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif ()
 
@@ -162,7 +172,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 include (cmake/test_compiler.cmake)
 
-if (CMAKE_SYSTEM MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if (ARCH_LINUX AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 
     option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
@@ -246,7 +256,7 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 # Using system libs can cause lot of warnings in includes.
-if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE) OR ARCH_32)
+if (UNBUNDLED OR NOT (ARCH_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
@@ -266,8 +276,10 @@ include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
 include (cmake/find_ltdl.cmake) # for odbc
-if (EXISTS "contrib/poco/cmake/FindODBC.cmake")
-    include (contrib/poco/cmake/FindODBC.cmake) # for poco
+if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake)
+    include (${CMAKE_CURRENT_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake) # for poco
+else ()
+    include (cmake/find_odbc.cmake)
 endif ()
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)

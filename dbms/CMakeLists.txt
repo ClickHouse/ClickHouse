@@ -80,7 +80,7 @@ list (APPEND dbms_headers
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
-if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
+if (APPLE OR ARCH_FREEBSD)
     list(REMOVE_ITEM clickhouse_common_io_headers
         src/Common/AIO.h
         src/IO/WriteBufferAIO.h
@@ -142,6 +142,7 @@ target_link_libraries (clickhouse_common_io
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
+    ${CMAKE_DL_LIBS}
 )
 
 target_link_libraries (dbms
@@ -203,7 +204,6 @@ if (USE_RDKAFKA)
 endif ()
 
 target_link_libraries (dbms
-    ${CMAKE_DL_LIBS}
     Threads::Threads
 )
 
@@ -228,7 +228,7 @@ target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)
-    include (${PROJECT_SOURCE_DIR}/cmake/find_gtest.cmake)
+    include (${ClickHouse_SOURCE_DIR}/cmake/find_gtest.cmake)
 
     if (USE_INTERNAL_GTEST_LIBRARY)
         # Google Test from sources

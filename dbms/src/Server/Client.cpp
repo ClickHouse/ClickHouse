@@ -26,6 +26,7 @@
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -433,12 +434,6 @@ private:
     }
 
 
-    static bool isWhitespace(char c)
-    {
-        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
-    }
-
-
     /// Check if multi-line query is inserted from the paste buffer.
     /// Allows delaying the start of query execution until the entirety of query is inserted.
     static bool hasDataInSTDIN()
@@ -461,7 +456,7 @@ private:
             free(line_);
 
             size_t ws = line.size();
-            while (ws > 0 && isWhitespace(line[ws - 1]))
+            while (ws > 0 && isWhitespaceASCII(line[ws - 1]))
                 --ws;
 
             if (ws == 0 && query.empty())
@@ -592,7 +587,7 @@ private:
                 query = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
-                while (isWhitespace(*begin) || *begin == ';')
+                while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
                 try
