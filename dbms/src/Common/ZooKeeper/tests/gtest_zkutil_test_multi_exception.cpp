@@ -1,5 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <iostream>
 #include <chrono>
 
@@ -112,4 +112,33 @@ TEST(zkutil, multi_async)
         ASSERT_EQ(res.results->size(), 2);
         ASSERT_EQ(res.ops_ptr->size(), 2);
     }
+}
+
+
+TEST(zkutil, multi_create_sequential)
+{
+    try
+    {
+        auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
+        auto acl = zookeeper->getDefaultACL();
+        zkutil::Ops ops;
+
+        String base_path = "/clickhouse_test/zkutil/multi_create_sequential";
+        zookeeper->tryRemoveRecursive(base_path);
+        zookeeper->createAncestors(base_path + "/");
+
+        String entry_path = base_path + "/queue-";
+        ops.emplace_back(new zkutil::Op::Create(entry_path, "", acl, zkutil::CreateMode::EphemeralSequential));
+        zkutil::OpResultsPtr results = zookeeper->multi(ops);
+        zkutil::OpResult & result = results->at(0);
+
+        EXPECT_TRUE(result.value != nullptr);
+        EXPECT_TRUE(startsWith(result.value, entry_path));
+    }
+    catch (...)
+    {
+        std::cerr << getCurrentExceptionMessage(false);
+        throw;
+    }
+
 }
