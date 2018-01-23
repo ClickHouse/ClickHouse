@@ -47,6 +47,7 @@
 #include <typeinfo>
 #include <typeindex>
 #include <optional>
+#include <Interpreters/PartLog.h>
 
 
 namespace ProfileEvents
@@ -656,18 +657,43 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
 
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts)
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-
-    /// TODO: use data_parts iterators instead of pointers
-    for (auto & part : parts)
     {
-        auto it = data_parts_by_name.find(part->info);
-        if (it == data_parts_by_name.end())
-            throw Exception("Deleting data part " + part->name + " is not exist", ErrorCodes::LOGICAL_ERROR);
+        std::lock_guard<std::mutex> lock(data_parts_mutex);
 
-        (*it)->assertState({DataPartState::Deleting});
+        /// TODO: use data_parts iterators instead of pointers
+        for (auto & part : parts)
+        {
+            auto it = data_parts_by_name.find(part->info);
+            if (it == data_parts_by_name.end())
+                throw Exception("Deleting data part " + part->name + " is not exist", ErrorCodes::LOGICAL_ERROR);
 
-        data_parts_indexes.erase(it);
+            (*it)->assertState({DataPartState::Deleting});
+
+            data_parts_indexes.erase(it);
+        }
+    }
+
+    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
+    /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
+    if (auto part_log = context.getPartLog(database_name, table_name))
+    {
+        PartLogElement part_log_elem;
+
+        part_log_elem.event_type = PartLogElement::REMOVE_PART;
+        part_log_elem.event_time = time(nullptr);
+        part_log_elem.duration_ms = 0;
+
+        part_log_elem.database_name = database_name;
+        part_log_elem.table_name = table_name;
+
+        for (auto & part : parts)
+        {
+            part_log_elem.part_name = part->name;
+            part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+            part_log_elem.rows = part->rows_count;
+
+            part_log->add(part_log_elem);
+        }
     }
 }
 

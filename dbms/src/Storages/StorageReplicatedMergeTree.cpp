@@ -980,12 +980,33 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
     }
 
     bool do_fetch = false;
-
     if (entry.type == LogEntry::GET_PART)
     {
         do_fetch = true;
     }
     else if (entry.type == LogEntry::MERGE_PARTS)
+    {
+        tryExecuteMerge(entry, do_fetch);
+    }
+    else
+    {
+        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+    }
+
+    if (do_fetch)
+        return executeFetch(entry);
+
+    return true;
+}
+
+
+void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTree::LogEntry & entry, bool & do_fetch)
+{
+    /// The caller has already decided to make the fetch
+    if (do_fetch)
+        return;
+
+    // Log source part names just in case
     {
         std::stringstream log_message;
         log_message << "Executing log entry to merge parts ";
@@ -994,366 +1015,388 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         log_message << " to " << entry.new_part_name;
 
         LOG_TRACE(log, log_message.rdbuf());
-
-        MergeTreeData::DataPartsVector parts;
-        bool have_all_parts = true;
-        for (const String & name : entry.parts_to_merge)
-        {
-            MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
-            if (!part)
-            {
-                have_all_parts = false;
-                break;
-            }
-            if (part->name != name)
-            {
-                LOG_WARNING(log, "Part " << name << " is covered by " << part->name
-                    << " but should be merged into " << entry.new_part_name << ". This shouldn't happen often.");
-                have_all_parts = false;
-                break;
-            }
-            parts.push_back(part);
-        }
-
-        if (!have_all_parts)
-        {
-            /// If you do not have all the necessary parts, try to take some already merged part from someone.
-            do_fetch = true;
-            LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
-        }
-        else if (entry.create_time + data.settings.prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
-        {
-            /// If entry is old enough, and have enough size, and part are exists in any replica,
-            ///  then prefer fetching of merged part from replica.
-
-            size_t sum_parts_size_in_bytes = 0;
-            for (const auto & part : parts)
-                sum_parts_size_in_bytes += part->size_in_bytes;
-
-            if (sum_parts_size_in_bytes >= data.settings.prefer_fetch_merged_part_size_threshold)
-            {
-                String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
-                if (!replica.empty())
-                {
-                    do_fetch = true;
-                    LOG_DEBUG(log, "Preffering to fetch " << entry.new_part_name << " from replica");
-                }
-            }
-        }
-
-        if (!do_fetch)
-        {
-            size_t estimated_space_for_merge = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
-
-            /// Can throw an exception.
-            DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
-
-            auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
-
-            MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
-            MergeTreeData::Transaction transaction;
-            size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-
-            /// Logging
-            Stopwatch stopwatch;
-
-            MergeTreeDataMerger::FuturePart future_merged_part(parts);
-            if (future_merged_part.name != entry.new_part_name)
-                throw Exception(
-                    "Future merged part name `" + future_merged_part.name +
-                    "` differs from part name in log entry: `" + entry.new_part_name + "`",
-                    ErrorCodes::BAD_DATA_PART_NAME);
-
-            auto part = merger.mergePartsToTemporaryPart(
-                future_merged_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
-
-            zkutil::Ops ops;
-
-            try
-            {
-                /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
-                checkPartAndAddToZooKeeper(part, ops, entry.new_part_name);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH
-                    || e.code() == ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART
-                    || e.code() == ErrorCodes::NO_FILE_IN_DATA_PART
-                    || e.code() == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART)
-                {
-                    do_fetch = true;
-                    part->remove();
-
-                    ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
-
-                    LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
-                        "Data after merge is not byte-identical to data on another replicas. "
-                        "There could be several reasons: "
-                        "1. Using newer version of compression library after server update. "
-                        "2. Using another compression method. "
-                        "3. Non-deterministic compression algorithm (highly unlikely). "
-                        "4. Non-deterministic merge algorithm due to logical error in code. "
-                        "5. Data corruption in memory due to bug in code. "
-                        "6. Data corruption in memory due to hardware issue. "
-                        "7. Manual modification of source data after server startup. "
-                        "8. Manual modification of checksums stored in ZooKeeper. "
-                        "We will download merged part from replica to force byte-identical result.");
-                }
-                else
-                    throw;
-            }
-
-            if (!do_fetch)
-            {
-                merger.renameMergedTemporaryPart(part, parts, &transaction);
-
-                /// Do not commit if the part is obsolete
-                if (!transaction.isEmpty())
-                {
-                    getZooKeeper()->multi(ops); /// After long merge, get fresh ZK handle, because previous session may be expired.
-                    transaction.commit();
-                }
-
-                /** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
-                  */
-
-                /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
-                  * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
-                  */
-                merge_selecting_event.set();
-
-                if (auto part_log = context.getPartLog(database_name, table_name))
-                {
-                    PartLogElement elem;
-                    elem.event_time = time(nullptr);
-
-                    elem.merged_from.reserve(parts.size());
-                    for (const auto & part : parts)
-                        elem.merged_from.push_back(part->name);
-                    elem.event_type = PartLogElement::MERGE_PARTS;
-                    elem.size_in_bytes = part->size_in_bytes;
-
-                    elem.database_name = part->storage.getDatabaseName();
-                    elem.table_name = part->storage.getTableName();
-                    elem.part_name = part->name;
-
-                    elem.duration_ms = stopwatch.elapsed() / 1000000;
-
-                    part_log->add(elem);
-
-                    elem.duration_ms = 0;
-                    elem.event_type = PartLogElement::REMOVE_PART;
-                    elem.merged_from = Strings();
-
-                    for (const auto & part : parts)
-                    {
-                        elem.part_name = part->name;
-                        elem.size_in_bytes = part->size_in_bytes;
-                        part_log->add(elem);
-                    }
-                }
-
-                ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
-            }
-        }
     }
-    else
+
+    MergeTreeData::DataPartsVector parts;
+    bool have_all_parts = true;
+    for (const String & name : entry.parts_to_merge)
     {
-        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+        MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
+        if (!part)
+        {
+            have_all_parts = false;
+            break;
+        }
+        if (part->name != name)
+        {
+            LOG_WARNING(log, "Part " << name << " is covered by " << part->name
+                << " but should be merged into " << entry.new_part_name << ". This shouldn't happen often.");
+            have_all_parts = false;
+            break;
+        }
+        parts.push_back(part);
+    }
+
+    if (!have_all_parts)
+    {
+        /// If you do not have all the necessary parts, try to take some already merged part from someone.
+        do_fetch = true;
+        LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
+    }
+    else if (entry.create_time + data.settings.prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
+    {
+        /// If entry is old enough, and have enough size, and part are exists in any replica,
+        ///  then prefer fetching of merged part from replica.
+
+        size_t sum_parts_size_in_bytes = 0;
+        for (const auto & part : parts)
+            sum_parts_size_in_bytes += part->size_in_bytes;
+
+        if (sum_parts_size_in_bytes >= data.settings.prefer_fetch_merged_part_size_threshold)
+        {
+            String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
+            if (!replica.empty())
+            {
+                do_fetch = true;
+                LOG_DEBUG(log, "Prefer to fetch " << entry.new_part_name << " from replica " << replica);
+            }
+        }
     }
 
     if (do_fetch)
+        return;
+
+    /// Start to make the main work
+
+    size_t estimated_space_for_merge = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
+
+    /// Can throw an exception.
+    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
+
+    auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
+
+    MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
+    MergeTreeData::Transaction transaction;
+    size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
+
+    MergeTreeDataMerger::FuturePart future_merged_part(parts);
+    if (future_merged_part.name != entry.new_part_name)
     {
-        String replica = findReplicaHavingCoveringPart(entry, true);
+        throw Exception("Future merged part name `" + future_merged_part.name +  "` differs from part name in log entry: `"
+                        + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
+    }
 
-        static std::atomic_uint total_fetches {0};
-        if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
-        {
-            throw Exception("Too many total fetches from replicas, maximum: " + data.settings.replicated_max_parallel_fetches.toString(),
-                ErrorCodes::TOO_MUCH_FETCHES);
-        }
+    /// Logging
+    Stopwatch stopwatch;
+    ExecutionStatus execution_status;
+    MergeTreeData::MutableDataPartPtr part;
 
-        ++total_fetches;
-        SCOPE_EXIT({--total_fetches;});
-
-        if (data.settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
-        {
-            throw Exception("Too many fetches from replicas for table, maximum: " + data.settings.replicated_max_parallel_fetches_for_table.toString(),
-                ErrorCodes::TOO_MUCH_FETCHES);
-        }
-
-        ++current_table_fetches;
-        SCOPE_EXIT({--current_table_fetches;});
-
+    auto write_part_log = [&] (const ExecutionStatus & execution_status)
+    {
         try
         {
-            if (replica.empty())
-            {
-                /** If a part is to be written with a quorum and the quorum is not reached yet,
-                  *  then (due to the fact that a part is impossible to download right now),
-                  *  the quorum entry should be considered unsuccessful.
-                  * TODO Complex code, extract separately.
-                  */
-                if (entry.quorum)
-                {
-                    if (entry.type != LogEntry::GET_PART)
-                        throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
+            auto part_log = context.getPartLog(database_name, table_name);
+            if (!part_log)
+                return;
 
-                    LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum."
-                        " Will try to mark that quorum as failed.");
+            PartLogElement part_log_elem;
 
-                    /** Atomically:
-                      * - if replicas do not become active;
-                      * - if there is a `quorum` node with this part;
-                      * - delete `quorum` node;
-                      * - set `nonincrement_block_numbers` to resolve merges through the number of the lost part;
-                      * - add a part to the list `quorum/failed_parts`;
-                      * - if the part is not already removed from the list for deduplication `blocks/block_num`, then delete it;
-                      *
-                      * If something changes, then we will nothing - we'll get here again next time.
-                      */
+            part_log_elem.event_type = PartLogElement::MERGE_PARTS;
+            part_log_elem.event_time = time(nullptr);
+            /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
+            part_log_elem.duration_ms = stopwatch.elapsed() / 1000000;
 
-                    /** We collect the `host` node versions from the replicas.
-                      * When the replica becomes active, it changes the value of host in the same transaction (with the creation of `is_active`).
-                      * This will ensure that the replicas do not become active.
-                      */
+            part_log_elem.database_name = database_name;
+            part_log_elem.table_name = table_name;
+            part_log_elem.part_name = entry.new_part_name;
 
-                    auto zookeeper = getZooKeeper();
+            if (part)
+                part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
 
-                    Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+            part_log_elem.source_part_names.reserve(parts.size());
+            for (const auto & source_part : parts)
+                part_log_elem.source_part_names.push_back(source_part->name);
 
-                    zkutil::Ops ops;
+            part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
+            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
 
-                    for (size_t i = 0, size = replicas.size(); i < size; ++i)
-                    {
-                        Stat stat;
-                        String path = zookeeper_path + "/replicas/" + replicas[i] + "/host";
-                        zookeeper->get(path, &stat);
-                        ops.emplace_back(std::make_unique<zkutil::Op::Check>(path, stat.version));
-                    }
+            part_log_elem.rows = (*merge_entry)->rows_written;
+            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
 
-                    /// We verify that while we were collecting versions, the replica with the necessary part did not come alive.
-                    replica = findReplicaHavingPart(entry.new_part_name, true);
+            part_log_elem.error = static_cast<UInt16>(execution_status.code);
+            part_log_elem.exception = execution_status.message;
 
-                    /// Also during this time a completely new replica could be created.
-                    /// But if a part does not appear on the old, then it can not be on the new one either.
-
-                    if (replica.empty())
-                    {
-                        Stat quorum_stat;
-                        String quorum_path = zookeeper_path + "/quorum/status";
-                        String quorum_str = zookeeper->get(quorum_path, &quorum_stat);
-                        ReplicatedMergeTreeQuorumEntry quorum_entry;
-                        quorum_entry.fromString(quorum_str);
-
-                        if (quorum_entry.part_name == entry.new_part_name)
-                        {
-                            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(quorum_path, quorum_stat.version));
-
-                            auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
-
-                            if (part_info.min_block != part_info.max_block)
-                                throw Exception("Logical error: log entry with quorum for part covering more than one block number",
-                                    ErrorCodes::LOGICAL_ERROR);
-
-                            zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id, "");
-
-                            auto acl = zookeeper->getDefaultACL();
-
-                            ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-                                zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id + "/block-" + padIndex(part_info.min_block),
-                                "",
-                                acl,
-                                zkutil::CreateMode::Persistent));
-
-                            ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-                                zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name,
-                                "",
-                                acl,
-                                zkutil::CreateMode::Persistent));
-
-                            /// Deleting from `blocks`.
-                            if (!entry.block_id.empty() && zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
-                                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id, -1));
-
-                            auto code = zookeeper->tryMulti(ops);
-
-                            if (code == ZOK)
-                            {
-                                LOG_DEBUG(log, "Marked quorum for part " << entry.new_part_name << " as failed.");
-                                return true;    /// NOTE Deletion from `virtual_parts` is not done, but it is only necessary for merges.
-                            }
-                            else if (code == ZBADVERSION || code == ZNONODE || code == ZNODEEXISTS)
-                            {
-                                LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part "
-                                    << entry.new_part_name << " as failed. Code: " << zerror(code));
-                            }
-                            else
-                                throw zkutil::KeeperException(code);
-                        }
-                        else
-                        {
-                            LOG_WARNING(log, "No active replica has part " << entry.new_part_name
-                                << ", but that part needs quorum and /quorum/status contains entry about another part " << quorum_entry.part_name
-                                << ". It means that part was successfully written to " << entry.quorum
-                                << " replicas, but then all of them goes offline."
-                                << " Or it is a bug.");
-                        }
-                    }
-                }
-
-                if (replica.empty())
-                {
-                    ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
-                    throw Exception("No active replica has part " + entry.new_part_name + " or covering part", ErrorCodes::NO_REPLICA_HAS_PART);
-                }
-            }
-
-            try
-            {
-                if (!fetchPart(entry.actual_new_part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
-                    return false;
-            }
-            catch (Exception & e)
-            {
-                /// No stacktrace, just log message
-                if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
-                    e.addMessage("Too busy replica. Will try later.");
-                throw;
-            }
-
-            if (entry.type == LogEntry::MERGE_PARTS)
-                ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
+            part_log->add(part_log_elem);
         }
         catch (...)
         {
-            /** If you can not download the part you need for some merge, it's better not to try to get other parts for this merge,
-              * but try to get already merged part. To do this, move the action to get the remaining parts
-              * for this merge at the end of the queue.
-              */
-            try
-            {
-                auto parts_for_merge = queue.moveSiblingPartsForMergeToEndOfQueue(entry.new_part_name);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        }
+    };
 
-                if (!parts_for_merge.empty() && replica.empty())
-                {
-                    LOG_INFO(log, "No active replica has part " << entry.new_part_name << ". Will fetch merged part instead.");
-                    return false;
-                }
+    try
+    {
+        part = merger.mergePartsToTemporaryPart(
+            future_merged_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
-                /** If no active replica has a part, and there is no merge in the queue with its participation,
-                  * check to see if any (active or inactive) replica has such a part or covering it.
-                  */
-                if (replica.empty())
-                    enqueuePartForCheck(entry.new_part_name);
-            }
-            catch (...)
+        zkutil::Ops ops;
+
+        try
+        {
+            /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
+            checkPartAndAddToZooKeeper(part, ops, entry.new_part_name);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH
+                || e.code() == ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART
+                || e.code() == ErrorCodes::NO_FILE_IN_DATA_PART
+                || e.code() == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                do_fetch = true;
+                part->remove();
+
+                ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
+
+                LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
+                    "Data after merge is not byte-identical to data on another replicas. "
+                    "There could be several reasons: "
+                    "1. Using newer version of compression library after server update. "
+                    "2. Using another compression method. "
+                    "3. Non-deterministic compression algorithm (highly unlikely). "
+                    "4. Non-deterministic merge algorithm due to logical error in code. "
+                    "5. Data corruption in memory due to bug in code. "
+                    "6. Data corruption in memory due to hardware issue. "
+                    "7. Manual modification of source data after server startup. "
+                    "8. Manual modification of checksums stored in ZooKeeper. "
+                    "We will download merged part from replica to force byte-identical result.");
+
+                write_part_log(ExecutionStatus::fromCurrentException());
+                return;
             }
 
             throw;
         }
+
+        merger.renameMergedTemporaryPart(part, parts, &transaction);
+
+        /// Do not commit if the part is obsolete
+        if (!transaction.isEmpty())
+        {
+            getZooKeeper()->multi(ops); /// After long merge, get fresh ZK handle, because previous session may be expired.
+            transaction.commit();
+        }
+
+        /** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
+          */
+
+        /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
+          * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
+          */
+        merge_selecting_event.set();
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
+
+        write_part_log({});
+    }
+    catch (...)
+    {
+        write_part_log(ExecutionStatus::fromCurrentException());
+        throw;
+    }
+}
+
+
+bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::LogEntry & entry)
+{
+    String replica = findReplicaHavingCoveringPart(entry, true);
+
+    static std::atomic_uint total_fetches {0};
+    if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
+    {
+        throw Exception("Too many total fetches from replicas, maximum: " + data.settings.replicated_max_parallel_fetches.toString(),
+            ErrorCodes::TOO_MUCH_FETCHES);
+    }
+
+    ++total_fetches;
+    SCOPE_EXIT({--total_fetches;});
+
+    if (data.settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
+    {
+        throw Exception("Too many fetches from replicas for table, maximum: " + data.settings.replicated_max_parallel_fetches_for_table.toString(),
+            ErrorCodes::TOO_MUCH_FETCHES);
+    }
+
+    ++current_table_fetches;
+    SCOPE_EXIT({--current_table_fetches;});
+
+    try
+    {
+        if (replica.empty())
+        {
+            /** If a part is to be written with a quorum and the quorum is not reached yet,
+              *  then (due to the fact that a part is impossible to download right now),
+              *  the quorum entry should be considered unsuccessful.
+              * TODO Complex code, extract separately.
+              */
+            if (entry.quorum)
+            {
+                if (entry.type != LogEntry::GET_PART)
+                    throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
+
+                LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum."
+                    " Will try to mark that quorum as failed.");
+
+                /** Atomically:
+                  * - if replicas do not become active;
+                  * - if there is a `quorum` node with this part;
+                  * - delete `quorum` node;
+                  * - set `nonincrement_block_numbers` to resolve merges through the number of the lost part;
+                  * - add a part to the list `quorum/failed_parts`;
+                  * - if the part is not already removed from the list for deduplication `blocks/block_num`, then delete it;
+                  *
+                  * If something changes, then we will nothing - we'll get here again next time.
+                  */
+
+                /** We collect the `host` node versions from the replicas.
+                  * When the replica becomes active, it changes the value of host in the same transaction (with the creation of `is_active`).
+                  * This will ensure that the replicas do not become active.
+                  */
+
+                auto zookeeper = getZooKeeper();
+
+                Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+                zkutil::Ops ops;
+
+                for (size_t i = 0, size = replicas.size(); i < size; ++i)
+                {
+                    Stat stat;
+                    String path = zookeeper_path + "/replicas/" + replicas[i] + "/host";
+                    zookeeper->get(path, &stat);
+                    ops.emplace_back(std::make_unique<zkutil::Op::Check>(path, stat.version));
+                }
+
+                /// We verify that while we were collecting versions, the replica with the necessary part did not come alive.
+                replica = findReplicaHavingPart(entry.new_part_name, true);
+
+                /// Also during this time a completely new replica could be created.
+                /// But if a part does not appear on the old, then it can not be on the new one either.
+
+                if (replica.empty())
+                {
+                    Stat quorum_stat;
+                    String quorum_path = zookeeper_path + "/quorum/status";
+                    String quorum_str = zookeeper->get(quorum_path, &quorum_stat);
+                    ReplicatedMergeTreeQuorumEntry quorum_entry;
+                    quorum_entry.fromString(quorum_str);
+
+                    if (quorum_entry.part_name == entry.new_part_name)
+                    {
+                        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(quorum_path, quorum_stat.version));
+
+                        auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
+
+                        if (part_info.min_block != part_info.max_block)
+                            throw Exception("Logical error: log entry with quorum for part covering more than one block number",
+                                ErrorCodes::LOGICAL_ERROR);
+
+                        zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id, "");
+
+                        auto acl = zookeeper->getDefaultACL();
+
+                        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+                            zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id + "/block-" + padIndex(part_info.min_block),
+                            "",
+                            acl,
+                            zkutil::CreateMode::Persistent));
+
+                        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+                            zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name,
+                            "",
+                            acl,
+                            zkutil::CreateMode::Persistent));
+
+                        /// Deleting from `blocks`.
+                        if (!entry.block_id.empty() && zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
+                            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id, -1));
+
+                        auto code = zookeeper->tryMulti(ops);
+
+                        if (code == ZOK)
+                        {
+                            LOG_DEBUG(log, "Marked quorum for part " << entry.new_part_name << " as failed.");
+                            return true;    /// NOTE Deletion from `virtual_parts` is not done, but it is only necessary for merges.
+                        }
+                        else if (code == ZBADVERSION || code == ZNONODE || code == ZNODEEXISTS)
+                        {
+                            LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part "
+                                << entry.new_part_name << " as failed. Code: " << zerror(code));
+                        }
+                        else
+                            throw zkutil::KeeperException(code);
+                    }
+                    else
+                    {
+                        LOG_WARNING(log, "No active replica has part " << entry.new_part_name
+                            << ", but that part needs quorum and /quorum/status contains entry about another part " << quorum_entry.part_name
+                            << ". It means that part was successfully written to " << entry.quorum
+                            << " replicas, but then all of them goes offline."
+                            << " Or it is a bug.");
+                    }
+                }
+            }
+
+            if (replica.empty())
+            {
+                ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
+                throw Exception("No active replica has part " + entry.new_part_name + " or covering part", ErrorCodes::NO_REPLICA_HAS_PART);
+            }
+        }
+
+        try
+        {
+            if (!fetchPart(entry.actual_new_part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+                return false;
+        }
+        catch (Exception & e)
+        {
+            /// No stacktrace, just log message
+            if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
+                e.addMessage("Too busy replica. Will try later.");
+            throw;
+        }
+
+        if (entry.type == LogEntry::MERGE_PARTS)
+            ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
+    }
+    catch (...)
+    {
+        /** If you can not download the part you need for some merge, it's better not to try to get other parts for this merge,
+          * but try to get already merged part. To do this, move the action to get the remaining parts
+          * for this merge at the end of the queue.
+          */
+        try
+        {
+            auto parts_for_merge = queue.moveSiblingPartsForMergeToEndOfQueue(entry.new_part_name);
+
+            if (!parts_for_merge.empty() && replica.empty())
+            {
+                LOG_INFO(log, "No active replica has part " << entry.new_part_name << ". Will fetch merged part instead.");
+                return false;
+            }
+
+            /** If no active replica has a part, and there is no merge in the queue with its participation,
+              * check to see if any (active or inactive) replica has such a part or covering it.
+              */
+            if (replica.empty())
+                enqueuePartForCheck(entry.new_part_name);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        throw;
     }
 
     return true;
@@ -2148,82 +2191,105 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         table_lock = lockStructure(true, __PRETTY_FUNCTION__);
 
     ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
-
-    Stopwatch stopwatch;
-
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
-    MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
-        part_name, replica_path, address.host, address.replication_port, timeouts, to_detached);
 
-    if (!to_detached)
+    /// Logging
+    Stopwatch stopwatch;
+    MergeTreeData::MutableDataPartPtr part;
+    MergeTreeData::DataPartsVector replaced_parts;
+
+    auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        zkutil::Ops ops;
-
-        /** NOTE
-          * Here, an error occurs if ALTER occurred with a change in the column type or column deletion,
-          *  and the part on remote server has not yet been modified.
-          * After a while, one of the following attempts to make `fetchPart` succeed.
-          */
-        checkPartAndAddToZooKeeper(part, ops, part_name);
-
-        MergeTreeData::Transaction transaction;
-        auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
-
-        /// Do not commit if the part is obsolete
-        if (!transaction.isEmpty())
+        try
         {
-            getZooKeeper()->multi(ops);
-            transaction.commit();
-        }
+            auto part_log = context.getPartLog(database_name, table_name);
+            if (!part_log)
+                return;
 
-        if (auto part_log = context.getPartLog(database_name, table_name))
-        {
-            PartLogElement elem;
-            elem.event_time = time(nullptr);
-            elem.event_type = PartLogElement::DOWNLOAD_PART;
-            elem.size_in_bytes = part->size_in_bytes;
-            elem.duration_ms = stopwatch.elapsed() / 10000000;
+            PartLogElement part_log_elem;
 
-            elem.merged_from.reserve(removed_parts.size());
-            for (const auto & part : removed_parts)
+            part_log_elem.event_time = time(nullptr);
+            part_log_elem.event_type = PartLogElement::DOWNLOAD_PART;
+            /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
+            part_log_elem.duration_ms = stopwatch.elapsed() / 10000000;
+
+            part_log_elem.database_name = database_name;
+            part_log_elem.table_name = table_name;
+            part_log_elem.part_name = part_name;
+
+            if (part)
             {
-                elem.merged_from.push_back(part->name);
+                part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+                part_log_elem.rows = part->rows_count; /// Could be approximate (?)
             }
 
-            elem.database_name = part->storage.getDatabaseName();
-            elem.table_name = part->storage.getTableName();
-            elem.part_name = part->name;
+            part_log_elem.source_part_names.reserve(replaced_parts.size());
+            for (const auto & replaced_part : replaced_parts)
+                part_log_elem.source_part_names.push_back(replaced_part->name);
 
-            part_log->add(elem);
+            part_log_elem.error = static_cast<UInt16>(execution_status.code);
+            part_log_elem.exception = execution_status.message;
 
-            elem.duration_ms = 0;
-            elem.event_type = PartLogElement::REMOVE_PART;
-            elem.merged_from = Strings();
-            for (const auto & part : removed_parts)
-            {
-                elem.part_name = part->name;
-                elem.size_in_bytes = part->size_in_bytes;
-                part_log->add(elem);
-            }
+            part_log->add(part_log_elem);
         }
-
-        /** If a quorum is tracked for this part, you must update it.
-          * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
-          */
-        if (quorum)
-            updateQuorum(part_name);
-
-        merge_selecting_event.set();
-
-        for (const auto & removed_part : removed_parts)
+        catch (...)
         {
-            LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
-            ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        }
+    };
+
+    try
+    {
+        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, to_detached);
+
+        if (!to_detached)
+        {
+            zkutil::Ops ops;
+
+            /** NOTE
+              * Here, an error occurs if ALTER occurred with a change in the column type or column deletion,
+              *  and the part on remote server has not yet been modified.
+              * After a while, one of the following attempts to make `fetchPart` succeed.
+              */
+            checkPartAndAddToZooKeeper(part, ops, part_name);
+
+            MergeTreeData::Transaction transaction;
+            replaced_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
+
+            /// Do not commit if the part is obsolete
+            if (!transaction.isEmpty())
+            {
+                getZooKeeper()->multi(ops);
+                transaction.commit();
+            }
+
+            /** If a quorum is tracked for this part, you must update it.
+              * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
+              */
+            if (quorum)
+                updateQuorum(part_name);
+
+            merge_selecting_event.set();
+
+            for (const auto & replaced_part : replaced_parts)
+            {
+                LOG_DEBUG(log, "Part " << replaced_part->name << " is rendered obsolete by fetching part " << part_name);
+                ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+            }
+
+            write_part_log({});
+        }
+        else
+        {
+            part->renameTo("detached/" + part_name);
         }
     }
-    else
+    catch (...)
     {
-        part->renameTo("detached/" + part_name);
+        if (!to_detached)
+            write_part_log(ExecutionStatus::fromCurrentException());
+
+        throw;
     }
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);

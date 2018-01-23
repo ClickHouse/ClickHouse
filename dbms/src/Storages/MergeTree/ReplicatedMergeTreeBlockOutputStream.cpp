@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int READONLY;
     extern const int UNKNOWN_STATUS_OF_INSERT;
+    extern const int INSERT_WAS_DEDUPLICATED;
 }
 
 
@@ -141,10 +142,21 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             LOG_DEBUG(log, "Wrote block with " << block.rows() << " rows");
         }
 
-        commitPart(zookeeper, part, block_id);
 
-        if (auto part_log = storage.context.getPartLog(part->storage.getDatabaseName(), part->storage.getTableName()))
-            part_log->addNewPart(*part, watch.elapsed());
+
+        try
+        {
+            commitPart(zookeeper, part, block_id);
+
+            /// Set a special error code if the block is duplicate
+            int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+            PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed(), ExecutionStatus(error));
+        }
+        catch (...)
+        {
+            PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            throw;
+        }
     }
 }
 
@@ -163,10 +175,16 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 
     Stopwatch watch;
 
-    commitPart(zookeeper, part, "");
-
-    if (auto part_log = storage.context.getPartLog(part->storage.getDatabaseName(), part->storage.getTableName()))
-        part_log->addNewPart(*part, watch.elapsed());
+    try
+    {
+        commitPart(zookeeper, part, "");
+        PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        throw;
+    }
 }
 
 

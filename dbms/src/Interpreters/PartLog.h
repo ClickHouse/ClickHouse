@@ -18,15 +18,28 @@ struct PartLogElement
 
     Type event_type = NEW_PART;
 
-    time_t event_time{};
-
-    UInt64 size_in_bytes{};
-    UInt64 duration_ms{};
+    time_t event_time = 0;
+    UInt64 duration_ms = 0;
 
     String database_name;
     String table_name;
     String part_name;
-    Strings merged_from;
+
+    /// Size of the part
+    UInt64 rows = 0;
+
+    /// Size of files in filesystem
+    UInt64 bytes_compressed_on_disk = 0;
+
+    //// Make sense for Merges
+    Strings source_part_names;
+    UInt64 bytes_uncompressed = 0;
+    UInt64 rows_read = 0;
+    UInt64 bytes_read_uncompressed = 0;
+
+    /// Is the operation was successful?
+    UInt16 error = 0;
+    String exception;
 
     static std::string name() { return "PartLog"; }
 
@@ -44,7 +57,8 @@ class PartLog : public SystemLog<PartLogElement>
 
 public:
     /// Add a record about creation of new part.
-    void addNewPart(const MergeTreeDataPart & part, double elapsed);
+    static bool addNewPartToTheLog(Context & context, const MergeTreeDataPart & part, UInt64 elapsed_ns,
+                                   const ExecutionStatus & execution_status = {});
 };
 
 }
