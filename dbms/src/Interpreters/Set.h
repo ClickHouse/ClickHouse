@@ -41,11 +41,11 @@ public:
 
     /** Returns false, if some limit was exceeded and no need to insert more data.
       *
-      * Note that if create_ordered_set = true, you must call the method makeOrderedSet() after all required blocks
+      * Note that if create_ordered_set = true, you must call the method finalizeOrderedSet() after all required blocks
       * have been inserted.
       */
     bool insertFromBlock(const Block & block, bool create_ordered_set = false);
-    void makeOrderedSet();
+    void finalizeOrderedSet();
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.

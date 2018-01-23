@@ -313,9 +313,10 @@ private:
       */
     void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set);
 
-    /***
-     * Create Set from a subuqery or a table expression in the query.
-     */
+    /**
+      * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
+      * The set will not be created if its size hits the limit.
+      */
     void tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name);
 
     void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);

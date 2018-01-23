@@ -306,8 +306,8 @@ struct Settings
     M(SettingSeconds, http_send_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP send timeout") \
     M(SettingSeconds, http_receive_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP receive timeout") \
     M(SettingBool, optimize_throw_if_noop, false, "If setting is enabled and OPTIMIZE query didn't actually assign a merge then an explanatory exception is thrown") \
-    /** Try using the primary key if there is a subquery or a table expression on the right side of the IN operator. */ \
-    M(SettingBool, try_primary_key_for_in_with_subqueries, true, "Try using the primary key if there is a subquery or a table expression on the right side of the IN operator.")
+    /** Try using an index if there is a subquery or a table expression on the right side of the IN operator. */ \
+    M(SettingBool, use_index_for_in_with_subqueries, true, "Try using an index if there is a subquery or a table expression on the right side of the IN operator.")
 
 
     /// Possible limits for query execution.
