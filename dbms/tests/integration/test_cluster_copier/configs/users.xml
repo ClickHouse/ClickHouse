@@ -3,9 +3,6 @@
     <profiles>
         <default>
             <log_queries>1</log_queries>
-
-            <!-- Remove this setting after superfluous deduplication after DROP PARTITION is fixed -->
-            <insert_deduplicate>0</insert_deduplicate>
         </default>
     </profiles>
 

@@ -22,5 +22,4 @@ const std::string & getFQDNOrHostName()
 {
     static std::string result = getFQDNOrHostNameImpl();
     return result;
-
 }
