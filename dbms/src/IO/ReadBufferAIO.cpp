@@ -1,3 +1,5 @@
+#if !(defined(__FreeBSD__) || defined(__APPLE__))
+
 #include <IO/ReadBufferAIO.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -295,3 +297,5 @@ void ReadBufferAIO::finalize()
 }
 
 }
+
+#endif
