@@ -10,14 +10,21 @@ LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
 [ -x "${CUR_DIR}/clickhouse-server" ] && [ -x "${CUR_DIR}/clickhouse-client" ] && BIN_DIR= # Allow run in /usr/bin
 BIN_DIR=${BIN_DIR=$BUILD_DIR/dbms/src/Server/}
-[ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}
+[ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
+CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=${CONFIG_DIR}}
+CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=${CONFIG_DIR}}
+CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=/etc/clickhouse-client/}
+CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=/etc/clickhouse-server/}
+CONFIG_CLIENT=${CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}client-test.xml}
+export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
 
 rm -rf $DATA_DIR
 mkdir -p $LOG_DIR
 
+
 # Start a local clickhouse server which will be used to run tests
 #PATH=$PATH:$BIN_DIR \
-${BIN_DIR}clickhouse-server --config-file=$CONFIG_DIR/server-test.xml > $LOG_DIR/stdout 2>&1 &
+${BIN_DIR}clickhouse-server --config-file=${CLICKHOUSE_CONFIG} > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
 
@@ -31,12 +38,10 @@ function finish {
 trap finish EXIT
 
 # Do tests
-export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=$CUR_DIR/server-test.xml}
-#cd $CUR_DIR
 if [ -n "$*" ]; then
     $*
 else
-    ${BIN_DIR}clickhouse-client --config $CONFIG_DIR/client-test.xml -q 'SELECT * from system.build_options;'
+    ${BIN_DIR}clickhouse-client --config ${CONFIG_CLIENT} -q 'SELECT * from system.build_options;'
     PATH=$PATH:$BIN_DIR \
-      $CUR_DIR/clickhouse-test --binary ${BIN_DIR}clickhouse --configclient $CONFIG_DIR/client-test.xml --configserver $CONFIG_DIR/server-test.xml --tmp $DATA_DIR/tmp --queries $CUR_DIR/queries $TEST_OPT
+      $CUR_DIR/clickhouse-test --binary ${BIN_DIR}clickhouse --configclient ${CONFIG_CLIENT} --configserver ${CLICKHOUSE_CONFIG} --tmp $DATA_DIR/tmp --queries $CUR_DIR/queries $TEST_OPT
 fi
