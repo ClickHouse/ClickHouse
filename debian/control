@@ -16,7 +16,7 @@ Standards-Version: 3.9.8
 
 Package: clickhouse-client
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common (= ${binary:Version})
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
 Description: Client binary for clickhouse
@@ -25,7 +25,7 @@ Description: Client binary for clickhouse
  .
  This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
 
-Package: clickhouse-common
+Package: clickhouse-common-static
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Replaces: clickhouse-server-base
@@ -39,7 +39,7 @@ Description: Common files for clickhouse
 
 Package: clickhouse-server
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common (= ${binary:Version}), adduser, tzdata
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser, tzdata
 Replaces: clickhouse-server-common
 Provides: clickhouse-server-common
 Conflicts: clickhouse-server-common
@@ -53,8 +53,8 @@ Package: clickhouse-common-dbg
 Architecture: any
 Section: debug
 Priority: extra
-Depends: ${misc:Depends}, clickhouse-common (= ${binary:Version})
-Description: debugging symbols for clickhouse-common
+Depends: ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
+Description: debugging symbols for clickhouse-common-static
  This package contains the debugging symbols for clickhouse-common.
 
 Package: clickhouse-test
