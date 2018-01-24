@@ -21,7 +21,9 @@ public:
 
     virtual std::unique_ptr<Op> clone() const = 0;
 
-    virtual std::string describe() = 0;
+    virtual std::string getPath() const = 0;
+
+    virtual std::string describe() const = 0;
 
     std::unique_ptr<zoo_op_t> data;
 
@@ -44,7 +46,9 @@ struct Op::Remove : public Op
         return std::unique_ptr<zkutil::Op>(new Remove(path, version));
     }
 
-    std::string describe() override { return "command: remove, path: " + path; }
+    std::string getPath() const override { return path; }
+
+    std::string describe() const override { return "command: remove, path: " + path; }
 
 private:
     std::string path;
@@ -53,27 +57,26 @@ private:
 
 struct Op::Create : public Op
 {
-    Create(const std::string & path_, const std::string & value_, ACLPtr acl_, int32_t flags_);
+    Create(const std::string & path_pattern_, const std::string & value_, ACLPtr acl_, int32_t flags_);
 
     std::unique_ptr<Op> clone() const override
     {
-        return std::unique_ptr<zkutil::Op>(new Create(path, value, acl, flags));
+        return std::unique_ptr<zkutil::Op>(new Create(path_pattern, value, acl, flags));
     }
 
-    std::string getPathCreated()
-    {
-        return created_path.data();
-    }
+    std::string getPathCreated() { return created_path.data(); }
 
-    std::string describe() override
+    std::string getPath() const override { return path_pattern; }
+
+    std::string describe() const override
     {
         return     "command: create"
-                ", path: " + path +
+                ", path: " + path_pattern +
                 ", value: " + value;
     }
 
 private:
-    std::string path;
+    std::string path_pattern;
     std::string value;
     ACLPtr acl;
     int32_t flags;
@@ -93,7 +96,9 @@ struct Op::SetData : public Op
         return std::unique_ptr<zkutil::Op>(new SetData(path, value, version));
     }
 
-    std::string describe() override
+    std::string getPath() const override { return path; }
+
+    std::string describe() const override
     {
         return
             "command: set"
@@ -122,7 +127,9 @@ struct Op::Check : public Op
         return std::unique_ptr<zkutil::Op>(new Check(path, version));
     }
 
-    std::string describe() override { return "command: check, path: " + path; }
+    std::string getPath() const override { return path; }
+
+    std::string describe() const override { return "command: check, path: " + path; }
 
 private:
     std::string path;
@@ -161,5 +168,12 @@ class ZooKeeper;
 /// state - session connection state, one of the *_STATE constants from zookeeper.h
 /// path - znode path to which the change happened. if event == ZOO_SESSION_EVENT it is either NULL or empty string.
 using WatchCallback = std::function<void(ZooKeeper & zookeeper, int type, int state, const char * path)>;
+
+
+/// Returns first op which code != ZOK or throws an exception
+/// ZooKeeper client sets correct OP codes if the transaction fails because of logical (user) errors like ZNODEEXISTS
+/// If it is failed because of network error, for example, OP codes is not set.
+/// Therefore you should make zkutil::isUserError() check before the function invocation.
+size_t getFailedOpIndex(const OpResultsPtr & op_results, int32_t transaction_return_code);
 
 }
