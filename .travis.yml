@@ -63,23 +63,23 @@ matrix:
         - utils/travis/pbuilder.sh
 
 
-# Link problem
-    - os: osx
-      osx_image: xcode9.2
-
-      cache:
-        ccache: true
-        timeout: 1000
-
-      before_install:
-        - brew install unixodbc gcc ccache libtool gettext zlib readline double-conversion gperftools google-sparsehash lz4 zstd || true
-        - brew link --overwrite gcc || true
-
-      env:
-        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
-
-      script:
-        - env CMAKE_FLAGS="-DUSE_INTERNAL_BOOST_LIBRARY=1" utils/travis/normal.sh
+# Cant fit to time limit (48min)
+#    - os: osx
+#      osx_image: xcode9.2
+#
+#      cache:
+#        ccache: true
+#        timeout: 1000
+#
+#      before_install:
+#        - brew install unixodbc gcc ccache libtool gettext zlib readline double-conversion gperftools google-sparsehash lz4 zstd || true
+#        - brew link --overwrite gcc || true
+#
+#      env:
+#        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
+#
+#      script:
+#        - env CMAKE_FLAGS="-DUSE_INTERNAL_BOOST_LIBRARY=1" utils/travis/normal.sh
 
 
   allow_failures:
