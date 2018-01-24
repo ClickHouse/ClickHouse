@@ -206,7 +206,7 @@ void StorageNextGenReplicatedMergeTree::initPartSet()
     for (const MergeTreeData::DataPartPtr & part : parts_on_disk)
         parts.emplace(std::piecewise_construct,
             std::forward_as_tuple(part->info),
-            std::forward_as_tuple(part, Part::ZKState::Committed));
+            std::forward_as_tuple(part, Part::ReplicationState::Committed));
 
     /// TODO: check and sync with ZooKeeper.
 }
@@ -317,14 +317,12 @@ void StorageNextGenReplicatedMergeTree::runPartSetUpdatingThread()
     {
         try
         {
+            std::vector<String> parts_in_zk;
             std::vector<MergeTreePartInfo> ephemeral_parts;
-            std::vector<String> active_parts;
             {
                 auto zookeeper = getZooKeeper();
                 Strings part_nodes = zookeeper->getChildren(
                     zookeeper_path + "/parts", nullptr, part_set_updating_event);
-
-                ActiveDataPartSet current_parts(data.format_version);
 
                 for (const String & part_name : part_nodes)
                 {
@@ -347,49 +345,62 @@ void StorageNextGenReplicatedMergeTree::runPartSetUpdatingThread()
                         ephemeral_parts.emplace_back(partition_id, block_num, block_num, 0);
                     }
                     else
-                        current_parts.add(part_name);
+                        parts_in_zk.emplace_back(part_name);
                 }
-
-                active_parts = current_parts.getParts();
             }
 
+            std::set<MergeTreePartInfo> all_parts_set;
             bool have_new_parts = false;
             {
                 std::lock_guard<std::mutex> lock(parts_mutex);
                 /// TODO maybe not the best idea to lock the mutex for so long.
 
-                for (auto it = parts.begin(); it != parts.end(); )
-                {
-                    if (it->second.zk_state == Part::ZKState::Ephemeral && !it->second.in_progress)
-                        it = parts.erase(it);
-                    else
-                        ++it;
-                }
-
                 for (const MergeTreePartInfo & part_info : ephemeral_parts)
                 {
+                    all_parts_set.insert(part_info);
+
                     parts.emplace(std::piecewise_construct,
                         std::forward_as_tuple(part_info),
-                        std::forward_as_tuple(part_info, part_info.getPartName(), Part::ZKState::Ephemeral));
+                        std::forward_as_tuple(part_info, part_info.getPartName(), Part::ReplicationState::Ephemeral));
                     /// TODO: calling part_info->getPartName() is a bit misleading here.
                     /// Better not store names in ZK at all.
                     Int64 & low_watermark = low_watermark_by_partition[part_info.partition_id];
                     low_watermark = std::max(low_watermark, part_info.max_block);
                 }
 
-                for (const String & part_name : active_parts)
+                for (const String & part_name : parts_in_zk)
                 {
                     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+                    all_parts_set.insert(part_info);
+
                     auto insertion = parts.emplace(std::piecewise_construct,
                         std::forward_as_tuple(part_info),
-                        std::forward_as_tuple(part_info, part_name, Part::ZKState::Virtual));
-                    if (insertion.second)
+                        std::forward_as_tuple(part_info, part_name, Part::ReplicationState::Virtual));
+
+                    bool new_part = insertion.second;
+                    if (insertion.first->second.replication_state == Part::ReplicationState::Ephemeral
+                        && !insertion.first->second.local_part)
+                    {
+                        /// The insertion was successful, the part is virtual now.
+                        new_part = true;
+                        insertion.first->second.replication_state = Part::ReplicationState::Virtual;
+                        insertion.first->second.name = part_name;
+                    }
+
+                    if (new_part)
                     {
                         LOG_TRACE(log, "New part: " << part_name);
                         have_new_parts = true;
                         Int64 & low_watermark = low_watermark_by_partition[part_info.partition_id];
                         low_watermark = std::max(low_watermark, part_info.max_block);
                     }
+                }
+
+                for (auto & kv : parts)
+                {
+                    Part & part = kv.second;
+                    if (!all_parts_set.count(part.info))
+                        part.replication_state = Part::ReplicationState::None;
                 }
             }
 
@@ -417,7 +428,7 @@ bool StorageNextGenReplicatedMergeTree::runPartsProducingTask()
         ActiveDataPartSet virtual_parts(data.format_version);
         for (auto & part : parts)
         {
-            if (part.second.zk_state == Part::ZKState::Virtual && !part.second.in_progress)
+            if (part.second.replication_state == Part::ReplicationState::Virtual && !part.second.in_progress)
                 virtual_parts.add(part.second.name);
         }
 
@@ -425,9 +436,18 @@ bool StorageNextGenReplicatedMergeTree::runPartsProducingTask()
         if (active_parts.empty())
             return false;
 
-        auto chosen_part = MergeTreePartInfo::fromPartName(
-            active_parts[rng() % active_parts.size()], data.format_version);
-        selected_part.set(parts.find(chosen_part)->second);
+        const String & chosen_part_name = active_parts[rng() % active_parts.size()];
+        Part & chosen_part = parts.find(
+            MergeTreePartInfo::fromPartName(chosen_part_name, data.format_version))->second;
+
+        if (data.getActiveContainingPart(chosen_part_name))
+        {
+            LOG_DEBUG(log, "Virtual part " << chosen_part_name << " is obsolete.");
+            chosen_part.replication_state = Part::ReplicationState::Obsolete;
+            return true;
+        }
+
+        selected_part.set(chosen_part);
     }
 
     String part_path = zookeeper_path + "/parts/" + selected_part.parent->name;
@@ -558,9 +578,8 @@ bool StorageNextGenReplicatedMergeTree::runPartsProducingTask()
             else
             {
                 LOG_WARNING(log, "Added obsolete part " << selected_part.parent->name);
-                MergeTreePartInfo part_info = selected_part.parent->info;
-                selected_part.reset();
-                parts.erase(part_info);
+                if (selected_part.parent->replication_state != Part::ReplicationState::None)
+                    selected_part.parent->replication_state = Part::ReplicationState::Obsolete;
                 return true;
             }
         }
@@ -578,51 +597,18 @@ bool StorageNextGenReplicatedMergeTree::runPartsProducingTask()
             writeHexByteLowercase(hash_data[i], &hash_string[2 * i]);
     }
 
-    auto commit_part = [&](Part::ZKState zk_state)
+    auto commit_part = [&](bool status_unknown)
     {
         std::lock_guard<std::mutex> lock(parts_mutex);
-        selected_part.parent->zk_state = zk_state;
-        if (data.commitPart(selected_part.parent->local_part))
-        {
-            LOG_INFO(log, "Committed part " << selected_part.parent->name);
 
-            const MergeTreePartInfo & part_info = selected_part.parent->info;
-            auto it_middle = parts.lower_bound(part_info);
-
-            /// Go to the left.
-            auto it_begin = it_middle;
-            while (it_begin != parts.begin())
-            {
-                --it_begin;
-                if (!part_info.contains(it_begin->second.info))
-                    break;
-
-
-            }
-
-            auto it_end = it_middle;
-            while (it_end != parts.end())
-            {
-                if (!part_info.contains(it_end->second.info))
-                    break;
-                ++it_end;
-            }
-
-            for (auto it = it_begin; it != it_end; )
-            {
-                if (it->second.zk_state == Part::ZKState::Virtual && !it->second.in_progress)
-                {
-                    LOG_INFO(log, "Removing virtual part " << it->second.name << " from the queue");
-                    it = parts.erase(it);
-                }
-                else
-                    ++it;
-            }
-        }
-        else
-        {
+        if (!data.commitPart(selected_part.parent->local_part))
             LOG_WARNING(log, "Added obsolete part " << selected_part.parent->name);
-            /// TODO maybe do something immediately if we have added an obsolete part.
+
+        if (selected_part.parent->replication_state != Part::ReplicationState::None)
+        {
+            selected_part.parent->replication_state = Part::ReplicationState::Committed;
+            selected_part.parent->status_unknown = status_unknown;
+            LOG_TRACE(log, "Committed part " << selected_part.parent->name);
         }
 
         selected_part.reset();
@@ -681,12 +667,12 @@ bool StorageNextGenReplicatedMergeTree::runPartsProducingTask()
     catch (const zkutil::KeeperException & ex)
     {
         if (zkutil::isTemporaryErrorCode(ex.code))
-            commit_part(Part::ZKState::MaybeCommitted);
-        else
-            throw;
+            commit_part(true);
+
+        throw;
     }
 
-    commit_part(Part::ZKState::Committed);
+    commit_part(false);
 
     return true;
 }
@@ -705,7 +691,7 @@ void StorageNextGenReplicatedMergeTree::runMergeSelectingThread()
                 for (const auto & kv : parts)
                 {
                     const Part & part = kv.second;
-                    if (part.info.level > 0 && part.zk_state == Part::ZKState::Virtual)
+                    if (part.info.level > 0 && part.replication_state == Part::ReplicationState::Virtual)
                         ++merges_count;
                 }
             }

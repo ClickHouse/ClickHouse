@@ -65,9 +65,10 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
 
             auto insertion = storage.parts.emplace(std::piecewise_construct,
                 std::forward_as_tuple(part->info),
-                std::forward_as_tuple(part->info, part->name, Part::ZKState::Ephemeral));
+                std::forward_as_tuple(part->info, part->name, Part::ReplicationState::Ephemeral));
 
-            if (!insertion.second && insertion.first->second.zk_state != Part::ZKState::Ephemeral)
+            if (!insertion.second
+                  && insertion.first->second.replication_state != Part::ReplicationState::Ephemeral)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
             /// TODO check covering and covered parts;
 
@@ -88,9 +89,7 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
             {
                 std::lock_guard<std::mutex> lock(storage.parts_mutex);
                 storage.data.removePreCommittedPart(inserted_part.parent->local_part);
-                MergeTreePartInfo part_info = inserted_part.parent->info;
-                storage.parts.erase(part_info);
-                inserted_part.parent = nullptr;
+                inserted_part.parent->local_part = nullptr;
             }
         });
 
@@ -129,8 +128,13 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
             {
                 {
                     std::lock_guard<std::mutex> lock(storage.parts_mutex);
-                    storage.data.commitPart(inserted_part.parent->local_part);
-                    inserted_part.parent->zk_state = Part::ZKState::MaybeCommitted;
+                    if (inserted_part.parent->replication_state != Part::ReplicationState::None)
+                    {
+                        storage.data.commitPart(inserted_part.parent->local_part);
+                        inserted_part.parent->replication_state = Part::ReplicationState::Committed;
+                        inserted_part.parent->status_unknown = true;
+                        LOG_TRACE(log, "Committed inserted part " << inserted_part.parent->name);
+                    }
                     inserted_part.reset();
                 }
 
@@ -143,8 +147,12 @@ void NextGenReplicatedBlockOutputStream::write(const Block & block)
 
         {
             std::lock_guard<std::mutex> lock(storage.parts_mutex);
-            storage.data.commitPart(inserted_part.parent->local_part);
-            inserted_part.parent->zk_state = Part::ZKState::Committed;
+            if (inserted_part.parent->replication_state != Part::ReplicationState::None)
+            {
+                storage.data.commitPart(inserted_part.parent->local_part);
+                inserted_part.parent->replication_state = Part::ReplicationState::Committed;
+                LOG_TRACE(log, "Committed inserted part " << inserted_part.parent->name);
+            }
             inserted_part.reset();
         }
 

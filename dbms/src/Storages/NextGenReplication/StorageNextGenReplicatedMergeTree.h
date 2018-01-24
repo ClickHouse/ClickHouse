@@ -111,31 +111,33 @@ private:
 
         MergeTreeData::DataPartPtr local_part = nullptr;
 
-        enum class ZKState
+        enum class ReplicationState
         {
-            Ephemeral,
-            Virtual,
-            MaybeCommitted,
-            Committed,
-            /// TODO: deleting states
+            Ephemeral,          /// The part is being inserted (on this replica or on some other).
+            Virtual,            /// We need to get this part (by merging or fetching) and commit it.
+            Committed,          /// Part is published, its checksum is checked.
+            Obsolete,           /// The part is not committed and we are not interested in it.
+            None,               /// The part is not in the ZK.
+            /// Rule: the part can only appear in ZK once.
         };
 
-        ZKState zk_state;
+        ReplicationState replication_state;
+        bool status_unknown = false;
 
         std::atomic<bool> in_progress = false;
 
-        Part(MergeTreePartInfo info_, String name_, ZKState zk_state_)
+        Part(MergeTreePartInfo info_, String name_, ReplicationState replication_state_)
             : info(std::move(info_))
             , name(std::move(name_))
-            , zk_state(zk_state_)
+            , replication_state(replication_state_)
         {
         }
 
-        Part(const MergeTreeData::DataPartPtr & existing_part, ZKState zk_state_)
+        Part(const MergeTreeData::DataPartPtr & existing_part, ReplicationState replication_state_)
             : info(existing_part->info)
             , name(existing_part->name)
             , local_part(existing_part)
-            , zk_state(zk_state_)
+            , replication_state(replication_state_)
         {
         }
 
@@ -159,10 +161,12 @@ private:
 
             InProgressGuard() = default;
             InProgressGuard(Part & parent_) { set(parent_); }
+            InProgressGuard(const InProgressGuard &) = delete;
+            InProgressGuard & operator=(const InProgressGuard &) = delete;
             ~InProgressGuard() { reset(); }
         };
     };
-    friend bool operator<(Part::ZKState, Part::ZKState);
+    friend bool operator<(Part::ReplicationState, Part::ReplicationState);
 
     mutable std::mutex parts_mutex;
     std::map<MergeTreePartInfo, Part> parts;
@@ -185,12 +189,14 @@ private:
     zkutil::EventPtr merge_selecting_event = std::make_shared<Poco::Event>();
     void runMergeSelectingThread();
 
+    /// TODO: cleaner thread.
+
     friend class NextGenReplicatedBlockOutputStream;
 };
 
 inline bool operator<(
-    StorageNextGenReplicatedMergeTree::Part::ZKState left,
-    StorageNextGenReplicatedMergeTree::Part::ZKState right)
+    StorageNextGenReplicatedMergeTree::Part::ReplicationState left,
+    StorageNextGenReplicatedMergeTree::Part::ReplicationState right)
 {
     return static_cast<int>(left) < static_cast<int>(right);
 }
