@@ -72,7 +72,7 @@ void MySQLDictionarySource::setDate()
         char buffer [80];
         struct tm * timeinfo;
         timeinfo = localtime (&hr_time);
-        strftime(buffer, 80, "%Y-%m-%d%%20%H:%M:%S", timeinfo);
+        strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", timeinfo);
         std::string str_time(buffer);
         date = str_time;
     }
@@ -88,9 +88,7 @@ void MySQLDictionarySource::setDate()
         strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", timeinfo);
         std::string str_time(buffer);
         date = str_time;
-        std::string tmp = load_all_query;
-        tmp.pop_back();
-        load_all_query_update = tmp + " WHERE " + update_field + " > '" + date + "';";
+        load_all_query_update = query_builder.composeUpdateQuery(update_field, date);
     }
 }
 
