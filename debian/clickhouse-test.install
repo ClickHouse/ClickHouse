@@ -1,3 +1,4 @@
 usr/bin/clickhouse-test
-usr/share/clickhouse-test/*
+usr/bin/clickhouse-test-server
 usr/bin/clickhouse-performance-test
+usr/share/clickhouse-test/*

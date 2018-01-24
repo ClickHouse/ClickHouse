@@ -7,7 +7,7 @@ else ()
     include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
 endif ()
 
-install (PROGRAMS clickhouse-test DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+install (PROGRAMS clickhouse-test clickhouse-test-server DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 install (
     DIRECTORY queries performance external_dictionaries
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse-test
