@@ -141,7 +141,7 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 std::string ExternalQueryBuilder::composeUpdateQuery(const std::string &update_field, std::string &time_point) const
 {
     std::string out = composeLoadAllQuery();
-    std::string update_query = " WHERE " + update_field + " > '" + time_point + "'";
+    std::string update_query = " WHERE " + update_field + " >= '" + time_point + "'";
     out.insert(out.size()-1, update_query);
 
     return out;

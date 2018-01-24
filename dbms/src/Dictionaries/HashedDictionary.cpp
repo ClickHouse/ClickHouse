@@ -296,6 +296,8 @@ void HashedDictionary::updateData()
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
+        stream->readSuffix();
+
     }
     else
     {
@@ -342,16 +344,15 @@ void HashedDictionary::updateData()
                         }
                         else
                             temp_columns[attribute_idx]->insertFrom(*saved_block->safeGetByPosition(attribute_idx).column, i);
-
-                        for (size_t i = 0; i < update_id_column.size(); ++i)
+                    }
+                    for (size_t i = 0; i < update_id_column.size(); ++i)
+                    {
+                        bool exists = std::any_of(update_indices.begin(), update_indices.end(), [&](size_t x)
                         {
-                            bool exists = std::any_of(update_indices.begin(), update_indices.end(), [&](size_t x)
-                            {
-                                return x == i;
-                            });
-                            if (!exists)
-                                temp_columns[attribute_idx]->insertFrom(*block.safeGetByPosition(attribute_idx).column, i);
-                        }
+                            return x == i;
+                        });
+                        if (!exists)
+                            temp_columns[attribute_idx]->insertFrom(*block.safeGetByPosition(attribute_idx).column, i);
                     }
                 }
             }
@@ -362,6 +363,7 @@ void HashedDictionary::updateData()
                 temp_block.reset();
             }
         }
+        stream->readSuffix();
     }
 
     if (saved_block)

@@ -247,7 +247,7 @@ void ComplexKeyHashedDictionary::updateData()
                 saved_block = std::make_shared<DB::Block>(block.cloneEmpty());
             for (const auto attribute_idx : ext::range(0, keys_size + attributes_size))
             {
-                const IColumn &update_column = *block.getByPosition(attribute_idx).column.get();
+                const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
                 MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->mutate();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
@@ -272,7 +272,6 @@ void ComplexKeyHashedDictionary::updateData()
                 return block.safeGetByPosition(key_idx).column;
             });
 
-            const auto &saved_columns = saved_block->mutateColumns();
 
             std::vector<int> update_indices, saved_indices;
             for (size_t i = 0; i < saved_block->rows(); ++i)
@@ -292,6 +291,9 @@ void ComplexKeyHashedDictionary::updateData()
                     u_temp_key_pool.rollback(u_key.size);
                 }
             }
+
+            auto saved_columns = saved_block->mutateColumns();
+
             BlockPtr temp_block = std::make_shared<DB::Block>(saved_block->cloneEmpty());
             for (const auto attribute_idx : ext::range(0, keys_size + attributes_size))
             {
@@ -334,6 +336,8 @@ void ComplexKeyHashedDictionary::updateData()
                 saved_block = std::make_shared<DB::Block>(*temp_block);
                 temp_block.reset();
             }
+            else
+                saved_block->setColumns(std::move(saved_columns));
         }
         stream->readSuffix();
     }
