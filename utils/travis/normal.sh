@@ -31,4 +31,4 @@ cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00428 requires sudo (not all vms allow this)` \
-    && ( ( cd .. && env TEST_OPT="--no-long --no-shard --skip 00281 00428" bash -x dbms/tests/server_wrapper.sh ) || $TEST_TRUE )
+    && ( ( cd .. && env TEST_OPT="--no-long --no-shard --skip 00281 00428 $TEST_OPT" bash -x dbms/tests/server_wrapper.sh ) || $TEST_TRUE )
