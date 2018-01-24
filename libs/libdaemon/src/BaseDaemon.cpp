@@ -48,6 +48,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <Poco/Util/Application.h>
 #include <Poco/ScopedLock.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
@@ -724,14 +725,15 @@ void BaseDaemon::initialize(Application & self)
             auto key_start = arg.find_first_not_of('-');
             if (key_start == std::string::npos)
                 continue;
-            auto key = arg.substr(key_start, pos - 2);
+            auto key = arg.substr(key_start, pos - 2); // -1 for skip '=', annother -1 for coord-count difference
             std::string value;
             if (arg.size() > pos)
                 value = arg.substr(pos+1);
 
             map_config->setString(key, value);
         }
-        config().add(map_config,  -200); /// Highest priority
+        /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
+        config().add(map_config, PRIO_APPLICATION - 100);
     }
 
     bool is_daemon = config().getBool("application.runAsDaemon", false);
