@@ -179,7 +179,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     current_zookeeper(context.getZooKeeper()), database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros().expand(zookeeper_path_)),

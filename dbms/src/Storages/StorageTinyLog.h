@@ -27,8 +27,6 @@ public:
     std::string getName() const override { return "TinyLog"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -55,7 +53,6 @@ public:
 private:
     String path;
     String name;
-    NamesAndTypesList columns;
 
     size_t max_compress_block_size;
 
