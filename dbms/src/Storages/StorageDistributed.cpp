@@ -207,25 +207,23 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    if (owned_cluster && context.getApplicationType() != Context::ApplicationType::LOCAL)
-        throw Exception(
-            "Method write is not supported by storage " + getName() +
-            " created via a table function", ErrorCodes::READONLY);
-
     auto cluster = (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
 
-    bool is_sharding_key_ok = has_sharding_key || ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2);
-    if (!is_sharding_key_ok)
-        throw Exception(
-            "Method write is not supported by storage " + getName() +
-            " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
+    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
+    {
+        throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
 
-    if (path.empty() && !settings.insert_distributed_sync.value)
-        throw Exception(
-            "Data path should be set for storage " + getName() +
-            " to enable asynchronous inserts", ErrorCodes::BAD_ARGUMENTS);
+    /// If sharding key is not specified, then you can only write to a shard containing only one shard
+    if (!has_sharding_key && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    {
+        throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
+                        ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+    }
 
+    /// Force sync insertion if it is remote() table function
     bool insert_sync = settings.insert_distributed_sync || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 

@@ -14,10 +14,10 @@ class DatabaseOrdinary : public DatabaseMemory
 {
 protected:
     const String metadata_path;
-    String data_path;
+    const String data_path;
 
 public:
-    DatabaseOrdinary(const String & name_, const String & metadata_path, const Context & context);
+    DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context);
 
     String getEngineName() const override { return "Ordinary"; }
 
