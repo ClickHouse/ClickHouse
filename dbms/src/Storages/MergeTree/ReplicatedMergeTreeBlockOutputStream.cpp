@@ -7,6 +7,10 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
+namespace ProfileEvents
+{
+    extern const Event DuplicatedInsertedBlocks;
+}
 
 namespace DB
 {
@@ -228,6 +232,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                 LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (skip the insertion)");
                 part->is_duplicate = true;
                 last_block_is_duplicate = true;
+                ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
                 return;
             }
 
@@ -371,6 +376,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             part->is_duplicate = true;
             transaction.rollback();
             last_block_is_duplicate = true;
+            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
         }
         else if (info.code == ZNODEEXISTS && failed_op_path == quorum_info.status_path)
         {
