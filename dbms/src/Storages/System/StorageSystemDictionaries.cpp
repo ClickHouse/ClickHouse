@@ -33,8 +33,8 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
           { "element_count", std::make_shared<DataTypeUInt64>() },
           { "load_factor", std::make_shared<DataTypeFloat64>() },
           { "creation_time", std::make_shared<DataTypeDateTime>() },
-          { "last_exception", std::make_shared<DataTypeString>() },
-          { "source", std::make_shared<DataTypeString>() }
+          { "source", std::make_shared<DataTypeString>() },
+          { "last_exception", std::make_shared<DataTypeString>() }
     }
 {
 }
