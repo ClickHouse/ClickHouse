@@ -1,27 +1,27 @@
 #include "ClusterCopier.h"
 
 #include <chrono>
-#include <boost/algorithm/string.hpp>
+
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
-#include <Poco/Util/Application.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/File.h>
 #include <Poco/Process.h>
 #include <Poco/FileChannel.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Poco/Util/ServerApplication.h>
+
+#include <boost/algorithm/string.hpp>
+#include <pcg_random.hpp>
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -52,7 +52,6 @@
 #include <DataStreams/NullBlockOutputStream.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferNull.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -69,22 +68,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNFINISHED;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
-
-template <typename T>
-static ConfigurationPtr getConfigurationFromXMLString(T && xml_string)
+static ConfigurationPtr getConfigurationFromXMLString(const std::string & xml_data)
 {
-    std::stringstream ss;
-    ss << std::forward<T>(xml_string);
-
-    Poco::XML::InputSource input_source(ss);
-    ConfigurationPtr res(new Poco::Util::XMLConfiguration(&input_source));
-
-    return res;
+    std::stringstream ss(xml_data);
+    Poco::XML::InputSource input_source{ss};
+    return {new Poco::Util::XMLConfiguration{&input_source}};
 }
 
 namespace
@@ -118,7 +112,7 @@ struct TaskStateWithOwner
     String toString()
     {
         WriteBufferFromOwnString wb;
-        wb << static_cast<UInt32>(state) << "\n" << DB::escape << owner;
+        wb << static_cast<UInt32>(state) << "\n" << escape << owner;
         return wb.str();
     }
 
@@ -128,7 +122,7 @@ struct TaskStateWithOwner
         TaskStateWithOwner res;
         UInt32 state;
 
-        rb >> state >> "\n" >> DB::escape >> res.owner;
+        rb >> state >> "\n" >> escape >> res.owner;
 
         if (state >= static_cast<int>(TaskState::Unknown))
             throw Exception("Unknown state " + data, ErrorCodes::LOGICAL_ERROR);
@@ -174,12 +168,10 @@ struct ShardPriority
     size_t hostname_difference = 0;
     UInt8 random = 0;
 
-    static bool isMorePriority(const ShardPriority & current, const ShardPriority & other)
+    static bool greaterPriority(const ShardPriority & current, const ShardPriority & other)
     {
-        return std::less<void>()(
-            std::forward_as_tuple(current.is_remote, current.hostname_difference, current.random),
-            std::forward_as_tuple(other.is_remote, other.hostname_difference, other.random)
-        );
+        return std::forward_as_tuple(current.is_remote, current.hostname_difference, current.random)
+               < std::forward_as_tuple(other.is_remote, other.hostname_difference, other.random);
     }
 };
 
@@ -248,8 +240,8 @@ struct TaskTable
 
     PartitionToShards partition_to_shards;
 
-    template <class URNG>
-    void initShards(URNG && urng);
+    template <typename RandomEngine>
+    void initShards(RandomEngine && random_engine);
 };
 
 struct TaskCluster
@@ -279,8 +271,8 @@ struct TaskCluster
     /// Path to remote_servers in task config
     String clusters_prefix;
 
-    std::random_device rd;
-    std::mt19937 random_generator;
+    std::random_device random_device;
+    pcg64 random_engine;
 };
 
 
@@ -354,9 +346,9 @@ Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
 
 String TaskTable::getPartitionPath(const String & partition_name) const
 {
-    return task_cluster.task_zookeeper_path                 // root
-           + "/table_" + escapeForFileName(name_in_config)  // table_test.hits
-           + "/" + partition_name;                          // 201701
+    return task_cluster.task_zookeeper_path                     // root
+           + "/tables/" + escapeForFileName(name_in_config)     // tables/table_hits
+           + "/" + partition_name;                              // 201701
 }
 
 String TaskPartition::getPartitionPath() const
@@ -377,7 +369,7 @@ String TaskPartition::getPartitionShardsPath() const
 
 String TaskPartition::getPartitionActiveWorkersPath() const
 {
-    return getPartitionPath() + "/active_workers";
+    return getPartitionPath() + "/partition_active_workers";
 }
 
 String TaskPartition::getActiveWorkerPath() const
@@ -438,13 +430,34 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
         where_condition_str = queryToString(where_condition_ast);
     }
 
-    has_enabled_partitions = config.has(table_prefix + "enabled_partitions");
+    String enabled_partitions_prefix = table_prefix + "enabled_partitions";
+    has_enabled_partitions = config.has(enabled_partitions_prefix);
+
     if (has_enabled_partitions)
     {
+        Strings keys;
+        config.keys(enabled_partitions_prefix, keys);
+
         Strings partitions;
-        String partitions_str = config.getString(table_prefix + "enabled_partitions");
-        boost::trim_if(partitions_str, isWhitespaceASCII);
-        boost::split(partitions, partitions_str, isWhitespaceASCII, boost::token_compress_on);
+        if (keys.empty())
+        {
+            /// Parse list of partition from space-separated string
+            String partitions_str = config.getString(table_prefix + "enabled_partitions");
+            boost::trim_if(partitions_str, isWhitespaceASCII);
+            boost::split(partitions, partitions_str, isWhitespaceASCII, boost::token_compress_on);
+        }
+        else
+        {
+            /// Parse sequence of <partition>...</partition>
+            for (const String & key : keys)
+            {
+                if (!startsWith(key, "partition"))
+                    throw Exception("Unknown key " + key + " in " + enabled_partitions_prefix, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+
+                partitions.emplace_back(config.getString(enabled_partitions_prefix + "." + key));
+            }
+        }
+
         std::copy(partitions.begin(), partitions.end(), std::inserter(enabled_partitions, enabled_partitions.begin()));
     }
 
@@ -479,18 +492,18 @@ static ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, co
     return res;
 }
 
-template<class URNG>
-void TaskTable::initShards(URNG && urng)
+template<typename RandomEngine>
+void TaskTable::initShards(RandomEngine && random_engine)
 {
     const String & fqdn_name = getFQDNOrHostName();
-    std::uniform_int_distribution<UInt8> get_rand(0, std::numeric_limits<UInt8>::max());
+    std::uniform_int_distribution<UInt8> get_urand(0, std::numeric_limits<UInt8>::max());
 
     // Compute the priority
     for (auto & shard_info : cluster_pull->getShardsInfo())
     {
         TaskShardPtr task_shard = std::make_shared<TaskShard>(*this, shard_info);
         const auto & replicas = cluster_pull->getShardsAddresses().at(task_shard->indexInCluster());
-        task_shard->priority = getReplicasPriority(replicas, fqdn_name, get_rand(urng));
+        task_shard->priority = getReplicasPriority(replicas, fqdn_name, get_urand(random_engine));
 
         all_shards.emplace_back(task_shard);
     }
@@ -499,7 +512,7 @@ void TaskTable::initShards(URNG && urng)
     std::sort(all_shards.begin(), all_shards.end(),
         [] (const TaskShardPtr & lhs, const TaskShardPtr & rhs)
         {
-            return ShardPriority::isMorePriority(lhs->priority, rhs->priority);
+            return ShardPriority::greaterPriority(lhs->priority, rhs->priority);
         });
 
     // Cut local shards
@@ -596,12 +609,12 @@ public:
         context.setClustersConfig(task_cluster_config, task_cluster->clusters_prefix);
 
         /// Set up shards and their priority
-        task_cluster->random_generator.seed(task_cluster->rd());
+        task_cluster->random_engine.seed(task_cluster->random_device());
         for (auto & task_table : task_cluster->table_tasks)
         {
             task_table.cluster_pull = context.getCluster(task_table.cluster_pull_name);
             task_table.cluster_push = context.getCluster(task_table.cluster_push_name);
-            task_table.initShards(task_cluster->random_generator);
+            task_table.initShards(task_cluster->random_engine);
         }
 
         LOG_DEBUG(log, "Loaded " << task_cluster->table_tasks.size() << " table tasks");
@@ -633,7 +646,7 @@ public:
                 Strings partitions = getRemotePartitions(task_table.table_pull, *connection_entry, &task_cluster->settings_pull);
                 for (const String & partition_name : partitions)
                 {
-                    /// Do not process partition if it is in enabled_partitions list
+                    /// Do not process partition if it is not in enabled_partitions list
                     if (task_table.has_enabled_partitions && !task_table.enabled_partitions.count(partition_name))
                     {
                         LOG_DEBUG(log, "Will skip partition " << partition_name);
@@ -810,7 +823,7 @@ protected:
 
     String getWorkersPath() const
     {
-        return task_cluster->task_zookeeper_path + "/workers";
+        return task_cluster->task_zookeeper_path + "/task_active_workers";
     }
 
     String getCurrentWorkerNodePath() const
@@ -1147,8 +1160,8 @@ protected:
             bool inject_fault = false;
             if (copy_fault_probability > 0)
             {
-                std::uniform_real_distribution<> dis(0, 1);
-                double value = dis(task_table.task_cluster.random_generator);
+                std::uniform_real_distribution<> get_urand(0, 1);
+                double value = get_urand(task_table.task_cluster.random_engine);
                 inject_fault = value < copy_fault_probability;
             }
 

@@ -463,16 +463,11 @@ static const char * minimal_default_user_xml =
 "</yandex>";
 
 
-template <typename T>
-static ConfigurationPtr getConfigurationFromXMLString(T && xml_string)
+static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
-    std::stringstream ss;
-    ss << std::forward<T>(xml_string);
-
-    Poco::XML::InputSource input_source(ss);
-    ConfigurationPtr res{new Poco::Util::XMLConfiguration(&input_source)};
-
-    return res;
+    std::stringstream ss{std::string{xml_data}};
+    Poco::XML::InputSource input_source{ss};
+    return {new Poco::Util::XMLConfiguration{&input_source}};
 }
 
 
