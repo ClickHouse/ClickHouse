@@ -8,7 +8,7 @@ endif ()
 
 if (NOT USE_INTERNAL_CCTZ_LIBRARY)
     find_library (CCTZ_LIBRARY cctz)
-    find_path (CCTZ_INCLUDE_DIR NAMES cctz/civil_time.h PATHS ${CCTZ_INCLUDE_PATHS})
+    find_path (CCTZ_INCLUDE_DIR NAMES cctz/civil_time.h civil_time.h PATHS ${CCTZ_INCLUDE_PATHS})
 endif ()
 
 if (CCTZ_LIBRARY AND CCTZ_INCLUDE_DIR)

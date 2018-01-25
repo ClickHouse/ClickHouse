@@ -2895,7 +2895,8 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 }
 
 
-AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper)
+AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+                                                                           zkutil::Ops * precheck_ops)
 {
     String partition_path = zookeeper_path + "/block_numbers/" + partition_id;
     if (!existsNodeCached(partition_path))
@@ -2907,7 +2908,7 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
 
     return AbandonableLockInZooKeeper(
         partition_path + "/block-",
-        zookeeper_path + "/temp", *zookeeper);
+        zookeeper_path + "/temp", *zookeeper, precheck_ops);
 }
 
 
