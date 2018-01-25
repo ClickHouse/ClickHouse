@@ -7,7 +7,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -19,7 +19,8 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
-        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()}
+        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
+        {"temporary", std::make_shared<DataTypeUInt8>()}
     }
 {
 }
@@ -30,6 +31,9 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     MutableColumnPtr column = ColumnString::create();
     for (const auto & db : context.getDatabases())
         column->insert(db.first);
+
+    std::string temporary_database = "";
+    column->insert(temporary_database);
 
     Block block { ColumnWithTypeAndName( std::move(column), std::make_shared<DataTypeString>(), "database" ) };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -55,23 +59,42 @@ BlockInputStreams StorageSystemTables::read(
     for (size_t row_number = 0; row_number < filtered_databases_column->size(); ++row_number)
     {
         std::string database_name = filtered_databases_column->getDataAt(row_number).toString();
-        auto database = context.tryGetDatabase(database_name);
 
-        if (!database)
+        if (!database_name.empty())
         {
-            /// Database was deleted just now.
-            continue;
-        }
+            auto database = context.tryGetDatabase(database_name);
 
-        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+            if (!database) {
+                /// Database was deleted just now.
+                continue;
+            }
+
+            for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+            {
+                auto table_name = iterator->name();
+                res_columns[0]->insert(database_name);
+                res_columns[1]->insert(table_name);
+                res_columns[2]->insert(iterator->table()->getName());
+                res_columns[3]->insert(
+                    static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+                res_columns[4]->insert(UInt64(0));
+            }
+        } else
         {
-            auto table_name = iterator->name();
-            res_columns[0]->insert(database_name);
-            res_columns[1]->insert(table_name);
-            res_columns[2]->insert(iterator->table()->getName());
-            res_columns[3]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+            Tables externalTables = context.getSessionContext().getExternalTables();
+
+            for (auto table = externalTables.begin(); table != externalTables.end(); table++)
+            {
+                res_columns[0]->insert(database_name);
+                res_columns[1]->insert(table->first);
+                res_columns[2]->insert(table->second->getName());
+                res_columns[3]->insert(UInt64(0));
+                res_columns[4]->insert(UInt64(1));
+            }
         }
     }
+
+
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
