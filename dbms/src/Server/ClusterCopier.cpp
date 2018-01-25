@@ -636,8 +636,8 @@ public:
                                << ", shard " << task_shard->info.shard_num << ")");
 
                 LOG_DEBUG(log, "There are "
-                    << task_table.all_shards.size() << " shards, and "
-                    << task_table.local_shards.size() << " remote ones");
+                    << task_table.all_shards.size() << " shards, "
+                    << task_table.local_shards.size() << " of them are remote ones");
 
                 auto connection_entry = task_shard->info.pool->get(&task_cluster->settings_pull);
                 LOG_DEBUG(log, "Will get meta information for shard " << task_shard->numberInCluster()
