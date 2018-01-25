@@ -10,6 +10,8 @@ import time
 import errno
 from dicttoxml import dicttoxml
 import xml.dom.minidom
+from kazoo.client import KazooClient
+from kazoo.exceptions import KazooException
 
 import docker
 from docker.errors import ContainerError
@@ -91,6 +93,12 @@ class ClickHouseCluster:
         return self.project_name + '_' + instance_name + '_1'
 
 
+    def get_instance_ip(self, instance_name):
+        docker_id = self.get_instance_docker_id(instance_name)
+        handle = self.docker_client.containers.get(docker_id)
+        return handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
+
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -114,7 +122,7 @@ class ClickHouseCluster:
         if self.with_zookeeper and self.base_zookeeper_cmd:
             subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
             for command in self.pre_zookeeper_commands:
-                self.run_zookeeper_client_command(command, repeats=5)
+                self.run_kazoo_commands_with_retries(command, repeats=5)
 
         # Uncomment for debugging
         # print ' '.join(self.base_cmd + ['up', '--no-recreate'])
@@ -124,9 +132,7 @@ class ClickHouseCluster:
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
             instance.docker_client = self.docker_client
-
-            container = self.docker_client.containers.get(instance.docker_id)
-            instance.ip_address = container.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
+            instance.ip_address = self.get_instance_ip(instance.name)
 
             instance.wait_for_start(start_deadline)
 
@@ -149,17 +155,23 @@ class ClickHouseCluster:
             instance.client = None
 
 
-    def run_zookeeper_client_command(self, command, zoo_node = 'zoo1', repeats=1, sleep_for=1):
-        cli_cmd = 'zkCli.sh  ' + command
-        zoo_name = self.get_instance_docker_id(zoo_node)
-        network_mode = 'container:' + zoo_name
-        for i in range(0, repeats - 1):
+    def get_kazoo_client(self, zoo_instance_name):
+        zk = KazooClient(hosts=self.get_instance_ip(zoo_instance_name))
+        zk.start()
+        return zk
+
+
+    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name = 'zoo1', repeats=1, sleep_for=1):
+        for i in range(repeats - 1):
             try:
-                return self.docker_client.containers.run('zookeeper', cli_cmd, remove=True, network_mode=network_mode)
-            except ContainerError:
+                kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+                return
+            except KazooException as e:
+                print repr(e)
                 time.sleep(sleep_for)
 
-        return self.docker_client.containers.run('zookeeper', cli_cmd, remove=True, network_mode=network_mode)
+        kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+
 
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)

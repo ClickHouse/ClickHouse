@@ -17,6 +17,24 @@ from helpers.test_tools import TSV
 COPYING_FAIL_PROBABILITY = 0.33
 cluster = None
 
+
+def check_all_hosts_sucesfully_executed(tsv_content, num_hosts):
+    M = TSV.toMat(tsv_content)
+    hosts = [(l[0], l[1]) for l in M] # (host, port)
+    codes = [l[2] for l in M]
+    messages = [l[3] for l in M]
+
+    assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, "\n" + tsv_content
+    assert len(set(codes)) == 1, "\n" + tsv_content
+    assert codes[0] == "0", "\n" + tsv_content
+
+
+def ddl_check_query(instance, query, num_hosts=3):
+    contents = instance.query(query)
+    check_all_hosts_sucesfully_executed(contents, num_hosts)
+    return contents
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     global cluster
@@ -54,23 +72,24 @@ def started_cluster():
 def _test_copying(cmd_options):
     instance = cluster.instances['s0_0_0']
 
-    instance.query("CREATE TABLE hits ON CLUSTER cluster0 (d UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16")
-    instance.query("CREATE TABLE hits_all ON CLUSTER cluster0 (d UInt64) ENGINE=Distributed(cluster0, default, hits, d)")
-    instance.query("CREATE TABLE hits_all ON CLUSTER cluster1 (d UInt64) ENGINE=Distributed(cluster1, default, hits, d + 1)")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS hits ON CLUSTER cluster0")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS hits ON CLUSTER cluster1")
+
+    ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16")
+    ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster0 (d UInt64) ENGINE=Distributed(cluster0, default, hits, d)")
+    ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster1 (d UInt64) ENGINE=Distributed(cluster1, default, hits, d + 1)")
     instance.query("INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002")
 
-    zoo_id = cluster.get_instance_docker_id('zoo1')
-    zoo_handle = cluster.docker_client.containers.get(zoo_id)
-    zoo_ip = zoo_handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
-    print "Use ZooKeeper server: {} ({})".format(zoo_id, zoo_ip)
+    zk = cluster.get_kazoo_client('zoo1')
+    print "Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1])
 
-    zk = KazooClient(hosts=zoo_ip)
-    zk.start()
     zk_task_path = "/clickhouse-copier/task_simple"
     zk.ensure_path(zk_task_path)
+
     copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task0_description.xml'), 'r').read()
     zk.create(zk_task_path + "/description", copier_task_config)
 
+    # Run cluster-copier processes on each node
     docker_api = docker.from_env().api
     copiers_exec_ids = []
 
@@ -88,7 +107,7 @@ def _test_copying(cmd_options):
         copiers_exec_ids.append(exec_id)
         print "Copier for {} ({}) has started".format(instance.name, instance.ip_address)
 
-    # Wait for copiers finalizing and check their return codes
+    # Wait for copiers stopping and check their return codes
     for exec_id, instance in zip(copiers_exec_ids, cluster.instances.itervalues()):
         while True:
             res = docker_api.exec_inspect(exec_id)
@@ -105,10 +124,10 @@ def _test_copying(cmd_options):
     assert TSV(cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("0\n")
 
     zk.delete(zk_task_path, recursive=True)
-    instance.query("DROP TABLE hits_all ON CLUSTER cluster1")
-    instance.query("DROP TABLE hits_all ON CLUSTER cluster1")
-    instance.query("DROP TABLE hits ON CLUSTER cluster0")
-    instance.query("DROP TABLE hits ON CLUSTER cluster1")
+    ddl_check_query(instance, "DROP TABLE hits_all ON CLUSTER cluster0")
+    ddl_check_query(instance, "DROP TABLE hits_all ON CLUSTER cluster1")
+    ddl_check_query(instance, "DROP TABLE hits ON CLUSTER cluster0")
+    ddl_check_query(instance, "DROP TABLE hits ON CLUSTER cluster1")
 
 
 def test_copy_simple(started_cluster):
