@@ -27,7 +27,7 @@ BlockIO InterpreterShowCreateQuery::execute()
 
 Block InterpreterShowCreateQuery::getSampleBlock()
 {
-    return {{ nullptr, std::make_shared<DataTypeString>(), "statement" }};
+    return {{ std::make_shared<DataTypeString>(), "statement" }};
 }
 
 

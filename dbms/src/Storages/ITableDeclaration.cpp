@@ -260,10 +260,10 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
     using NameSet = std::unordered_set<String>;
     NameSet names_in_block;
 
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+    block.checkNumberOfRows();
 
+    for (const auto & column : block)
+    {
         if (names_in_block.count(column.name))
             throw Exception("Duplicate column " + column.name + " in block",
                             ErrorCodes::DUPLICATE_COLUMN);

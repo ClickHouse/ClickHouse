@@ -303,6 +303,8 @@ public:
             || merging_params.mode == MergingParams::Replacing;
     }
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const;
+
     Int64 getMaxDataPartIndex();
 
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
@@ -660,6 +662,9 @@ private:
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, std::unique_lock<std::mutex> & data_parts_lock);
+
+    /// Checks whether the column is in the primary key.
+    bool isPrimaryKeyColumn(const ASTPtr &node) const;
 };
 
 }

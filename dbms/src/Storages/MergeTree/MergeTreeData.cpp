@@ -2160,5 +2160,36 @@ void MergeTreeData::Transaction::replaceParts(MergeTreeData::DataPartState move_
     }
 }
 
+bool MergeTreeData::isPrimaryKeyColumn(const ASTPtr &node) const
+{
+    String column_name = node->getColumnName();
+
+    for (const auto & column : sort_descr)
+        if (column_name == column.column_name)
+            return true;
+
+    return false;
+}
+
+bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+{
+    /// Make sure that the left side of the IN operator is part of the primary key.
+    /// If there is a tuple on the left side of the IN operator, each item of the tuple must be part of the primary key.
+    const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
+    if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
+    {
+        for (const auto & item : left_in_operand_tuple->arguments->children)
+            if (!isPrimaryKeyColumn(item))
+                /// The tuple itself may be part of the primary key, so check that as a last resort.
+                return isPrimaryKeyColumn(left_in_operand);
+
+        /// tuple() is invalid but can still be found here since this method may be called before the arguments are validated.
+        return !left_in_operand_tuple->arguments->children.empty();
+    }
+    else
+    {
+        return isPrimaryKeyColumn(left_in_operand);
+    }
+}
 
 }
