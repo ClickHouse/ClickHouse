@@ -38,6 +38,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
       */
     context.assertDatabaseExists(database, false);
 
+    if (query.temporary) {
+        database = "";
+    }
+
     std::stringstream rewritten_query;
     rewritten_query << "SELECT name FROM system.tables WHERE database = " << std::quoted(database, '\'');
 
