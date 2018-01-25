@@ -142,8 +142,8 @@ StorageDistributed::StorageDistributed(
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),

@@ -59,12 +59,9 @@ StorageFile::StorageFile(
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_)
-    : IStorage(materialized_columns_, alias_columns_, column_defaults_),
-    table_name(table_name_), format_name(format_name_), columns(columns_), context_global(context_), table_fd(table_fd_)
+    : IStorage(columns_, materialized_columns_, alias_columns_, column_defaults_),
+    table_name(table_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
-    if (columns.empty())
-        throw Exception("Empty list of columns passed to storage " + getName() + " constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-
     if (table_fd < 0) /// Will use file
     {
         use_table_fd = false;

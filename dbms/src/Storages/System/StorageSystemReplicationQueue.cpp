@@ -19,7 +19,8 @@ namespace DB
 
 StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string & name_)
     : name(name_)
-    , columns{
+{
+    columns = NamesAndTypesList{
         /// Table properties.
         { "database",                std::make_shared<DataTypeString>() },
         { "table",                   std::make_shared<DataTypeString>() },
@@ -42,8 +43,7 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
         { "num_postponed",           std::make_shared<DataTypeUInt32>() },
         { "postpone_reason",         std::make_shared<DataTypeString>() },
         { "last_postpone_time",      std::make_shared<DataTypeDateTime>() },
-    }
-{
+    };
 }
 
 

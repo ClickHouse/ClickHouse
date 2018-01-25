@@ -47,7 +47,6 @@ public:
 
 private:
     String name;
-    NamesAndTypesList columns;
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     const Context & context;
