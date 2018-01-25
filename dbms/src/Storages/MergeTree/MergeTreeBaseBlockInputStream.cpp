@@ -233,6 +233,16 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
               */
             if (constant_filter_description.always_false)
             {
+	            /*
+                  If this filter is PREWHERE 0, MergeTree Stream can be marked as done,
+                  and this task can be clear. I don't understand why below commented out
+                  code is needed. If we don't mark this task finished here, readImpl could
+        		  jump into endless loop.
+                  Error scenario:
+                  select * from table where isNull(NOT_NULLABLE_COLUMN) AND OTHER PRED;
+                  and isNull pred is promoted to PREWHERE.
+                */	
+		        /*****************************************************************************
                 if (pre_range_reader)
                 {
                     /// Have to read rows from last partly read granula.
@@ -246,7 +256,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 }
                 else
                     task->current_range_reader.reset();
-
+	        	*****************************************************************************/
+                task->current_range_reader.reset();
+        		task->mark_ranges.clear();
                 res.clear();
                 return res;
             }
