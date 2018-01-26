@@ -1,6 +1,8 @@
-#include "GatherUtils.h"
+#include <Functions/GatherUtils/Sinks.h>
+#include <Functions/GatherUtils/Sources.h>
+#include <Core/TypeListNumber.h>
 
-namespace DB
+namespace DB::GatherUtils
 {
 /// Creates IArraySource from ColumnArray
 
@@ -10,7 +12,7 @@ struct ArraySourceCreator;
 template <typename Type, typename... Types>
 struct ArraySourceCreator<Type, Types...>
 {
-    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
+    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const NullMap * null_map, bool is_const, size_t total_rows)
     {
         if (typeid_cast<const ColumnVector<Type> *>(&col.getData()))
         {
@@ -32,7 +34,7 @@ struct ArraySourceCreator<Type, Types...>
 template <>
 struct ArraySourceCreator<>
 {
-    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
+    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const NullMap * null_map, bool is_const, size_t total_rows)
     {
         if (null_map)
         {
@@ -52,7 +54,7 @@ std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is
     if (auto column_nullable = typeid_cast<const ColumnNullable *>(&col.getData()))
     {
         auto column = ColumnArray::create(column_nullable->getNestedColumnPtr(), col.getOffsetsPtr());
-        return Creator::create(*column, &column_nullable->getNullMapColumn(), is_const, total_rows);
+        return Creator::create(*column, &column_nullable->getNullMapData(), is_const, total_rows);
     }
     return Creator::create(col, nullptr, is_const, total_rows);
 }

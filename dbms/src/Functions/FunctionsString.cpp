@@ -5,7 +5,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsArray.h>
-#include <Functions/GatherUtils.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
 #include <Common/UTF8Helpers.h>
 
@@ -25,6 +26,7 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
+using namespace GatherUtils;
 
 template <bool negative = false>
 struct EmptyImpl
