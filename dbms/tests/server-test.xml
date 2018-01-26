@@ -1,4 +1,5 @@
 <?xml version="1.0"?>
+<!-- Config for test server -->
 <yandex>
     <logger>
         <level>trace</level>
