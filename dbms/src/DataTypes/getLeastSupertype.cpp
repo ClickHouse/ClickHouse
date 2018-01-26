@@ -2,7 +2,7 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
-#include <DataTypes/getLeastCommonType.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -27,7 +27,7 @@ namespace
     String getExceptionMessagePrefix(const DataTypes & types)
     {
         WriteBufferFromOwnString res;
-        res << "There is no common type for types ";
+        res << "There is no supertype for types ";
 
         bool first = true;
         for (const auto & type : types)
@@ -44,7 +44,7 @@ namespace
 }
 
 
-DataTypePtr getLeastCommonType(const DataTypes & types)
+DataTypePtr getLeastSupertype(const DataTypes & types)
 {
     /// Trivial cases
 
@@ -82,7 +82,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
                 non_nothing_types.emplace_back(type);
 
         if (non_nothing_types.size() < types.size())
-            return getLeastCommonType(non_nothing_types);
+            return getLeastSupertype(non_nothing_types);
     }
 
     /// For Arrays
@@ -109,7 +109,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             if (!all_arrays)
                 throw Exception(getExceptionMessagePrefix(types) + " because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeArray>(getLeastCommonType(nested_types));
+            return std::make_shared<DataTypeArray>(getLeastSupertype(nested_types));
         }
     }
 
@@ -151,7 +151,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                common_tuple_types[elem_idx] = getLeastCommonType(nested_types[elem_idx]);
+                common_tuple_types[elem_idx] = getLeastSupertype(nested_types[elem_idx]);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -179,7 +179,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
 
         if (have_nullable)
         {
-            return std::make_shared<DataTypeNullable>(getLeastCommonType(nested_types));
+            return std::make_shared<DataTypeNullable>(getLeastSupertype(nested_types));
         }
     }
 
