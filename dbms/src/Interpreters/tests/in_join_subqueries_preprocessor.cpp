@@ -1163,10 +1163,11 @@ bool run()
     return performTests(entries);
 }
 
-static DB::Context context = DB::Context::createGlobal();
 
 TestResult check(const TestEntry & entry)
 {
+    static DB::Context context = DB::Context::createGlobal();
+
     try
     {
 
