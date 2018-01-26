@@ -24,7 +24,7 @@ public:
     /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
             const String & username, const String & password,
-            UInt16 clickhouse_port, bool treat_local_as_shared = true);
+            UInt16 clickhouse_port, bool treat_local_as_shared);
 
     Cluster(const Cluster &) = delete;
     Cluster & operator=(const Cluster &) = delete;
