@@ -46,7 +46,7 @@ BlockIO InterpreterDropQuery::execute()
     }
 
     /// Drop temporary table.
-    if (drop.database.empty())
+    if (drop.temporary)
     {
         StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(drop.table);
         if (table)
