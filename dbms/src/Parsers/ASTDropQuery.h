@@ -15,6 +15,7 @@ class ASTDropQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 public:
     bool detach{false};    /// DETACH query, not DROP.
     bool if_exists{false};
+    bool temporary{false};
     String database;
     String table;
 
