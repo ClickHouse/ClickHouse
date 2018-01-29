@@ -30,13 +30,15 @@ namespace ErrorCodes
 /// The reference counter is not atomic, since it is used from one thread.
 namespace detail
 {
-    struct SharedBlock : Block
-    {
-        int refcount = 0;
+struct SharedBlock : Block
+{
+    int refcount = 0;
 
-        SharedBlock(Block && value_)
-            : Block(std::move(value_)) {};
-    };
+    ColumnRawPtrs all_columns;
+    ColumnRawPtrs sort_columns;
+
+    SharedBlock(Block && block) : Block(std::move(block)) {}
+};
 }
 
 using SharedBlockPtr = boost::intrusive_ptr<detail::SharedBlock>;
@@ -77,7 +79,7 @@ public:
 protected:
     struct RowRef
     {
-        ColumnRawPtrs columns;
+        ColumnRawPtrs * columns = nullptr;
         size_t row_num;
         SharedBlockPtr shared_block;
 
@@ -91,9 +93,9 @@ protected:
         /// The number and types of columns must match.
         bool operator==(const RowRef & other) const
         {
-            size_t size = columns.size();
+            size_t size = columns->size();
             for (size_t i = 0; i < size; ++i)
-                if (0 != columns[i]->compareAt(row_num, other.row_num, *other.columns[i], 1))
+                if (0 != (*columns)[i]->compareAt(row_num, other.row_num, *(*other.columns)[i], 1))
                     return false;
             return true;
         }
@@ -103,8 +105,8 @@ protected:
             return !(*this == other);
         }
 
-        bool empty() const { return columns.empty(); }
-        size_t size() const { return columns.size(); }
+        bool empty() const { return columns == nullptr; }
+        size_t size() const { return empty() ? 0 : columns->size(); }
     };
 
 
@@ -190,9 +192,7 @@ protected:
     {
         row_ref.row_num = cursor.impl->pos;
         row_ref.shared_block = source_blocks[cursor.impl->order];
-
-        for (size_t i = 0; i < num_columns; ++i)
-            row_ref.columns[i] = cursor->all_columns[i];
+        row_ref.columns = &row_ref.shared_block->all_columns;
     }
 
     template <typename TSortCursor>
@@ -200,9 +200,7 @@ protected:
     {
         row_ref.row_num = cursor.impl->pos;
         row_ref.shared_block = source_blocks[cursor.impl->order];
-
-        for (size_t i = 0; i < cursor->sort_columns_size; ++i)
-            row_ref.columns[i] = cursor->sort_columns[i];
+        row_ref.columns = &row_ref.shared_block->sort_columns;
     }
 
 private:

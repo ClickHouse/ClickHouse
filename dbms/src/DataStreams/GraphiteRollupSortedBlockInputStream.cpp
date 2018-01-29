@@ -98,9 +98,6 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
         for (size_t i = 0; i < num_columns; ++i)
             if (i != time_column_num && i != value_column_num && i != version_column_num)
                 unmodified_column_numbers.push_back(i);
-
-        if (current_subgroup_newest_row.empty())
-            current_subgroup_newest_row.columns.resize(num_columns);
     }
 
     merge(merged_columns, queue);
@@ -257,14 +254,14 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
     }
     else
         merged_columns[value_column_num]->insertFrom(
-            *current_subgroup_newest_row.columns[value_column_num], current_subgroup_newest_row.row_num);
+            *(*current_subgroup_newest_row.columns)[value_column_num], current_subgroup_newest_row.row_num);
 }
 
 
 void GraphiteRollupSortedBlockInputStream::accumulateRow(RowRef & row)
 {
     if (aggregate_state_created)
-        current_pattern->function->add(place_for_aggregate_state.data(), &row.columns[value_column_num], row.row_num, nullptr);
+        current_pattern->function->add(place_for_aggregate_state.data(), &(*row.columns)[value_column_num], row.row_num, nullptr);
 }
 
 }
