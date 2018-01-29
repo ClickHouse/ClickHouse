@@ -10,3 +10,5 @@ build:
     - docker build -t yandex/clickhouse-builder .
   script:
     - docker run --rm -v $(realpath ../..):/server yandex/clickhouse-builder
+  tags:
+    - docker
