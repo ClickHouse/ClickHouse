@@ -15,7 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/getLeastCommonType.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -133,7 +133,7 @@ public:
             if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastCommonType({type_arr_to_nested, type_default});
+                return getLeastSupertype({type_arr_to_nested, type_default});
             }
 
             /// TODO More checks.

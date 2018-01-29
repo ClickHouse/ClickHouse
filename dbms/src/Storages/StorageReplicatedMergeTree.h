@@ -342,6 +342,11 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
+    /// Do the merge or recommend to make the fetch instead of the merge
+    void tryExecuteMerge(const LogEntry & entry, bool & do_fetch);
+
+    bool executeFetch(const LogEntry & entry);
+
     void executeClearColumnInPartition(const LogEntry & entry);
 
     /** Updates the queue.

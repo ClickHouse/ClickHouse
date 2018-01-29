@@ -1200,7 +1200,7 @@ private:
         }
 
         /// both from_type and to_type should be nullptr now is array types had same dimensions
-        if (from_type || to_type)
+        if ((from_type == nullptr) != (to_type == nullptr))
             throw Exception{
                 "CAST AS Array can only be performed between same-dimensional array types or from String",
                 ErrorCodes::TYPE_MISMATCH};

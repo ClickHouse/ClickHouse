@@ -1,6 +1,6 @@
 from helpers.cluster import ClickHouseCluster
 import pytest
-
+import time
 
 def test_chroot_with_same_root():
 
@@ -25,6 +25,8 @@ def test_chroot_with_same_root():
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
                 '''.format(replica=node.name))
                 node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
+
+            time.sleep(1)
 
             assert node1.query('select count() from simple').strip() == '2'
             assert node2.query('select count() from simple').strip() == '2'
@@ -83,13 +85,17 @@ def test_identity():
     try:
         cluster_1.start()
 
-        # node1.query('''
-        # CREATE TABLE simple (date Date, id UInt32)
-        # ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
-        # '''.format(replica=node1.name))
+        node1.query('''
+        CREATE TABLE simple (date Date, id UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
+        '''.format(replica=node1.name))
 
         with pytest.raises(Exception):
             cluster_2.start(destroy_dirs=False)
+            node2.query('''
+            CREATE TABLE simple (date Date, id UInt32) 
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '1', date, id, 8192);
+            ''')
 
     finally:
         cluster_1.shutdown()
