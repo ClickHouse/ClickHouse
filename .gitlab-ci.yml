@@ -2,7 +2,11 @@ stages:
   - build
 build:
   stage: build
-  script:
+  services:
+    - docker:dind
+  before_script:
     - cd ./docker/builder
+    - docker info
     - docker build -t yandex/clickhouse-builder .
+  script:
     - docker run --rm -v $(realpath ../..):/server -it yandex/clickhouse-builder
