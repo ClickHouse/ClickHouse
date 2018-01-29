@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o pipefail
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
+DATA_DIR=${DATA_DIR:=/tmp/clickhouse}
+LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
+BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
+[ -x "${CUR_DIR}/clickhouse-server" ] && [ -x "${CUR_DIR}/clickhouse-client" ] && BIN_DIR= # Allow run in /usr/bin
+[ -x "${BUILD_DIR}/dbms/src/Server/clickhouse-server" ] && BIN_DIR=${BIN_DIR=$BUILD_DIR/dbms/src/Server/}
+[ -f "${CUR_DIR}/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
+CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=${CONFIG_DIR}}
+CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=${CONFIG_DIR}}
+[ ! -f "${CONFIG_CLIENT_DIR}client-test.xml" ] && CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR:=/etc/clickhouse-client/}
+[ ! -f "${CONFIG_SERVER_DIR}server-test.xml" ] && CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR:=/etc/clickhouse-server/}
+CONFIG_CLIENT=${CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}client-test.xml}
+export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
+[ -x "${CUR_DIR}/clickhouse-test" ] && TEST_DIR=${TEST_DIR=${CUR_DIR}/}
+[ -d "${CUR_DIR}/queries" ] && QUERIES_DIR=${QUERIES_DIR=${CUR_DIR}/queries}
+[ ! -d "$QUERIES_DIR" ] && QUERIES_DIR=${QUERIES_DIR=/usr/share/clickhouse-test/queries}
+
+rm -rf $DATA_DIR
+mkdir -p $LOG_DIR
+
+
+# Start a local clickhouse server which will be used to run tests
+#PATH=$PATH:$BIN_DIR \
+${BIN_DIR}clickhouse-server --config-file=${CLICKHOUSE_CONFIG} > $LOG_DIR/stdout 2>&1 &
+CH_PID=$!
+sleep 3
+
+# Define needed stuff to kill test clickhouse server after tests completion
+function finish {
+  kill $CH_PID || true
+  wait
+  tail -n 50 $LOG_DIR/stdout
+  rm -rf $DATA_DIR
+}
+trap finish EXIT
+
+# Do tests
+if [ -n "$*" ]; then
+    $*
+else
+    ${BIN_DIR}clickhouse-client --config ${CONFIG_CLIENT} -q 'SELECT * from system.build_options;'
+    PATH=$PATH:$BIN_DIR \
+      ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient ${CONFIG_CLIENT} --configserver ${CLICKHOUSE_CONFIG} --tmp $DATA_DIR/tmp --queries ${QUERIES_DIR} $TEST_OPT
+fi

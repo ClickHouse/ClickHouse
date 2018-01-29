@@ -1,7 +1,7 @@
-#include "GatherUtils.h"
-#include "GatherUtils_selectors.h"
+#include <Functions/GatherUtils/Selectors.h>
+#include <Functions/GatherUtils/Algorithms.h>
 
-namespace DB
+namespace DB::GatherUtils
 {
 struct SliceFromLeftConstantOffsetUnboundedSelectArraySource
     : public ArraySinkSourceSelector<SliceFromLeftConstantOffsetUnboundedSelectArraySource>

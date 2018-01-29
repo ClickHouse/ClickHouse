@@ -1,5 +1,7 @@
 #pragma once
 
+#if !(defined(__FreeBSD__) || defined(__APPLE__))
+
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
 #include <ext/singleton.h>
@@ -220,3 +222,5 @@ public:
 
 
 }
+
+#endif

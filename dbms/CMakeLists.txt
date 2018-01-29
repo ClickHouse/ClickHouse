@@ -80,16 +80,6 @@ list (APPEND dbms_headers
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
-if (APPLE OR ARCH_FREEBSD)
-    list(REMOVE_ITEM clickhouse_common_io_headers
-        src/Common/AIO.h
-        src/IO/WriteBufferAIO.h
-        src/IO/ReadBufferAIO.h)
-    list(REMOVE_ITEM clickhouse_common_io_sources
-        src/IO/ReadBufferAIO.cpp
-        src/IO/WriteBufferAIO.cpp)
-endif()
-
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 add_subdirectory(src/Common/ZooKeeper)

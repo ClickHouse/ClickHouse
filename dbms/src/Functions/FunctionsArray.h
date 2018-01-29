@@ -1540,6 +1540,130 @@ public:
     FunctionArrayPopBack() : FunctionArrayPop(false, name) {}
 };
 
+class FunctionArrayIntersect : public IFunction
+{
+public:
+    static constexpr auto name = "arrayIntersect";
+    static FunctionPtr create(const Context & context);
+    FunctionArrayIntersect(const Context & context) : context(context) {};
+
+    String getName() const override;
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+private:
+    const Context & context;
+
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+
+    struct UnpackedArrays
+    {
+        std::vector<char> is_const;
+        std::vector<const NullMap *> null_maps;
+        std::vector<const ColumnArray::ColumnOffsets::Container *> offsets;
+        ColumnRawPtrs nested_columns;
+
+        UnpackedArrays() = default;
+    };
+
+    /// Cast column to data_type removing nullable if data_type hasn't.
+    /// It's expected that column can represent data_type after removing some NullMap's.
+    ColumnPtr castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const;
+    Columns castColumns(Block & block, const ColumnNumbers & arguments,
+                        const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls) const;
+    UnpackedArrays prepareArrays(const Columns & columns) const;
+
+    template <typename Map, typename ColumnType, bool is_numeric_column>
+    static ColumnPtr execute(const UnpackedArrays & arrays, MutableColumnPtr result_data);
+
+    struct NumberExecutor
+    {
+        const UnpackedArrays & arrays;
+        const DataTypePtr & data_type;
+        ColumnPtr & result;
+
+        NumberExecutor(const UnpackedArrays & arrays, const DataTypePtr & data_type, ColumnPtr & result)
+            : arrays(arrays), data_type(data_type), result(result) {}
+
+        template <typename T, size_t>
+        void operator()();
+    };
+};
+
+class FunctionArrayHasAllAny : public IFunction
+{
+public:
+    FunctionArrayHasAllAny(const Context & context, bool all, const char * name)
+        : context(context), all(all), name(name) {}
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+private:
+    const Context & context;
+    bool all;
+    const char * name;
+};
+
+class FunctionArrayHasAll : public FunctionArrayHasAllAny
+{
+public:
+    static constexpr auto name = "hasAll";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayHasAll(const Context & context) : FunctionArrayHasAllAny(context, true, name) {}
+};
+
+class FunctionArrayHasAny : public FunctionArrayHasAllAny
+{
+public:
+    static constexpr auto name = "hasAny";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayHasAny(const Context & context) : FunctionArrayHasAllAny(context, false, name) {}
+};
+
+
+class FunctionArrayResize : public IFunction
+{
+public:
+    static constexpr auto name = "arrayResize";
+    static FunctionPtr create(const Context & context);
+    FunctionArrayResize(const Context & context) : context(context) {};
+
+    String getName() const override;
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
+    const Context & context;
+};
 
 struct NameHas { static constexpr auto name = "has"; };
 struct NameIndexOf { static constexpr auto name = "indexOf"; };
