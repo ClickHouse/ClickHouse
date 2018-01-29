@@ -2,7 +2,7 @@
 
 ## Tabix
 
-Веб-интерфейс для ClickHouse в проекте [Tabix](https://github.com/smi2/tabix.ui).
+Веб-интерфейс для ClickHouse в проекте [Tabix](https://github.com/tabixio/tabix).
 
 Основные особенности:
 - Работает с ClickHouse напрямую из браузера, без необходимости установки дополнительного ПО.
