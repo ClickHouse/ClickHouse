@@ -368,6 +368,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Replacing;
     else if (name_part == "Graphite")
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
+    else if (name_part == "Multiversion")
+        merging_params.mode = MergeTreeData::MergingParams::Multiversion;
     else if (!name_part.empty())
         throw Exception(
             "Unknown storage " + args.engine_name + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -424,6 +426,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     case MergeTreeData::MergingParams::Graphite:
         add_mandatory_param("'config_element_for_graphite_schema'");
         break;
+    case MergeTreeData::MergingParams::Multiversion:
+        {
+            add_mandatory_param("sign column");
+            add_mandatory_param("version");
+            break;
+        }
     }
 
     ASTs & engine_args = args.engine_args;
@@ -536,6 +544,26 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         engine_args.pop_back();
         setGraphitePatternsFromConfig(args.context, graphite_config_name, merging_params.graphite_params);
     }
+    else if (merging_params.mode == MergeTreeData::MergingParams::Multiversion)
+    {
+        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
+            merging_params.version_column = ast->name;
+        else
+            throw Exception(
+                    "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+
+        engine_args.pop_back();
+
+        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
+            merging_params.sign_column = ast->name;
+        else
+            throw Exception(
+                    "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+
+        engine_args.pop_back();
+    }
 
     String date_column_name;
     ASTPtr partition_expr_list;
@@ -585,6 +613,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
+    /// MultiversionMergeTree must have version column in primary key. Add it to primary key implicitly otherwise.
+    if (merging_params.mode == MergeTreeData::MergingParams::Multiversion)
+    {
+        auto ast_primary_expr_list = typeid_cast<ASTExpressionList *>(primary_expr_list.get());
+        bool has_version_column_in_pk = false;
+        for (const auto & expr : ast_primary_expr_list->children)
+            if (auto ast = typeid_cast<const ASTIdentifier *>(expr.get()))
+                if (ast->name == merging_params.version_column)
+                    has_version_column_in_pk = true;
+
+        if (!has_version_column_in_pk)
+        {
+            auto version = std::make_shared<ASTIdentifier>(StringRange(), merging_params.version_column);
+            ast_primary_expr_list->children.push_back(version);
+        }
+    }
+
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
@@ -610,6 +655,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("AggregatingMergeTree", create);
     factory.registerStorage("SummingMergeTree", create);
     factory.registerStorage("GraphiteMergeTree", create);
+    factory.registerStorage("MultiversionMergeTree", create);
 
     factory.registerStorage("ReplicatedMergeTree", create);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create);
@@ -617,6 +663,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedAggregatingMergeTree", create);
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
+    factory.registerStorage("ReplicatedMultiversionMergeTree", create);
 }
 
 }

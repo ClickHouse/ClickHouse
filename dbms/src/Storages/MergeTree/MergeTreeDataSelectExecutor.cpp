@@ -38,6 +38,7 @@ namespace std
 #include <DataStreams/SummingSortedBlockInputStream.h>
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DataStreams/MultiversionSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -783,7 +784,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     BlockInputStreams res;
     if (to_merge.size() == 1)
     {
-        if (!data.merging_params.sign_column.empty())
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
         {
             ExpressionActionsPtr sign_filter_expression;
             String sign_filter_column;
@@ -806,7 +807,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
                 break;
 
             case MergeTreeData::MergingParams::Collapsing:
-                merged = std::make_shared<CollapsingFinalBlockInputStream>(to_merge, data.getSortDescription(), data.merging_params.sign_column);
+                merged = std::make_shared<CollapsingFinalBlockInputStream>(
+                        to_merge, data.getSortDescription(), data.merging_params.sign_column);
                 break;
 
             case MergeTreeData::MergingParams::Summing:
@@ -821,6 +823,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
             case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
                 merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
                     data.getSortDescription(), data.merging_params.version_column, max_block_size);
+                break;
+
+            case MergeTreeData::MergingParams::Multiversion: /// TODO Make MultiversionFinalBlockInputStream
+                merged = std::make_shared<MultiversionSortedBlockInputStream>(
+                        to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
                 break;
 
             case MergeTreeData::MergingParams::Unsorted:
