@@ -4,5 +4,5 @@ build:
   stage: build
   script:
     - cd ./docker/builder
-    - make image
-    - make build
+    - docker build -t yandex/clickhouse-builder .
+    - docker run --rm -v $(realpath ../..):/server -it yandex/clickhouse-builder
