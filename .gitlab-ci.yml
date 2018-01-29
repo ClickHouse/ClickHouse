@@ -9,4 +9,4 @@ build:
     - docker info
     - docker build -t yandex/clickhouse-builder .
   script:
-    - docker run --rm -v $(realpath ../..):/server -it yandex/clickhouse-builder
+    - docker run --rm -v $(realpath ../..):/server yandex/clickhouse-builder
