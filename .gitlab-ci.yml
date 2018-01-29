@@ -1,0 +1,8 @@
+stages:
+  - build
+build:
+  stage: build
+  script:
+    - cd ./docker/builder
+    - make image
+    - make build
