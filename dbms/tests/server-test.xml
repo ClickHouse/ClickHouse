@@ -10,6 +10,7 @@
     </logger>
     <http_port>58123</http_port>
     <tcp_port>59000</tcp_port>
+    <listen_host>::</listen_host>
     <interserver_http_port>59009</interserver_http_port>
     <keep_alive_timeout>3</keep_alive_timeout>
     <path>/tmp/clickhouse/data/</path>
