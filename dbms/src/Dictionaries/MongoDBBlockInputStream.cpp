@@ -10,6 +10,7 @@
     #include <Poco/MongoDB/Connection.h>
     #include <Poco/MongoDB/Cursor.h>
     #include <Poco/MongoDB/Element.h>
+    #include <Poco/MongoDB/ObjectId.h>
 #pragma GCC diagnostic pop
 
 #include <Dictionaries/DictionaryStructure.h>
@@ -48,6 +49,7 @@ String MongoDBBlockInputStream::getID() const
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
+    using ObjectId = Poco::MongoDB::ObjectId;
 
     template <typename T>
     void insertNumber(IColumn & column, const Poco::MongoDB::Element & value, const std::string & name)
@@ -97,14 +99,23 @@ namespace
 
             case ValueType::String:
             {
-                if (value.type() != Poco::MongoDB::ElementTraits<String>::TypeId)
-                    throw Exception{
-                        "Type mismatch, expected String, got type id = " + toString(value.type()) +
-                            " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
+                {
+                    std::string string_id = value.toString();
+                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string_id.data(), string_id.size() + 1);
+                    break;
+                }
+                else
+                {
+                    if (value.type() != Poco::MongoDB::ElementTraits<String>::TypeId)
+                        throw Exception{
+                            "Type mismatch, expected String, got type id = " + toString(value.type()) +
+                                " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
-                String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
-                break;
+                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
+                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
+                    break;
+                }
             }
 
             case ValueType::Date:
