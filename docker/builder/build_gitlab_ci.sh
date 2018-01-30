@@ -7,3 +7,4 @@ export CXX=g++-7
 mkdir -p ${CI_PROJECT_DIR}/build
 cmake ${CI_PROJECT_DIR}
 make -j $THREADS
+make clickhouse
