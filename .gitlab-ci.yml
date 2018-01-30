@@ -28,6 +28,7 @@ build:
     # - git submodule update --init --recursive
     # - git config --global http.sslVerify false
     - docker info
+    - apk add --no-cache git
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker pull $CI_REGISTRY/yandex/clickhouse-builder
     - ls ${CI_PROJECT_DIR}
