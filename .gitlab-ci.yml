@@ -6,9 +6,12 @@ build:
     - docker:dind
   before_script:
     - docker info
+    - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker build -t yandex/clickhouse-builder ./docker/builder
   script:
-    - docker run --rm -v $CI_PROJECT_DIR/docker/builder/build.sh:/build.sh -v $CI_PROJECT_DIR:/server yandex/clickhouse-builder
-    - docker push yandex/clickhouse
+    - docker push yandex/clickhouse-builder
+    - docker run --rm --volumes-from "${HOSTNAME}-build" -v $(pwd)/docker/builder/build.sh:/build.sh -v $(pwd):/server yandex/clickhouse-builder
+    - docker tag yandex/clickhouse $CI_REGISTRY/yandex/clickhouse
+    - docker push $CI_REGISTRY/yandex/clickhouse
   tags:
     - docker
