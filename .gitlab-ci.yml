@@ -10,6 +10,7 @@ builder:
     - docker:dind
   before_script:
     - docker info
+    - apk add --no-cache git
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker build -t yandex/clickhouse-builder ./docker/builder
   script:
