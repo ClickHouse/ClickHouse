@@ -12,7 +12,7 @@ RUN apt-get update -y && \
 		gcc-7 g++-7 unixodbc-dev devscripts dupload fakeroot debhelper
 
 ADD build.sh /
-ADD build_gitlab_ci.sh
+ADD build_gitlab_ci.sh /
 RUN chmod +x /build.sh
 RUN chmod +x /build_gitlab_ci.sh
 
