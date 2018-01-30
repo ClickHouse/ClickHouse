@@ -20,9 +20,11 @@ build:
   when: manual
   services:
     - docker:dind
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
   before_script:
-    - git submodule sync --recursive
-    - git submodule update --init --recursive
+    # - git submodule sync --recursive
+    # - git submodule update --init --recursive
     - docker info
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker pull $CI_REGISTRY/yandex/clickhouse-builder
