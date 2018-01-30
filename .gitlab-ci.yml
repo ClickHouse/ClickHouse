@@ -3,6 +3,7 @@ stages:
   - build
 builder:
   stage: builder
+  when: manual
   services:
     - docker:dind
   before_script:
@@ -14,10 +15,9 @@ builder:
     - docker push $CI_REGISTRY/yandex/clickhouse-builder
   tags:
     - docker
-  when:
-    - manual
 build:
   stage: build
+  when: manual
   services:
     - docker:dind
   before_script:
@@ -31,5 +31,3 @@ build:
       - ./build/
   tags:
     - docker
-  when:
-    - manual
