@@ -26,7 +26,7 @@ build:
     - docker pull $CI_REGISTRY/yandex/clickhouse-builder
     - ls ${CI_PROJECT_DIR}
   script:
-    - docker run --rm --volumes-from "${HOSTNAME}-build" --workdir "${CI_PROJECT_DIR}" --command "${CI_PROJECT_DIR}/docker/builder/build_gitlab_ci.sh" $CI_REGISTRY/yandex/clickhouse-builder
+    - docker run --rm --volumes-from "${HOSTNAME}-build" --workdir "${CI_PROJECT_DIR}" $CI_REGISTRY/yandex/clickhouse-builder /build_gitlab_ci.sh
   artifacts:
     paths:
       - ./build/
