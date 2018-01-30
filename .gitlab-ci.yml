@@ -5,10 +5,10 @@ build:
   services:
     - docker:dind
   before_script:
-    - cd ./docker/builder
     - docker info
-    - docker build -t yandex/clickhouse-builder .
+    - docker build -t yandex/clickhouse-builder ./docker/builder
   script:
-    - docker run --rm -v $(realpath ../..):/server yandex/clickhouse-builder
+    - docker run --rm -v ./docker/builder/build.sh:/build.sh -v ./:/server yandex/clickhouse-builder
+    - docker push yandex/clickhouse
   tags:
     - docker
