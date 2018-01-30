@@ -1,7 +1,8 @@
 stages:
+  - image
   - build
-build:
-  stage: build
+image:
+  stage: image
   services:
     - docker:dind
   before_script:
@@ -9,9 +10,26 @@ build:
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker build -t yandex/clickhouse-builder ./docker/builder
   script:
-    - docker push yandex/clickhouse-builder
-    - docker run --rm --volumes-from "${HOSTNAME}-build" -v $(pwd)/docker/builder/build.sh:/build.sh -v $(pwd):/server yandex/clickhouse-builder
-    - docker tag yandex/clickhouse $CI_REGISTRY/yandex/clickhouse
-    - docker push $CI_REGISTRY/yandex/clickhouse
+    - docker tag yandex/clickhouse-builder $CI_REGISTRY/yandex/clickhouse-builder
+    - docker push $CI_REGISTRY/yandex/clickhouse-builder
   tags:
     - docker
+  when:
+    - manual
+build:
+  stage: build
+  services:
+    - docker:dind
+  before_script:
+    - docker info
+    - docker login -u gitlab -p nopasswd $CI_REGISTRY
+    - docker pull $CI_REGISTRY/yandex/clickhouse-builder
+  script:
+    - docker run --rm --volumes-from "${HOSTNAME}-build" -v $(pwd)/docker/builder/build.sh:/build.sh -v $(pwd):/server $CI_REGISTRY/yandex/clickhouse-builder
+  artifacts:
+    paths:
+      - ./build/
+  tags:
+    - docker
+  when:
+    - manual
