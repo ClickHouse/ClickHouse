@@ -25,7 +25,7 @@ build:
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker pull $CI_REGISTRY/yandex/clickhouse-builder
   script:
-    - docker run --rm --volumes-from "${HOSTNAME}-build" -v $(pwd)/docker/builder/build.sh:/build.sh -v $(pwd):/server $CI_REGISTRY/yandex/clickhouse-builder
+    - docker run --rm --volumes-from "${HOSTNAME}-build" -v ${CI_PROJECT_DIR}/docker/builder/build.sh:/build.sh -v ${CI_PROJECT_DIR}:/server $CI_REGISTRY/yandex/clickhouse-builder
   artifacts:
     paths:
       - ./build/
