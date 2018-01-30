@@ -1,5 +1,5 @@
 build:
-	docker run --rm -v $(realpath ../..):/server -it yandex/clickhouse-builder
+	docker run --rm --workdir /server -v $(realpath ../..):/server -it yandex/clickhouse-builder
 
 pull:
 	docker pull yandex/clickhouse-builder
