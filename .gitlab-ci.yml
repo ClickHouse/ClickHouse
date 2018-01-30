@@ -10,7 +10,7 @@ builder:
     - docker:dind
   before_script:
     - docker info
-    - apk add --no-cache git ca-certificates
+    - apk add --no-cache git binutils ca-certificates
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker build -t yandex/clickhouse-builder ./docker/builder
   script:
@@ -33,6 +33,8 @@ build:
     - ls ${CI_PROJECT_DIR}
   script:
     - docker run --rm --volumes-from "${HOSTNAME}-build" --workdir "${CI_PROJECT_DIR}" --env CI_PROJECT_DIR=${CI_PROJECT_DIR} $CI_REGISTRY/yandex/clickhouse-builder /build_gitlab_ci.sh
+    - strip --strip-unneeded ./*.a
+    - strip --strip-unneeded ./dbms/*.a
   artifacts:
     paths:
       - ./dbms/src/Server/clickhouse
