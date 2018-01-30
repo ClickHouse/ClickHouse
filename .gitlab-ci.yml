@@ -10,7 +10,7 @@ builder:
     - docker:dind
   before_script:
     - docker info
-    - apk add --no-cache git
+    - apk add --no-cache git ca-certificates
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker build -t yandex/clickhouse-builder ./docker/builder
   script:
@@ -28,7 +28,7 @@ build:
     # - git submodule update --init --recursive
     # - git config --global http.sslVerify false
     - docker info
-    - apk add --no-cache git
+    - apk add --no-cache git ca-certificates
     - docker login -u gitlab -p nopasswd $CI_REGISTRY
     - docker pull $CI_REGISTRY/yandex/clickhouse-builder
     - ls ${CI_PROJECT_DIR}
