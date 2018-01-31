@@ -40,6 +40,7 @@ void MultiversionSortedBlockInputStream::insertRow(size_t skip_rows, const RowRe
 
     if (out_row_sources_buf)
     {
+        current_row_sources.front().setSkipFlag(false);
         writeRowSourcePart(*out_row_sources_buf, current_row_sources.front());
         current_row_sources.pop();
     }
