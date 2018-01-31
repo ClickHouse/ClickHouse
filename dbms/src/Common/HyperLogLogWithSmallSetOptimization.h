@@ -80,7 +80,7 @@ public:
             large->insert(value);
     }
 
-    UInt32 size() const
+    UInt64 size() const
     {
         return !isLarge() ? small.size() : large->size();
     }
