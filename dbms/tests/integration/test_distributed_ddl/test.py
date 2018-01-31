@@ -89,7 +89,6 @@ def init_cluster(cluster):
         # Initialize databases and service tables
         instance = cluster.instances['ch1']
 
-        instance.query("SELECT 1")
         ddl_check_query(instance, """
 CREATE TABLE IF NOT EXISTS all_tables ON CLUSTER 'cluster_no_replicas'
     (database String, name String, engine String, metadata_modification_time DateTime)
@@ -118,6 +117,8 @@ def started_cluster():
         time.sleep(1.5)
         for instance in cluster.instances.values():
             ddl_check_there_are_no_dublicates(instance)
+
+        cluster.pm_random_drops.heal_all()
 
     finally:
         cluster.shutdown()

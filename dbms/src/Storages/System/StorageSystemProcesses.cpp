@@ -13,7 +13,8 @@ namespace DB
 
 StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
     : name(name_)
-    , columns{
+{
+    columns = NamesAndTypesList{
         { "is_initial_query",     std::make_shared<DataTypeUInt8>() },
 
         { "user",                 std::make_shared<DataTypeString>() },
@@ -48,8 +49,7 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
         { "written_bytes",        std::make_shared<DataTypeUInt64>() },
         { "memory_usage",         std::make_shared<DataTypeInt64>() },
         { "query",                std::make_shared<DataTypeString>() }
-    }
-{
+    };
 }
 
 
