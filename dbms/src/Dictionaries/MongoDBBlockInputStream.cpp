@@ -105,17 +105,16 @@ namespace
                     static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string_id.data(), string_id.size() + 1);
                     break;
                 }
-                else
+                else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
-                    if (value.type() != Poco::MongoDB::ElementTraits<String>::TypeId)
-                        throw Exception{
-                            "Type mismatch, expected String, got type id = " + toString(value.type()) +
-                                " for column " + name, ErrorCodes::TYPE_MISMATCH};
-
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
                     static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
                     break;
                 }
+
+                throw Exception{
+                    "Type mismatch, expected String, got type id = " + toString(value.type()) +
+                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
             }
 
             case ValueType::Date:
