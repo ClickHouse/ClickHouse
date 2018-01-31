@@ -33,8 +33,6 @@ build:
     - ls ${CI_PROJECT_DIR}
   script:
     - docker run --rm --volumes-from "${HOSTNAME}-build" --workdir "${CI_PROJECT_DIR}" --env CI_PROJECT_DIR=${CI_PROJECT_DIR} $CI_REGISTRY/yandex/clickhouse-builder /build_gitlab_ci.sh
-    - strip --strip-unneeded ./*.a
-    - strip --strip-unneeded ./dbms/*.a
   artifacts:
     paths:
       - ./dbms/src/Server/clickhouse
