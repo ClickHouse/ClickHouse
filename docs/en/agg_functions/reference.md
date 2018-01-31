@@ -129,6 +129,8 @@ This algorithm is also very accurate for data sets with small cardinality (up to
 
 The result is determinate (it doesn't depend on the order of query processing).
 
+This function provides excellent accuracy even for data sets with huge cardinality (10B+ elements) and is recommended for use by default.
+
 ## uniqCombined(x)
 
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
@@ -137,16 +139,16 @@ A combination of three algorithms is used: array, hash table and [HyperLogLog](h
 
 The result is determinate (it doesn't depend on the order of query processing).
 
-The `uniqCombined` function is a good default choice for calculating the number of different values.
+The `uniqCombined` function is a good default choice for calculating the number of different values, but the following should be considered: for data sets with large cardinality (200M+) error of estimate will only grow and for data sets with huge cardinality(1B+ elements) it returns result with high inaccuracy.
 
 ## uniqHLL12(x)
 
 Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the number of different values of the argument.
-212 5-bit cells are used. The size of the state is slightly more than 2.5 KB.
+212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. Result is not very accurate (error up to ~10%) for data sets of small cardinality(<10K elements), but for data sets with large cardinality (10K - 100M) result is quite accurate (error up to ~1.6%) and after that error of estimate will only grow and for data sets with huge cardinality (1B+ elements) it returns result with high inaccuracy.
 
 The result is determinate (it doesn't depend on the order of query processing).
 
-In most cases, use the  `uniq` or `uniqCombined` function.
+This function is not recommended for use, and in most cases, use the  `uniq` or `uniqCombined` function.
 
 ## uniqExact(x)
 
