@@ -84,6 +84,8 @@ public:
         const Context & context,
         const String & table_name) const override;
 
+    String getDataPath(const Context & context) const override;
+
     void shutdown() override;
     void drop() override;
 };

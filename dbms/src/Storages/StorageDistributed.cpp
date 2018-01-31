@@ -50,6 +50,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int STORAGE_REQUIRES_PARAMETER;
+    extern const int BAD_ARGUMENTS;
+    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
@@ -141,8 +143,8 @@ StorageDistributed::StorageDistributed(
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(context.getMacros().expand(cluster_name_)), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
@@ -197,7 +199,7 @@ BlockInputStreams StorageDistributed::read(
         external_tables = context.getExternalTables();
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
-        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
+        processed_stage, QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::executeQuery(
             select_stream_factory, cluster, modified_query_ast, context, settings);
@@ -206,25 +208,29 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
+    auto cluster = (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
 
-    /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
-    bool write_enabled = (!path.empty() || owned_cluster)
-                         && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
+    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
+    {
+        throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
 
-    if (!write_enabled)
-        throw Exception{
-            "Method write is not supported by storage " + getName() +
-            " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER};
+    /// If sharding key is not specified, then you can only write to a shard containing only one shard
+    if (!has_sharding_key && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    {
+        throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
+                        ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+    }
 
+    /// Force sync insertion if it is remote() table function
     bool insert_sync = settings.insert_distributed_sync || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, insert_sync, timeout);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings, insert_sync, timeout);
 }
 
 

@@ -94,7 +94,6 @@ public:
 
 
     String name;
-    NamesAndTypesList columns;
     String remote_database;
     String remote_table;
 

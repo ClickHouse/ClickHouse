@@ -13,13 +13,13 @@ namespace DB
 
 StorageSystemSettings::StorageSystemSettings(const std::string & name_)
     : name(name_)
-    , columns{
+{
+    columns = NamesAndTypesList{
         { "name",        std::make_shared<DataTypeString>() },
         { "value",       std::make_shared<DataTypeString>() },
         { "changed",     std::make_shared<DataTypeUInt8>() },
-        { "description", std::make_shared<DataTypeString>() },
-    }
-{
+        { "description", std::make_shared<DataTypeString>() }
+    };
 }
 
 

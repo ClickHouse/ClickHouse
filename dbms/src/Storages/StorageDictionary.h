@@ -37,7 +37,6 @@ private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
     String table_name;
-    NamesAndTypesList columns;
     String dictionary_name;
     Poco::Logger * logger;
 

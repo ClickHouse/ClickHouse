@@ -84,20 +84,21 @@ public:
 
     ITableDeclaration() = default;
     ITableDeclaration(
+        const NamesAndTypesList & columns,
         const NamesAndTypesList & materialized_columns,
         const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults)
-        : materialized_columns{materialized_columns},
-          alias_columns{alias_columns},
-          column_defaults{column_defaults}
-    {}
+        const ColumnDefaults & column_defaults);
 
+    NamesAndTypesList columns;
     NamesAndTypesList materialized_columns{};
     NamesAndTypesList alias_columns{};
     ColumnDefaults column_defaults{};
 
 private:
-    virtual const NamesAndTypesList & getColumnsListImpl() const = 0;
+    virtual const NamesAndTypesList & getColumnsListImpl() const
+    {
+        return columns;
+    }
 
     using ColumnsListRange = boost::range::joined_range<const NamesAndTypesList, const NamesAndTypesList>;
     /// Returns a lazily joined range of table's ordinary and materialized columns, without unnecessary copying
