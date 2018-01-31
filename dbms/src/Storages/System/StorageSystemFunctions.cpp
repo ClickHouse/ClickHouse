@@ -15,11 +15,11 @@ namespace DB
 
 StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
     : name(name_)
-    , columns{
+{
+    columns = NamesAndTypesList{
         { "name",         std::make_shared<DataTypeString>() },
         { "is_aggregate", std::make_shared<DataTypeUInt8>()  }
-    }
-{
+    };
 }
 
 

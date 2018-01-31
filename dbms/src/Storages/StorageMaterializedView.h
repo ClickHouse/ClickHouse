@@ -51,7 +51,6 @@ private:
     String database_name;
     ASTPtr inner_query;
     Context & global_context;
-    NamesAndTypesList columns;
     bool has_inner_table = false;
 
 protected:
