@@ -93,7 +93,8 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+    : ITableDeclaration{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    context(context_),
     sampling_expression(sampling_expression_),
     index_granularity(settings_.index_granularity),
     merging_params(merging_params_),
@@ -102,7 +103,7 @@ MergeTreeData::MergeTreeData(
     partition_expr_ast(partition_expr_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
-    full_path(full_path_), columns(columns_),
+    full_path(full_path_),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_name(data_parts_indexes.get<TagByName>()),

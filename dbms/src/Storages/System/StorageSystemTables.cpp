@@ -13,16 +13,15 @@ namespace DB
 {
 
 StorageSystemTables::StorageSystemTables(const std::string & name_)
-    : name(name_),
-    columns
-    {
+    : name(name_)
+{
+    columns = NamesAndTypesList{
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
         {"temporary", std::make_shared<DataTypeUInt8>()}
-    }
-{
+    };
 }
 
 
