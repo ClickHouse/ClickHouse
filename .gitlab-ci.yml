@@ -3,6 +3,9 @@ stages:
   - build
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
+  NEXUS_USER: admin
+  NEXUS_PASSWORD: YPUVpFdmLz98HC
+  NEXUS_HOST: nexus.start.film
 builder:
   stage: builder
   when: manual
@@ -33,8 +36,6 @@ build:
     - ls ${CI_PROJECT_DIR}
   script:
     - docker run --rm --volumes-from "${HOSTNAME}-build" --workdir "${CI_PROJECT_DIR}" --env CI_PROJECT_DIR=${CI_PROJECT_DIR} $CI_REGISTRY/yandex/clickhouse-builder /build_gitlab_ci.sh
-  artifacts:
-    paths:
-      - ./dbms/src/Server/clickhouse
+    - curl -v --keepalive-time 60 --keepalive --user "$NEXUS_USER:$NEXUS_PASSWORD" -XPUT "http://$NEXUS_HOST/repository/binaries/$CI_PROJECT_NAME" --upload-file ./dbms/src/Server/clickhouse
   tags:
     - docker
