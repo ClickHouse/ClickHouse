@@ -79,7 +79,7 @@ BlockInputStreams StorageSystemTables::read(
                     static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
                 res_columns[4]->insert(UInt64(0));
             }
-        } else
+        } else if (context.hasSessionContext())
         {
             Tables externalTables = context.getSessionContext().getExternalTables();
 

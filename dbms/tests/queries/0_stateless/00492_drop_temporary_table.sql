@@ -1,8 +1,8 @@
-drop table if exists temp_tab;
-create temporary table temp_tab (number UInt64);
-insert into temp_tab select number from system.numbers limit 1;
-select number from temp_tab;
-drop table temp_tab;
-create temporary table temp_tab (number UInt64);
-select number from temp_tab;
-drop table temp_tab;
+DROP TEMPORARY TABLE IF EXISTS temp_tab;
+CREATE TEMPORARY TABLE temp_tab (number UInt64);
+INSERT INTO temp_tab SELECT number FROM system.numbers LIMIT 1;
+SELECT number FROM temp_tab;
+DROP TEMPORARY TABLE temp_tab;
+CREATE TEMPORARY TABLE temp_tab (number UInt64);
+SELECT number FROM temp_tab;
+DROP TEMPORARY TABLE temp_tab;
