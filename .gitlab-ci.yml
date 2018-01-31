@@ -24,7 +24,7 @@ build:
   services:
     - docker:dind
   before_script:
-    - apk add --no-cache git ca-certificates
+    - apk add --no-cache git binutils ca-certificates
     - git submodule sync --recursive
     - git submodule update --init --recursive
     - docker info
