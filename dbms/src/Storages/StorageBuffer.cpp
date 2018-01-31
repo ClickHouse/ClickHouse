@@ -56,8 +56,8 @@ StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList 
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_), context(context_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_), context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),

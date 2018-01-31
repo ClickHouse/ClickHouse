@@ -77,7 +77,6 @@ private:
 
     std::string table_name;
     std::string format_name;
-    NamesAndTypesList columns;
     Context & context_global;
 
     std::string path;

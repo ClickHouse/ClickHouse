@@ -550,8 +550,6 @@ private:
     String table_name;
     String full_path;
 
-    NamesAndTypesList columns;
-
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizes column_sizes;
 
