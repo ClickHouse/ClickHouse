@@ -117,6 +117,7 @@ struct ContextShared
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
     mutable std::shared_ptr<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.
+    String system_profile_name;                             /// Profile used by system processes
     std::shared_ptr<ISecurityManager> security_manager;     /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
@@ -1593,15 +1594,21 @@ void Context::setApplicationType(ApplicationType type)
     shared->application_type = type;
 }
 
+void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
+{
+    shared->default_profile_name = config.getString("default_profile", "default");
+    shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
+    setSetting("profile", shared->system_profile_name);
+}
 
 String Context::getDefaultProfileName() const
 {
     return shared->default_profile_name;
 }
 
-void Context::setDefaultProfileName(const String & name)
+String Context::getSystemProfileName() const
 {
-    shared->default_profile_name = name;
+    return shared->system_profile_name;
 }
 
 String Context::getFormatSchemaPath() const

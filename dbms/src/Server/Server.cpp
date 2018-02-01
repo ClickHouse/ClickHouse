@@ -256,11 +256,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Load global settings from default profile.
+    /// Load global settings from default_profile and system_profile.
+    global_context->setDefaultProfiles(config());
     Settings & settings = global_context->getSettingsRef();
-    String default_profile_name = config().getString("default_profile", "default");
-    global_context->setDefaultProfileName(default_profile_name);
-    global_context->setSetting("profile", default_profile_name);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
