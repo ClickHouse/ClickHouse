@@ -103,13 +103,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     String database_name_escaped = escapeForFileName(database_name);
 
-    /// Create directories for tables data and metadata.
+    /// Create directories for tables metadata.
     String path = context.getPath();
-    String data_path = path + "data/" + database_name_escaped + "/";
     String metadata_path = path + "metadata/" + database_name_escaped + "/";
-
     Poco::File(metadata_path).createDirectory();
-    Poco::File(data_path).createDirectory();
 
     DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context);
 
@@ -458,12 +455,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = context.getCurrentDatabase();
 
     String database_name = create.database.empty() ? current_database : create.database;
-    String database_name_escaped = escapeForFileName(database_name);
     String table_name = create.table;
     String table_name_escaped = escapeForFileName(table_name);
-
-    String data_path = path + "data/" + database_name_escaped + "/";
-    String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns)
@@ -511,9 +504,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         std::unique_ptr<DDLGuard> guard;
 
+        String data_path;
+        DatabasePtr database;
+
         if (!create.is_temporary)
         {
-            context.assertDatabaseExists(database_name);
+            database = context.getDatabase(database_name);
+            data_path = database->getDataPath(context);
 
             /** If the table already exists, and the request specifies IF NOT EXISTS,
               *  then we allow concurrent CREATE queries (which do nothing).
@@ -548,7 +545,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (create.is_temporary)
             context.getSessionContext().addExternalTable(table_name, res);
         else
-            context.getDatabase(database_name)->createTable(context, table_name, res, query_ptr);
+            database->createTable(context, table_name, res, query_ptr);
     }
 
     res->startup();
@@ -560,17 +557,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 
         /// Also see InterpreterInsertQuery.
-        BlockOutputStreamPtr out =
-            std::make_shared<ProhibitColumnsBlockOutputStream>(
-                std::make_shared<AddingDefaultBlockOutputStream>(
-                    std::make_shared<MaterializingBlockOutputStream>(
-                        std::make_shared<PushingToViewsBlockOutputStream>(
-                            create.database, create.table, res,
-                            create.is_temporary ? context.getSessionContext() : context,
-                            query_ptr)),
-                    /// @note shouldn't these two contexts be session contexts in case of temporary table?
-                    columns.columns, columns.column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults)),
-                columns.materialized_columns);
+        BlockOutputStreamPtr out;
+
+        out = std::make_shared<PushingToViewsBlockOutputStream>(
+            create.database, create.table, res, create.is_temporary ? context.getSessionContext() : context, query_ptr);
+
+        out = std::make_shared<MaterializingBlockOutputStream>(out);
+
+        /// @note shouldn't these two contexts be session contexts in case of temporary table?
+        bool strict_insert_defaults = static_cast<bool>(context.getSettingsRef().strict_insert_defaults);
+        out = std::make_shared<AddingDefaultBlockOutputStream>(
+            out, columns.columns, columns.column_defaults, context, strict_insert_defaults);
+
+        if (!context.getSettingsRef().insert_allow_materialized_columns)
+            out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, columns.materialized_columns);
 
         BlockIO io;
         io.in_sample = as_select_sample;

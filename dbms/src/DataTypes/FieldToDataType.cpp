@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/getLeastCommonType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/Exception.h>
 #include <ext/size.h>
@@ -61,7 +61,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
     for (Field & elem : x)
         element_types.emplace_back(applyVisitor(FieldToDataType(), elem));
 
-    DataTypePtr res = getLeastCommonType(element_types);
+    DataTypePtr res = getLeastSupertype(element_types);
 
     for (Field & elem : x)
         elem = convertFieldToType(elem, *res);

@@ -1528,6 +1528,26 @@ void ExpressionAnalyzer::makeSetsForIndex()
         makeSetsForIndexImpl(ast, storage->getSampleBlock());
 }
 
+
+void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name)
+{
+    BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
+
+    SetPtr set = std::make_shared<Set>(settings.limits);
+
+    while (Block block = res.in->read())
+    {
+        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+        if (!set->insertFromBlock(block, true))
+            return;
+    }
+
+    set->finalizeOrderedSet();
+
+    prepared_sets[subquery_or_table_name.get()] = std::move(set);
+}
+
+
 void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block)
 {
     for (auto & child : node->children)
@@ -1539,18 +1559,27 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         const IAST & args = *func->arguments;
         const ASTPtr & arg = args.children.at(1);
 
-        if (!prepared_sets.count(arg.get()) /// Not already prepared.
-            && !typeid_cast<ASTSubquery *>(arg.get()) && !typeid_cast<ASTIdentifier *>(arg.get()))
+        if (!prepared_sets.count(arg.get())) /// Not already prepared.
         {
-            try
+            if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
             {
-                makeExplicitSet(func, sample_block, true);
+                if (settings.use_index_for_in_with_subqueries && storage->mayBenefitFromIndexForIn(args.children.at(0)))
+                    tryMakeSetFromSubquery(arg);
             }
-            catch (const Exception & e)
+            else
             {
-                /// in `sample_block` there are no columns that add `getActions`
-                if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
-                    throw;
+                try
+                {
+                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(columns, settings);
+                    getRootActions(func->arguments->children.at(0), true, false, temp_actions);
+                    makeExplicitSet(func, temp_actions->getSampleBlock(), true);
+                }
+                catch (const Exception & e)
+                {
+                    /// in `sample_block` there are no columns that add `getActions`
+                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
+                        throw;
+                }
             }
         }
     }

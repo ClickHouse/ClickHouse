@@ -25,7 +25,7 @@ BlockIO InterpreterExistsQuery::execute()
 
 Block InterpreterExistsQuery::getSampleBlock()
 {
-    return {{ nullptr, std::make_shared<DataTypeUInt8>(), "result" }};
+    return {{ std::make_shared<DataTypeUInt8>(), "result" }};
 }
 
 

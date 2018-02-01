@@ -55,14 +55,14 @@ StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList 
     const ColumnDefaults & column_defaults_,
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_), context(context_),
+    const String & destination_database_, const String & destination_table_, bool allow_materialized_)
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_), context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    log(&Logger::get("StorageBuffer (" + name + ")"))
+    allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + name + ")"))
 {
 }
 
@@ -527,7 +527,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
       * This will support some of the cases (but not all) when the table structure does not match.
       */
-    Block structure_of_destination_table = table->getSampleBlock();
+    Block structure_of_destination_table = allow_materialized ? table->getSampleBlock() : table->getSampleBlockNonMaterialized();
     Names columns_intersection;
     columns_intersection.reserve(block.columns());
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
@@ -564,7 +564,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const String & column : columns_intersection)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column));
 
-    InterpreterInsertQuery interpreter{insert, context};
+    InterpreterInsertQuery interpreter{insert, context, allow_materialized};
 
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();
@@ -650,7 +650,8 @@ void registerStorageBuffer(StorageFactory & factory)
             num_buckets,
             StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
             StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
-            destination_database, destination_table);
+            destination_database, destination_table,
+            static_cast<bool>(args.local_context.getSettingsRef().insert_allow_materialized_columns));
     });
 }
 

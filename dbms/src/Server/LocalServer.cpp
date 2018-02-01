@@ -463,6 +463,14 @@ static const char * minimal_default_user_xml =
 "</yandex>";
 
 
+static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
+{
+    std::stringstream ss{std::string{xml_data}};
+    Poco::XML::InputSource input_source{ss};
+    return {new Poco::Util::XMLConfiguration{&input_source}};
+}
+
+
 void LocalServer::setupUsers()
 {
     ConfigurationPtr users_config;
@@ -477,11 +485,7 @@ void LocalServer::setupUsers()
     }
     else
     {
-        std::stringstream default_user_stream;
-        default_user_stream << minimal_default_user_xml;
-
-        Poco::XML::InputSource default_user_source(default_user_stream);
-        users_config = ConfigurationPtr(new Poco::Util::XMLConfiguration(&default_user_source));
+        users_config = getConfigurationFromXMLString(minimal_default_user_xml);
     }
 
     if (users_config)

@@ -18,8 +18,6 @@ class StorageSystemPartsBase : public IStorage
 public:
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     NameAndTypePair getColumn(const String & column_name) const override;
 
     bool hasColumn(const String & column_name) const override;
@@ -50,12 +48,12 @@ public:
 
 private:
     const std::string name;
-    NamesAndTypesList columns;
+
 
     bool hasStateColumn(const Names & column_names);
 
 protected:
-    StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns) : name(std::move(name_)), columns(columns) {}
+    StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_);
 
     virtual void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) = 0;
 };

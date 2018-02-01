@@ -89,7 +89,6 @@ def init_cluster(cluster):
         # Initialize databases and service tables
         instance = cluster.instances['ch1']
 
-        instance.query("SELECT 1")
         ddl_check_query(instance, """
 CREATE TABLE IF NOT EXISTS all_tables ON CLUSTER 'cluster_no_replicas'
     (database String, name String, engine String, metadata_modification_time DateTime)
@@ -118,6 +117,8 @@ def started_cluster():
         time.sleep(1.5)
         for instance in cluster.instances.values():
             ddl_check_there_are_no_dublicates(instance)
+
+        cluster.pm_random_drops.heal_all()
 
     finally:
         cluster.shutdown()
@@ -298,6 +299,21 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
     ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER cluster_without_replication")
     ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster_without_replication")
 
+
+def test_macro(started_cluster):
+    instance = cluster.instances['ch2']
+    ddl_check_query(instance, "CREATE TABLE tab ON CLUSTER '{cluster}' (value UInt8) ENGINE = Memory")
+
+    for i in xrange(4):
+        insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO tab VALUES ({})".format(i))
+
+    ddl_check_query(instance, "CREATE TABLE distr ON CLUSTER '{cluster}' (value UInt8) ENGINE = Distributed('{cluster}', 'default', 'tab', value % 4)")
+
+    assert TSV(instance.query("SELECT value FROM distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV( cluster.instances['ch3'].query("SELECT value FROM distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+
+    ddl_check_query(instance, "DROP TABLE IF EXISTS distr ON CLUSTER '{cluster}'")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
