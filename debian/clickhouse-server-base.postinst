@@ -8,8 +8,20 @@ CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 
 
 if [ "$1" = configure ]; then
-    if [ -x "/etc/init.d/clickhouse-server" ]; then
-        update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+    if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
+        # if old rc.d service present - remove it
+        if [ -x "/etc/init.d/clickhouse-server" ]; then
+            update-rc.d clickhouse-server remove
+            echo "ClickHouse init script has migrated to systemd. Please manually stop old server and restart the service: sudo killall clickhouse-server && sleep 5 && sudo service clickhouse-server restart"
+        fi
+
+        /bin/systemctl daemon-reload
+        /bin/systemctl enable clickhouse-server
+    else
+        # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
+        if [ -x "/etc/init.d/clickhouse-server" ]; then
+            update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+        fi
     fi
 
     # Make sure the administrative user exists
@@ -59,7 +71,6 @@ Please fix this and reinstall this package." >&2
         # only for compatibility for old metrika user, remove string after 2017-06-01
         su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R ug+rw ${CLICKHOUSE_LOGDIR}
     fi
-
 
     # Clean old dynamic compilation results
     if [ -d "${CLICKHOUSE_DATADIR}/build" ]; then

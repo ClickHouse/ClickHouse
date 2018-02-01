@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Core/Block.h>
 
 

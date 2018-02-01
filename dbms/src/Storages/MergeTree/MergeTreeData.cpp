@@ -47,6 +47,7 @@
 #include <typeinfo>
 #include <typeindex>
 #include <optional>
+#include <Interpreters/PartLog.h>
 
 
 namespace ProfileEvents
@@ -92,7 +93,8 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+    : ITableDeclaration{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    context(context_),
     sampling_expression(sampling_expression_),
     index_granularity(settings_.index_granularity),
     merging_params(merging_params_),
@@ -101,7 +103,7 @@ MergeTreeData::MergeTreeData(
     partition_expr_ast(partition_expr_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
-    full_path(full_path_), columns(columns_),
+    full_path(full_path_),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_name(data_parts_indexes.get<TagByName>()),
@@ -656,18 +658,43 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
 
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts)
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-
-    /// TODO: use data_parts iterators instead of pointers
-    for (auto & part : parts)
     {
-        auto it = data_parts_by_name.find(part->info);
-        if (it == data_parts_by_name.end())
-            throw Exception("Deleting data part " + part->name + " is not exist", ErrorCodes::LOGICAL_ERROR);
+        std::lock_guard<std::mutex> lock(data_parts_mutex);
 
-        (*it)->assertState({DataPartState::Deleting});
+        /// TODO: use data_parts iterators instead of pointers
+        for (auto & part : parts)
+        {
+            auto it = data_parts_by_name.find(part->info);
+            if (it == data_parts_by_name.end())
+                throw Exception("Deleting data part " + part->name + " is not exist", ErrorCodes::LOGICAL_ERROR);
 
-        data_parts_indexes.erase(it);
+            (*it)->assertState({DataPartState::Deleting});
+
+            data_parts_indexes.erase(it);
+        }
+    }
+
+    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
+    /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
+    if (auto part_log = context.getPartLog(database_name, table_name))
+    {
+        PartLogElement part_log_elem;
+
+        part_log_elem.event_type = PartLogElement::REMOVE_PART;
+        part_log_elem.event_time = time(nullptr);
+        part_log_elem.duration_ms = 0;
+
+        part_log_elem.database_name = database_name;
+        part_log_elem.table_name = table_name;
+
+        for (auto & part : parts)
+        {
+            part_log_elem.part_name = part->name;
+            part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+            part_log_elem.rows = part->rows_count;
+
+            part_log->add(part_log_elem);
+        }
     }
 }
 
@@ -2159,5 +2186,36 @@ void MergeTreeData::Transaction::replaceParts(MergeTreeData::DataPartState move_
     }
 }
 
+bool MergeTreeData::isPrimaryKeyColumn(const ASTPtr &node) const
+{
+    String column_name = node->getColumnName();
+
+    for (const auto & column : sort_descr)
+        if (column_name == column.column_name)
+            return true;
+
+    return false;
+}
+
+bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+{
+    /// Make sure that the left side of the IN operator is part of the primary key.
+    /// If there is a tuple on the left side of the IN operator, each item of the tuple must be part of the primary key.
+    const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
+    if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
+    {
+        for (const auto & item : left_in_operand_tuple->arguments->children)
+            if (!isPrimaryKeyColumn(item))
+                /// The tuple itself may be part of the primary key, so check that as a last resort.
+                return isPrimaryKeyColumn(left_in_operand);
+
+        /// tuple() is invalid but can still be found here since this method may be called before the arguments are validated.
+        return !left_in_operand_tuple->arguments->children.empty();
+    }
+    else
+    {
+        return isPrimaryKeyColumn(left_in_operand);
+    }
+}
 
 }

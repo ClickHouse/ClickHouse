@@ -65,8 +65,8 @@ StorageMaterializedView::StorageMaterializedView(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     bool attach_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), global_context(local_context.getGlobalContext()), columns(columns_)
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
+    database_name(database_name_), global_context(local_context.getGlobalContext())
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);

@@ -32,8 +32,6 @@ public:
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const { return database_name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     void startup() override;
     void shutdown() override;
 
@@ -73,7 +71,6 @@ private:
     String table_name;
     String database_name;
     Context & context;
-    NamesAndTypesList columns;
     Names topics;
     const String brokers;
     const String group;

@@ -53,8 +53,6 @@ public:
     std::string getName() const override { return "Buffer"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -82,7 +80,6 @@ public:
 
 private:
     String name;
-    NamesAndTypesList columns;
 
     Context & context;
 
@@ -103,6 +100,7 @@ private:
     const String destination_database;
     const String destination_table;
     bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
+    bool allow_materialized;
 
     Poco::Logger * log;
 
@@ -131,7 +129,7 @@ protected:
         const ColumnDefaults & column_defaults_,
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_);
+        const String & destination_database_, const String & destination_table_, bool allow_materialized_);
 };
 
 }

@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 
@@ -259,10 +260,10 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
     using NameSet = std::unordered_set<String>;
     NameSet names_in_block;
 
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+    block.checkNumberOfRows();
 
+    for (const auto & column : block)
+    {
         if (names_in_block.count(column.name))
             throw Exception("Duplicate column " + column.name + " in block",
                             ErrorCodes::DUPLICATE_COLUMN);
@@ -287,6 +288,17 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
                 throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
+}
+
+ITableDeclaration::ITableDeclaration(const NamesAndTypesList & columns, const NamesAndTypesList & materialized_columns,
+                                     const NamesAndTypesList & alias_columns, const ColumnDefaults & column_defaults)
+    : columns{columns},
+      materialized_columns{materialized_columns},
+      alias_columns{alias_columns},
+      column_defaults{column_defaults}
+{
+    if (columns.empty())
+        throw Exception("Empty list of columns passed to storage constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 }
 
 }

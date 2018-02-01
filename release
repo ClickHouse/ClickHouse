@@ -37,6 +37,10 @@ do
     elif [[ $1 == '--pbuilder' ]]; then
         USE_PBUILDER=1
         shift
+    elif [[ $1 == '--fast' ]]; then
+        # Wrong but fast pbuilder mode: create base package with all depends
+        EXTRAPACKAGES+=" debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc gdb bash expect python python-lxml python-termcolor curl perl sudo"
+        shift
     else
         echo "Unknown option $1"
         exit 2
@@ -54,7 +58,7 @@ then
     # GLIBC_COMPATIBILITY отключен по умолчанию
     export DEB_CC=clang-5.0
     export DEB_CXX=clang++-5.0
-    export EXTRAPACKAGES=clang-5.0
+    EXTRAPACKAGES+=" clang-5.0 "
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
@@ -65,11 +69,12 @@ elif [[ $BUILD_TYPE == 'debug' ]]; then
 fi
 
 if [ -z "$THREAD_COUNT" ] ; then
-    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
+    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4`
 fi
 
 CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 export CMAKE_FLAGS
+export EXTRAPACKAGES
 
 REVISION+=$VERSION_POSTFIX
 echo -e "\nCurrent revision is $REVISION"
@@ -86,7 +91,12 @@ else
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
-        sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc
+        sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
+
+    if [[ -n "$PBUILDER_UPDATE" ]] ; then
+        sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+    fi
+
     pdebuild --configfile $CURDIR/debian/.pbuilderrc -- $PBUILDER_OPT
 fi

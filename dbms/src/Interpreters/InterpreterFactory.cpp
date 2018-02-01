@@ -61,7 +61,8 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (typeid_cast<ASTInsertQuery *>(query.get()))
     {
         /// readonly is checked inside InterpreterInsertQuery
-        return std::make_unique<InterpreterInsertQuery>(query, context);
+        bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
+        return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (typeid_cast<ASTCreateQuery *>(query.get()))
     {

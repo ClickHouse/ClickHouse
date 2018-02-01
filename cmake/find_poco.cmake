@@ -53,10 +53,6 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         set (Poco_NetSSL_FOUND 1)
         set (Poco_NetSSL_LIBRARY PocoNetSSL)
         set (Poco_Crypto_LIBRARY PocoCrypto)
-        set (Poco_NetSSL_INCLUDE_DIRS 
-            "${ClickHouse_SOURCE_DIR}/contrib/poco/NetSSL_OpenSSL/include/"
-            "${ClickHouse_SOURCE_DIR}/contrib/poco/Crypto/include/"
-        )
     endif ()
 
     if (USE_STATIC_LIBRARIES AND USE_INTERNAL_ZLIB_LIBRARY)
@@ -71,7 +67,6 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     set (Poco_Net_LIBRARY PocoNet)
     set (Poco_Data_LIBRARY PocoData)
     set (Poco_XML_LIBRARY PocoXML)
-
 endif ()
 
 message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_MongoDB_LIBRARY}; MongoDB=${Poco_MongoDB_FOUND}, DataODBC=${Poco_DataODBC_FOUND}, NetSSL=${Poco_NetSSL_FOUND}")

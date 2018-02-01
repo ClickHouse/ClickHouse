@@ -53,9 +53,10 @@ namespace ErrorCodes
 }
 
 
-DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast,
-                                                           const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_)
-    : storage(storage), query_ast(query_ast), cluster(cluster_), insert_sync(insert_sync_), insert_timeout(insert_timeout_)
+DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
+                                                           const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_)
+    : storage(storage), query_ast(query_ast), cluster(cluster_), settings(settings_), insert_sync(insert_sync_),
+      insert_timeout(insert_timeout_)
 {
 }
 
@@ -392,9 +393,21 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 
 void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
 {
-    InterpreterInsertQuery interp{query_ast, storage.context};
+    std::unique_ptr<Context> local_context;
+    std::optional<InterpreterInsertQuery> interp;
 
-    auto block_io = interp.execute();
+    /// Async insert does not support settings forwarding yet whereas sync one supports
+    if (insert_sync)
+        interp.emplace(query_ast, storage.context);
+    else
+    {
+        /// Overwrite global settings by user settings
+        local_context = std::make_unique<Context>(storage.context);
+        local_context->setSettings(settings);
+        interp.emplace(query_ast, *local_context);
+    }
+
+    auto block_io = interp->execute();
     block_io.out->writePrefix();
 
     for (size_t i = 0; i < repeats; ++i)
@@ -410,7 +423,7 @@ void DistributedBlockOutputStream::writeToShardSync(const Block & block, const s
     auto connection = pool->get();
 
     const auto & query_string = queryToString(query_ast);
-    RemoteBlockOutputStream remote{*connection, query_string};
+    RemoteBlockOutputStream remote{*connection, query_string, &settings};
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
