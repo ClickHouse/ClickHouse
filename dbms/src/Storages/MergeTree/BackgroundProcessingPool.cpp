@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <Common/ThreadStatus.h>
 
 #include <pcg_random.hpp>
 #include <random>
@@ -112,10 +113,8 @@ BackgroundProcessingPool::~BackgroundProcessingPool()
 void BackgroundProcessingPool::threadFunction()
 {
     setThreadName("BackgrProcPool");
-
-    MemoryTracker memory_tracker;
-    memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
-    current_memory_tracker = &memory_tracker;
+    if (current_thread)
+        ThreadStatus::setCurrentThreadParentQuery(nullptr);
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
@@ -199,8 +198,6 @@ void BackgroundProcessingPool::threadFunction()
             task->iterator = tasks.emplace(next_time_to_execute, task);
         }
     }
-
-    current_memory_tracker = nullptr;
 }
 
 }

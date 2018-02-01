@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -103,10 +104,11 @@ public:
     /// Start background threads, start work.
     void process()
     {
+        QueryStatus * current_query = current_thread ? current_thread->parent_query : nullptr;
         active_threads = max_threads;
         threads.reserve(max_threads);
         for (size_t i = 0; i < max_threads; ++i)
-            threads.emplace_back(std::bind(&ParallelInputsProcessor::thread, this, current_memory_tracker, i));
+            threads.emplace_back([=] () { thread(current_query, i); } );
     }
 
     /// Ask all sources to stop earlier than they run out.
@@ -174,9 +176,9 @@ private:
         }
     }
 
-    void thread(MemoryTracker * memory_tracker, size_t thread_num)
+    void thread(QueryStatus * query_status, size_t thread_num)
     {
-        current_memory_tracker = memory_tracker;
+        ThreadStatus::setCurrentThreadParentQuery(query_status);
         std::exception_ptr exception;
 
         setThreadName("ParalInputsProc");

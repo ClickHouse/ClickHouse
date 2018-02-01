@@ -24,6 +24,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/demangle.h>
 #include <Interpreters/config_compile.h>
+#include "Common/ThreadStatus.h"
 
 
 namespace ProfileEvents
@@ -139,8 +140,10 @@ Aggregator::Aggregator(const Params & params_)
     : params(params_),
     isCancelled([]() { return false; })
 {
-    if (current_memory_tracker)
-        memory_usage_before_aggregation = current_memory_tracker->get();
+    /// Use query-level memory tracker
+    if (current_thread)
+        if (auto memory_tracker = current_thread->memory_tracker.getParent())
+            memory_usage_before_aggregation = memory_tracker->get();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -798,8 +801,9 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = 0;
-    if (current_memory_tracker)
-        current_memory_usage = current_memory_tracker->get();
+    if (current_thread)
+        if (auto memory_tracker = current_thread->memory_tracker.getParent())
+            current_memory_usage = memory_tracker->get();
 
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
 
@@ -1271,9 +1275,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     bool final,
     ThreadPool * thread_pool) const
 {
-    auto converter = [&](size_t bucket, MemoryTracker * memory_tracker)
+    auto converter = [&](size_t bucket, const ThreadStatusPtr & main_thread)
     {
-        current_memory_tracker = memory_tracker;
+        if (main_thread)
+            ThreadStatus::setCurrentThreadFromSibling(main_thread);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1288,7 +1293,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             if (method.data.impls[bucket].empty())
                 continue;
 
-            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, current_memory_tracker));
+            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, current_thread));
 
             if (thread_pool)
                 thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
@@ -1550,7 +1555,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 
 template <typename Method>
-void NO_INLINE Aggregator::mergeBucketImpl(
+void NO_INLINE Aggregator:: mergeBucketImpl(
     ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena) const
 {
     /// We connect all aggregation results to the first.
@@ -1717,13 +1722,14 @@ private:
         if (max_scheduled_bucket_num >= NUM_BUCKETS)
             return;
 
-        parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
-            max_scheduled_bucket_num, current_memory_tracker));
+        parallel_merge_data->pool.schedule([this, main_thread=current_thread] () { thread(max_scheduled_bucket_num, main_thread); });
     }
 
-    void thread(Int32 bucket_num, MemoryTracker * memory_tracker)
+    void thread(Int32 bucket_num, const ThreadStatusPtr & main_thread)
     {
-        current_memory_tracker = memory_tracker;
+        if (main_thread)
+            ThreadStatus::setCurrentThreadFromSibling(main_thread);
+
         setThreadName("MergingAggregtd");
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
@@ -2028,9 +2034,10 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, const ThreadStatusPtr & main_thread)
         {
-            current_memory_tracker = memory_tracker;
+            if (main_thread)
+                ThreadStatus::setCurrentThreadFromSibling(main_thread);
 
             for (Block & block : bucket_to_blocks[bucket])
             {
@@ -2064,7 +2071,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker);
+            auto task = std::bind(merge_bucket, bucket, aggregates_pool, current_thread);
 
             if (thread_pool)
                 thread_pool->schedule(task);

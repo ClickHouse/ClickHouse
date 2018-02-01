@@ -379,7 +379,7 @@ void IProfilingBlockInputStream::setProgressCallback(const ProgressCallback & ca
 }
 
 
-void IProfilingBlockInputStream::setProcessListElement(ProcessListElement * elem)
+void IProfilingBlockInputStream::setProcessListElement(QueryStatus * elem)
 {
     process_list_elem = elem;
 

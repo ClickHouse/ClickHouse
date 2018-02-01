@@ -45,7 +45,7 @@ class Compiler;
 class MarkCache;
 class UncompressedCache;
 class ProcessList;
-struct ProcessListElement;
+struct QueryStatus;
 class Macros;
 struct Progress;
 class Clusters;
@@ -99,7 +99,7 @@ private:
     Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
-    ProcessListElement * process_list_elem = nullptr;   /// For tracking total resource usage for query.
+    QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -285,9 +285,9 @@ public:
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IProfilingBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.
       */
-    void setProcessListElement(ProcessListElement * elem);
+    void setProcessListElement(QueryStatus * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    ProcessListElement * getProcessListElement() const;
+    QueryStatus * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();

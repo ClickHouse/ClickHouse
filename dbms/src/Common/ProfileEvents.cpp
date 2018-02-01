@@ -1,4 +1,5 @@
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 
 
 /// Available events. Add something here as you wish.
@@ -132,30 +133,77 @@
     M(RWLockAcquiredReadLocks) \
     M(RWLockAcquiredWriteLocks) \
     M(RWLockReadersWaitMilliseconds) \
-    M(RWLockWritersWaitMilliseconds)
+    M(RWLockWritersWaitMilliseconds) \
+    \
+    M(RealTimeMicroseconds) \
+    M(RusageUserTimeMicroseconds) \
+    M(RusageSystemTimeMicroseconds) \
+    M(RusagePageReclaims) \
+    M(RusagePageVoluntaryContextSwitches) \
+    M(RusagePageInvoluntaryContextSwitches)
 
 namespace ProfileEvents
 {
-    #define M(NAME) extern const Event NAME = __COUNTER__;
+
+#define M(NAME) extern const Event NAME = __COUNTER__;
+    APPLY_FOR_EVENTS(M)
+#undef M
+constexpr Event END = __COUNTER__;
+
+/// Global variable, initialized by zeros.
+Counter global_counters_array[END] {};
+/// Initialize global counters statically
+Counters global_counters(global_counters_array);
+
+const Event Counters::num_counters = END;
+
+
+Counters::Counters(Level level, Counters * parent)
+    : parent(parent), level(level),
+      counters_holder(new Counter[num_counters] {})
+{
+    counters = counters_holder.get();
+}
+
+void Counters::resetCounters()
+{
+    if (counters)
+    {
+        for (Event i = 0; i < num_counters; ++i)
+            counters[i].store(0, std::memory_order_relaxed);
+    }
+}
+
+void Counters::reset()
+{
+    parent = nullptr;
+    resetCounters();
+}
+
+const char * getDescription(Event event)
+{
+    static const char * descriptions[] =
+    {
+    #define M(NAME) #NAME,
         APPLY_FOR_EVENTS(M)
     #undef M
-    constexpr Event END = __COUNTER__;
+    };
 
-    std::atomic<Count> counters[END] {};    /// Global variable, initialized by zeros.
+    return descriptions[event];
+}
 
-    const char * getDescription(Event event)
-    {
-        static const char * descriptions[] =
-        {
-        #define M(NAME) #NAME,
-            APPLY_FOR_EVENTS(M)
-        #undef M
-        };
 
-        return descriptions[event];
-    }
+Event end() { return END; }
 
-    Event end() { return END; }
+
+void increment(Event event, Count amount)
+{
+    if (DB::current_thread)
+        DB::current_thread->performance_counters.increment(event, amount);
+    else
+        global_counters.increment(event, amount);
+}
+
 }
 
 #undef APPLY_FOR_EVENTS

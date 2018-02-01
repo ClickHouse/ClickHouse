@@ -3,6 +3,7 @@
 #include <atomic>
 #include <common/Types.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ActionBlocker.h>
 
 
 namespace CurrentMetrics
@@ -26,7 +27,7 @@ class MemoryTracker
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
-    std::atomic<MemoryTracker *> next {};
+    std::atomic<MemoryTracker *> parent {};
 
     /// You could specify custom metric to track memory usage.
     CurrentMetrics::Metric metric = CurrentMetrics::MemoryTracking;
@@ -37,6 +38,7 @@ class MemoryTracker
 public:
     MemoryTracker() {}
     MemoryTracker(Int64 limit_) : limit(limit_) {}
+    MemoryTracker(MemoryTracker * parent_) : parent(parent_) {}
 
     ~MemoryTracker();
 
@@ -79,9 +81,15 @@ public:
     }
 
     /// next should be changed only once: from nullptr to some value.
-    void setNext(MemoryTracker * elem)
+    /// NOTE: It is not true in MergeListElement
+    void setParent(MemoryTracker * elem)
     {
-        next.store(elem, std::memory_order_relaxed);
+        parent.store(elem, std::memory_order_relaxed);
+    }
+
+    MemoryTracker * getParent()
+    {
+        return parent.load(std::memory_order_relaxed);
     }
 
     /// The memory consumption could be shown in realtime via CurrentMetrics counter
@@ -100,21 +108,13 @@ public:
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage() const;
+
+    /// To be able to temporarily stop memory tracker
+    DB::ActionBlockerSingleThread blocker;
 };
 
 
-/** The MemoryTracker object is quite difficult to pass to all places where significant amounts of memory are allocated.
-  * Therefore, a thread-local pointer to used MemoryTracker is set, or nullptr if MemoryTracker does not need to be used.
-  * This pointer is set when memory consumption is monitored in current thread.
-  * So, you just need to pass it to all the threads that handle one request.
-  */
-#if __APPLE__ && __clang__
-extern __thread MemoryTracker * current_memory_tracker;
-#else
-extern thread_local MemoryTracker * current_memory_tracker;
-#endif
-
-/// Convenience methods, that use current_memory_tracker if it is available.
+/// Convenience methods, that use current thread's memory_tracker if it is available.
 namespace CurrentMemoryTracker
 {
     void alloc(Int64 size);
@@ -123,20 +123,4 @@ namespace CurrentMemoryTracker
 }
 
 
-#include <boost/noncopyable.hpp>
-
-struct TemporarilyDisableMemoryTracker : private boost::noncopyable
-{
-    MemoryTracker * memory_tracker;
-
-    TemporarilyDisableMemoryTracker()
-    {
-        memory_tracker = current_memory_tracker;
-        current_memory_tracker = nullptr;
-    }
-
-    ~TemporarilyDisableMemoryTracker()
-    {
-        current_memory_tracker = memory_tracker;
-    }
-};
+DB::ActionBlockerSingleThread::BlockHolder getCurrentMemoryTrackerBlocker();

@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 class QuotaForIntervals;
-struct ProcessListElement;
+struct QueryStatus;
 class IProfilingBlockInputStream;
 
 using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;
@@ -101,7 +101,7 @@ public:
       * Based on this information, the quota and some restrictions will be checked.
       * This information will also be available in the SHOW PROCESSLIST request.
       */
-    void setProcessListElement(ProcessListElement * elem);
+    void setProcessListElement(QueryStatus * elem);
 
     /** Set the approximate total number of rows to read.
       */
@@ -192,7 +192,7 @@ protected:
     std::atomic<bool> is_cancelled{false};
     bool is_killed{false};
     ProgressCallback progress_callback;
-    ProcessListElement * process_list_elem = nullptr;
+    QueryStatus * process_list_elem = nullptr;
 
     /// Additional information that can be generated during the work process.
 

@@ -32,6 +32,8 @@
 #include <future>
 #include <condition_variable>
 #include <mutex>
+#include <Common/ThreadStatus.h>
+
 
 
 namespace CurrentMetrics
@@ -184,8 +186,8 @@ void DistributedBlockOutputStream::waitForJobs()
 
 ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobInfo & job)
 {
-    auto memory_tracker = current_memory_tracker;
-    return [this, memory_tracker, &job]()
+    auto main_thread = current_thread;
+    return [this, main_thread, &job]()
     {
         SCOPE_EXIT({
             std::lock_guard<std::mutex> lock(mutex);
@@ -193,9 +195,9 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
             cond_var.notify_one();
         });
 
-        if (!current_memory_tracker)
+        if (current_thread)
         {
-            current_memory_tracker = memory_tracker;
+            ThreadStatus::setCurrentThreadFromSibling(main_thread);
             setThreadName("DistrOutStrProc");
         }
 
