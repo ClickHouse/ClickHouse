@@ -353,9 +353,10 @@ public:
     ApplicationType getApplicationType() const;
     void setApplicationType(ApplicationType type);
 
-    /// Set once
+    /// Sets default_profile and system_profile, must be called once during the initialization
+    void setDefaultProfiles(const Poco::Util::AbstractConfiguration & config);
     String getDefaultProfileName() const;
-    void setDefaultProfileName(const String & name);
+    String getSystemProfileName() const;
 
     /// Base path for format schemas
     String getFormatSchemaPath() const;

@@ -312,10 +312,8 @@ try
     if (mark_cache_size)
         context->setMarkCache(mark_cache_size);
 
-    /// Load global settings from default profile.
-    String default_profile_name = config().getString("default_profile", "default");
-    context->setDefaultProfileName(default_profile_name);
-    context->setSetting("profile", default_profile_name);
+    /// Load global settings from default_profile and system_profile.
+    context->setDefaultProfiles(config());
 
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server enviroment
