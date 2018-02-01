@@ -36,7 +36,7 @@ BlockInputStreams StorageSystemEvents::read(
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
-        UInt64 value = ProfileEvents::counters[i];
+        UInt64 value = ProfileEvents::global_counters[i];
 
         if (0 != value)
         {

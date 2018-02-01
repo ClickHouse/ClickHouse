@@ -42,6 +42,9 @@ public:
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        if (!place || !rhs)
+            throw Exception("nullptr", ErrorCodes::LOGICAL_ERROR);
+
         data(place).count += data(rhs).count;
     }
 

@@ -7,10 +7,12 @@ namespace DB
 
 /// An atomic variable that is used to block and interrupt certain actions
 /// If it is not zero then actions related with it should be considered as interrupted
-class ActionBlocker
+template <typename TCounter=std::atomic<int>>
+class ActionBlockerImpl
 {
 private:
-    mutable std::atomic<int> counter{0};
+    using ActionBlocker = ActionBlockerImpl<TCounter>;
+    mutable TCounter counter{0};
 
 public:
     bool isCancelled() const { return counter > 0; }
@@ -59,5 +61,8 @@ public:
         const ActionBlocker * var = nullptr;
     };
 };
+
+using ActionBlocker = ActionBlockerImpl<std::atomic<int>>;
+using ActionBlockerSingleThread = ActionBlockerImpl<int>;
 
 }

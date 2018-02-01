@@ -7,6 +7,8 @@
 #include <Common/CurrentMetrics.h>
 #include <common/ThreadPool.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Poco/Ext/ThreadNumber.h>
 
 
 namespace CurrentMetrics
@@ -97,7 +99,8 @@ protected:
         /// If there were no calculations yet, calculate the first block synchronously
         if (!started)
         {
-            calculate(current_memory_tracker);
+            ThreadStatusPtr main_thread = current_thread;
+            calculate(main_thread);
             started = true;
         }
         else    /// If the calculations are already in progress - wait for the result
@@ -121,12 +124,12 @@ protected:
     void next()
     {
         ready.reset();
-        pool.schedule(std::bind(&AsynchronousBlockInputStream::calculate, this, current_memory_tracker));
+        pool.schedule([this, main_thread=current_thread] () { calculate(main_thread); });
     }
 
 
     /// Calculations that can be performed in a separate thread
-    void calculate(MemoryTracker * memory_tracker)
+    void calculate(ThreadStatusPtr main_thread)
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
@@ -135,8 +138,9 @@ protected:
             if (first)
             {
                 first = false;
+                if (main_thread)
+                    ThreadStatus::setCurrentThreadFromSibling(main_thread);
                 setThreadName("AsyncBlockInput");
-                current_memory_tracker = memory_tracker;
                 children.back()->readPrefix();
             }
 

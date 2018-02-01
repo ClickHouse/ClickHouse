@@ -3,9 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <IO/WriteHelpers.h>
-#include <iomanip>
-
-#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -56,13 +54,16 @@ void MemoryTracker::logPeakMemoryUsage() const
 
 void MemoryTracker::alloc(Int64 size)
 {
+    if (blocker.isCancelled())
+        return;
+
     /** Using memory_order_relaxed means that if allocations are done simultaneously,
       *  we allow exception about memory limit exceeded to be thrown only on next allocation.
       * So, we allow over-allocations.
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
 
-    if (!next.load(std::memory_order_relaxed))
+    if (!parent.load(std::memory_order_relaxed))
         CurrentMetrics::add(metric, size);
 
     Int64 current_limit = limit.load(std::memory_order_relaxed);
@@ -102,13 +103,16 @@ void MemoryTracker::alloc(Int64 size)
     if (will_be > peak.load(std::memory_order_relaxed))        /// Races doesn't matter. Could rewrite with CAS, but not worth.
         peak.store(will_be, std::memory_order_relaxed);
 
-    if (auto loaded_next = next.load(std::memory_order_relaxed))
+    if (auto loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->alloc(size);
 }
 
 
 void MemoryTracker::free(Int64 size)
 {
+    if (blocker.isCancelled())
+        return;
+
     Int64 new_amount = amount.fetch_sub(size, std::memory_order_relaxed) - size;
 
     /** Sometimes, query could free some data, that was allocated outside of query context.
@@ -123,7 +127,7 @@ void MemoryTracker::free(Int64 size)
         size += new_amount;
     }
 
-    if (auto loaded_next = next.load(std::memory_order_relaxed))
+    if (auto loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
     else
         CurrentMetrics::sub(metric, size);
@@ -132,7 +136,7 @@ void MemoryTracker::free(Int64 size)
 
 void MemoryTracker::reset()
 {
-    if (!next.load(std::memory_order_relaxed))
+    if (!parent.load(std::memory_order_relaxed))
         CurrentMetrics::sub(metric, amount.load(std::memory_order_relaxed));
 
     amount.store(0, std::memory_order_relaxed);
@@ -149,29 +153,29 @@ void MemoryTracker::setOrRaiseLimit(Int64 value)
         ;
 }
 
-#if __APPLE__ && __clang__
-__thread MemoryTracker * current_memory_tracker = nullptr;
-#else
-thread_local MemoryTracker * current_memory_tracker = nullptr;
-#endif
 
 namespace CurrentMemoryTracker
 {
     void alloc(Int64 size)
     {
-        if (current_memory_tracker)
-            current_memory_tracker->alloc(size);
+        if (DB::current_thread)
+            DB::current_thread->memory_tracker.alloc(size);
     }
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        if (current_memory_tracker)
-            current_memory_tracker->alloc(new_size - old_size);
+        if (DB::current_thread)
+            DB::current_thread->memory_tracker.alloc(new_size - old_size);
     }
 
     void free(Int64 size)
     {
-        if (current_memory_tracker)
-            current_memory_tracker->free(size);
+        if (DB::current_thread)
+            DB::current_thread->memory_tracker.free(size);
     }
+}
+
+DB::ActionBlockerSingleThread::BlockHolder getCurrentMemoryTrackerBlocker()
+{
+    return (DB::current_thread) ? DB::current_thread->memory_tracker.blocker.cancel() : DB::ActionBlockerSingleThread::BlockHolder(nullptr);
 }

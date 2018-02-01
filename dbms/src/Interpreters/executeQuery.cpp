@@ -272,7 +272,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Also make possible for caller to log successful query finish and exception during execution.
             res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
-                ProcessListElement * process_list_elem = context.getProcessListElement();
+                QueryStatus * process_list_elem = context.getProcessListElement();
 
                 if (!process_list_elem)
                     return;
@@ -337,7 +337,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception = getCurrentExceptionMessage(false);
 
-                ProcessListElement * process_list_elem = context.getProcessListElement();
+                QueryStatus * process_list_elem = context.getProcessListElement();
 
                 if (process_list_elem)
                 {

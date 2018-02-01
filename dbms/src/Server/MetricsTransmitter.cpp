@@ -81,7 +81,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
         {
-            const auto counter = ProfileEvents::counters[i].load(std::memory_order_relaxed);
+            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
             const auto counter_increment = counter - prev_counters[i];
             prev_counters[i] = counter;
 
