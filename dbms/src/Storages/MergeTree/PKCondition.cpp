@@ -582,7 +582,13 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
-        if (getConstant(args[1], block_with_constants, const_value, const_type)
+        if (prepared_sets.count(args[1].get())
+            && isTupleIndexable(args[0], context, out, prepared_sets[args[1].get()], key_column_num)
+        ) {
+            key_arg_pos = 0;
+            is_set_const = true;
+        }
+        else if (getConstant(args[1], block_with_constants, const_value, const_type)
             && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
         {
             key_arg_pos = 0;
@@ -603,12 +609,6 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
         {
             key_arg_pos = 1;
             is_constant_transformed = true;
-        }
-        else if (prepared_sets.count(args[1].get())
-            && isTupleIndexable(args[0], context, out, prepared_sets[args[1].get()], key_column_num)
-        ) {
-            key_arg_pos = 0;
-            is_set_const = true;
         }
         else
             return false;
