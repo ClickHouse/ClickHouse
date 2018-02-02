@@ -91,10 +91,13 @@ else
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
+        echo Creating base system $BASETGZ
         sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
 
-    if [[ -n "$PBUILDER_UPDATE" ]] ; then
+    # Update every 3 days (60*24*3 minutes)
+    if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +4320` ; then
+        echo Updating base system $BASETGZ
         sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
 
