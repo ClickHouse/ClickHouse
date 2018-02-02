@@ -46,11 +46,16 @@ BlockIO InterpreterDropQuery::execute()
     }
 
     /// Drop temporary table.
-    if (drop.temporary)
+    if (drop.database.empty() || drop.temporary)
     {
         StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(drop.table);
         if (table)
         {
+            if (drop.database.empty() && !drop.temporary)
+            {
+                LOG_WARNING((&Logger::get("InterpreterDropQuery")),
+                            "It is recommended to use `DROP TEMPORARY TABLE ` to delete temporary tables");
+            }
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);

@@ -31,9 +31,6 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     for (const auto & db : context.getDatabases())
         column->insert(db.first);
 
-    std::string temporary_database = "";
-    column->insert(temporary_database);
-
     Block block { ColumnWithTypeAndName( std::move(column), std::make_shared<DataTypeString>(), "database" ) };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
     return block.getByPosition(0).column;
@@ -59,37 +56,37 @@ BlockInputStreams StorageSystemTables::read(
     {
         std::string database_name = filtered_databases_column->getDataAt(row_number).toString();
 
-        if (!database_name.empty())
+        auto database = context.tryGetDatabase(database_name);
+
+        if (!database)
         {
-            auto database = context.tryGetDatabase(database_name);
+            /// Database was deleted just now.
+            continue;
+        }
 
-            if (!database) {
-                /// Database was deleted just now.
-                continue;
-            }
-
-            for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
-            {
-                auto table_name = iterator->name();
-                res_columns[0]->insert(database_name);
-                res_columns[1]->insert(table_name);
-                res_columns[2]->insert(iterator->table()->getName());
-                res_columns[3]->insert(
-                    static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
-                res_columns[4]->insert(UInt64(0));
-            }
-        } else if (context.hasSessionContext())
+        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
         {
-            Tables externalTables = context.getSessionContext().getExternalTables();
+            auto table_name = iterator->name();
+            res_columns[0]->insert(database_name);
+            res_columns[1]->insert(table_name);
+            res_columns[2]->insert(iterator->table()->getName());
+            res_columns[3]->insert(
+                static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+            res_columns[4]->insert(UInt64(0));
+        }
+    }
 
-            for (auto table = externalTables.begin(); table != externalTables.end(); table++)
-            {
-                res_columns[0]->insert(database_name);
-                res_columns[1]->insert(table->first);
-                res_columns[2]->insert(table->second->getName());
-                res_columns[3]->insert(UInt64(0));
-                res_columns[4]->insert(UInt64(1));
-            }
+    if (context.hasSessionContext())
+    {
+        Tables external_tables = context.getSessionContext().getExternalTables();
+
+        for (auto table = external_tables.begin(); table != external_tables.end(); table++)
+        {
+            res_columns[0]->insert(String{});
+            res_columns[1]->insert(table->first);
+            res_columns[2]->insert(table->second->getName());
+            res_columns[3]->insert(UInt64(0));
+            res_columns[4]->insert(UInt64(1));
         }
     }
 
