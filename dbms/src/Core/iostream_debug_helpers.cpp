@@ -56,9 +56,9 @@ std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const IFunction & what)
+std::ostream & operator<<(std::ostream & stream, const IFunctionBase & what)
 {
-    stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = " << what.getNumberOfArguments()
+    stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = " << what.getArgumentTypes().size()
            << ")";
     return stream;
 }

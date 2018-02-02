@@ -25,7 +25,7 @@ class FunctionFactory : public ext::singleton<FunctionFactory>
     friend class StorageSystemFunctions;
 
 public:
-    using Creator = std::function<FunctionPtr(const Context &)>;
+    using Creator = std::function<FunctionBuilderPtr(const Context &)>;
 
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
     enum CaseSensitiveness
@@ -41,17 +41,27 @@ public:
         Creator creator,
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
+
+    template <typename Function>
+    static FunctionBuilderPtr registerDefaultFunction(const Context & context)
+    {
+        return std::make_shared<Function>(Function::create(context));
+    }
+
     template <typename Function>
     void registerFunction()
     {
-        registerFunction(Function::name, &Function::create);
+        if constexpr (std::is_base_of<IFunction, Function>::value)
+            registerFunction(Function::name, &registerDefaultFunction<Function>);
+        else
+            registerFunction(Function::name, &Function::create);
     }
 
     /// Throws an exception if not found.
-    FunctionPtr get(const std::string & name, const Context & context) const;
+    FunctionBuilderPtr get(const std::string & name, const Context & context) const;
 
     /// Returns nullptr if not found.
-    FunctionPtr tryGet(const std::string & name, const Context & context) const;
+    FunctionBuilderPtr tryGet(const std::string & name, const Context & context) const;
 
 private:
     using Functions = std::unordered_map<std::string, Creator>;
