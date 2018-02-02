@@ -38,14 +38,19 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_databases.ignore(pos))
     {
         query->databases = true;
-    } else {
-        if (s_temporary.ignore(pos)) {
+    }
+    else
+    {
+        if (s_temporary.ignore(pos))
             query->temporary = true;
-        }
 
         if (s_tables.ignore(pos, expected))
         {
-            if (s_from.ignore(pos, expected)) {
+            if (s_from.ignore(pos, expected))
+            {
+                if (query->temporary)
+                    throw Exception("Unable to parse FROM,Because the temporary table does not have a database.");
+                
                 if (!name_p.parse(pos, database, expected))
                     return false;
             }
@@ -53,12 +58,15 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (s_not.ignore(pos, expected))
                 query->not_like = true;
 
-            if (s_like.ignore(pos, expected)) {
+            if (s_like.ignore(pos, expected))
+            {
                 if (!like_p.parse(pos, like, expected))
                     return false;
-            } else if (query->not_like)
+            }
+            else if (query->not_like)
                 return false;
-        } else
+        }
+        else
             return false;
     }
 
