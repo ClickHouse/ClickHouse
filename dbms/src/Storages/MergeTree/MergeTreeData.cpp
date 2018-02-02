@@ -345,9 +345,15 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
     {
         /// If columns_to_sum are set, then check that such columns exist.
         for (const auto & column_to_sum : columns_to_sum)
-            if (columns.end() == std::find_if(columns.begin(), columns.end(),
-                [&](const NameAndTypePair & name_and_type) { return column_to_sum == Nested::extractTableName(name_and_type.name); }))
-                throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+        {
+            auto check_column_to_sum_exists = [& column_to_sum](const NameAndTypePair & name_and_type)
+            {
+                return column_to_sum == Nested::extractTableName(name_and_type.name);
+            };
+            if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
+                throw Exception(
+                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+        }
     }
 
     if (mode == MergingParams::Replacing)
