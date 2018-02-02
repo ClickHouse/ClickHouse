@@ -80,11 +80,11 @@ BlockInputStreams StorageSystemTables::read(
     {
         Tables external_tables = context.getSessionContext().getExternalTables();
 
-        for (auto table = external_tables.begin(); table != external_tables.end(); table++)
+        for (auto table : external_tables)
         {
             res_columns[0]->insert(String{});
-            res_columns[1]->insert(table->first);
-            res_columns[2]->insert(table->second->getName());
+            res_columns[1]->insert(table.first);
+            res_columns[2]->insert(table.second->getName());
             res_columns[3]->insert(UInt64(0));
             res_columns[4]->insert(UInt64(1));
         }
