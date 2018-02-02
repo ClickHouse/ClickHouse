@@ -40,6 +40,7 @@ using StorageWeakPtr = std::weak_ptr<IStorage>;
 struct Settings;
 
 class AlterCommands;
+struct MutationCommands;
 
 
 /** Does not allow changing the table description (including rename and delete the table).
@@ -258,6 +259,12 @@ public:
     virtual bool optimize(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*final*/, bool /*deduplicate*/, const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Mutate the table contents
+    virtual void mutate(const MutationCommands &, const Context &)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** If the table have to do some complicated work on startup,
