@@ -203,7 +203,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         return;
     }
 
-    const FunctionPtr & function_ptr = FunctionFactory::instance().get(function->name, context);
+    const auto & function_builder_ptr = FunctionFactory::instance().get(function->name, context);
 
     /// (?) Replace function name to canonical one. Because same function could be referenced by different names.
     // function->name = function_ptr->getName();
@@ -228,10 +228,12 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         }
     }
 
+    auto function_ptr = function_builder_ptr->build(argument_types);
+
     TypeAndConstantInference::ExpressionInfo expression_info;
     expression_info.node = ast;
     expression_info.function = function_ptr;
-    expression_info.data_type = function_ptr->getReturnType(argument_types);
+    expression_info.data_type = function_ptr->getReturnType();
 
     if (all_consts && function_ptr->isSuitableForConstantFolding())
     {

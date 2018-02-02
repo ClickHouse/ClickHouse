@@ -778,7 +778,7 @@ private:
         return false;
     }
 
-    FunctionPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
@@ -830,24 +830,22 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (FunctionPtr function = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
+        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
         {
-            ColumnsWithTypeAndName new_arguments(2);
+            DataTypes new_types(2);
 
             for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
+                new_types[i] = arguments[i];
 
             /// Interval argument must be second.
-            if (checkDataType<DataTypeInterval>(new_arguments[0].type.get()))
-                std::swap(new_arguments[0], new_arguments[1]);
+            if (checkDataType<DataTypeInterval>(new_types[0].get()))
+                std::swap(new_types[0], new_types[1]);
 
             /// Change interval argument to its representation
-            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+            new_types[1] = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
-            DataTypePtr res;
-            std::vector<ExpressionAction> unused_prerequisites;
-            function->getReturnTypeAndPrerequisites(new_arguments, res, unused_prerequisites);
-            return res;
+            auto function = function_builder->build(new_types);
+            return function->getReturnType();
         }
 
         DataTypePtr type_res;

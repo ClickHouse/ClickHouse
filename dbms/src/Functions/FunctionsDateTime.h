@@ -633,10 +633,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> &) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() == 1)
         {
@@ -663,9 +660,9 @@ public:
 
         /// For DateTime, if time zone is specified, attach it to type.
         if (std::is_same_v<ToDataType, DataTypeDateTime>)
-            out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         else
-            out_return_type = std::make_shared<ToDataType>();
+            return std::make_shared<ToDataType>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -942,10 +939,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> &) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -979,16 +973,16 @@ public:
         if (checkDataType<DataTypeDate>(arguments[0].type.get()))
         {
             if (std::is_same_v<decltype(Transform::execute(DataTypeDate::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>)
-                out_return_type = std::make_shared<DataTypeDate>();
+                return std::make_shared<DataTypeDate>();
             else
-                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
         else
         {
             if (std::is_same_v<decltype(Transform::execute(DataTypeDateTime::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>)
-                out_return_type = std::make_shared<DataTypeDate>();
+                return std::make_shared<DataTypeDate>();
             else
-                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
     }
 
@@ -1291,10 +1285,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> &) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1307,7 +1298,7 @@ public:
                 ". Should be DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-        out_return_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+        return std::make_shared<DataTypeDateTime>(time_zone_name);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

@@ -17,7 +17,7 @@ namespace DB
 {
 
 class IFunction;
-using FunctionPtr = std::shared_ptr<IFunction>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 
 /** Range with open or closed ends; possibly unbounded.
@@ -271,7 +271,7 @@ public:
           * If the primary key column is wrapped in functions that can be monotonous in some value ranges
           * (for example: -toFloat64(toDayOfWeek(date))), then here the functions will be located: toDayOfWeek, toFloat64, negate.
           */
-        using MonotonicFunctionsChain = std::vector<FunctionPtr>;
+        using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
         mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
     };
 

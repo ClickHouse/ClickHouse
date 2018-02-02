@@ -303,13 +303,14 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 
 
 static void applyFunction(
-    FunctionPtr & func,
+    FunctionBuilderPtr & func_builder,
     const DataTypePtr & arg_type, const Field & arg_value,
     DataTypePtr & res_type, Field & res_value)
 {
-    std::vector<ExpressionAction> unused_prerequisites;
+
     ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
-    func->getReturnTypeAndPrerequisites(arguments, res_type, unused_prerequisites);
+    auto func = func_builder->build(arguments);
+    res_type = func->getReturnType();
 
     Block block
     {
@@ -388,13 +389,13 @@ bool PKCondition::canConstantBeWrappedByMonotonicFunctions(
                 return false;
 
             // Range is irrelevant in this case
-            IFunction::Monotonicity monotonicity = a.function->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunctionBase::Monotonicity monotonicity = a.function->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             // Apply the next transformation step
             DataTypePtr new_type;
-            applyFunction(a.function, out_type, out_value, new_type, out_value);
+            applyFunction(a.function_builder, out_type, out_value, new_type, out_value);
             if (!new_type)
                 return false;
 
@@ -432,14 +433,14 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        FunctionPtr func = FunctionFactory::instance().tryGet((*it)->name, context);
+        auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
+        ColumnsWithTypeAndName arguments{{ nullptr, primary_key_column_type, "" }};
+        auto func = func_builder->build(arguments);
+
         if (!func || !func->hasInformationAboutMonotonicity())
             return false;
 
-        std::vector<ExpressionAction> unused_prerequisites;
-        ColumnsWithTypeAndName arguments{{ nullptr, primary_key_column_type, "" }};
-        func->getReturnTypeAndPrerequisites(arguments, primary_key_column_type, unused_prerequisites);
-
+        primary_key_column_type = func->getReturnType();
         out_functions_chain.push_back(func);
     }
 
@@ -849,7 +850,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
                 for (auto & func : element.monotonic_functions_chain)
                 {
                     /// We check the monotonicity of each function on a specific range.
-                    IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
+                    IFunctionBase::Monotonicity monotonicity = func->getMonotonicityForRange(
                         *current_type.get(), key_range_transformed.left, key_range_transformed.right);
 
                 /*    std::cerr << "Function " << func->getName() << " is " << (monotonicity.is_monotonic ? "" : "not ")

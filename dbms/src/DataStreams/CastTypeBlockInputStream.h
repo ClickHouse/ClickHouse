@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class IFunction;
-
 /// Implicitly converts string and numeric values to Enum, numeric types to other numeric types.
 class CastTypeBlockInputStream : public IProfilingBlockInputStream
 {

@@ -625,10 +625,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> &) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
@@ -660,9 +657,9 @@ public:
             }
 
             if (std::is_same_v<ToDataType, DataTypeDateTime>)
-                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else
-                out_return_type = std::make_shared<ToDataType>();
+                return std::make_shared<ToDataType>();
         }
     }
 
@@ -845,9 +842,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block &) override { return true; }
 
-    void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & /*out_prerequisites*/) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!arguments[1].type->isUnsignedInteger())
             throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
@@ -857,7 +852,7 @@ public:
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
         const size_t n = arguments[1].column->getUInt(0);
-        out_return_type = std::make_shared<DataTypeFixedString>(n);
+        return std::make_shared<DataTypeFixedString>(n);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1130,19 +1125,80 @@ using FunctionToFloat32OrNull = FunctionConvertOrNull<DataTypeFloat32, NameToFlo
 using FunctionToFloat64OrNull = FunctionConvertOrNull<DataTypeFloat64, NameToFloat64OrNull>;
 
 
-class FunctionCast final : public IFunction
+class PreparedFunctionCast : public PreparedFunctionImpl
 {
 public:
-    FunctionCast(const Context & context) : context(context) {}
+    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
+
+    explicit PreparedFunctionCast(WrapperType && wrapper_function, const char * name)
+            : wrapper_function(std::move(wrapper_function)), name(name) {}
+
+    String getName() const override { return name; }
+
+protected:
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        /// drop second argument, pass others
+        ColumnNumbers new_arguments{arguments.front()};
+        if (arguments.size() > 2)
+            new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
+
+        wrapper_function(block, new_arguments, result);
+    }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 private:
-    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
-    const Context & context;
     WrapperType wrapper_function;
-    std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
+    const char * name;
+};
+
+class FunctionCast final : public IFunctionBase
+{
+public:
+    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
+    using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>
+
+    FunctionCast(const Context & context, const char * name, MonotonicityForRange && monotonicity_for_range
+            , const DataTypes & argument_types, const DataTypePtr & return_type)
+            : context(context), name(name), monotonicity_for_range(monotonicity_for_range)
+            , argument_types(argument_types), return_type(return_type)
+    {
+    }
+
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
+    const DataTypePtr & getReturnType() const override { return return_type; }
+
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
+    {
+        return std::make_shared<PreparedFunctionCast>(prepare(getArgumentTypes()[0], getReturnType().get()), name);
+    }
+
+    String getName() const override { return name; }
+
+    bool hasInformationAboutMonotonicity() const override
+    {
+        return static_cast<bool>(monotonicity_for_range);
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        return monotonicity_for_range(type, left, right);
+    }
+
+private:
+
+    const Context & context;
+    const char * name;
+    MonotonicityForRange monotonicity_for_range;
+
+    DataTypes argument_types;
+    DataTypePtr return_type;
 
     template <typename DataType>
-    WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const)
+    WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const) const
     {
         using FunctionType = typename FunctionTo<DataType>::Type;
 
@@ -1150,9 +1206,7 @@ private:
 
         /// Check conversion using underlying function
         {
-            DataTypePtr unused_data_type;
-            std::vector<ExpressionAction> unused_prerequisites;
-            function->getReturnTypeAndPrerequisites({{ nullptr, from_type, "" }}, unused_data_type, unused_prerequisites);
+            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
         }
 
         return [function] (Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1161,7 +1215,7 @@ private:
         };
     }
 
-    static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
+    static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N) const
     {
         if (!from_type->isStringOrFixedString())
             throw Exception{
@@ -1174,7 +1228,7 @@ private:
         };
     }
 
-    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type)
+    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type) const
     {
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
@@ -1235,7 +1289,7 @@ private:
         };
     }
 
-    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type)
+    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
     {
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
@@ -1304,7 +1358,7 @@ private:
     }
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type)
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
     {
         using EnumType = DataTypeEnum<FieldType>;
         using Function = typename FunctionTo<EnumType>::Type;
@@ -1324,9 +1378,7 @@ private:
 
             /// Check conversion using underlying function
             {
-                DataTypePtr unused_data_type;
-                std::vector<ExpressionAction> unused_prerequisites;
-                function->getReturnTypeAndPrerequisites({{ nullptr, from_type, "" }}, unused_data_type, unused_prerequisites);
+                function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
             }
 
             return [function] (Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1342,7 +1394,7 @@ private:
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
-    void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type)
+    void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type) const
     {
         const auto & from_values = from_type->getValues();
         const auto & to_values = to_type->getValues();
@@ -1369,7 +1421,7 @@ private:
     };
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper()
+    WrapperType createStringToEnumWrapper() const
     {
         return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
@@ -1399,7 +1451,7 @@ private:
         };
     }
 
-    WrapperType createIdentityWrapper(const DataTypePtr &)
+    WrapperType createIdentityWrapper(const DataTypePtr &) const
     {
         return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
@@ -1407,7 +1459,7 @@ private:
         };
     }
 
-    WrapperType createNothingWrapper(const IDataType * to_type)
+    WrapperType createNothingWrapper(const IDataType * to_type) const
     {
         ColumnPtr res = to_type->createColumnConstWithDefaultValue(1);
         return [res] (Block & block, const ColumnNumbers &, const size_t result)
@@ -1424,7 +1476,7 @@ private:
         bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
+    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type) const
     {
         /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -1519,7 +1571,7 @@ private:
             return wrapper;
     }
 
-    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * to_type)
+    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * to_type) const
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
@@ -1569,99 +1621,95 @@ private:
             "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
             ErrorCodes::CANNOT_CONVERT_TYPE};
     }
+};
 
+class FunctionCastBuilder : public FunctionBuilderImpl
+{
+public:
+    using MonotonicityForRange = FunctionCast::MonotonicityForRange;
+
+    static constexpr auto name = "CAST";
+    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionCastBuilder>(context); }
+
+    FunctionCastBuilder(const Context & context) : context(context) {}
+
+    String getName() const { return name; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+
+protected:
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        DataTypes data_types(arguments.size());
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        auto monotonicity_information = getMonotonicityInformation(arguments.front().type, return_type.get());
+        return std::make_shared<FunctionCast>(context, name, monotonicity_information, arguments, return_type);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
+        if (!type_col)
+            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return DataTypeFactory::instance().get(type_col->getValue<String>());
+    }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)
     {
         return FunctionTo<DataType>::Type::Monotonic::get;
     }
 
-    void prepareMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
+    MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type) const
     {
         if (const auto type = checkAndGetDataType<DataTypeUInt8>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (from_type->isEnum())
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
-                monotonicity_for_range = monotonicityForType(type);
+                return monotonicityForType(type);
             else if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
-                monotonicity_for_range = monotonicityForType(type);
+                return monotonicityForType(type);
         }
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
+        return {};
     }
 
-public:
-    static constexpr auto name = "CAST";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCast>(context); }
-
-    String getName() const override { return name; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & /*out_prerequisites*/) override
-    {
-        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
-        if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        out_return_type = DataTypeFactory::instance().get(type_col->getValue<String>());
-
-        const DataTypePtr & from_type = arguments.front().type;
-        wrapper_function = prepare(from_type, out_return_type.get());
-        prepareMonotonicityInformation(from_type, out_return_type.get());
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
-    {
-        /// drop second argument, pass others
-        ColumnNumbers new_arguments{arguments.front()};
-        if (arguments.size() > 2)
-            new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
-
-        wrapper_function(block, new_arguments, result);
-    }
-
-    bool hasInformationAboutMonotonicity() const override
-    {
-        return static_cast<bool>(monotonicity_for_range);
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        return monotonicity_for_range(type, left, right);
-    }
+    const Context & context;
 };
 
 }
