@@ -48,9 +48,6 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             if (s_from.ignore(pos, expected))
             {
-                if (query->temporary)
-                    throw Exception("Unable to parse FROM,Because the temporary table does not have a database.");
-                
                 if (!name_p.parse(pos, database, expected))
                     return false;
             }
