@@ -621,9 +621,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto ast_primary_expr_list = typeid_cast<ASTExpressionList *>(primary_expr_list.get());
         bool has_version_column_in_pk = false;
         for (const auto & expr : ast_primary_expr_list->children)
+        {
             if (auto ast = typeid_cast<const ASTIdentifier *>(expr.get()))
+            {
                 if (ast->name == merging_params.version_column)
                     has_version_column_in_pk = true;
+            }
+        }
 
         if (!has_version_column_in_pk)
             throw Exception("VersionedCollapsingMergeTree must have version column in primary key.",

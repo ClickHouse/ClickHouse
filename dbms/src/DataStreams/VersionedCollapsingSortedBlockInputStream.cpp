@@ -7,7 +7,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)
@@ -62,7 +63,7 @@ Block VersionedCollapsingSortedBlockInputStream::readImpl()
     init(header, merged_columns);
 
     if (has_collation)
-        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::NOT_IMPLEMENTED);
 
     if (merged_columns.empty())
         return {};
@@ -81,7 +82,7 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
 {
     size_t merged_rows = 0;
 
-    auto update_queue = [this, & queue](SortCursor cursor)
+    auto update_queue = [this, & queue](SortCursor & cursor)
     {
         queue.pop();
 
