@@ -221,6 +221,15 @@ void StorageMergeTree::alter(
 }
 
 
+void StorageMergeTree::mutate(const MutationCommands & commands, const Context & /*context*/)
+{
+    for (const auto & cmd : commands.commands)
+    {
+        LOG_TRACE(log, "MUTATION type: " << cmd.type << " predicate: " << cmd.predicate);
+    }
+}
+
+
 /// While exists, marks parts as 'currently_merging' and reserves free space on filesystem.
 /// It's possible to mark parts before.
 struct CurrentlyMergingPartsTagger
