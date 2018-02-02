@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -102,7 +103,9 @@ private:
     const Context & context;
 
     static void parseAlter(const ASTAlterQuery::ParameterContainer & params,
-        AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands);
+        AlterCommands & out_alter_commands,
+        PartitionCommands & out_partition_commands,
+        MutationCommands & out_mutation_commands);
 };
 
 }

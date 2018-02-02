@@ -50,7 +50,14 @@ BlockIO InterpreterAlterQuery::execute()
 
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
-    parseAlter(alter.parameters, alter_commands, partition_commands);
+    MutationCommands mutation_commands;
+    parseAlter(alter.parameters, alter_commands, partition_commands, mutation_commands);
+
+    if (!mutation_commands.commands.empty())
+    {
+        /// TODO: validate
+        table->mutate(mutation_commands, context);
+    }
 
     partition_commands.validate(table.get());
     for (const PartitionCommand & command : partition_commands)
@@ -79,18 +86,20 @@ BlockIO InterpreterAlterQuery::execute()
         }
     }
 
-    if (alter_commands.empty())
-        return {};
-
-    alter_commands.validate(table.get(), context);
-    table->alter(alter_commands, database_name, table_name, context);
+    if (!alter_commands.empty())
+    {
+        alter_commands.validate(table.get(), context);
+        table->alter(alter_commands, database_name, table_name, context);
+    }
 
     return {};
 }
 
 void InterpreterAlterQuery::parseAlter(
     const ASTAlterQuery::ParameterContainer & params_container,
-    AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands)
+    AlterCommands & out_alter_commands,
+    PartitionCommands & out_partition_commands,
+    MutationCommands & out_mutation_commands)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -185,6 +194,10 @@ void InterpreterAlterQuery::parseAlter(
         else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
         {
             out_partition_commands.emplace_back(PartitionCommand::freezePartition(params.partition, params.with_name));
+        }
+        else if (params.type == ASTAlterQuery::DELETE)
+        {
+            out_mutation_commands.commands.emplace_back(MutationCommand::delete_(params.predicate));
         }
         else
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
