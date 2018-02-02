@@ -14,6 +14,11 @@ static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
 /* Deque with fixed memory size. Allows pushing gaps.
  * frontGap() returns the number of gaps were inserted before front.
  *
+ * This structure may be implemented via std::deque, but
+ *  - Deque uses fixed amount of memory which is allocated in constructor. No more allocations are performed.
+ *  - Gaps are not stored as separate values in queue, which is more memory efficient.
+ *  - Deque is responsible for gaps invariant: after removing element, moves gaps into neighbor cell.
+ *
  * Note: empty deque may have non-zero front gap.
  */
 template <typename T>
@@ -23,7 +28,10 @@ public:
 
     struct ValueWithGap
     {
+        /// The number of gaps before current element. The number of gaps after last element stores into end cell.
         size_t gap;
+        /// Store char[] instead of T in order to make ValueWithGap POD.
+        /// Call placement constructors after push and and destructors after pop.
         char value[sizeof(T)];
     };
 
@@ -51,6 +59,7 @@ public:
 
     void pushBack(const T & value)
     {
+        checkEnoughSpaceToInsert();
         constructValue(end, value);
         moveRight(end);
         container[end].gap = 0;
@@ -60,6 +69,7 @@ public:
 
     void popBack()
     {
+        checkHasValuesToRemove();
         size_t curr_gap = container[end].gap;
         moveLeft(end);
         destructValue(end);
@@ -68,12 +78,21 @@ public:
 
     void popFront()
     {
+        checkHasValuesToRemove();
         destructValue(begin);
         moveRight(begin);
     }
 
-    T & front() { return getValue(begin); }
-    const T & front() const { return getValue(begin); }
+    T & front()
+    {
+        checkHasValuesToGet();
+        return getValue(begin);
+    }
+    const T & front() const
+    {
+        checkHasValuesToGet();
+        return getValue(begin);
+    }
 
     const T & back() const
     {
@@ -121,6 +140,25 @@ private:
             index = container.size();
 
         --index;
+    }
+
+    void checkEnoughSpaceToInsert() const
+    {
+        if (size() + 1 == container.size())
+            throw Exception("Not enough space to insert into FixedSizeDequeWithGaps with capacity "
+                            + toString(container.size() - 1), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void checkHasValuesToRemove() const
+    {
+        if (empty())
+            throw Exception("Cannot remove from empty FixedSizeDequeWithGaps", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void checkHasValuesToGet() const
+    {
+        if (empty())
+            throw Exception("Cannot get value from empty FixedSizeDequeWithGaps", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
