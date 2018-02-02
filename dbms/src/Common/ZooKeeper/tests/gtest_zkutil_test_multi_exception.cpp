@@ -10,6 +10,20 @@
 
 using namespace DB;
 
+TEST(zkutil, zookeeper_connected)
+{
+    auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
+    try
+    {
+        zookeeper->exists("/");
+    }
+    catch (...)
+    {
+        std::cerr << "No zookeeper. skip tests." << std::endl;
+        exit(0);
+    }
+}
+
 TEST(zkutil, multi_nice_exception_msg)
 {
     auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
