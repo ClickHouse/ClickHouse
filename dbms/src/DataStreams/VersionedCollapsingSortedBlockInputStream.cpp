@@ -1,5 +1,5 @@
 #include <Common/FieldVisitors.h>
-#include <DataStreams/MultiversionSortedBlockInputStream.h>
+#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 
 namespace DB
@@ -18,7 +18,7 @@ inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSou
         buffer.write(reinterpret_cast<const char *>(&row_source), sizeof(RowSourcePart));
 }
 
-void MultiversionSortedBlockInputStream::insertGap(size_t gap_size)
+void VersionedCollapsingSortedBlockInputStream::insertGap(size_t gap_size)
 {
     if (out_row_sources_buf)
     {
@@ -30,7 +30,7 @@ void MultiversionSortedBlockInputStream::insertGap(size_t gap_size)
     }
 }
 
-void MultiversionSortedBlockInputStream::insertRow(size_t skip_rows, const RowRef & row, MutableColumns & merged_columns)
+void VersionedCollapsingSortedBlockInputStream::insertRow(size_t skip_rows, const RowRef & row, MutableColumns & merged_columns)
 {
     const auto & columns = row.shared_block->all_columns;
     for (size_t i = 0; i < num_columns; ++i)
@@ -46,7 +46,7 @@ void MultiversionSortedBlockInputStream::insertRow(size_t skip_rows, const RowRe
     }
 }
 
-Block MultiversionSortedBlockInputStream::readImpl()
+Block VersionedCollapsingSortedBlockInputStream::readImpl()
 {
     if (finished)
         return {};
@@ -77,7 +77,7 @@ Block MultiversionSortedBlockInputStream::readImpl()
 }
 
 
-void MultiversionSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
     size_t merged_rows = 0;
 

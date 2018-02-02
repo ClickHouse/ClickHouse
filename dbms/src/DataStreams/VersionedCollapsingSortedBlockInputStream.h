@@ -124,12 +124,12 @@ private:
     }
 };
 
-class MultiversionSortedBlockInputStream : public MergingSortedBlockInputStream
+class VersionedCollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
     /// Don't need version column. It's in primary key.
     /// max_rows_in_queue should be about max_block_size_ if we won't store a lot of extra blocks (RowRef holds SharedBlockPtr).
-    MultiversionSortedBlockInputStream(
+    VersionedCollapsingSortedBlockInputStream(
             BlockInputStreams inputs_, const SortDescription & description_,
             const String & sign_column_, size_t max_block_size_, bool can_collapse_all_rows_,
             WriteBuffer * out_row_sources_buf_ = nullptr)
@@ -140,12 +140,12 @@ public:
     {
     }
 
-    String getName() const override { return "CollapsingSorted"; }
+    String getName() const override { return "VersionedCollapsingSorted"; }
 
     String getID() const override
     {
         std::stringstream res;
-        res << "MultiversionSortedBlockInputStream(inputs";
+        res << "VersionedCollapsingSortedBlockInputStream(inputs";
 
         for (const auto & child : children)
             res << ", " << child->getID();
@@ -169,7 +169,7 @@ private:
 
     size_t sign_column_number = 0;
 
-    Logger * log = &Logger::get("MultiversionSortedBlockInputStream");
+    Logger * log = &Logger::get("VersionedCollapsingSortedBlockInputStream");
 
     /// Read is finished.
     bool finished = false;
