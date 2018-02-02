@@ -147,12 +147,6 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
 
         while (rows_to_merge)
         {
-            if (merged_rows >= max_block_size)
-            {
-                ++blocks_written;
-                return;
-            }
-
             const auto & row = current_keys.front();
             auto gap = current_keys.frontGap();
 
@@ -162,6 +156,12 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
 
             ++merged_rows;
             --rows_to_merge;
+
+            if (merged_rows >= max_block_size)
+            {
+                ++blocks_written;
+                return;
+            }
         }
     }
 
