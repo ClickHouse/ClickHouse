@@ -1552,8 +1552,6 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
             return;
     }
 
-    set->finalizeOrderedSet();
-
     prepared_sets[subquery_or_table_name.get()] = std::move(set);
 }
 
