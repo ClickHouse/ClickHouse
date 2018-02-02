@@ -213,9 +213,9 @@ MergeTrees are different in two ways:
 - they may be replicated and non-replicated;
 - they may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
 
-So we have 12 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, GraphiteMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedGraphiteMergeTree
+So we have 14 combinations:
+    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, GraphiteMergeTree, VersionedCollapsingMergeTree
+    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedGraphiteMergeTree, ReplicatedVersionedCollapsingMergeTree
 
 In most of cases, you need MergeTree or ReplicatedMergeTree.
 
@@ -254,6 +254,8 @@ For the Summing mode, the optional last parameter is a list of columns to sum wh
 If this parameter is omitted, the storage will sum all numeric columns except columns participating in the primary key.
 
 For the Replacing mode, the optional last parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
+
+For VersionedCollapsing mode, the last 2 parameters are the name of a sign column and the name of a 'version' column. Version column must be in primary key. While merging, a pair of rows with the same primary key and different sign may collapse.
 )";
 
     if (is_extended_syntax)
@@ -653,7 +655,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("AggregatingMergeTree", create);
     factory.registerStorage("SummingMergeTree", create);
     factory.registerStorage("GraphiteMergeTree", create);
-    factory.registerStorage("MultiversionMergeTree", create);
+    factory.registerStorage("VersionedCollapsingMergeTree", create);
 
     factory.registerStorage("ReplicatedMergeTree", create);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create);
@@ -661,7 +663,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedAggregatingMergeTree", create);
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
-    factory.registerStorage("ReplicatedMultiversionMergeTree", create);
+    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
 }
 
 }
