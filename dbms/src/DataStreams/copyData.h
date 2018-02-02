@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 
 
 namespace DB
@@ -13,5 +14,7 @@ class IBlockOutputStream;
   * (for example, from the database to the console, etc.)
   */
 void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<bool> * is_cancelled = nullptr);
+
+void copyData(IBlockInputStream & from, IBlockOutputStream & to, const std::function<bool()> & is_cancelled);
 
 }

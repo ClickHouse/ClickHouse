@@ -81,7 +81,7 @@ try
     Context context = Context::createGlobal();
 
     context.setPath("./");
-    auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/");
+    auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/", context);
     context.addDatabase("test", database);
     database->loadTables(context, nullptr, false);
     context.setCurrentDatabase("test");
