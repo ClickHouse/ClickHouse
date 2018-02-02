@@ -13,7 +13,7 @@
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
-#include <DataStreams/MultiversionSortedBlockInputStream.h>
+#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -340,8 +340,8 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
         key_columns.emplace(merging_params.version_column);
 
-    /// Force sign column for Multiversion mode. Version is already in primary key.
-    if (merging_params.mode == MergeTreeData::MergingParams::Multiversion)
+    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
+    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         key_columns.emplace(merging_params.sign_column);
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
@@ -631,8 +631,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
-        case MergeTreeData::MergingParams::Multiversion:
-            merged_stream = std::make_unique<MultiversionSortedBlockInputStream>(
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
                     src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
             break;
 
@@ -803,7 +803,7 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
         data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
         data.merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
         data.merging_params.mode == MergeTreeData::MergingParams::Replacing ||
-        data.merging_params.mode == MergeTreeData::MergingParams::Multiversion;
+        data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
     bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
 

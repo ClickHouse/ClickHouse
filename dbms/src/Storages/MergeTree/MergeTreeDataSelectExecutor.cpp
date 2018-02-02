@@ -38,7 +38,7 @@ namespace std
 #include <DataStreams/SummingSortedBlockInputStream.h>
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
-#include <DataStreams/MultiversionSortedBlockInputStream.h>
+#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -825,8 +825,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
                     data.getSortDescription(), data.merging_params.version_column, max_block_size);
                 break;
 
-            case MergeTreeData::MergingParams::Multiversion: /// TODO Make MultiversionFinalBlockInputStream
-                merged = std::make_shared<MultiversionSortedBlockInputStream>(
+            case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
+                merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
                         to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
                 break;
 

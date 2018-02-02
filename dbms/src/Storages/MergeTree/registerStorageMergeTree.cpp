@@ -368,8 +368,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Replacing;
     else if (name_part == "Graphite")
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
-    else if (name_part == "Multiversion")
-        merging_params.mode = MergeTreeData::MergingParams::Multiversion;
+    else if (name_part == "VersionedCollapsing")
+        merging_params.mode = MergeTreeData::MergingParams::VersionedCollapsing;
     else if (!name_part.empty())
         throw Exception(
             "Unknown storage " + args.engine_name + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -426,7 +426,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     case MergeTreeData::MergingParams::Graphite:
         add_mandatory_param("'config_element_for_graphite_schema'");
         break;
-    case MergeTreeData::MergingParams::Multiversion:
+    case MergeTreeData::MergingParams::VersionedCollapsing:
         {
             add_mandatory_param("sign column");
             add_mandatory_param("version");
@@ -544,7 +544,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         engine_args.pop_back();
         setGraphitePatternsFromConfig(args.context, graphite_config_name, merging_params.graphite_params);
     }
-    else if (merging_params.mode == MergeTreeData::MergingParams::Multiversion)
+    else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
         if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
             merging_params.version_column = ast->name;
@@ -613,8 +613,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
-    /// MultiversionMergeTree must have version column in primary key. Add it to primary key implicitly otherwise.
-    if (merging_params.mode == MergeTreeData::MergingParams::Multiversion)
+    /// MultiversionMergeTree must have version column in primary key.
+    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
         auto ast_primary_expr_list = typeid_cast<ASTExpressionList *>(primary_expr_list.get());
         bool has_version_column_in_pk = false;
@@ -624,10 +624,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     has_version_column_in_pk = true;
 
         if (!has_version_column_in_pk)
-        {
-            auto version = std::make_shared<ASTIdentifier>(StringRange(), merging_params.version_column);
-            ast_primary_expr_list->children.push_back(version);
-        }
+            throw Exception("VersionedCollapsingMergeTree must have version column in primary key.",
+                            ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (replicated)

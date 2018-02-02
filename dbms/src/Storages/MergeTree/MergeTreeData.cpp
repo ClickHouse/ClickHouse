@@ -271,12 +271,12 @@ void MergeTreeData::initPartitionKey()
 
 void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
 {
-    if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::Multiversion)
-        throw Exception("Sign column for MergeTree cannot be specified in modes except Collapsing or Multiversion.",
+    if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
+        throw Exception("Sign column for MergeTree cannot be specified in modes except Collapsing or VersionedCollapsing.",
                         ErrorCodes::LOGICAL_ERROR);
 
-    if (!version_column.empty() && mode != MergingParams::Replacing && mode != MergingParams::Multiversion)
-        throw Exception("Version column for MergeTree cannot be specified in modes except Replacing or Multiversion.",
+    if (!version_column.empty() && mode != MergingParams::Replacing && mode != MergingParams::VersionedCollapsing)
+        throw Exception("Version column for MergeTree cannot be specified in modes except Replacing or VersionedCollapsing.",
                         ErrorCodes::LOGICAL_ERROR);
 
     if (!columns_to_sum.empty() && mode != MergingParams::Summing)
@@ -353,10 +353,10 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
     if (mode == MergingParams::Replacing)
         check_version_column(true, "ReplacingMergeTree");
 
-    if (mode == MergingParams::Multiversion)
+    if (mode == MergingParams::VersionedCollapsing)
     {
-        check_sign_column(false, "MultiversionMergeTree");
-        check_version_column(false, "MultiversionMergeTree");
+        check_sign_column(false, "VersionedCollapsingMergeTree");
+        check_version_column(false, "VersionedCollapsingMergeTree");
     }
 
     /// TODO Checks for Graphite mode.
@@ -374,7 +374,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Unsorted:      return "Unsorted";
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
-        case Multiversion:  return "Multiversion";
+        case VersionedCollapsing:  return "VersionedCollapsing";
 
         default:
             throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
