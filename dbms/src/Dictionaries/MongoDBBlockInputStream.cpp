@@ -105,6 +105,11 @@ namespace
                     static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string_id.data(), string_id.size() + 1);
                     break;
                 }
+                else if (value.type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
+                {
+                    static_cast<ColumnVector<String> &>(column).getData().emplace_back();
+                    break;
+                }
                 else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
