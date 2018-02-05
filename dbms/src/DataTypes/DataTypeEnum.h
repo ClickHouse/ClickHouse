@@ -59,7 +59,6 @@ private:
 
 public:
     explicit DataTypeEnum(const Values & values_);
-    DataTypeEnum(const DataTypeEnum & other);
 
     const Values & getValues() const { return values; }
     std::string getName() const override { return name; }
