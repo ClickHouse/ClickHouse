@@ -103,12 +103,6 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
 }
 
 template <typename Type>
-DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.values}, name{other.name}
-{
-    fillMaps();
-}
-
-template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);

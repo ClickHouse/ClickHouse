@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Common/COWPtr.h>
+#include <boost/noncopyable.hpp>
 #include <Core/Field.h>
 
 
@@ -29,7 +30,7 @@ using DataTypes = std::vector<DataTypePtr>;
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType
+class IDataType : private boost::noncopyable
 {
 public:
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
