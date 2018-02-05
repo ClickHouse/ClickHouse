@@ -92,7 +92,7 @@ StoragePtr StorageFactory::get(
             name = engine_def.name;
 
             if ((storage_def->partition_by || storage_def->order_by || storage_def->sample_by || storage_def->settings)
-                && !endsWith(name, "MergeTree"))
+                && !ignoreCaseAndEndsWith(name, "MergeTree"))
             {
                 throw Exception(
                     "Engine " + name + " doesn't support PARTITION BY, ORDER BY, SAMPLE BY or SETTINGS clauses. "
@@ -113,31 +113,37 @@ StoragePtr StorageFactory::get(
             }
         }
     }
-
-    auto it = storages.find(name);
-    if (it == storages.end())
-        throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
-
-    Arguments arguments
+    for (auto it : storages)
     {
-        .engine_name = name,
-        .engine_args = args,
-        .storage_def = storage_def,
-        .query = query,
-        .data_path = data_path,
-        .table_name = table_name,
-        .database_name = database_name,
-        .local_context = local_context,
-        .context = context,
-        .columns = columns,
-        .materialized_columns = materialized_columns,
-        .alias_columns = alias_columns,
-        .column_defaults = column_defaults,
-        .attach = attach,
-        .has_force_restore_data_flag = has_force_restore_data_flag
-    };
+        String storage_name = it.first;
+        if (storage_name.size() == name.size() &&
+            0 == strncasecmp(storage_name.data(), name.data(), storage_name.size()))
+        {
+            Arguments arguments
+                    {
+                            .engine_name = name,
+                            .engine_args = args,
+                            .storage_def = storage_def,
+                            .query = query,
+                            .data_path = data_path,
+                            .table_name = table_name,
+                            .database_name = database_name,
+                            .local_context = local_context,
+                            .context = context,
+                            .columns = columns,
+                            .materialized_columns = materialized_columns,
+                            .alias_columns = alias_columns,
+                            .column_defaults = column_defaults,
+                            .attach = attach,
+                            .has_force_restore_data_flag = has_force_restore_data_flag
+                    };
 
-    return it->second(arguments);
+            return it.second(arguments);
+        }
+    }
+
+
+    throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
 }
 
 }

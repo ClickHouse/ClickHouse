@@ -9,6 +9,7 @@ namespace detail
 {
     bool startsWith(const std::string & s, const char * prefix, size_t prefix_size);
     bool endsWith(const std::string & s, const char * suffix, size_t suffix_size);
+    bool ignoreCaseAndEndsWith(const std::string & s, const char * suffix, size_t suffix_size);
 }
 
 
@@ -33,6 +34,11 @@ inline bool startsWith(const std::string & s, const char * prefix)
 inline bool endsWith(const std::string & s, const char * suffix)
 {
     return detail::endsWith(s, suffix, strlen(suffix));
+}
+
+inline bool ignoreCaseAndEndsWith(const std::string & s, const char * suffix)
+{
+    return detail::ignoreCaseAndEndsWith(s, suffix, strlen(suffix));
 }
 
 /// Given an integer, return the adequate suffix for
