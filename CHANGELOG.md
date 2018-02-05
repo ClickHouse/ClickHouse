@@ -113,6 +113,7 @@ This release contains bug fixes for the previous release 1.1.54342:
 * Removed the `BlockTabSeparated` format that was used solely for demonstration purposes.
 * Changed the serialization format of intermediate states of the aggregate functions `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, and `corr`. If you have stored states of these aggregate functions in tables (using the AggregateFunction data type or materialized views with corresponding states), please write to clickhouse-feedback@yandex-team.com.
 * In previous server versions there was an undocumented feature: if an aggregate function depends on parameters, you can still specify it without parameters in the AggregateFunction data type. Example: `AggregateFunction(quantiles, UInt64)` instead of `AggregateFunction(quantiles(0.5, 0.9), UInt64)`. This feature was lost. Although it was undocumented, we plan to support it again in future releases.
+* Enum data types cannot be used in min/max aggregate functions. The possibility will be returned back in future release.
 
 ## Please note when upgrading:
 * When doing a rolling update on a cluster, at the point when some of the replicas are running the old version of ClickHouse and some are running the new version, replication is temporarily stopped and the message `unknown parameter 'shard'` appears in the log. Replication will continue after all replicas of the cluster are updated.
