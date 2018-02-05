@@ -60,10 +60,20 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
         || !checkChar('_', in)
         || !tryReadIntText(max_block_num, in)
         || !checkChar('_', in)
-        || !tryReadIntText(level, in)
-        || !in.eof())
+        || !tryReadIntText(level, in))
     {
         return false;
+    }
+
+    UInt32 version = max_block_num;
+    if (!in.eof())
+    {
+        if (!checkChar('_', in)
+            || !tryReadIntText(version, in)
+            || !in.eof())
+        {
+            return false;
+        }
     }
 
     if (part_info)
@@ -72,6 +82,7 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
         part_info->min_block = min_block_num;
         part_info->max_block = max_block_num;
         part_info->level = level;
+        part_info->version = version;
     }
 
     return true;
@@ -125,6 +136,12 @@ String MergeTreePartInfo::getPartName() const
     writeChar('_', wb);
     writeIntText(level, wb);
 
+    if (version != max_block)
+    {
+        writeChar('_', wb);
+        writeIntText(version, wb);
+    }
+
     return wb.str();
 }
 
@@ -149,6 +166,12 @@ String MergeTreePartInfo::getPartNameV0(DayNum_t left_date, DayNum_t right_date)
     writeIntText(max_block, wb);
     writeChar('_', wb);
     writeIntText(level, wb);
+
+    if (version != max_block)
+    {
+        writeChar('_', wb);
+        writeIntText(version, wb);
+    }
 
     return wb.str();
 }

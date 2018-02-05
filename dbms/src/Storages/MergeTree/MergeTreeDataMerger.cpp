@@ -83,13 +83,18 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
     parts = std::move(parts_);
 
     UInt32 max_level = 0;
+    UInt32 max_version = 0;
     for (const auto & part : parts)
+    {
         max_level = std::max(max_level, part->info.level);
+        max_version = std::max(max_version, part->info.version);
+    }
 
     part_info.partition_id = parts.front()->info.partition_id;
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
+    part_info.version = max_version;
 
     if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
