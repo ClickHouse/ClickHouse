@@ -68,17 +68,17 @@ void DataTypeEnum<Type>::fillMaps()
     {
         const auto name_to_value_pair = name_to_value_map.insert(
             { StringRef{name_and_value.first}, name_and_value.second });
+
         if (!name_to_value_pair.second)
-            throw Exception{
-                "Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+            throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
                     + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(name_to_value_pair.first->second),
                 ErrorCodes::SYNTAX_ERROR};
 
         const auto value_to_name_pair = value_to_name_map.insert(
             { name_and_value.second, StringRef{name_and_value.first} });
+
         if (!value_to_name_pair.second)
-            throw Exception{
-                "Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+            throw Exception{"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
                     + " and '" + value_to_name_pair.first->second.toString() + "' = " + toString(value_to_name_pair.first->first),
                 ErrorCodes::SYNTAX_ERROR};
     }
@@ -88,9 +88,7 @@ template <typename Type>
 DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
 {
     if (values.empty())
-        throw Exception{
-            "DataTypeEnum enumeration cannot be empty",
-            ErrorCodes::EMPTY_DATA_PASSED};
+        throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
 
     fillMaps();
 
