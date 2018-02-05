@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Common/COWPtr.h>
+#include <boost/noncopyable.hpp>
 #include <Core/Field.h>
 
 
@@ -29,7 +30,7 @@ using DataTypes = std::vector<DataTypePtr>;
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType
+class IDataType : private boost::noncopyable
 {
 public:
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -272,7 +273,9 @@ public:
       */
     virtual bool canBeUsedAsVersion() const { return false; };
 
-    /** Values of data type can be summed. Example: numbers, even nullable. Not Date/DateTime.
+    /** Values of data type can be summed (possibly with overflow, within the same data type).
+      * Example: numbers, even nullable. Not Date/DateTime. Not Enum.
+      * Enums can be passed to aggregate function 'sum', but the result is Int64, not Enum, so they are not summable.
       */
     virtual bool isSummable() const { return false; };
 

@@ -12,6 +12,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/formatAST.h>
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeArray.h>
@@ -926,7 +927,16 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
     if (!alias.empty())
     {
         if (aliases.count(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
-            throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+        {
+            std::stringstream message;
+            message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":\n";
+            formatAST(*ast, message, false, true);
+            message << "\nand\n";
+            formatAST(*aliases[alias], message, false, true);
+            message << "\n";
+
+            throw Exception(message.str(), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+        }
 
         aliases[alias] = ast;
     }
