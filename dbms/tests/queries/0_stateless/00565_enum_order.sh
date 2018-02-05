@@ -55,3 +55,4 @@ done
 
 echo 'Count:'
 $CLICKHOUSE_CLIENT --query 'select count() from test.test_log'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE test.test_log'
