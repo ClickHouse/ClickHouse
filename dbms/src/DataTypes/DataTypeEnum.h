@@ -68,9 +68,7 @@ public:
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            throw Exception{
-                "Unexpected value " + toString(value) + " for type " + getName(),
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
         return it->second;
     }
@@ -79,9 +77,7 @@ public:
     {
         const auto it = name_to_value_map.find(name);
         if (it == std::end(name_to_value_map))
-            throw Exception{
-                "Unknown element '" + name.toString() + "' for type " + getName(),
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unknown element '" + name.toString() + "' for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
         return it->second;
     }

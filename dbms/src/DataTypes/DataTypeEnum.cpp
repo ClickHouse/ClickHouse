@@ -349,8 +349,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         const auto value = value_literal->value.get<typename NearestFieldType<FieldType>::Type>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
-            throw Exception{
-                "Value " + toString(value) + " for element '" + name + "' exceeds range of " + EnumName<FieldType>::value,
+            throw Exception{"Value " + toString(value) + " for element '" + name + "' exceeds range of " + EnumName<FieldType>::value,
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         values.emplace_back(name, value);
