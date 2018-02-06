@@ -25,6 +25,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeFunction.h>
 
 
 namespace DB
@@ -141,6 +142,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     }
 
     DataTypes argument_types;
+    ColumnsWithTypeAndName argument_columns;
 
     if (function->arguments)
     {
@@ -151,6 +153,9 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
                 throw Exception("Logical error: type of function argument was not inferred during depth-first search", ErrorCodes::LOGICAL_ERROR);
 
             argument_types.emplace_back(it->second.data_type);
+            argument_columns.emplace_back(ColumnWithTypeAndName(nullptr, it->second.data_type, ""));
+            if (it->second.is_constant_expression)
+                argument_columns.back().column = it->second.data_type->createColumnConst(1, it->second.value);
         }
     }
 
@@ -228,7 +233,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         }
     }
 
-    auto function_ptr = function_builder_ptr->build(argument_types);
+    auto function_ptr = function_builder_ptr->build(argument_columns);
 
     TypeAndConstantInference::ExpressionInfo expression_info;
     expression_info.node = ast;
@@ -327,7 +332,7 @@ void processHigherOrderFunction(
 {
     ASTFunction * function = static_cast<ASTFunction *>(ast.get());
 
-    const FunctionPtr & function_ptr = FunctionFactory::instance().get(function->name, context);
+    const auto & function_builder_ptr = FunctionFactory::instance().get(function->name, context);
 
     if (!function->arguments)
         throw Exception("Unexpected AST for higher-order function", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
@@ -341,7 +346,7 @@ void processHigherOrderFunction(
         types.emplace_back(child_info.data_type);
     }
 
-    function_ptr->getLambdaArgumentTypes(types);
+    function_builder_ptr->getLambdaArgumentTypes(types);
 
     /// For every lambda expression, dive into it.
 
@@ -355,11 +360,11 @@ void processHigherOrderFunction(
         const ASTFunction * lambda = typeid_cast<const ASTFunction *>(child.get());
         if (lambda && lambda->name == "lambda")
         {
-            const DataTypeExpression * lambda_type = typeid_cast<const DataTypeExpression *>(types[i].get());
+            const auto * lambda_type = typeid_cast<const DataTypeFunction *>(types[i].get());
 
             if (!lambda_type)
                 throw Exception("Logical error: IFunction::getLambdaArgumentTypes returned data type for lambda expression,"
-                    " that is not DataTypeExpression", ErrorCodes::LOGICAL_ERROR);
+                    " that is not DataTypeFunction", ErrorCodes::LOGICAL_ERROR);
 
             if (!lambda->arguments || lambda->arguments->children.size() != 2)
                 throw Exception("Lambda function must have exactly two arguments (sides of arrow)", ErrorCodes::BAD_LAMBDA);
@@ -392,7 +397,7 @@ void processHigherOrderFunction(
 
             /// Update Expression type (expression signature).
 
-            info.at(lambda->getColumnName()).data_type = std::make_shared<DataTypeExpression>(
+            info.at(lambda->getColumnName()).data_type = std::make_shared<DataTypeFunction>(
                 lambda_argument_types, info.at(lambda->arguments->children[1]->getColumnName()).data_type);
         }
     }

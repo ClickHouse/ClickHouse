@@ -629,7 +629,7 @@ public:
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
-            out_return_type = std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
+            return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
         }
         else
         {
@@ -1159,7 +1159,7 @@ class FunctionCast final : public IFunctionBase
 {
 public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
-    using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>
+    using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
 
     FunctionCast(const Context & context, const char * name, MonotonicityForRange && monotonicity_for_range
             , const DataTypes & argument_types, const DataTypePtr & return_type)
@@ -1215,7 +1215,7 @@ private:
         };
     }
 
-    static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N) const
+    static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
         if (!from_type->isStringOrFixedString())
             throw Exception{
@@ -1423,7 +1423,8 @@ private:
     template <typename ColumnStringType, typename EnumType>
     WrapperType createStringToEnumWrapper() const
     {
-        return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+        const char * function_name = name;
+        return [function_name] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             const auto first_col = block.getByPosition(arguments.front()).column.get();
 
@@ -1445,8 +1446,7 @@ private:
             }
             else
                 throw Exception{
-                    "Unexpected column " + first_col->getName() + " as first argument of function " +
-                        name,
+                    "Unexpected column " + first_col->getName() + " as first argument of function " + function_name,
                     ErrorCodes::LOGICAL_ERROR};
         };
     }
@@ -1623,15 +1623,15 @@ private:
     }
 };
 
-class FunctionCastBuilder : public FunctionBuilderImpl
+class FunctionBuilderCast : public FunctionBuilderImpl
 {
 public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
     static constexpr auto name = "CAST";
-    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionCastBuilder>(context); }
+    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderCast>(context); }
 
-    FunctionCastBuilder(const Context & context) : context(context) {}
+    FunctionBuilderCast(const Context & context) : context(context) {}
 
     String getName() const { return name; }
 
@@ -1647,8 +1647,8 @@ protected:
         for (size_t i = 0; i < arguments.size(); ++i)
             data_types[i] = arguments[i].type;
 
-        auto monotonicity_information = getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_shared<FunctionCast>(context, name, monotonicity_information, arguments, return_type);
+        auto monotonicity = getMonotonicityInformation(arguments.front().type, return_type.get());
+        return std::make_shared<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

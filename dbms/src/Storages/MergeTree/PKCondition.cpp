@@ -303,18 +303,15 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 
 
 static void applyFunction(
-    FunctionBuilderPtr & func_builder,
+    const FunctionBasePtr & func,
     const DataTypePtr & arg_type, const Field & arg_value,
     DataTypePtr & res_type, Field & res_value)
 {
-
-    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
-    auto func = func_builder->build(arguments);
     res_type = func->getReturnType();
 
     Block block
     {
-        arguments[0],
+        { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
         { nullptr, res_type, "y" }
     };
 
@@ -395,7 +392,7 @@ bool PKCondition::canConstantBeWrappedByMonotonicFunctions(
 
             // Apply the next transformation step
             DataTypePtr new_type;
-            applyFunction(a.function_builder, out_type, out_value, new_type, out_value);
+            applyFunction(a.function, out_type, out_value, new_type, out_value);
             if (!new_type)
                 return false;
 
