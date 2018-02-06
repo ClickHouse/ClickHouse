@@ -9,6 +9,7 @@
     #include <Poco/MongoDB/Database.h>
     #include <Poco/MongoDB/Cursor.h>
     #include <Poco/MongoDB/Array.h>
+    #include <Poco/MongoDB/ObjectId.h>
 #pragma GCC diagnostic pop
 
 #include <Poco/Version.h>
@@ -234,9 +235,11 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
     auto cursor = createCursor(db, collection, sample_block);
 
     Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
+    Poco::MongoDB::Document key;
+
     for (const auto row_idx : requested_rows)
     {
-        auto & key = keys_array->addNewDocument(DB::toString(row_idx));
+        key = keys_array->addNewDocument(DB::toString(row_idx));
 
         for (const auto attr : ext::enumerate(*dict_struct.key))
         {
@@ -260,13 +263,32 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                     break;
 
                 case AttributeUnderlyingType::String:
-                    key.add(attr.second.name, get<String>((*key_columns[attr.first])[row_idx]));
+                    /// Convert string to ObjectID
+                    if (attr.second.injective)
+                    {
+                        String _str(get<String>((*key_columns[attr.first])[row_idx]));
+                        Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
+                        key.add(attr.second.name, _id);
+                    }
+                    else
+                    {
+                        key.add(attr.second.name, get<String>((*key_columns[attr.first])[row_idx]));
+                    }
                     break;
             }
         }
     }
 
-    cursor->query().selector().add("$or", keys_array);
+
+    /// If more than one key we should use $or
+    if (keys_array->size() == 1)
+    {
+        cursor->query().selector().addElement(key.get(DB::toString(0)));
+    }
+    else
+    {
+        cursor->query().selector().add("$or", keys_array);
+    }
 
     return std::make_shared<MongoDBBlockInputStream>(
         connection, std::move(cursor), sample_block, max_block_size);
