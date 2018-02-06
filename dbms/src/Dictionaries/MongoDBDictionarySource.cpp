@@ -261,35 +261,34 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                     break;
 
                 case AttributeUnderlyingType::String:
+                    String _str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
-                    if (attr.second.injective)
+                    /// TODO: add adequate check of objectid
+                    if (_str.size() == 24)
                     {
-                        String _str(get<String>((*key_columns[attr.first])[row_idx]));
                         Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
                         key.add(attr.second.name, _id);
                     }
                     else
                     {
-                        key.add(attr.second.name, get<String>((*key_columns[attr.first])[row_idx]));
+                        key.add(attr.second.name, _str);
                     }
                     break;
             }
         }
     }
 
-    cursor->query().selector().add("$or", keys_array);
-
-//    /// If more than one key we should use $or
-//    if (keys_array->size() == 1)
-//    {
-//        auto doc = dynamic_cast<const Poco::MongoDB::ConcreteElement<Poco::MongoDB::Document>&>(
-//                keys_array->get(0)).value();
-//        cursor->query().selector().addElement(doc.get(DB::toString(0)));
-//    }
-//    else
-//    {
-//        cursor->query().selector().add("$or", keys_array);
-//    }
+    /// If more than one key we should use $or
+    if (keys_array->size() == 1)
+    {
+        auto doc = static_cast<const Poco::MongoDB::ConcreteElement<Poco::MongoDB::Document::Ptr>&>(
+                keys_array->get(0)).value();
+        cursor->query().selector().addElement(doc->get(DB::toString(0)));
+    }
+    else
+    {
+        cursor->query().selector().add("$or", keys_array);
+    }
 
     return std::make_shared<MongoDBBlockInputStream>(
         connection, std::move(cursor), sample_block, max_block_size);
