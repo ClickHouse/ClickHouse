@@ -201,8 +201,10 @@ struct TaskTable
     String getPartitionPath(const String & partition_name) const;
     String getPartitionIsDirtyPath(const String & partition_name) const;
 
-    /// Used as task ID
     String name_in_config;
+
+    /// Used as task ID
+    String table_id;
 
     /// Source cluster and table
     String cluster_pull_name;
@@ -257,6 +259,8 @@ struct TaskCluster
     /// Limits number of simultaneous workers
     size_t max_workers = 0;
 
+    /// Base settings for pull and push
+    Settings settings_common;
     /// Settings used to fetch data
     Settings settings_pull;
     /// Settings used to insert data
@@ -346,9 +350,9 @@ Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
 
 String TaskTable::getPartitionPath(const String & partition_name) const
 {
-    return task_cluster.task_zookeeper_path                     // root
-           + "/tables/" + escapeForFileName(name_in_config)     // tables/table_hits
-           + "/" + partition_name;                              // 201701
+    return task_cluster.task_zookeeper_path     // root
+           + "/tables/" + table_id              // tables/dst_cluster.merge.hits
+           + "/" + partition_name;              // 201701
 }
 
 String TaskPartition::getPartitionPath() const
@@ -405,6 +409,11 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
     table_push.first = config.getString(table_prefix + "database_push");
     table_push.second = config.getString(table_prefix + "table_push");
 
+    /// Used as node name in ZooKeeper
+    table_id = escapeForFileName(cluster_push_name)
+               + "." + escapeForFileName(table_push.first)
+               + "." + escapeForFileName(table_push.second);
+
     engine_push_str = config.getString(table_prefix + "engine");
     {
         ParserStorage parser_storage;
@@ -417,7 +426,7 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
         sharding_key_ast = parseQuery(parser_expression, sharding_key_str);
         engine_split_ast = createASTStorageDistributed(cluster_push_name, table_push.first, table_push.second, sharding_key_ast);
 
-        table_split = DatabaseAndTableName(task_cluster.default_local_database, ".split." + name_in_config);
+        table_split = DatabaseAndTableName(task_cluster.default_local_database, ".split." + table_id);
     }
 
     where_condition_str = config.getString(table_prefix + "where_condition", "");
@@ -538,8 +547,9 @@ TaskCluster::TaskCluster(const String & task_zookeeper_path_, const Poco::Util::
 
     if (config.has(prefix + "settings"))
     {
-        settings_pull.loadSettingsFromConfig(prefix + "settings", config);
-        settings_push.loadSettingsFromConfig(prefix + "settings", config);
+        settings_common.loadSettingsFromConfig(prefix + "settings", config);
+        settings_pull = settings_common;
+        settings_push = settings_common;
     }
 
     if (config.has(prefix + "settings_pull"))
@@ -606,6 +616,7 @@ public:
         settings_push.insert_distributed_sync = 1;
 
         /// Set up clusters
+        context.getSettingsRef() = task_cluster->settings_common;
         context.setClustersConfig(task_cluster_config, task_cluster->clusters_prefix);
 
         /// Set up shards and their priority
@@ -630,7 +641,7 @@ public:
                                     ErrorCodes::LOGICAL_ERROR);
                 }
 
-                LOG_DEBUG(log, "Set up table task " << task_table.name_in_config << " ("
+                LOG_DEBUG(log, "Set up table task " << task_table.table_id << " (pull from "
                                << "cluster " << task_table.cluster_pull_name
                                << ", table " << getDatabaseDotTable(task_table.table_pull)
                                << ", shard " << task_shard->info.shard_num << ")");
@@ -851,10 +862,36 @@ protected:
         }
     }
 
-    std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_pull, const DatabaseAndTableName & new_table,
-                                     const ASTPtr & new_storage_ast)
+    static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
     {
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_query_pull);
+        const ASTs & column_asts = typeid_cast<ASTCreateQuery &>(*query_ast).columns->children;
+        auto new_columns = std::make_shared<ASTExpressionList>();
+
+        for (const ASTPtr & column_ast : column_asts)
+        {
+            const ASTColumnDeclaration & column = typeid_cast<const ASTColumnDeclaration &>(*column_ast);
+
+            if (!column.default_specifier.empty())
+            {
+                ColumnDefaultType type = columnDefaultTypeFromString(column.default_specifier);
+                if (type == ColumnDefaultType::Materialized || type == ColumnDefaultType::Alias)
+                    continue;
+            }
+
+            new_columns->children.emplace_back(column_ast->clone());
+        }
+
+        ASTPtr new_query_ast = query_ast->clone();
+        ASTCreateQuery & new_query = typeid_cast<ASTCreateQuery &>(*new_query_ast);
+        new_query.columns = new_columns.get();
+        new_query.children.at(0) = std::move(new_columns);
+
+        return new_query_ast;
+    }
+
+    std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
+    {
+        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*create_query_ast);
         auto res = std::make_shared<ASTCreateQuery>(create);
 
         if (create.storage == nullptr || new_storage_ast == nullptr)
@@ -927,7 +964,7 @@ protected:
 
         LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
         /// Limit number of max executing replicas to 1
-        size_t num_shards = executeQueryOnCluster(cluster_push, query, nullptr, &settings_push, PoolMode::GET_ALL, 1);
+        size_t num_shards = executeQueryOnCluster(cluster_push, query, nullptr, &settings_push, PoolMode::GET_ONE, 1);
 
         if (num_shards < cluster_push->getShardCount())
         {
@@ -1069,8 +1106,8 @@ protected:
 
         /// Create local Distributed tables:
         ///  a table fetching data from current shard and a table inserting data to the whole destination cluster
-        DatabaseAndTableName table_shard(working_database_name, ".read_shard." + task_table.name_in_config);
-        DatabaseAndTableName table_split(working_database_name, ".split." + task_table.name_in_config);
+        DatabaseAndTableName table_shard(working_database_name, ".read_shard." + task_table.table_id);
+        DatabaseAndTableName table_split(working_database_name, ".split." + task_table.table_id);
         {
             /// Create special cluster with single shard
             String shard_read_cluster_name = ".read_shard." + task_table.cluster_pull_name;
@@ -1080,8 +1117,9 @@ protected:
             auto storage_shard_ast = createASTStorageDistributed(shard_read_cluster_name, task_table.table_pull.first, task_table.table_pull.second);
             const auto & storage_split_ast = task_table.engine_split_ast;
 
-            auto create_table_pull_ast = rewriteCreateQueryStorage(create_query_pull_ast, table_shard, storage_shard_ast);
-            auto create_table_split_ast = rewriteCreateQueryStorage(create_query_pull_ast, table_split, storage_split_ast);
+            auto create_query_ast = removeAliasColumnsFromCreateQuery(create_query_pull_ast);
+            auto create_table_pull_ast = rewriteCreateQueryStorage(create_query_ast, table_shard, storage_shard_ast);
+            auto create_table_split_ast = rewriteCreateQueryStorage(create_query_ast, table_split, storage_split_ast);
 
             //LOG_DEBUG(log, "Create shard reading table. Query: " << queryToString(create_table_pull_ast));
             dropAndCreateLocalTable(create_table_pull_ast);
@@ -1152,7 +1190,7 @@ protected:
             String query = queryToString(create_query_push_ast);
 
             LOG_DEBUG(log, "Create remote push tables. Query: " << query);
-            executeQueryOnCluster(task_table.cluster_push, query, create_query_push_ast, &task_cluster->settings_push);
+            executeQueryOnCluster(task_table.cluster_push, query, create_query_push_ast, &task_cluster->settings_push, PoolMode::GET_MANY);
         }
 
         /// Do the copying
@@ -1381,8 +1419,12 @@ protected:
                 return max_successful_executions_per_shard && num_successful_executions >= max_successful_executions_per_shard;
             };
 
+            size_t num_replicas = cluster->getShardsAddresses().at(shard_index).size();
+            size_t num_local_replicas = shard.getLocalNodeCount();
+            size_t num_remote_replicas = num_replicas - num_local_replicas;
+
             /// In that case we don't have local replicas, but do it just in case
-            for (size_t i = 0; i < shard.getLocalNodeCount(); ++i)
+            for (size_t i = 0; i < num_local_replicas; ++i)
             {
                 auto interpreter = InterpreterFactory::get(query_ast, context);
                 interpreter->execute();
@@ -1394,7 +1436,10 @@ protected:
             /// Will try to make as many as possible queries
             if (shard.hasRemoteConnections())
             {
-                std::vector<IConnectionPool::Entry> connections = shard.pool->getMany(settings, pool_mode);
+                Settings current_settings = *settings;
+                current_settings.max_parallel_replicas = num_remote_replicas ? num_remote_replicas : 1;
+
+                std::vector<IConnectionPool::Entry> connections = shard.pool->getMany(&current_settings, pool_mode);
 
                 for (auto & connection : connections)
                 {
@@ -1402,7 +1447,7 @@ protected:
                     {
                         try
                         {
-                            RemoteBlockInputStream stream(*connection, query, context, settings);
+                            RemoteBlockInputStream stream(*connection, query, context, &current_settings);
                             NullBlockOutputStream output;
                             copyData(stream, output);
 
@@ -1473,7 +1518,7 @@ private:
 
 void ClusterCopierApp::initialize(Poco::Util::Application & self)
 {
-    Poco::Util::Application::initialize(self);
+    Poco::Util::ServerApplication::initialize(self);
 
     is_help = config().has("help");
     if (is_help)
@@ -1487,8 +1532,11 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
     base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
 
-    // process_id is '<hostname>#<pid>_<start_timestamp>'
-    process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
+    // process_id is '<hostname>#<start_timestamp>_<pid>'
+    time_t timestamp = Poco::Timestamp().epochTime();
+    auto pid = Poco::Process::id();
+
+    process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
     process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
     Poco::File(process_path).createDirectories();
@@ -1515,6 +1563,8 @@ void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
 
 void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 {
+    Poco::Util::ServerApplication::defineOptions(options);
+
     options.addOption(Poco::Util::Option("config-file", "c", "path to config file with ZooKeeper config", true)
                           .argument("config-file").binding("config-file"));
     options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
@@ -1543,7 +1593,7 @@ void ClusterCopierApp::setupLogging()
     split_channel->addChannel(log_file_channel);
     log_file_channel->open();
 
-    if (!config().getBool("application.runAsService", true))
+    if (!config().getBool("application.runAsDaemon", true))
     {
         Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
         split_channel->addChannel(console_channel);
@@ -1551,7 +1601,7 @@ void ClusterCopierApp::setupLogging()
     }
 
     Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
-    formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
+    formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i [ %I ] <%p> %s: %t");
     Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter));
     formatting_channel->setChannel(split_channel);
     split_channel->open();
