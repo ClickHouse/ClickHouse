@@ -832,19 +832,19 @@ public:
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
         {
-            DataTypes new_types(2);
+            ColumnsWithTypeAndName new_arguments(2);
 
             for (size_t i = 0; i < 2; ++i)
-                new_types[i] = arguments[i];
+                new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (checkDataType<DataTypeInterval>(new_types[0].get()))
-                std::swap(new_types[0], new_types[1]);
+            if (checkDataType<DataTypeInterval>(new_arguments[0].type.get()))
+                std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
-            new_types[1] = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
-            auto function = function_builder->build(new_types);
+            auto function = function_builder->build(new_arguments);
             return function->getReturnType();
         }
 
@@ -871,7 +871,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (FunctionPtr function = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        if (auto function_builder = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
         {
             ColumnNumbers new_arguments = arguments;
 
@@ -883,7 +883,11 @@ public:
             Block new_block = block;
             new_block.getByPosition(new_arguments[1]).type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
-            function->executeImpl(new_block, new_arguments, result);
+            ColumnsWithTypeAndName new_arguments_with_type_and_name =
+                    {new_block.getByPosition(new_arguments[0]), new_block.getByPosition(new_arguments[1])};
+            auto function = function_builder->build(new_arguments_with_type_and_name);
+
+            function->execute(new_block, new_arguments, result);
             block.getByPosition(result).column = new_block.getByPosition(result).column;
 
             return;

@@ -360,7 +360,7 @@ void ExpressionAction::execute(Block & block) const
 
                     Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-                    function->execute(tmp_block, {0}, 1);
+                    function_builder->build({src_col})->execute(tmp_block, {0}, 1);
                     non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
                 }
 

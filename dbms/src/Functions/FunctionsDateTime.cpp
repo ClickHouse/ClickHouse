@@ -83,7 +83,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionToRelativeMinuteNum>();
     factory.registerFunction<FunctionToRelativeSecondNum>();
     factory.registerFunction<FunctionToTime>();
-    factory.registerFunction(FunctionNow::name, FunctionNow::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionNow>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionToday>();
     factory.registerFunction<FunctionYesterday>();
     factory.registerFunction<FunctionTimeSlot>();
@@ -108,7 +108,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionSubtractMonths>();
     factory.registerFunction<FunctionSubtractYears>();
 
-    factory.registerFunction(FunctionDateDiff::name, FunctionDateDiff::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateDiff>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToTimeZone>();
 }

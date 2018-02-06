@@ -34,27 +34,19 @@ public:
         CaseInsensitive
     };
 
-    /// Register a function by its name.
-    /// No locking, you must register all functions before usage of get.
-    void registerFunction(
-        const std::string & name,
-        Creator creator,
-        CaseSensitiveness case_sensitiveness = CaseSensitive);
-
-
     template <typename Function>
-    static FunctionBuilderPtr registerDefaultFunction(const Context & context)
+    void registerFunction(CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
-        return std::make_shared<Function>(Function::create(context));
+        registerFunction<Function>(Function::name, case_sensitiveness);
     }
 
     template <typename Function>
-    void registerFunction()
+    void registerFunction(const std::string & name, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         if constexpr (std::is_base_of<IFunction, Function>::value)
-            registerFunction(Function::name, &registerDefaultFunction<Function>);
+            registerFunction(name, &createDefaultFunction<Function>, case_sensitiveness);
         else
-            registerFunction(Function::name, &Function::create);
+            registerFunction(name, &Function::create, case_sensitiveness);
     }
 
     /// Throws an exception if not found.
@@ -68,6 +60,19 @@ private:
 
     Functions functions;
     Functions case_insensitive_functions;
+
+    template <typename Function>
+    static FunctionBuilderPtr createDefaultFunction(const Context & context)
+    {
+        return std::make_shared<DefaultFunctionBuilder>(Function::create(context));
+    }
+
+    /// Register a function by its name.
+    /// No locking, you must register all functions before usage of get.
+    void registerFunction(
+            const std::string & name,
+            Creator creator,
+            CaseSensitiveness case_sensitiveness = CaseSensitive);
 };
 
 }
