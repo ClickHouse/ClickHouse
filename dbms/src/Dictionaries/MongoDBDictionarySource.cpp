@@ -264,7 +264,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                     String _str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
                     /// TODO: add adequate check of objectid
-                    if (_str.size() == 24)
+                    if (attr.second.is_object_id)
                     {
                         Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
                         key.add(attr.second.name, _id);
@@ -280,7 +280,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 
     /// If more than one key we should use $or
     cursor->query().selector().add("$or", keys_array);
-    
+
     return std::make_shared<MongoDBBlockInputStream>(
         connection, std::move(cursor), sample_block, max_block_size);
 }
