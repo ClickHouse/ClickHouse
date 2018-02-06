@@ -39,6 +39,7 @@ lldReaderWriter
 lldYAML
 lldCommon
 lldCore
+#lldWasm
 
 ${REQUIRED_LLVM_LIBRARIES}
 
