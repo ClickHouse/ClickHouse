@@ -234,8 +234,8 @@ For its purpose (calculating quantiles of page loading times), using this functi
 
 ## quantileTimingWeighted(level)(x, weight)
 
-Differs from the 'medianTiming' function in that it has a second argument, "weights". Weight is a non-negative integer.
-The result is calculated as if the 'x' value were passed 'weight' number of times to the 'medianTiming\` function.
+Differs from the 'quantileTiming' function in that it has a second argument, "weights". Weight is a non-negative integer.
+The result is calculated as if the 'x' value were passed 'weight' number of times to the 'quantileTiming' function.
 
 ## quantileExact(level)(x)
 
@@ -273,7 +273,7 @@ Returns `Float64`. When `n <= 1`, returns `+∞`.
 
 ## varPop(x)
 
-Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
+Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
