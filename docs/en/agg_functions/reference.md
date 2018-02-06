@@ -234,8 +234,8 @@ For its purpose (calculating quantiles of page loading times), using this functi
 
 ## quantileTimingWeighted(level)(x, weight)
 
-Differs from the 'medianTiming' function in that it has a second argument, "weights". Weight is a non-negative integer.
-The result is calculated as if the 'x' value were passed 'weight' number of times to the 'medianTiming\` function.
+Differs from the 'quantileTiming' function in that it has a second argument, "weights". Weight is a non-negative integer.
+The result is calculated as if the 'x' value were passed 'weight' number of times to the 'quantileTiming' function.
 
 ## quantileExact(level)(x)
 
