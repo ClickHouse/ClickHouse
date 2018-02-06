@@ -41,8 +41,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
 
         for (const auto & requested_column : required_columns)
         {
-            const auto it = column_defaults.find(requested_column.name);
-            if (res.has(requested_column.name) || it != column_defaults.end())
+            if (res.has(requested_column.name) || column_defaults.count(requested_column.name))
                 continue;
 
             ColumnWithTypeAndName column_to_add;
