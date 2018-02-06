@@ -19,7 +19,9 @@ DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 #endif
 #DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
 
-CMAKE_FLAGS += -DENABLE_TESTS=0
+ifndef ENABLE_TESTS
+    CMAKE_FLAGS += -DENABLE_TESTS=0
+endif
 
 #DEB_CLANG ?= $(shell which clang-6.0 || which clang-5.0 || which clang-4.0 || which clang || which clang-3.9 || which clang-3.8)
 
