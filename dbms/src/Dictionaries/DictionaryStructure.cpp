@@ -235,7 +235,7 @@ size_t DictionaryStructure::getKeySize() const
 static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
     static const std::unordered_set<std::string> valid_keys =
-        { "name", "type", "expression", "null_value", "hierarchical", "injective" };
+        { "name", "type", "expression", "null_value", "hierarchical", "injective", "is_object_id" };
 
     for (const auto & key : keys)
     {
