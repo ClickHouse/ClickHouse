@@ -1,7 +1,6 @@
 #include <Common/config.h>
 #if Poco_MongoDB_FOUND
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/MD5Engine.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -239,7 +238,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 
     for (const auto row_idx : requested_rows)
     {
-        key = keys_array->addNewDocument(DB::toString(row_idx));
+        auto & key = keys_array->addNewDocument(DB::toString(row_idx));
 
         for (const auto attr : ext::enumerate(*dict_struct.key))
         {
