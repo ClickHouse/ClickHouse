@@ -182,6 +182,8 @@ esac
 # will test symbols
 EXTRAPACKAGES+=" gdb "
 
+[[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX "
+
 export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
@@ -201,3 +203,4 @@ HOOKDIR="debian/pbuilder-hooks"
 
 #echo "DEBOOTSTRAPOPTS=${DEBOOTSTRAPOPTS[@]}"
 #echo "ALLOWUNTRUSTED=${ALLOWUNTRUSTED} OTHERMIRROR=${OTHERMIRROR}"
+#echo "EXTRAPACKAGES=${EXTRAPACKAGES}"
