@@ -63,6 +63,26 @@ matrix:
         - utils/travis/pbuilder.sh
 
 
+    - os: linux
+
+      sudo: required
+
+      cache:
+        timeout: 1000
+        directories:
+        - /var/cache/pbuilder/ccache
+
+      addons:
+        apt:
+          packages: [ pbuilder, fakeroot, debhelper ]
+
+      env:
+        - MATRIX_EVAL="export CC=clang-6.0 && export CXX=clang++-6.0 && export DIST=bionic"
+
+      script:
+        - utils/travis/pbuilder.sh
+
+
 # Cant fit to time limit (48min)
 #    - os: osx
 #      osx_image: xcode9.2
