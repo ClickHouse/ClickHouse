@@ -488,24 +488,9 @@ static void terminate_handler()
 
 static std::string createDirectory(const std::string & _path)
 {
-    Poco::Path path(_path);
-    bool first_backslash = !_path.empty() && _path[0] == '/';
-    std::string str;
-    for(int j=0;j<path.depth();++j)
-    {
-        /// Allow create relative paths
-        if (j > 0 || first_backslash)
-            str += "/";
-        str += path[j];
-
-        int res = ::mkdir(str.c_str(), 0700);
-        if( res && (errno!=EEXIST) )
-        {
-            throw std::runtime_error(std::string("Can't create dir - ") + str + " - " + strerror(errno));
-        }
-    }
-
-    return str;
+    auto path = Poco::Path(_path).makeDirectory().popDirectory();
+    Poco::File(path).createDirectories();
+    return path.toString();
 };
 
 static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
