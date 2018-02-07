@@ -35,4 +35,4 @@ TEST_TRUE=${TEST_TRUE:=true}
 service clickhouse-server stop
 
 # Test debug symbols
-gdb -ex quit --args /usr/bin/clickhouse-server
+# gdb -ex quit --args /usr/bin/clickhouse-server
