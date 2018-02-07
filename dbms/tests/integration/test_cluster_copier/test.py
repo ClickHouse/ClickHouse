@@ -74,8 +74,10 @@ def _test_copying(cmd_options):
 
     ddl_check_query(instance, "DROP TABLE IF EXISTS hits ON CLUSTER cluster0")
     ddl_check_query(instance, "DROP TABLE IF EXISTS hits ON CLUSTER cluster1")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS hits_all ON CLUSTER cluster0")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS hits_all ON CLUSTER cluster1")
 
-    ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16")
+    ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64, d1 UInt64 MATERIALIZED d+1) ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16")
     ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster0 (d UInt64) ENGINE=Distributed(cluster0, default, hits, d)")
     ddl_check_query(instance, "CREATE TABLE hits_all ON CLUSTER cluster1 (d UInt64) ENGINE=Distributed(cluster1, default, hits, d + 1)")
     instance.query("INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002")

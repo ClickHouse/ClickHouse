@@ -122,6 +122,7 @@ public:
         void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
+    std::mutex cluster_nodes_mutex;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
