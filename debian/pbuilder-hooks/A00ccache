@@ -1,11 +1,10 @@
 #!/bin/sh
 
 if [ -n "$CCACHEDIR" ]; then
-    mkdir -p $CCACHEDIR
-    chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
-    chmod -R a+rwx $CCACHEDIR
+    mkdir -p $CCACHEDIR || true
+    chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR || true
+    chmod -R a+rwx $CCACHEDIR || true
 fi
 
-CCACHE_SIZE=${CCACHE_SIZE:=32G}
 ccache --show-stats
-ccache -M $CCACHE_SIZE
+ccache -M ${CCACHE_SIZE:=32G}
