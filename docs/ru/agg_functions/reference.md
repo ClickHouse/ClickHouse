@@ -211,7 +211,7 @@ GROUP BY timeslot
 Работает для чисел, дат, дат-с-временем.
 Для чисел возвращает Float64, для дат - дату, для дат-с-временем - дату-с-временем.
 
-Используется [reservoir sampling](https://ru.wikipedia.org/wiki/Reservoir_sampling) с размером резервуара до 8192.
+Используется [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) с размером резервуара до 8192.
 При необходимости, результат выдаётся с линейной аппроксимацией из двух соседних значений.
 Этот алгоритм обеспечивает весьма низкую точность расчёта. Смотрите также функции `quantileTiming`, `quantileTDigest`, `quantileExact`.
 
