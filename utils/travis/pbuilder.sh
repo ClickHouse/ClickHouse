@@ -7,12 +7,14 @@ set -x
 
 df -h
 
-env TEST_RUN=1 \
+date
+
+env TEST_RUN=${TEST_RUN=true} \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00416 requires patched poco from contrib/` \
     TEST_OPT="--no-long --skip 00281 00416 $TEST_OPT" \
-    TEST_TRUE=false \
+    TEST_TRUE=${TEST_TRUE=false} \
     `# travisci will not upload ccache cache after timeout (48min), use our less timeout` \
     PBUILDER_OPT="--timeout 35m $PBUILDER_OPT" \
     `# clang faster than gcc` \
@@ -24,3 +26,5 @@ env TEST_RUN=1 \
     `# psmisc - killall` \
     EXTRAPACKAGES="psmisc clang-5.0 libc++abi-dev libc++-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzookeeper-mt-dev libsparsehash-dev librdkafka-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libzstd-dev libre2-dev $EXTRAPACKAGES" \
     ./release --pbuilder $RELEASE_OPT
+
+date
