@@ -63,24 +63,25 @@ matrix:
         - utils/travis/pbuilder.sh
 
 
-    - os: linux
-
-      sudo: required
-
-      cache:
-        timeout: 1000
-        directories:
-        - /var/cache/pbuilder/ccache
-
-      addons:
-        apt:
-          packages: [ pbuilder, fakeroot, debhelper ]
-
-      env:
-        - MATRIX_EVAL="export CC=clang-6.0 && export CXX=clang++-6.0 && export DIST=bionic && export EXTRAPACKAGES=clang-6.0"
-
-      script:
-        - utils/travis/pbuilder.sh
+# TODO:
+#    - os: linux
+#
+#      sudo: required
+#
+#      cache:
+#        timeout: 1000
+#        directories:
+#        - /var/cache/pbuilder/ccache
+#
+#      addons:
+#        apt:
+#          packages: [ pbuilder, fakeroot, debhelper ]
+#
+#      env:
+#        - MATRIX_EVAL="export CC=clang-6.0 && export CXX=clang++-6.0 && export DIST=bionic && export EXTRAPACKAGES=clang-6.0"
+#
+#      script:
+#        - utils/travis/pbuilder.sh
 
 
 # Cant fit to time limit (48min)
