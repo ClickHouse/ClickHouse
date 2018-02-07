@@ -263,7 +263,6 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                 case AttributeUnderlyingType::String:
                     String _str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
-                    /// TODO: add adequate check of objectid
                     if (attr.second.is_object_id)
                     {
                         Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
