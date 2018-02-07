@@ -194,7 +194,7 @@ In this function, as well as in all functions for calculating quantiles, the 'le
 Works for numbers, dates, and dates with times.
 Returns: for numbers – Float64; for dates – a date; for dates with times – a date with time.
 
-Uses [reservoir sampling](https://ru.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192.
+Uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192.
 If necessary, the result is output with linear approximation from the two neighboring values.
 This algorithm provides very low accuracy. See also: `quantileTiming`, `quantileTDigest`, `quantileExact`.
 
