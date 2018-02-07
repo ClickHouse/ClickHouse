@@ -63,7 +63,7 @@ matrix:
         - utils/travis/pbuilder.sh
 
 
-# TODO:
+# TODO: Can't bootstrap bionic on trusty host
 #    - os: linux
 #
 #      sudo: required
