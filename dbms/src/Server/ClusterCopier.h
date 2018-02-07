@@ -68,9 +68,11 @@
         <readonly>0</readonly>
     </settings_push>
 
-    <!-- Common setting for fetch (pull) and insert (push) operations.
-         They are overlaid by <settings_pull/> and <settings_push/> respectively -->
+    <!-- Common setting for fetch (pull) and insert (push) operations. Also, copier process context uses it.
+         They are overlaid by <settings_pull/> and <settings_push/> respectively. -->
     <settings>
+        <connect_timeout>3</connect_timeout>
+        <!-- Sync insert is set forcibly, leave it here just in case. -->
         <insert_distributed_sync>1</insert_distributed_sync>
     </settings>
 
