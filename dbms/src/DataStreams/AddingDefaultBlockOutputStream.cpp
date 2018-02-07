@@ -14,12 +14,6 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
 {
     Block res = block;
 
-    /// Computes explicitly specified values (in column_defaults) by default.
-    /** @todo if somehow block does not contain values for implicitly-defaulted columns that are prerequisites
-         *    for explicitly-defaulted ones, exception will be thrown during evaluating such columns
-         *    (implicitly-defaulted columns are evaluated on the line after following one. */
-    evaluateMissingDefaults(res, required_columns, column_defaults, context);
-
     /// Adds not specified default values.
     /// @todo this may be moved before `evaluateMissingDefaults` with passing {required_columns - explicitly-defaulted columns}
     if (!only_explicit_column_defaults)
@@ -47,7 +41,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
 
         for (const auto & requested_column : required_columns)
         {
-            if (res.has(requested_column.name))
+            if (res.has(requested_column.name) || column_defaults.count(requested_column.name))
                 continue;
 
             ColumnWithTypeAndName column_to_add;
@@ -75,6 +69,12 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
             res.insert(std::move(column_to_add));
         }
     }
+
+    /// Computes explicitly specified values (in column_defaults) by default.
+    /** @todo if somehow block does not contain values for implicitly-defaulted columns that are prerequisites
+         *    for explicitly-defaulted ones, exception will be thrown during evaluating such columns
+         *    (implicitly-defaulted columns are evaluated on the line after following one. */
+    evaluateMissingDefaults(res, required_columns, column_defaults, context);
 
     output->write(res);
 }
