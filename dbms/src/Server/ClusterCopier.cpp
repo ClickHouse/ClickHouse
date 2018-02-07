@@ -57,6 +57,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Server/StatusFile.h>
 #include <Storages/registerStorages.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
@@ -138,13 +139,25 @@ struct TaskPartition;
 struct TaskShard;
 struct TaskTable;
 struct TaskCluster;
+struct ClusterPartition;
 
 using TasksPartition = std::map<String, TaskPartition>;
 using ShardInfo = Cluster::ShardInfo;
 using TaskShardPtr = std::shared_ptr<TaskShard>;
 using TasksShard = std::vector<TaskShardPtr>;
 using TasksTable = std::list<TaskTable>;
-using PartitionToShards = std::map<String, TasksShard>;
+using ClusterPartitions = std::map<String, ClusterPartition>;
+
+/// Since we could drop only the whole parition on cluster, set of the same patitions in a cluster is atomic entity
+struct ClusterPartition
+{
+    TasksShard shards; /// having that partition
+
+    Stopwatch watch;
+    UInt64 bytes_copied = 0;
+    UInt64 rows_copied = 0;
+};
+
 
 struct TaskPartition
 {
@@ -240,7 +253,18 @@ struct TaskTable
     TasksShard all_shards;
     TasksShard local_shards;
 
-    PartitionToShards partition_to_shards;
+    ClusterPartitions cluster_partitions;
+    ClusterPartition & getClusterPartition(const String & partition_name)
+    {
+        auto it = cluster_partitions.find(partition_name);
+        if (it == cluster_partitions.end())
+            throw Exception("There are no cluster partition " + partition_name + " in " + table_id, ErrorCodes::LOGICAL_ERROR);
+        return it->second;
+    }
+
+    Stopwatch watch;
+    UInt64 bytes_copied = 0;
+    UInt64 rows_copied = 0;
 
     template <typename RandomEngine>
     void initShards(RandomEngine && random_engine);
@@ -665,7 +689,9 @@ public:
                     }
 
                     task_shard->partitions.emplace(partition_name, TaskPartition(*task_shard, partition_name));
-                    task_table.partition_to_shards[partition_name].emplace_back(task_shard);
+
+                    ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
+                    cluster_partition.shards.emplace_back(task_shard);
                 }
 
                 LOG_DEBUG(log, "Will fetch " << task_shard->partitions.size() << " partitions");
@@ -683,6 +709,8 @@ public:
             if (task_table.all_shards.empty())
                 continue;
 
+            task_table.watch.restart();
+
             /// An optimization: first of all, try to process all partitions of the local shards
 //            for (const TaskShardPtr & shard : task_table.local_shards)
 //            {
@@ -694,16 +722,17 @@ public:
 //            }
 
             /// Then check and copy all shards until the whole partition is copied
-            for (const auto & partition_with_shards : task_table.partition_to_shards)
+            for (auto & elem : task_table.cluster_partitions)
             {
-                const String & partition_name = partition_with_shards.first;
-                const TasksShard & shards_with_partition = partition_with_shards.second;
-                bool is_done;
+                const String & partition_name = elem.first;
+                ClusterPartition & cluster_partition = elem.second;
+                const TasksShard & shards_with_partition = cluster_partition.shards;
 
+                cluster_partition.watch.restart();
+
+                bool is_done = false;
                 size_t num_tries = 0;
                 constexpr size_t max_tries = 1000;
-
-                Stopwatch watch;
 
                 do
                 {
@@ -740,10 +769,33 @@ public:
                     ++num_tries;
                 } while (!is_done && num_tries < max_tries);
 
-                if (!is_done)
-                    throw Exception("Too many retries while copying partition", ErrorCodes::UNFINISHED);
+                if (is_done)
+                {
+                    task_table.bytes_copied += cluster_partition.bytes_copied;
+                    task_table.rows_copied += cluster_partition.rows_copied;
+                    double elapsed = cluster_partition.watch.elapsedSeconds();
+
+                    LOG_INFO(log, "It took " << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name
+                                  << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied) << " uncompressed bytes"
+                                  << " and " << formatReadableQuantity(cluster_partition.rows_copied) << " rows are copied");
+
+                    if (cluster_partition.rows_copied)
+                    {
+                        LOG_INFO(log, "Average partition speed: "
+                                      << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied / elapsed) << " per second.");
+                    }
+
+                    if (task_table.rows_copied)
+                    {
+                        LOG_INFO(log, "Average table " << task_table.table_id << " speed: "
+                                      << formatReadableSizeWithDecimalSuffix(task_table.bytes_copied / elapsed) << " per second.");
+                    }
+                }
                 else
-                    LOG_INFO(log, "It took " << watch.elapsedSeconds() << " seconds to copy partition " << partition_name);
+                {
+                    throw Exception("Too many retries while copying partition " + partition_name + ". Try the next one",
+                                    ErrorCodes::UNFINISHED);
+                }
             }
         }
     }
@@ -997,6 +1049,7 @@ protected:
     {
         TaskShard & task_shard = task_partition.task_shard;
         TaskTable & task_table = task_shard.task_table;
+        ClusterPartition & cluster_partition = task_table.getClusterPartition(task_partition.name);
 
         auto zookeeper = getZooKeeper();
         auto acl = zookeeper->getDefaultACL();
@@ -1276,6 +1329,19 @@ protected:
 
                     return false;
                 };
+
+                /// Update statistics
+                /// It is quite rough: bytes_copied don't take into account DROP PARTITION.
+                if (auto in = dynamic_cast<IProfilingBlockInputStream *>(io_select.in.get()))
+                {
+                    auto update_table_stats = [&] (const Progress & progress)
+                    {
+                        cluster_partition.bytes_copied += progress.bytes;
+                        cluster_partition.rows_copied += progress.rows;
+                    };
+
+                    in->setProgressCallback(update_table_stats);
+                }
 
                 /// Main work is here
                 copyData(*io_select.in, *io_insert.out, cancel_check);
