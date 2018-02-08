@@ -18,8 +18,8 @@ env TEST_RUN=${TEST_RUN=1} \
     `# travisci will not upload ccache cache after timeout (48min), use our less timeout` \
     PBUILDER_OPT="--timeout 35m $PBUILDER_OPT" \
     `# clang faster than gcc` \
-    DEB_CC=$CC DEB_CXX=$CXX \
-    CCACHE_SIZE=${CCACHE_SIZE:=4G} CCACHEDIR=${CCACHEDIR:=$HOME/.ccache} \
+    DEB_CC=${DEB_CC=$CC} DEB_CXX=${DEB_CXX=$CXX} \
+    CCACHE_SIZE=${CCACHE_SIZE:=4G} SET_CCACHEDIR=${SET_CCACHEDIR:=$HOME/.ccache} \
     `# Disable all features` \
     CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Debug -DUNBUNDLED=1 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DUSE_EMBEDDED_COMPILER=0 -DCMAKE_C_FLAGS_ADD='-O0 -g0' -DCMAKE_CXX_FLAGS_ADD='-O0 -g0' $CMAKE_FLAGS" \
     `# Use all possible contrib libs from system` \
