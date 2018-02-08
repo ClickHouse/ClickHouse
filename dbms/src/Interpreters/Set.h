@@ -164,19 +164,19 @@ class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
 /// Class for mayBeTrueInRange function.
-class MergeTreeSetIndex {
+class MergeTreeSetIndex
+{
 public:
     /** Mapping for tuple positions from Set::set_elements to
       * position of pk index and data type of this pk column
       * and functions chain applied to this column.
       */
-    struct PKTuplePositionMapping {
+    struct PKTuplePositionMapping
+    {
         size_t tuple_index;
         size_t pk_index;
         std::vector<FunctionPtr> functions;
         DataTypePtr data_type;
-
-        bool operator< (const PKTuplePositionMapping & other) const;
     };
 
     MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && indexes_mapping_);
