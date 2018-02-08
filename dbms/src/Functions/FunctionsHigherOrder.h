@@ -60,18 +60,37 @@ struct ArrayCumSumImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return true; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
-        return std::make_shared<DataTypeArray>(array_element);
+        //return std::make_shared<DataTypeArray>(array_element);
+        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
+            checkDataType<DataTypeUInt16>(&*expression_return) ||
+            checkDataType<DataTypeUInt32>(&*expression_return) ||
+            checkDataType<DataTypeUInt64>(&*expression_return))
+        	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+
+        if (checkDataType<DataTypeInt8>(&*expression_return) ||
+            checkDataType<DataTypeInt16>(&*expression_return) ||
+            checkDataType<DataTypeInt32>(&*expression_return) ||
+            checkDataType<DataTypeInt64>(&*expression_return))
+        	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+
+        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
+            checkDataType<DataTypeFloat64>(&*expression_return))
+        	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+
+        throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 
     template <typename Element, typename Result>
-    static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
         const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
-
         if (!column)
+           return false;
+
+        /*if (!column)
         {
             const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
 
@@ -80,7 +99,6 @@ struct ArrayCumSumImpl
 
             const Element x = column_const->template getValue<Element>();
 
-            auto res = ColumnArray::create()
             auto res_nested = ColumnVector<Result>::create();
             ColumnVector<Result>::Container & res_values = res_nested->getData();
             res_values.resize(offsets.size());
@@ -88,62 +106,55 @@ struct ArrayCumSumImpl
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                res[i] = x * (offsets[i] - pos);
-                pos = offsets[i];
-            }
-
-            size_t pos = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
-            {
                 res_values[pos++] = x;
                 for (; pos < offsets[i]; ++pos)
                 {
-                    res_values[pos] = res_values[pos - 1] + x
+                    res_values[pos] = res_values[pos - 1] + x;
                 }
             }
 
             res_ptr = ColumnArray::create(std::move(res_nested), offsets);
             return true;
-        }
+        }*/
 
+        const IColumn::Offsets & offsets = array.getOffsets();
         const typename ColumnVector<Element>::Container & data = column->getData();
 
         // create output column
-        auto res = ColumnArray::create()
         auto res_nested = ColumnVector<Result>::create();
-        ColumnVector<Result>::Container & res_values = res_nested->getData();
-        res_values.resize(offsets.size());
+	typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+        res_values.resize(data.size());
 
         // accumulate
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            res_values[pos++] = data[pos]
+            res_values[pos] = data[pos];
+	    ++pos;
             for (; pos < offsets[i]; ++pos)
             {
-                res_values[pos] = res_values[pos - 1] + data[pos - 1]
+                res_values[pos] = res_values[pos - 1] + data[pos];
             }
         }
-        res_ptr = ColumnArray::create(std::move(res_nested), offsets);
+	res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
         return true;
 
     }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
-        if (executeType< UInt8 , UInt64>(mapped, offsets, res) ||
-            executeType< UInt16, UInt64>(mapped, offsets, res) ||
-            executeType< UInt32, UInt64>(mapped, offsets, res) ||
-            executeType< UInt64, UInt64>(mapped, offsets, res) ||
-            executeType<  Int8 ,  Int64>(mapped, offsets, res) ||
-            executeType<  Int16,  Int64>(mapped, offsets, res) ||
-            executeType<  Int32,  Int64>(mapped, offsets, res) ||
-            executeType<  Int64,  Int64>(mapped, offsets, res) ||
-            executeType<Float32,Float64>(mapped, offsets, res) ||
-            executeType<Float64,Float64>(mapped, offsets, res))
+        if (executeType< UInt8 , UInt64>(mapped, array, res) ||
+            executeType< UInt16, UInt64>(mapped, array, res) ||
+            executeType< UInt32, UInt64>(mapped, array, res) ||
+            executeType< UInt64, UInt64>(mapped, array, res) ||
+            executeType<  Int8 ,  Int64>(mapped, array, res) ||
+            executeType<  Int16,  Int64>(mapped, array, res) ||
+            executeType<  Int32,  Int64>(mapped, array, res) ||
+            executeType<  Int64,  Int64>(mapped, array, res) ||
+            executeType<Float32,Float64>(mapped, array, res) ||
+            executeType<Float64,Float64>(mapped, array, res))
             return res;
         else
             throw Exception("Unexpected column for arrayCumSum: " + mapped->getName());
