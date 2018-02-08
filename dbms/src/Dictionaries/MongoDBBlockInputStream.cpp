@@ -176,7 +176,7 @@ Block MongoDBBlockInputStream::readImpl()
                 const auto & name = description.names[idx];
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
-                if (value.isNull())
+                if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
                     insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
                 else
                     insertValue(*columns[idx], description.types[idx], *value, name);
