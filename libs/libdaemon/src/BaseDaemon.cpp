@@ -709,7 +709,7 @@ void BaseDaemon::initialize(Application & self)
             auto pos_minus = arg.find('-');
             auto pos_eq = arg.find('=');
 
-            // old saved '--key' , will set to some true value "1"
+            // old saved '--key', will set to some true value "1"
             if (!key.empty() && pos_minus != std::string::npos && pos_minus < key_start)
             {
                 map_config->setString(key, "1");
