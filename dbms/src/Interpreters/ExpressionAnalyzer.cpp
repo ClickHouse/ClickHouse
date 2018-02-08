@@ -17,12 +17,10 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeExpression.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnExpression.h>
 #include <Columns/ColumnConst.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
