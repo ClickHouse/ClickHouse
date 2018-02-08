@@ -15,7 +15,10 @@ namespace DB
 {
 
 struct Range;
+struct FieldWithInfinity;
 
+using SetElements = std::vector<std::vector<Field>>;
+using SetElementsPtr = std::unique_ptr<SetElements>;
 
 /** Data structure for implementation of IN expression.
   */
@@ -26,7 +29,8 @@ public:
         log(&Logger::get("Set")),
         max_rows(limits.max_rows_in_set),
         max_bytes(limits.max_bytes_in_set),
-        overflow_mode(limits.set_overflow_mode)
+        overflow_mode(limits.set_overflow_mode),
+        set_elements(std::make_unique<SetElements>())
     {
     }
 
@@ -35,30 +39,22 @@ public:
     /** Create a Set from expression (specified literally in the query).
       * 'types' - types of what are on the left hand side of IN.
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      * 'create_ordered_set' - if true, create ordered vector of elements. For primary key to work.
+      * 'fill_set_elements' - if true, fill vector of elements. For primary key to work.
       */
-    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set);
+    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool fill_set_elements);
 
     /** Returns false, if some limit was exceeded and no need to insert more data.
-      *
-      * Note that if create_ordered_set = true, you must call the method finalizeOrderedSet() after all required blocks
-      * have been inserted.
       */
-    bool insertFromBlock(const Block & block, bool create_ordered_set = false);
-    void finalizeOrderedSet();
+    bool insertFromBlock(const Block & block, bool fill_set_elements);
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
     ColumnPtr execute(const Block & block, bool negative) const;
 
-    std::string describe() const;
-
-    /// Check, if the Set could possibly contain elements for specified range.
-    BoolMask mayBeTrueInRange(const Range & range) const;
-
     size_t getTotalRowCount() const { return data.getTotalRowCount(); }
     size_t getTotalByteCount() const { return data.getTotalByteCount(); }
+    SetElements & getSetElements() { return *set_elements.get(); }
 
 private:
     Sizes key_sizes;
@@ -105,11 +101,9 @@ private:
     /// Check whether the permissible sizes of keys set reached
     bool checkSetSizeLimits() const;
 
-    /// Vector of ordered elements of `Set`.
+    /// Vector of elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    using OrderedSetElements = std::vector<Field>;
-    using OrderedSetElementsPtr = std::unique_ptr<OrderedSetElements>;
-    OrderedSetElementsPtr ordered_set_elements;
+    SetElementsPtr set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -117,7 +111,6 @@ private:
       * Therefore, the rest of the functions for working with set are not protected.
       */
     mutable std::shared_mutex rwlock;
-
 
     template <typename Method>
     void insertFromBlockImpl(
@@ -167,4 +160,33 @@ using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
-}
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
+
+/// Class for mayBeTrueInRange function.
+class MergeTreeSetIndex {
+public:
+    /** Mapping for tuple positions from Set::set_elements to
+      * position of pk index and data type of this pk column
+      * and functions chain applied to this column.
+      */
+    struct PKTuplePositionMapping {
+        size_t tuple_index;
+        size_t pk_index;
+        std::vector<FunctionPtr> functions;
+        DataTypePtr data_type;
+
+        bool operator<(const PKTuplePositionMapping & other);
+    };
+
+    MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && indexes_mapping_);
+
+    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges);
+private:
+    using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
+    OrderedTuples ordered_set;
+
+    std::vector<PKTuplePositionMapping> indexes_mapping;
+};
+
+ }
