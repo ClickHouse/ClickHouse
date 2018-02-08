@@ -700,22 +700,56 @@ void BaseDaemon::initialize(Application & self)
 
     {
         /// Parsing all args and converting to config layer
-        /// Test: --1=1 --1=2 --3 5 7 8 -9 10 -11=12 14= 15== --16==17 --=18 --19=
+        /// Test: -- --1=1 --1=2 --3 5 7 8 -9 10 -11=12 14= 15== --16==17 --=18 --19= --20 21 22 --23 --24 25 --26 -27 28 ---29=30 -- ----31 32 --33 3-4
         Poco::AutoPtr<Poco::Util::MapConfiguration> map_config = new Poco::Util::MapConfiguration;
+        std::string key;
         for(auto &arg : argv())
         {
-            auto pos = arg.find('=');
-            if (pos == std::string::npos || pos < 2)
-                continue;
             auto key_start = arg.find_first_not_of('-');
+            auto pos_minus = arg.find('-');
+            auto pos_eq = arg.find('=');
+
+            // old saved '--key' , will set to some true value "1"
+            if (!key.empty() && pos_minus != std::string::npos && pos_minus < key_start)
+            {
+                map_config->setString(key, "1");
+                key = "";
+            }
+
+            if (pos_eq == std::string::npos)
+            {
+                if (!key.empty())
+                {
+                    if (pos_minus == std::string::npos || pos_minus > key_start)
+                    {
+                        map_config->setString(key, arg);
+                    }
+                    key = "";
+                }
+                if (pos_minus != std::string::npos && key_start != std::string::npos && pos_minus < key_start)
+                    key = arg.substr(key_start);
+                continue;
+            }
+            else
+            {
+                key = "";
+            }
+
             if (key_start == std::string::npos)
                 continue;
-            auto key = arg.substr(key_start, pos - 2); // -1 for skip '=', annother -1 for coord-count difference
+
+            if (pos_minus > key_start)
+                continue;
+
+            key = arg.substr(key_start, pos_eq - key_start);
+            if (key.empty())
+                continue;
             std::string value;
-            if (arg.size() > pos)
-                value = arg.substr(pos+1);
+            if (arg.size() > pos_eq)
+                value = arg.substr(pos_eq+1);
 
             map_config->setString(key, value);
+            key = "";
         }
         /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
         config().add(map_config, PRIO_APPLICATION - 100);
