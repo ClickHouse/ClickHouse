@@ -505,30 +505,30 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container & 
     }
 }
 
-bool MergeTreeSetIndex::PKIndexMapping::operator<(const PKIndexMapping & other)
+bool MergeTreeSetIndex::PKTuplePositionMapping::operator<(const PKTuplePositionMapping & other)
 {
-    return pk_index < other.pk_index || (pk_index == other.pk_index && tuple_index < other.tuple_index);
+    return std::forward_as_tuple(pk_index, tuple_index) < std::forward_as_tuple(other.pk_index, other.tuple_index);
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(SetElementsPtr set_elements, std::vector<PKIndexMapping> && index_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && index_mapping_)
     : ordered_set(),
     indexes_mapping(std::move(index_mapping_))
 {
     std::sort(indexes_mapping.begin(), indexes_mapping.end());
     std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
-        [](const PKIndexMapping & l, const PKIndexMapping & r)
+        [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
         {
             return l.pk_index == r.pk_index;
         }
     );
 
-    for (size_t i = 0; i < set_elements->size(); ++i)
+    for (size_t i = 0; i < set_elements.size(); ++i)
     {
         std::vector<FieldWithInfinity> new_set_values;
         for (size_t j = 0; j < indexes_mapping.size(); ++j)
         {
-            new_set_values.push_back(FieldWithInfinity((*set_elements)[i][indexes_mapping[j].tuple_index]));
+            new_set_values.push_back(FieldWithInfinity(set_elements[i][indexes_mapping[j].tuple_index]));
         }
         ordered_set.emplace_back(std::move(new_set_values));
     }
@@ -536,10 +536,19 @@ MergeTreeSetIndex::MergeTreeSetIndex(SetElementsPtr set_elements, std::vector<PK
     std::sort(ordered_set.begin(), ordered_set.end());
 }
 
+/** Return the BoolMask where:
+  * 1: the intersection of the set and the range is non-empty
+  * 2: the range contains elements not in the set
+  */
 BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges)
 {
     std::vector<FieldWithInfinity> left_point;
     std::vector<FieldWithInfinity> right_point;
+    left_point.reserve(indexes_mapping.size());
+    right_point.reserve(indexes_mapping.size());
+
+    bool invert_left_infinities = false;
+    bool invert_right_infinities = false;
 
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
     {
@@ -553,28 +562,53 @@ BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_rang
             return {true, true};
         }
 
+        /** A range that ends in (x, y, ..., +inf) exclusive is the same as a range
+          * that ends in (x, y, ..., -inf) inclusive and vice versa for the left bound.
+          */
         if (new_range->left_bounded)
         {
+            if (!new_range->left_included)
+            {
+                invert_left_infinities = true;
+            }
             left_point.push_back(FieldWithInfinity(new_range->left));
         }
         else
         {
-            left_point.push_back(FieldWithInfinity::getMinusInfinity());
+            if (invert_left_infinities)
+            {
+                left_point.push_back(FieldWithInfinity::getPlusinfinity());
+            } else {
+                left_point.push_back(FieldWithInfinity::getMinusInfinity());
+            }
         }
 
         if (new_range->right_bounded)
         {
+            if (!new_range->right_included)
+            {
+                invert_right_infinities = true;
+            }
             right_point.push_back(FieldWithInfinity(new_range->right));
         }
         else
         {
-            right_point.push_back(FieldWithInfinity::getPlusinfinity());
+            if (invert_right_infinities)
+            {
+                right_point.push_back(FieldWithInfinity::getMinusInfinity());
+            } else {
+                right_point.push_back(FieldWithInfinity::getPlusinfinity());
+            }
         }
     }
 
+    /** Because each parallelogram maps to a contiguous sequence of elements
+      * layed out in the lexicographically increasing order, the set intersects the range
+      * if and only if either bound coincides with an element or at least one element
+      * is between the lower bounds
+      */
     auto left_lower = std::lower_bound(ordered_set.begin(), ordered_set.end(), left_point);
     auto right_lower = std::lower_bound(ordered_set.begin(), ordered_set.end(), right_point);
-
     return {left_lower != right_lower
             || (left_lower != ordered_set.end() && *left_lower == left_point)
             || (right_lower != ordered_set.end() && *right_lower == right_point), true};

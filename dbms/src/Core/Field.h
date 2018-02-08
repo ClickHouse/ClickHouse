@@ -542,24 +542,4 @@ void writeBinary(const Tuple & x, WriteBuffer & buf);
 void writeText(const Tuple & x, WriteBuffer & buf);
 
 inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
-
-class FieldWithInfinity {
-public:
-    explicit FieldWithInfinity(const Field & field_);
-    FieldWithInfinity(Field && field_);
-
-    static FieldWithInfinity getMinusInfinity();
-    static FieldWithInfinity getPlusinfinity();
-
-    bool operator<(const FieldWithInfinity & other) const;
-
-    bool operator==(const FieldWithInfinity & other) const;
-
-    FieldWithInfinity(const bool minusInfinity, const bool plusInfinity);
-private:
-    Field field;
-    bool minusInfinity;
-    bool plusInfinity;
-};
-
 }

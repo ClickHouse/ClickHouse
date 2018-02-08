@@ -117,7 +117,7 @@ StorageSet::StorageSet(
 }
 
 
-void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block, /*fill_set_elements=*/false); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
 
 
