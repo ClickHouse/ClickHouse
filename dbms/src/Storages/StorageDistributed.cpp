@@ -325,11 +325,13 @@ void StorageDistributed::createDirectoryMonitors()
 
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
+    std::lock_guard lock(cluster_nodes_mutex);
     cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
 }
 
 ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
 {
+    std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[name];
     node_data.requireConnectionPool(name, *this);
     return node_data.conneciton_pool;

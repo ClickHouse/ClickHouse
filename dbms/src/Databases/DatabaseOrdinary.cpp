@@ -93,7 +93,7 @@ static void loadTable(
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context)
     : DatabaseMemory(name_), metadata_path(metadata_path_), data_path(context.getPath() + "data/" + escapeForFileName(name_) + "/")
 {
-    Poco::File(data_path).createDirectory();
+    Poco::File(data_path).createDirectories();
 }
 
 
