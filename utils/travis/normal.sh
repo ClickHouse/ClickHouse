@@ -7,15 +7,16 @@
 set -e
 set -x
 
-TEST_TRUE=${TEST_TRUE:=false}
-TEST_RUN=${TEST_RUN:=true}
+date
 
 # clean not used ~600mb
 [ -n "$TRAVIS" ] && rm -rf .git contrib/poco/openssl
 
 ccache -s
-ccache -M 4G
+ccache -M ${CCACHE_SIZE:=4G}
 df -h
+
+date
 
 mkdir -p build
 cd build
@@ -32,4 +33,6 @@ cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00428 requires sudo (not all vms allow this)` \
-    && ( $TEST_RUN && ( ( cd .. && env TEST_OPT="--no-long --no-shard --skip 00281 00428 $TEST_OPT" bash -x dbms/tests/clickhouse-test-server ) || $TEST_TRUE ) || true )
+    && ( [ ${TEST_RUN=1} ] && ( ( cd .. && env TEST_OPT="--no-long --no-shard --skip 00281 00428 $TEST_OPT" bash -x dbms/tests/clickhouse-test-server ) || ${TEST_TRUE=false} ) || true )
+
+date

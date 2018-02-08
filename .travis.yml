@@ -16,7 +16,7 @@ matrix:
           packages: [ g++-7,            libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo ]
 
       env:
-        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7 && export TEST_RUN=false"
+        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7 && export TEST_RUN="
 
       script:
         - utils/travis/normal.sh
@@ -58,6 +58,26 @@ matrix:
 
       env:
         - MATRIX_EVAL="export CC=clang-5.0 && export CXX=clang++-5.0"
+
+      script:
+        - utils/travis/pbuilder.sh
+
+
+    - os: linux
+
+      sudo: required
+
+      cache:
+        timeout: 1000
+        directories:
+        - /var/cache/pbuilder/ccache
+
+      addons:
+        apt:
+          packages: [ pbuilder, fakeroot, debhelper ]
+
+      env:
+        - MATRIX_EVAL="export ARCH=i386 && export TEST_RUN="
 
       script:
         - utils/travis/pbuilder.sh
