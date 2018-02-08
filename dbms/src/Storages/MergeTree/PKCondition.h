@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sstream>
+#include <optional>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -186,7 +187,8 @@ public:
 };
 
 /// Class that extends arbitrary objects with infinities, like +-inf for floats
-class FieldWithInfinity {
+class FieldWithInfinity
+{
 public:
     enum Type {
         MINUS_INFINITY = -1,
@@ -201,8 +203,8 @@ public:
     static FieldWithInfinity getPlusinfinity();
 
     bool operator<(const FieldWithInfinity & other) const;
-
     bool operator==(const FieldWithInfinity & other) const;
+
 private:
     Field field;
     Type type;
