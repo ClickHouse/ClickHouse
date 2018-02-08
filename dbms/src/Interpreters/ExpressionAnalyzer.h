@@ -72,7 +72,7 @@ public:
         const StoragePtr & storage_,
         const NamesAndTypesList & columns_,
         size_t subquery_depth_ = 0,
-        bool do_global_ = false);
+        bool do_global_ = false, SubqueriesForSets subquery_for_set_ = {});
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
@@ -166,6 +166,9 @@ private:
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
 
+    /// Do I need to prepare for execution global subqueries when analyzing the query.
+    bool do_global;
+
     SubqueriesForSets subqueries_for_sets;
 
     PreparedSets prepared_sets;
@@ -201,13 +204,10 @@ private:
     /// The backward mapping for array_join_alias_to_name.
     NameToNameMap array_join_name_to_alias;
 
-    /// Do I need to prepare for execution global subqueries when analyzing the query.
-    bool do_global;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
     size_t external_table_id = 1;
-
 
     void init();
 
