@@ -505,7 +505,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container & 
     }
 }
 
-bool MergeTreeSetIndex::PKTuplePositionMapping::operator<(const PKTuplePositionMapping & other)
+bool MergeTreeSetIndex::PKTuplePositionMapping::operator< (const PKTuplePositionMapping & other) const
 {
     return std::forward_as_tuple(pk_index, tuple_index) < std::forward_as_tuple(other.pk_index, other.tuple_index);
 }

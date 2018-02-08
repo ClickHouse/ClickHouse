@@ -15,7 +15,7 @@ namespace DB
 {
 
 struct Range;
-struct FieldWithInfinity;
+class FieldWithInfinity;
 
 using SetElements = std::vector<std::vector<Field>>;
 using SetElementsPtr = std::unique_ptr<SetElements>;
@@ -176,7 +176,7 @@ public:
         std::vector<FunctionPtr> functions;
         DataTypePtr data_type;
 
-        bool operator<(const PKTuplePositionMapping & other);
+        bool operator< (const PKTuplePositionMapping & other) const;
     };
 
     MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && indexes_mapping_);
