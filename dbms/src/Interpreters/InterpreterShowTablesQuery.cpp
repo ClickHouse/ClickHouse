@@ -45,7 +45,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     rewritten_query << "SELECT name FROM system.tables WHERE ";
 
     if (query.temporary)
-        rewritten_query << "temporary = 1";
+        rewritten_query << "is_temporary";
     else
         rewritten_query << "database = " << std::quoted(database, '\'');
 
