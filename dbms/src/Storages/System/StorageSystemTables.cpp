@@ -10,6 +10,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -117,6 +118,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()}
+        {"is_temporary", std::make_shared<DataTypeUInt8>()}
     };
 
     virtual_columns = {
@@ -168,6 +170,7 @@ BlockInputStreams StorageSystemTables::read(
     for (size_t row_number = 0; row_number < filtered_databases_column->size(); ++row_number)
     {
         std::string database_name = filtered_databases_column->getDataAt(row_number).toString();
+
         auto database = context.tryGetDatabase(database_name);
 
         if (!database)
@@ -184,6 +187,7 @@ BlockInputStreams StorageSystemTables::read(
             res_columns[j++]->insert(database_name);
             res_columns[j++]->insert(table_name);
             res_columns[j++]->insert(iterator->table()->getName());
+            res_columns[j++]->insert(UInt64(0));
 
             if (has_metadata_modification_time)
                 res_columns[j++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
@@ -225,6 +229,29 @@ BlockInputStreams StorageSystemTables::read(
                     res_columns[j++]->insert(engine_full);
                 }
             }
+        }
+    }
+  
+    if (context.hasSessionContext())
+    {
+        Tables external_tables = context.getSessionContext().getExternalTables();
+
+        for (auto table : external_tables)
+        {
+            size_t j = 0;
+            res_columns[j++]->insertDefault();
+            res_columns[j++]->insert(table.first);
+            res_columns[j++]->insert(table.second->getName());
+            res_columns[j++]->insert(UInt64(1));
+
+            if (has_metadata_modification_time)
+                res_columns[j++]->insertDefault();
+
+            if (has_create_table_query)
+                res_columns[j++]->insertDefault();
+            
+            if (has_engine_full)
+                res_columns[j++]->insert(table.second->getName());
         }
     }
 

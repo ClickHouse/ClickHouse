@@ -149,7 +149,7 @@ case "$DIST" in
         # ccache broken
         ;;
     *)
-        CCACHEDIR=${CCACHEDIR:="/var/cache/pbuilder/ccache"}
+        CCACHEDIR=${SET_CCACHEDIR:="/var/cache/pbuilder/ccache"}
         ;;
 esac
 
