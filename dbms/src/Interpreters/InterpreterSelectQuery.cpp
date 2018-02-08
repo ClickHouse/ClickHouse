@@ -120,10 +120,12 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
     else
     {
         renameColumns();
-        if (!required_column_names.empty()) {
+        if (!required_column_names.empty())
+        {
             rewriteExpressionList(required_column_names);
 
-            if (is_first_select_inside_union_all) {
+            if (is_first_select_inside_union_all)
+            {
                 for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
                     p->query_analyzer.reset(new ExpressionAnalyzer(
                         p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth,
