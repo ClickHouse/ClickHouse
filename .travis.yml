@@ -77,7 +77,7 @@ matrix:
           packages: [ pbuilder, fakeroot, debhelper ]
 
       env:
-        - MATRIX_EVAL="export ARCH=i386 && export TEST_TRUE=true"
+        - MATRIX_EVAL="export ARCH=i386 && export TEST_RUN=false"
 
       script:
         - utils/travis/pbuilder.sh
