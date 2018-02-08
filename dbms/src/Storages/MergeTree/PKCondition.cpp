@@ -198,6 +198,44 @@ inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVi
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
+FieldWithInfinity::FieldWithInfinity(const Field & field_)
+    : field(field_),
+    type(Type::NORMAL)
+{
+}
+
+FieldWithInfinity::FieldWithInfinity(Field && field_)
+    : field(std::move(field_)),
+    type(Type::NORMAL)
+{
+}
+
+FieldWithInfinity::FieldWithInfinity(const Type type_)
+    : field(),
+    type(type_)
+{
+}
+
+FieldWithInfinity FieldWithInfinity::getMinusInfinity()
+{
+    return FieldWithInfinity(Type::MINUS_INFINITY);
+}
+FieldWithInfinity FieldWithInfinity::getPlusinfinity()
+{
+    return FieldWithInfinity(Type::PLUS_INFINITY);
+}
+
+bool FieldWithInfinity::operator<(const FieldWithInfinity & other) const
+{
+    return type < other.type || (type == other.type && type == Type::NORMAL && field < other.field);
+}
+
+bool FieldWithInfinity::operator==(const FieldWithInfinity & other) const
+{
+    return type == other.type && (type != Type::NORMAL || field == other.field);
+}
+
+
 /** Calculate expressions, that depend only on constants.
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
@@ -416,47 +454,49 @@ bool PKCondition::canConstantBeWrappedByMonotonicFunctions(
     return found_transformation;
 }
 
-void PKCondition::getPKIndexMapping(
+void PKCondition::getPKTuplePositionMapping(
     const ASTPtr & node,
     const Context & context,
-    std::vector<MergeTreeSetIndex::PKIndexMapping> & indexes_mapping,
+    std::vector<MergeTreeSetIndex::PKTuplePositionMapping> & indexes_mapping,
     const size_t tuple_index,
-    size_t & out_primary_key_column_num
-) {
-    MergeTreeSetIndex::PKIndexMapping index_mapping;
+    size_t & out_primary_key_column_num)
+{
+    MergeTreeSetIndex::PKTuplePositionMapping index_mapping;
     index_mapping.tuple_index = tuple_index;
     if (isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
             node, context, index_mapping.pk_index,
             index_mapping.data_type, index_mapping.functions))
     {
         indexes_mapping.push_back(index_mapping);
-        if (out_primary_key_column_num < index_mapping.pk_index) {
+        if (out_primary_key_column_num < index_mapping.pk_index)
+        {
             out_primary_key_column_num = index_mapping.pk_index;
         }
     }
 }
 
+// Try to prepare PKTuplePositionMapping for tuples from IN expression.
 bool PKCondition::isTupleIndexable(
     const ASTPtr & node,
     const Context & context,
     RPNElement & out,
     const SetPtr & prepared_set,
-    size_t & out_primary_key_column_num
-) {
+    size_t & out_primary_key_column_num)
+{
     out_primary_key_column_num = 0;
     const ASTFunction * node_tuple = typeid_cast<const ASTFunction *>(node.get());
-    std::vector<MergeTreeSetIndex::PKIndexMapping> indexes_mapping;
+    std::vector<MergeTreeSetIndex::PKTuplePositionMapping> indexes_mapping;
     if (node_tuple && node_tuple->name == "tuple")
     {
         size_t current_tuple_index = 0;
         for (const auto & arg : node_tuple->arguments->children)
         {
-            getPKIndexMapping(arg, context, indexes_mapping, current_tuple_index++, out_primary_key_column_num);
+            getPKTuplePositionMapping(arg, context, indexes_mapping, current_tuple_index++, out_primary_key_column_num);
         }
     }
     else
     {
-       getPKIndexMapping(node, context, indexes_mapping, 0, out_primary_key_column_num);
+       getPKTuplePositionMapping(node, context, indexes_mapping, 0, out_primary_key_column_num);
     }
 
     if (indexes_mapping.empty())
@@ -583,8 +623,8 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
         bool is_constant_transformed = false;
 
         if (prepared_sets.count(args[1].get())
-            && isTupleIndexable(args[0], context, out, prepared_sets[args[1].get()], key_column_num)
-        ) {
+            && isTupleIndexable(args[0], context, out, prepared_sets[args[1].get()], key_column_num))
+        {
             key_arg_pos = 0;
             is_set_const = true;
         }

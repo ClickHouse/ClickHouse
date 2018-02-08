@@ -185,6 +185,30 @@ public:
     String toString() const;
 };
 
+/// Class that extends arbitrary objects with infinities, like +-inf for floats
+class FieldWithInfinity {
+public:
+    enum Type {
+        MINUS_INFINITY = -1,
+        NORMAL = 0,
+        PLUS_INFINITY = 1
+    };
+
+    explicit FieldWithInfinity(const Field & field_);
+    FieldWithInfinity(Field && field_);
+
+    static FieldWithInfinity getMinusInfinity();
+    static FieldWithInfinity getPlusinfinity();
+
+    bool operator<(const FieldWithInfinity & other) const;
+
+    bool operator==(const FieldWithInfinity & other) const;
+private:
+    Field field;
+    Type type;
+
+    FieldWithInfinity(const Type type_);
+};
 
 /** Condition on the index.
   *
@@ -327,10 +351,10 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
-    void getPKIndexMapping(
+    void getPKTuplePositionMapping(
         const ASTPtr & node,
         const Context & context,
-        std::vector<MergeTreeSetIndex::PKIndexMapping> & indexes_mapping,
+        std::vector<MergeTreeSetIndex::PKTuplePositionMapping> & indexes_mapping,
         const size_t tuple_index,
         size_t & out_primary_key_column_num);
 

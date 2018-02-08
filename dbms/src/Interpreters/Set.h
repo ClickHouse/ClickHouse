@@ -15,10 +15,10 @@ namespace DB
 {
 
 struct Range;
-
+struct FieldWithInfinity;
 
 using SetElements = std::vector<std::vector<Field>>;
-using SetElementsPtr = std::shared_ptr<SetElements>;
+using SetElementsPtr = std::unique_ptr<SetElements>;
 
 /** Data structure for implementation of IN expression.
   */
@@ -30,7 +30,7 @@ public:
         max_rows(limits.max_rows_in_set),
         max_bytes(limits.max_bytes_in_set),
         overflow_mode(limits.set_overflow_mode),
-        set_elements(std::make_shared<SetElements>())
+        set_elements(std::make_unique<SetElements>())
     {
     }
 
@@ -45,7 +45,7 @@ public:
 
     /** Returns false, if some limit was exceeded and no need to insert more data.
       */
-    bool insertFromBlock(const Block & block, bool fill_set_elements = false);
+    bool insertFromBlock(const Block & block, bool fill_set_elements);
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -54,7 +54,7 @@ public:
 
     size_t getTotalRowCount() const { return data.getTotalRowCount(); }
     size_t getTotalByteCount() const { return data.getTotalByteCount(); }
-    SetElementsPtr getSetElements() const { return set_elements; }
+    SetElements & getSetElements() { return *set_elements.get(); }
 
 private:
     Sizes key_sizes;
@@ -163,28 +163,30 @@ using Sets = std::vector<SetPtr>;
 class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
+/// Class for mayBeTrueInRange function.
 class MergeTreeSetIndex {
 public:
-    struct PKIndexMapping {
+    /** Mapping for tuple positions from Set::set_elements to
+      * position of pk index and data type of this pk column
+      * and functions chain applied to this column.
+      */
+    struct PKTuplePositionMapping {
         size_t tuple_index;
         size_t pk_index;
         std::vector<FunctionPtr> functions;
         DataTypePtr data_type;
 
-        bool operator<(const PKIndexMapping & other);
+        bool operator<(const PKTuplePositionMapping & other);
     };
 
-    MergeTreeSetIndex(SetElementsPtr set_elements, std::vector<PKIndexMapping> && indexes_mapping_);
+    MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && indexes_mapping_);
 
     BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges);
-
-    MergeTreeSetIndex(const MergeTreeSetIndex&) = delete;
-    MergeTreeSetIndex operator=(const MergeTreeSetIndex&) = delete;
 private:
-    using OrderedFields = std::vector<std::vector<FieldWithInfinity>>;
-    OrderedFields ordered_set;
+    using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
+    OrderedTuples ordered_set;
 
-    std::vector<PKIndexMapping> indexes_mapping;
+    std::vector<PKTuplePositionMapping> indexes_mapping;
 };
 
-}
+ }
