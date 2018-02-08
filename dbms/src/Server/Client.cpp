@@ -459,7 +459,7 @@ private:
             while (ws > 0 && isWhitespaceASCII(line[ws - 1]))
                 --ws;
 
-            if (ws == 0 && query.empty())
+            if (ws == 0 && line.empty())
                 continue;
 
             bool ends_with_semicolon = line[ws - 1] == ';';

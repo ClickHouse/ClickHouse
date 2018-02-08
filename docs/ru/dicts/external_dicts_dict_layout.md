@@ -87,7 +87,7 @@
 
 ### complex_key_hashed
 
-Тип размещения предназначен для использования с составными [ключами](..external_dicts_dict_structure.html/#dicts-external_dicts_dict_structure). Аналогичен hashed.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
 
 Пример конфигурации:
 

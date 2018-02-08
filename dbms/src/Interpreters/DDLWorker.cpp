@@ -227,6 +227,15 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
         max_tasks_in_queue = std::max(static_cast<UInt64>(1), config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+
+        if (config->has(prefix + ".profile"))
+            context.setSetting("profile", config->getString(prefix + ".profile"));
+    }
+
+    if (context.getSettingsRef().limits.readonly)
+    {
+        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries"
+            << " Set apropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -633,13 +642,6 @@ void DDLWorker::processTaskAlter(
 
     if (execute_once_on_replica)
     {
-        /// The following code can perform ALTER twice if:
-        ///  current server acquires the lock, executes replicated alter,
-        ///  loses zookeeper connection and doesn't have time to create /executed node, second server executes replicated alter again
-        /// To avoid this problem alter() method of replicated tables should be changed and takes into account ddl query id tag.
-        if (!context.getSettingsRef().distributed_ddl_allow_replicated_alter)
-            throw Exception("Distributed DDL alters for replicated tables don't work properly yet", ErrorCodes::NOT_IMPLEMENTED);
-
         /// Generate unique name for shard node, it will be used to execute the query by only single host
         /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
         /// Where replica_name is 'escape(replica_ip_address):replica_port'
