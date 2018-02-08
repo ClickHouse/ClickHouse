@@ -20,7 +20,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
-        {"temporary", std::make_shared<DataTypeUInt8>()}
+        {"is_temporary", std::make_shared<DataTypeUInt8>()}
     };
 }
 
