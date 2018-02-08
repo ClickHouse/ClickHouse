@@ -114,14 +114,16 @@ protected:
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    columns = NamesAndTypesList
+    {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"engine", std::make_shared<DataTypeString>()}
-        {"is_temporary", std::make_shared<DataTypeUInt8>()}
+        {"engine", std::make_shared<DataTypeString>()},
+        {"is_temporary", std::make_shared<DataTypeUInt8>()},
     };
 
-    virtual_columns = {
+    virtual_columns =
+    {
         {std::make_shared<DataTypeDateTime>(), "metadata_modification_time"},
         {std::make_shared<DataTypeString>(), "create_table_query"},
         {std::make_shared<DataTypeString>(), "engine_full"}
@@ -231,7 +233,7 @@ BlockInputStreams StorageSystemTables::read(
             }
         }
     }
-  
+
     if (context.hasSessionContext())
     {
         Tables external_tables = context.getSessionContext().getExternalTables();
@@ -249,7 +251,7 @@ BlockInputStreams StorageSystemTables::read(
 
             if (has_create_table_query)
                 res_columns[j++]->insertDefault();
-            
+
             if (has_engine_full)
                 res_columns[j++]->insert(table.second->getName());
         }
