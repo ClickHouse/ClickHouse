@@ -2,16 +2,13 @@
 
 #include <memory>
 #include <sys/resource.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
-
 #include <ext/scope_guard.h>
-
+#include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
@@ -22,22 +19,17 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-
 #include <IO/HTTPCommon.h>
-
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
-
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-
 #include "ConfigReloader.h"
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
@@ -48,7 +40,6 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
-
 
 namespace CurrentMetrics
 {
@@ -74,6 +65,18 @@ static std::string getCanonicalPath(std::string && path)
     if (path.back() != '/')
         path += '/';
     return path;
+}
+
+void Server::uninitialize()
+{
+    logger().information("shutting down");
+    BaseDaemon::uninitialize();
+}
+
+void Server::initialize(Poco::Util::Application & self)
+{
+    BaseDaemon::initialize(self);
+    logger().information("starting up");
 }
 
 std::string Server::getDefaultCorePath() const

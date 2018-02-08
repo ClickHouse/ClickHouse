@@ -158,11 +158,12 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const StoragePtr & storage_,
     const NamesAndTypesList & columns_,
     size_t subquery_depth_,
-    bool do_global_)
+    bool do_global_,
+    const SubqueriesForSets & subqueries_for_set_)
     : ast(ast_), context(context_), settings(context.getSettings()),
     subquery_depth(subquery_depth_), columns(columns_),
     storage(storage_ ? storage_ : getTable()),
-    do_global(do_global_)
+    do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
 {
     init();
 }
@@ -1551,8 +1552,6 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
         if (!set->insertFromBlock(block, true))
             return;
     }
-
-    set->finalizeOrderedSet();
 
     prepared_sets[subquery_or_table_name.get()] = std::move(set);
 }
