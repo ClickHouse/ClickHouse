@@ -17,6 +17,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Common/DNSCache.h>
+#include <Common/Macros.h>
 
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
@@ -1094,20 +1095,17 @@ private:
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
 {
-    ASTPtr query_ptr;
+    ASTPtr query_ptr = query_ptr_->clone();
 
     /// Remove FORMAT ... INTO OUTFILE if exists
     if (dynamic_cast<const ASTQueryWithOutput *>(query_ptr_.get()))
     {
-        query_ptr = query_ptr_->clone();
         auto query_with_output = dynamic_cast<ASTQueryWithOutput *>(query_ptr.get());
         query_with_output->out_file = nullptr;
         query_with_output->format = nullptr;
     }
-    else
-        query_ptr = query_ptr_;
 
-    auto query = dynamic_cast<const ASTQueryWithOnCluster *>(query_ptr.get());
+    auto query = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
     if (!query)
     {
         throw Exception("Distributed execution is not supported for such DDL queries", ErrorCodes::NOT_IMPLEMENTED);
@@ -1122,6 +1120,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
+    query->cluster = context.getMacros().expand(query->cluster);
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 

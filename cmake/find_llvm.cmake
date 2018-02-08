@@ -15,7 +15,7 @@ if (USE_EMBEDDED_COMPILER)
     #  llvm_map_components_to_libraries - Maps LLVM used components to required libraries.
     #  Usage: llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES core jit interpreter native ...)
 
-    if (CMAKE_SYSTEM MATCHES "FreeBSD")
+    if (ARCH_FREEBSD)
        set(LLVM_VERSION_POSTFIX "50" CACHE INTERNAL "")
     else()
        set(LLVM_VERSION_POSTFIX "-5.0" CACHE INTERNAL "")

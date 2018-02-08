@@ -176,14 +176,34 @@ private:
 
     time_t time_of_merge;
 
+    /// No data has been read.
+    bool is_first = true;
+
     /// All data has been read.
     bool finished = false;
 
-    RowRef current_selected_row;        /// Last row with maximum version for current primary key.
-    UInt64 current_max_version = 0;
+    /* | path | time | rounded_time | version | value | unmodified |
+     * -----------------------------------------------------------------------------------
+     * | A    | 11   | 10           | 1       | 1     | a          |                     |
+     * | A    | 11   | 10           | 3       | 2     | b          |> subgroup(A, 11)    |
+     * | A    | 11   | 10           | 2       | 3     | c          |                     |> group(A, 10)
+     * ----------------------------------------------------------------------------------|>
+     * | A    | 12   | 10           | 0       | 4     | d          |                     |> Outputs (A, 10, avg(2, 5), a)
+     * | A    | 12   | 10           | 1       | 5     | e          |> subgroup(A, 12)    |
+     * -----------------------------------------------------------------------------------
+     * | A    | 21   | 20           | 1       | 6     | f          |
+     * | B    | 11   | 10           | 1       | 7     | g          |
+     * ...
+     */
 
-    bool is_first = true;
-    StringRef current_path;
+    /// Path name of current bucket
+    StringRef current_group_path;
+
+    /// Last row with maximum version for current primary key (time bucket).
+    RowRef current_subgroup_newest_row;
+    UInt64 current_subgroup_max_version = 0;
+
+    /// Time of last read row
     time_t current_time = 0;
     time_t current_time_rounded = 0;
 
@@ -198,10 +218,11 @@ private:
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Insert the values into the resulting columns, which will not be changed in the future.
-    void startNextRow(MutableColumns & merged_columns, SortCursor & cursor, const Graphite::Pattern * next_pattern);
+    template <typename TSortCursor>
+    void startNextGroup(MutableColumns & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern);
 
     /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
-    void finishCurrentRow(MutableColumns & merged_columns);
+    void finishCurrentGroup(MutableColumns & merged_columns);
 
     /// Update the state of the aggregate function with the new `value`.
     void accumulateRow(RowRef & row);

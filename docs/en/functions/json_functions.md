@@ -5,7 +5,7 @@ In Yandex.Metrica, JSON is transmitted by users as session parameters. There are
 The following assumptions are made:
 
 1. The field name (function argument) must be a constant.
-2. The field name is somehow canonically encoded in JSON. For example: `visitParamHas('{"abc":"def"}', 'abc') = 1`, но `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+2. The field name is somehow canonically encoded in JSON. For example: `visitParamHas('{"abc":"def"}', 'abc') = 1`, but `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
 3. Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
 4. The JSON doesn't have space characters outside of string literals.
 

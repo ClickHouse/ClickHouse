@@ -1148,7 +1148,10 @@ private:
 
             ++rows_added;
             if (rows_added == max_block_size)
+            {
+                ++it;
                 break;
+            }
         }
 
         return rows_added;

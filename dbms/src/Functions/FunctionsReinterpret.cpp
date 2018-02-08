@@ -19,6 +19,7 @@ void registerFunctionsReinterpret(FunctionFactory & factory)
     factory.registerFunction<FunctionReinterpretAsDate>();
     factory.registerFunction<FunctionReinterpretAsDateTime>();
     factory.registerFunction<FunctionReinterpretAsString>();
+    factory.registerFunction<FunctionReinterpretAsFixedString>();
 }
 
 }

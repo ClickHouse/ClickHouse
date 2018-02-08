@@ -48,7 +48,7 @@
 #include <Dictionaries/IDictionary.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/formatAST.h>
 
@@ -1373,8 +1373,9 @@ void ExpressionAnalyzer::optimizeGroupBy()
     if (!(select_query && select_query->group_expression_list))
         return;
 
-    const auto is_literal = [] (const ASTPtr& ast) {
-        return typeid_cast<const ASTLiteral*>(ast.get());
+    const auto is_literal = [] (const ASTPtr & ast)
+    {
+        return typeid_cast<const ASTLiteral *>(ast.get());
     };
 
     auto & group_exprs = select_query->group_expression_list->children;
@@ -1527,6 +1528,26 @@ void ExpressionAnalyzer::makeSetsForIndex()
         makeSetsForIndexImpl(ast, storage->getSampleBlock());
 }
 
+
+void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name)
+{
+    BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
+
+    SetPtr set = std::make_shared<Set>(settings.limits);
+
+    while (Block block = res.in->read())
+    {
+        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+        if (!set->insertFromBlock(block, true))
+            return;
+    }
+
+    set->finalizeOrderedSet();
+
+    prepared_sets[subquery_or_table_name.get()] = std::move(set);
+}
+
+
 void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block)
 {
     for (auto & child : node->children)
@@ -1538,18 +1559,27 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         const IAST & args = *func->arguments;
         const ASTPtr & arg = args.children.at(1);
 
-        if (!prepared_sets.count(arg.get()) /// Not already prepared.
-            && !typeid_cast<ASTSubquery *>(arg.get()) && !typeid_cast<ASTIdentifier *>(arg.get()))
+        if (!prepared_sets.count(arg.get())) /// Not already prepared.
         {
-            try
+            if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
             {
-                makeExplicitSet(func, sample_block, true);
+                if (settings.use_index_for_in_with_subqueries && storage->mayBenefitFromIndexForIn(args.children.at(0)))
+                    tryMakeSetFromSubquery(arg);
             }
-            catch (const Exception & e)
+            else
             {
-                /// in `sample_block` there are no columns that add `getActions`
-                if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
-                    throw;
+                try
+                {
+                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(columns, settings);
+                    getRootActions(func->arguments->children.at(0), true, false, temp_actions);
+                    makeExplicitSet(func, temp_actions->getSampleBlock(), true);
+                }
+                catch (const Exception & e)
+                {
+                    /// in `sample_block` there are no columns that add `getActions`
+                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
+                        throw;
+                }
             }
         }
     }
@@ -1620,10 +1650,10 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
 
             /** Why is LazyBlockInputStream used?
               *
-              * The fact is that when processing a request of the form
+              * The fact is that when processing a query of the form
               *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
               *  if the distributed remote_test table contains localhost as one of the servers,
-              *  the request will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
+              *  the query will be interpreted locally again (and not sent over TCP, as in the case of a remote server).
               *
               * The query execution pipeline will be:
               * CreatingSets
@@ -1632,7 +1662,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
               *   reading from the table _data1, creating the set (2)
               *   read from the table subordinate to remote_test.
               *
-              * (The second part of the pipeline under CreateSets is a reinterpretation of the request inside StorageDistributed,
+              * (The second part of the pipeline under CreateSets is a reinterpretation of the query inside StorageDistributed,
               *  the query differs in that the database name and tables are replaced with subordinates, and the subquery is replaced with _data1.)
               *
               * But when creating the pipeline, when creating the source (2), it will be found that the _data1 table is empty
@@ -1912,11 +1942,10 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
                 bool found = false;
                 for (const auto & column_name_type : columns)
                 {
-                    String table_name = Nested::extractTableName(column_name_type.name);
-                    String column_name = Nested::extractElementName(column_name_type.name);
-                    if (table_name == source_name)
+                    auto splitted = Nested::splitName(column_name_type.name);
+                    if (splitted.first == source_name && !splitted.second.empty())
                     {
-                        array_join_result_to_source[Nested::concatenateName(result_name, column_name)] = column_name_type.name;
+                        array_join_result_to_source[Nested::concatenateName(result_name, splitted.second)] = column_name_type.name;
                         found = true;
                         break;
                     }
@@ -1939,38 +1968,33 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
     {
         if (node->kind == ASTIdentifier::Column)
         {
-            String table_name = Nested::extractTableName(node->name);
+            auto splitted = Nested::splitName(node->name);  /// ParsedParams, Key1
 
             if (array_join_alias_to_name.count(node->name))
             {
                 /// ARRAY JOIN was written with an array column. Example: SELECT K1 FROM ... ARRAY JOIN ParsedParams.Key1 AS K1
                 array_join_result_to_source[node->name] = array_join_alias_to_name[node->name];    /// K1 -> ParsedParams.Key1
             }
-            else if (array_join_alias_to_name.count(table_name))
+            else if (array_join_alias_to_name.count(splitted.first) && !splitted.second.empty())
             {
                 /// ARRAY JOIN was written with a nested table. Example: SELECT PP.KEY1 FROM ... ARRAY JOIN ParsedParams AS PP
-                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[node->name]    /// PP.Key1 -> ParsedParams.Key1
-                    = Nested::concatenateName(array_join_alias_to_name[table_name], nested_column);
+                    = Nested::concatenateName(array_join_alias_to_name[splitted.first], splitted.second);
             }
             else if (array_join_name_to_alias.count(node->name))
             {
                 /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams.Key1 AS PP.Key1.
                   * That is, the query uses the original array, replicated by itself.
                   */
-
-                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
                     array_join_name_to_alias[node->name]] = node->name;
             }
-            else if (array_join_name_to_alias.count(table_name))
+            else if (array_join_name_to_alias.count(splitted.first) && !splitted.second.empty())
             {
                 /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
                  */
-
-                String nested_column = Nested::extractElementName(node->name);    /// Key1
                 array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-                Nested::concatenateName(array_join_name_to_alias[table_name], nested_column)] = node->name;
+                Nested::concatenateName(array_join_name_to_alias[splitted.first], splitted.second)] = node->name;
             }
         }
     }

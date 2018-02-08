@@ -8,7 +8,9 @@
 #include <Storages/VirtualColumnFactory.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/StorageFactory.h>
 
+#include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
@@ -26,10 +28,11 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
-#include <Interpreters/ClusterProxy/AlterStreamFactory.h>
+#include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>
 
@@ -47,6 +50,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int STORAGE_REQUIRES_PARAMETER;
+    extern const int BAD_ARGUMENTS;
+    extern const int READONLY;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -127,25 +134,6 @@ StorageDistributed::~StorageDistributed() = default;
 StorageDistributed::StorageDistributed(
     const std::string & name_,
     const NamesAndTypesList & columns_,
-    const String & remote_database_,
-    const String & remote_table_,
-    const String & cluster_name_,
-    const Context & context_,
-    const ASTPtr & sharding_key_,
-    const String & data_path_)
-    : name(name_), columns(columns_),
-    remote_database(remote_database_), remote_table(remote_table_),
-    context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
-    sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-    path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
-{
-}
-
-
-StorageDistributed::StorageDistributed(
-    const std::string & name_,
-    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
@@ -155,10 +143,10 @@ StorageDistributed::StorageDistributed(
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_),
     remote_database(remote_database_), remote_table(remote_table_),
-    context(context_), cluster_name(cluster_name_), has_sharding_key(sharding_key_),
+    context(context_), cluster_name(context.getMacros().expand(cluster_name_)), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
@@ -175,8 +163,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     const Context & context_)
 {
     auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        name_, columns_, remote_database_,
-        remote_table_, String{}, context_);
+        name_, columns_, NamesAndTypesList(), NamesAndTypesList(), ColumnDefaults(),
+        remote_database_, remote_table_, String{}, context_, ASTPtr(), String());
 
     res->owned_cluster = owned_cluster_;
 
@@ -211,7 +199,7 @@ BlockInputStreams StorageDistributed::read(
         external_tables = context.getExternalTables();
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
-        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
+        processed_stage, QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::executeQuery(
             select_stream_factory, cluster, modified_query_ast, context, settings);
@@ -220,25 +208,29 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
+    auto cluster = (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
 
-    /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
-    bool write_enabled = (!path.empty() || owned_cluster)
-                         && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
+    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
+    {
+        throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
 
-    if (!write_enabled)
-        throw Exception{
-            "Method write is not supported by storage " + getName() +
-            " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER};
+    /// If sharding key is not specified, then you can only write to a shard containing only one shard
+    if (!has_sharding_key && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    {
+        throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
+                        ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+    }
 
+    /// Force sync insertion if it is remote() table function
     bool insert_sync = settings.insert_distributed_sync || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, insert_sync, timeout);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings, insert_sync, timeout);
 }
 
 
@@ -365,6 +357,64 @@ void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::str
     requireConnectionPool(name, storage);
     if (!directory_monitor)
         directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+}
+
+
+void registerStorageDistributed(StorageFactory & factory)
+{
+    factory.registerStorage("Distributed", [](const StorageFactory::Arguments & args)
+    {
+        /** Arguments of engine is following:
+          * - name of cluster in configuration;
+          * - name of remote database;
+          * - name of remote table;
+          *
+          * Remote database may be specified in following form:
+          * - identifier;
+          * - constant expression with string result, like currentDatabase();
+          * -- string literal as specific case;
+          * - empty string means 'use default database from cluster'.
+          */
+
+        ASTs & engine_args = args.engine_args;
+
+        if (!(engine_args.size() == 3 || engine_args.size() == 4))
+            throw Exception("Storage Distributed requires 3 or 4 parameters"
+                " - name of configuration section with list of remote servers, name of remote database, name of remote table,"
+                " sharding key expression (optional).", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        String cluster_name = getClusterName(*engine_args[0]);
+
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+        engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+
+        String remote_database = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String remote_table = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
+
+        const auto & sharding_key = engine_args.size() == 4 ? engine_args[3] : nullptr;
+
+        /// Check that sharding_key exists in the table and has numeric type.
+        if (sharding_key)
+        {
+            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns).getActions(true);
+            const Block & block = sharding_expr->getSampleBlock();
+
+            if (block.columns() != 1)
+                throw Exception("Sharding expression must return exactly one column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+
+            auto type = block.getByPosition(0).type;
+
+            if (!type->isValueRepresentedByInteger())
+                throw Exception("Sharding expression has type " + type->getName() +
+                    ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
+        }
+
+        return StorageDistributed::create(
+            args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            remote_database, remote_table, cluster_name,
+            args.context, sharding_key, args.data_path);
+    });
 }
 
 }

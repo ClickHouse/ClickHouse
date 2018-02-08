@@ -1,4 +1,4 @@
-#include <Common/ZooKeeper/Lock.h>
+#include "Lock.h"
 
 using namespace zkutil;
 

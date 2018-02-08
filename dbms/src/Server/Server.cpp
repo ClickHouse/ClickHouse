@@ -15,7 +15,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/config.h>
@@ -36,6 +36,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Storages/registerStorages.h>
 
 #include "ConfigReloader.h"
 #include "HTTPHandlerFactory.h"
@@ -87,6 +88,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerStorages();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
 
@@ -355,8 +357,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
                     Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("http_port"));
                     Poco::Net::ServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.receive_timeout);
-                    http_socket.setSendTimeout(settings.send_timeout);
+                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
+                    http_socket.setSendTimeout(settings.http_send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
@@ -374,8 +376,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     std::call_once(ssl_init_once, SSLInit);
                     Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
                     Poco::Net::SecureServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.receive_timeout);
-                    http_socket.setSendTimeout(settings.send_timeout);
+                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
+                    http_socket.setSendTimeout(settings.http_send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
@@ -436,8 +438,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
                     Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_http_port"));
                     Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
-                    interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
-                    interserver_io_http_socket.setSendTimeout(settings.send_timeout);
+                    interserver_io_http_socket.setReceiveTimeout(settings.http_receive_timeout);
+                    interserver_io_http_socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
@@ -449,7 +451,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
+                if (try_listen && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
                     LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "

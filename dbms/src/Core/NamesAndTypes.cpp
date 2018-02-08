@@ -89,9 +89,16 @@ Names NamesAndTypesList::getNames() const
     Names res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
-    {
         res.push_back(column.name);
-    }
+    return res;
+}
+
+DataTypes NamesAndTypesList::getTypes() const
+{
+    DataTypes res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.push_back(column.type);
     return res;
 }
 

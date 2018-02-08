@@ -124,6 +124,14 @@ int pthread_setname_np(pthread_t thread, const char *name) { return 0; }
 int pthread_getname_np(pthread_t thread, char *name, size_t len) { name[0] = '\0'; return 0; };
 
 
+#define SHMDIR "/dev/shm/"
+const char * __shm_directory(size_t * len)
+{
+    *len = sizeof(SHMDIR) - 1;
+    return SHMDIR;
+}
+
+
 #if defined (__cplusplus)
 }
 #endif

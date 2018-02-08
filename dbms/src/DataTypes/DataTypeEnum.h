@@ -58,7 +58,7 @@ private:
     void fillMaps();
 
 public:
-    DataTypeEnum(const Values & values_);
+    explicit DataTypeEnum(const Values & values_);
     DataTypeEnum(const DataTypeEnum & other);
 
     const Values & getValues() const { return values; }

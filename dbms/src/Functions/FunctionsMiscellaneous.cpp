@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int FUNCTION_IS_SPECIAL;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_SLOW;
 }
 
 /** Helper functions
@@ -549,13 +550,20 @@ public:
 };
 
 
+enum class FunctionSleepVariant
+{
+    PerBlock,
+    PerRow
+};
+
+template <FunctionSleepVariant variant>
 class FunctionSleep : public IFunction
 {
 public:
-    static constexpr auto name = "sleep";
+    static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionSleep>();
+        return std::make_shared<FunctionSleep<variant>>();
     }
 
     /// Get the name of the function.
@@ -617,7 +625,15 @@ public:
 
         /// We do not sleep if the block is empty.
         if (size > 0)
-            usleep(static_cast<unsigned>(seconds * 1e6));
+        {
+            unsigned useconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
+
+            /// When sleeping, the query cannot be cancelled. For abitily to cancel query, we limit sleep time.
+            if (useconds > 3000000)   /// The choice is arbitary
+                throw Exception("The maximum sleep time is 3000000 microseconds. Requested: " + toString(useconds), ErrorCodes::TOO_SLOW);
+
+            usleep(useconds);
+        }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
         block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, UInt64(0))->convertToFullColumnIfConst();
@@ -1380,7 +1396,8 @@ public:
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
-        auto deleter = [&agg_func](char * ptr) {
+        auto deleter = [&agg_func](char * ptr)
+        {
             agg_func.destroy(ptr);
             free(ptr);
         };
@@ -1513,7 +1530,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr res;
-        dispatchForSourceType(*arguments[0], [&](auto field_type_tag) {
+        dispatchForSourceType(*arguments[0], [&](auto field_type_tag)
+        {
             res = std::make_shared<DataTypeNumber<DstFieldType<decltype(field_type_tag)>>>();
         });
 
@@ -1751,7 +1769,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionBlockNumber>();
     factory.registerFunction<FunctionRowNumberInBlock>();
     factory.registerFunction<FunctionRowNumberInAllBlocks>();
-    factory.registerFunction<FunctionSleep>();
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>();
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
     factory.registerFunction<FunctionMaterialize>();
     factory.registerFunction<FunctionIgnore>();
     factory.registerFunction<FunctionIndexHint>();

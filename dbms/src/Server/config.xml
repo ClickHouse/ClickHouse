@@ -326,5 +326,5 @@
     <!-- Directory in <clickhouse-path> containing schema files for various input formats.
          The directory will be created if it doesn't exist.
       -->
-    <format_schema_path>format_schemas/</format_schema_path>
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 </yandex>

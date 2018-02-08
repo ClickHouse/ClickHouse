@@ -41,63 +41,59 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 }
 
 
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
+static Block createBlockWithNestedColumnsImpl(const Block & block, const std::unordered_set<size_t> & args)
 {
-    std::sort(args.begin(), args.end());
-
     Block res;
     size_t rows = block.rows();
     size_t columns = block.columns();
 
-    size_t j = 0;
     for (size_t i = 0; i < columns; ++i)
     {
         const auto & col = block.getByPosition(i);
-        bool is_inserted = false;
 
-        if ((j < args.size()) && (i == args[j]))
+        if (args.count(i) && col.type->isNullable())
         {
-            ++j;
+            const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
 
-            if (col.type->isNullable())
+            if (!col.column)
             {
-                const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
-
-                if (!col.column)
-                {
-                    res.insert(i, {nullptr, nested_type, col.name});
-                    is_inserted = true;
-                }
-                else if (col.column->isColumnNullable())
-                {
-                    const auto & nested_col = static_cast<const ColumnNullable &>(*col.column).getNestedColumnPtr();
-
-                    res.insert(i, {nested_col, nested_type, col.name});
-                    is_inserted = true;
-                }
-                else if (col.column->isColumnConst())
-                {
-                    const auto & nested_col = static_cast<const ColumnNullable &>(
-                        static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumnPtr();
-
-                    res.insert(i, { ColumnConst::create(nested_col, rows), nested_type, col.name});
-                    is_inserted = true;
-                }
+                res.insert({nullptr, nested_type, col.name});
             }
-        }
+            else if (col.column->isColumnNullable())
+            {
+                const auto & nested_col = static_cast<const ColumnNullable &>(*col.column).getNestedColumnPtr();
 
-        if (!is_inserted)
-            res.insert(i, col);
+                res.insert({nested_col, nested_type, col.name});
+            }
+            else if (col.column->isColumnConst())
+            {
+                const auto & nested_col = static_cast<const ColumnNullable &>(
+                    static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumnPtr();
+
+                res.insert({ ColumnConst::create(nested_col, rows), nested_type, col.name});
+            }
+            else
+                throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
+        }
+        else
+            res.insert(col);
     }
 
     return res;
 }
 
 
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result)
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args)
 {
-    args.push_back(result);
-    return createBlockWithNestedColumns(block, args);
+    std::unordered_set<size_t> args_set(args.begin(), args.end());
+    return createBlockWithNestedColumnsImpl(block, args_set);
+}
+
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result)
+{
+    std::unordered_set<size_t> args_set(args.begin(), args.end());
+    args_set.insert(result);
+    return createBlockWithNestedColumnsImpl(block, args_set);
 }
 
 }

@@ -250,7 +250,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY = 242;
     extern const int NOT_ENOUGH_SPACE = 243;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR = 244;
-    extern const int INVALID_NESTED_NAME = 245;
     extern const int CORRUPTED_DATA = 246;
     extern const int INCORRECT_MARK = 247;
     extern const int INVALID_PARTITION_VALUE = 248;
@@ -365,6 +364,8 @@ namespace ErrorCodes
     extern const int MULTIPLE_STREAMS_REQUIRED = 385;
     extern const int NO_COMMON_TYPE = 386;
     extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS = 387;
+    extern const int CANNOT_ASSIGN_OPTIMIZE = 388;
+    extern const int INSERT_WAS_DEDUPLICATED = 389;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
