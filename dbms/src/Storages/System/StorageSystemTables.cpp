@@ -109,6 +109,7 @@ protected:
 
 }
 
+
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_)
 {
@@ -120,7 +121,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 
     virtual_columns = {
         {std::make_shared<DataTypeDateTime>(), "metadata_modification_time"},
-        {std::make_shared<DataTypeString>(), "query_create_table"},
+        {std::make_shared<DataTypeString>(), "create_table_query"},
         {std::make_shared<DataTypeString>(), "engine_full"}
     };
 }
@@ -150,11 +151,11 @@ BlockInputStreams StorageSystemTables::read(
 
     Names real_column_names;
     bool has_metadata_modification_time = false;
-    bool has_query_create_table = false;
+    bool has_create_table_query = false;
     bool has_engine_full = false;
 
     VirtualColumnsProcessor virtual_columns_processor(virtual_columns);
-    real_column_names = virtual_columns_processor.process(column_names, {&has_metadata_modification_time, &has_query_create_table, &has_engine_full});
+    real_column_names = virtual_columns_processor.process(column_names, {&has_metadata_modification_time, &has_create_table_query, &has_engine_full});
     check(real_column_names);
 
     Block res_block = getSampleBlock();
@@ -187,7 +188,7 @@ BlockInputStreams StorageSystemTables::read(
             if (has_metadata_modification_time)
                 res_columns[j++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
 
-            if (has_query_create_table || has_engine_full)
+            if (has_create_table_query || has_engine_full)
             {
                 ASTPtr ast;
 
@@ -201,7 +202,7 @@ BlockInputStreams StorageSystemTables::read(
                         throw;
                 }
 
-                if (has_query_create_table)
+                if (has_create_table_query)
                     res_columns[j++]->insert(ast ? queryToString(ast) : "");
 
                 if (has_engine_full)

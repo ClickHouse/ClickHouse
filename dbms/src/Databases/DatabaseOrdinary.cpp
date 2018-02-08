@@ -413,7 +413,7 @@ ASTPtr DatabaseOrdinary::getCreateQuery(
     {
         ast = getCreateQueryImpl(metadata_path, table_name);
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         /// Handle system.* tables for which there are no table.sql files
         if (e.code() == ErrorCodes::FILE_DOESNT_EXIST && tryGetTable(context, table_name) != nullptr)

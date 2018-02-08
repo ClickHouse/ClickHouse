@@ -1,7 +1,6 @@
 #include <common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
-#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
