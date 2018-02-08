@@ -19,6 +19,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// The simplest executable object.
+/// Motivation:
+///  * Prepare something heavy once before main execution circle instead of doing it for each block.
+///  * Provide const interface for IBaseFunction (later).
 class IPreparedFunction
 {
 public:
@@ -64,7 +68,7 @@ private:
     bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result);
 };
 
-
+/// Function with known arguments and return type.
 class IFunctionBase
 {
 public:
@@ -153,6 +157,7 @@ public:
 
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
+/// Creates IBaseFunction from argument types list.
 class IFunctionBuilder
 {
 public:
@@ -170,7 +175,7 @@ public:
     /// Throw if number of arguments is incorrect. Default implementation will check only in non-variadic case.
     virtual void checkNumberOfArguments(size_t number_of_arguments) const = 0;
 
-    /// Check arguments and return IFunction.
+    /// Check arguments and return IBaseFunction.
     virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const = 0;
 
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -234,7 +239,7 @@ protected:
     }
 };
 
-
+/// Previous function interface.
 class IFunction : public std::enable_shared_from_this<IFunction>,
                   public FunctionBuilderImpl, public IFunctionBase, public PreparedFunctionImpl
 {
@@ -275,6 +280,8 @@ protected:
         throw Exception("buildImpl is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
+
+/// Wrappers over IFunction.
 
 class DefaultExecutable final : public PreparedFunctionImpl
 {
@@ -342,7 +349,6 @@ public:
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
 protected:
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
 
