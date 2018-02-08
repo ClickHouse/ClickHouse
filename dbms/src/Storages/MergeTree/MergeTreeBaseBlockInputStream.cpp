@@ -237,14 +237,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                   If this filter is PREWHERE 0, MergeTree Stream can be marked as done,
                   and this task can be clear. 
                   If we don't mark this task finished here, readImpl could
-        		  jump into endless loop.
+                  jump into endless loop.
                   Error scenario:
                   select * from table where isNull(NOT_NULLABLE_COLUMN) AND OTHER PRED;
                   and isNull pred is promoted to PREWHERE.
                   (though it is difficult to reproduce)
                 */	
                 task->current_range_reader.reset();
-        		task->mark_ranges.clear();
+                task->mark_ranges.clear();
                 res.clear();
                 return res;
             }
