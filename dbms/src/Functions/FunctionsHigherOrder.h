@@ -1,13 +1,11 @@
 #pragma once
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeExpression.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnExpression.h>
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>

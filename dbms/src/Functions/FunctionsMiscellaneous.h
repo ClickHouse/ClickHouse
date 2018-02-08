@@ -10,32 +10,7 @@
 namespace DB
 {
 
-/** Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
-  * Used only as prerequisites for higher-order functions.
-  */
-class FunctionReplicate : public IFunction
-{
-public:
-    static constexpr auto name = "replicate";
-    static FunctionPtr create(const Context & context);
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
-};
-
+/// Executes expression. Uses for lambda functions implementation. Isn't can't be created from factory.
 class FunctionExpression : public IFunctionBase, public IPreparedFunction,
                            public std::enable_shared_from_this<FunctionExpression>
 {
@@ -64,6 +39,7 @@ public:
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto & argument = block.getByPosition(arguments[i]);
+            /// Replace column name with value from argument_names.
             expr_block.insert({argument.column, argument.type, argument_names[i]});
         }
 
@@ -80,6 +56,10 @@ private:
     std::string return_name;
 };
 
+/// Captures columns which are used bu lambda function but not in argument list.
+/// Returns ColumnFunction with captured columns.
+/// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
+///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
 class FunctionCapture : public IFunctionBase, public IPreparedFunction, public FunctionBuilderImpl,
                         public std::enable_shared_from_this<FunctionCapture>
 {
@@ -91,6 +71,7 @@ public:
             , function_return_type(function_return_type), expression_return_name(expression_return_name)
     {
         const auto & all_arguments = expression_actions->getRequiredColumnsWithTypes();
+
         std::unordered_map<std::string, DataTypePtr> arguments_map;
         for (const auto & arg : all_arguments)
             arguments_map[arg.name] = arg.type;

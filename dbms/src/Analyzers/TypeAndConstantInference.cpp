@@ -128,15 +128,15 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
 {
     ASTFunction * function = static_cast<ASTFunction *>(ast.get());
 
-    /// Special case for lambda functions. Lambda function has special return type "Expression".
-    /// We first create info with Expression of unspecified arguments, and will specify them later.
+    /// Special case for lambda functions. Lambda function has special return type "Function".
+    /// We first create info with Function of unspecified arguments, and will specify them later.
     if (function->name == "lambda")
     {
         size_t number_of_lambda_parameters = AnalyzeLambdas::extractLambdaParameters(function->arguments->children.at(0)).size();
 
         TypeAndConstantInference::ExpressionInfo expression_info;
         expression_info.node = ast;
-        expression_info.data_type = std::make_unique<DataTypeExpression>(DataTypes(number_of_lambda_parameters));
+        expression_info.data_type = std::make_unique<DataTypeFunction>(DataTypes(number_of_lambda_parameters));
         info.emplace(column_name, std::move(expression_info));
         return;
     }
