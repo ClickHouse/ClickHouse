@@ -20,7 +20,6 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTWeightedZooKeeperPath.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 
