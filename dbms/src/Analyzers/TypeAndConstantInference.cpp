@@ -18,7 +18,6 @@
 #include <Common/FieldVisitors.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeExpression.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
