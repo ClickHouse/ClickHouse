@@ -6,7 +6,6 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTWeightedZooKeeperPath.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/copyData.h>
