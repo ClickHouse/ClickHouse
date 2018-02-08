@@ -552,7 +552,7 @@ The end slash is mandatory.
 
 ## query_log
 
-Setting for logging queries received with the [log_queries=1](#settings-log_queries) setting.
+Setting for logging queries received with the [log_queries=1](../settings/settings.md#settings_settings-log_queries) setting.
 
 Queries are logged in the ClickHouse table, not in a separate file.
 
