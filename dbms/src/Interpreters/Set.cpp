@@ -505,23 +505,23 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container & 
     }
 }
 
-bool MergeTreeSetIndex::PKTuplePositionMapping::operator< (const PKTuplePositionMapping & other) const
-{
-    return std::forward_as_tuple(pk_index, tuple_index) < std::forward_as_tuple(other.pk_index, other.tuple_index);
-}
 
 MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && index_mapping_)
     : ordered_set(),
     indexes_mapping(std::move(index_mapping_))
 {
-    std::sort(indexes_mapping.begin(), indexes_mapping.end());
+    std::sort(indexes_mapping.begin(), indexes_mapping.end(),
+        [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
+        {
+            return std::forward_as_tuple(l.pk_index, l.tuple_index) < std::forward_as_tuple(r.pk_index, r.tuple_index);
+        });
+
     std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
         {
             return l.pk_index == r.pk_index;
-        }
-    );
+        });
 
     for (size_t i = 0; i < set_elements.size(); ++i)
     {
@@ -553,14 +553,12 @@ BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_rang
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
     {
         std::optional<Range> new_range = PKCondition::applyMonotonicFunctionsChainToRange(
-                key_ranges[indexes_mapping[i].pk_index],
-                indexes_mapping[i].functions,
-                indexes_mapping[i].data_type);
+            key_ranges[indexes_mapping[i].pk_index],
+            indexes_mapping[i].functions,
+            indexes_mapping[i].data_type);
 
         if (!new_range)
-        {
             return {true, true};
-        }
 
         /** A range that ends in (x, y, ..., +inf) exclusive is the same as a range
           * that ends in (x, y, ..., -inf) inclusive and vice versa for the left bound.
@@ -568,37 +566,31 @@ BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_rang
         if (new_range->left_bounded)
         {
             if (!new_range->left_included)
-            {
                 invert_left_infinities = true;
-            }
+
             left_point.push_back(FieldWithInfinity(new_range->left));
         }
         else
         {
             if (invert_left_infinities)
-            {
                 left_point.push_back(FieldWithInfinity::getPlusinfinity());
-            } else {
+            else
                 left_point.push_back(FieldWithInfinity::getMinusInfinity());
-            }
         }
 
         if (new_range->right_bounded)
         {
             if (!new_range->right_included)
-            {
                 invert_right_infinities = true;
-            }
+
             right_point.push_back(FieldWithInfinity(new_range->right));
         }
         else
         {
             if (invert_right_infinities)
-            {
                 right_point.push_back(FieldWithInfinity::getMinusInfinity());
-            } else {
+            else
                 right_point.push_back(FieldWithInfinity::getPlusinfinity());
-            }
         }
     }
 
@@ -610,8 +602,8 @@ BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_rang
     auto left_lower = std::lower_bound(ordered_set.begin(), ordered_set.end(), left_point);
     auto right_lower = std::lower_bound(ordered_set.begin(), ordered_set.end(), right_point);
     return {left_lower != right_lower
-            || (left_lower != ordered_set.end() && *left_lower == left_point)
-            || (right_lower != ordered_set.end() && *right_lower == right_point), true};
+        || (left_lower != ordered_set.end() && *left_lower == left_point)
+        || (right_lower != ordered_set.end() && *right_lower == right_point), true};
 }
 
 }

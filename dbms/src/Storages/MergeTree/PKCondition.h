@@ -190,7 +190,8 @@ public:
 class FieldWithInfinity
 {
 public:
-    enum Type {
+    enum Type
+    {
         MINUS_INFINITY = -1,
         NORMAL = 0,
         PLUS_INFINITY = 1
