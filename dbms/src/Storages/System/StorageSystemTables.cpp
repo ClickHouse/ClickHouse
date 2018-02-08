@@ -7,7 +7,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -19,7 +19,8 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
-        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()}
+        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
+        {"is_temporary", std::make_shared<DataTypeUInt8>()}
     };
 }
 
@@ -54,6 +55,7 @@ BlockInputStreams StorageSystemTables::read(
     for (size_t row_number = 0; row_number < filtered_databases_column->size(); ++row_number)
     {
         std::string database_name = filtered_databases_column->getDataAt(row_number).toString();
+
         auto database = context.tryGetDatabase(database_name);
 
         if (!database)
@@ -68,9 +70,27 @@ BlockInputStreams StorageSystemTables::read(
             res_columns[0]->insert(database_name);
             res_columns[1]->insert(table_name);
             res_columns[2]->insert(iterator->table()->getName());
-            res_columns[3]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+            res_columns[3]->insert(
+                static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+            res_columns[4]->insert(UInt64(0));
         }
     }
+
+    if (context.hasSessionContext())
+    {
+        Tables external_tables = context.getSessionContext().getExternalTables();
+
+        for (auto table : external_tables)
+        {
+            res_columns[0]->insert(String{});
+            res_columns[1]->insert(table.first);
+            res_columns[2]->insert(table.second->getName());
+            res_columns[3]->insert(UInt64(0));
+            res_columns[4]->insert(UInt64(1));
+        }
+    }
+
+
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
