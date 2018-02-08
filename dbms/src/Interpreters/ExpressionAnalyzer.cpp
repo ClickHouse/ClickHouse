@@ -158,11 +158,12 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const StoragePtr & storage_,
     const NamesAndTypesList & columns_,
     size_t subquery_depth_,
-    bool do_global_, SubqueriesForSets subquery_for_set_)
+    bool do_global_,
+    const SubqueriesForSets & subqueries_for_set_)
     : ast(ast_), context(context_), settings(context.getSettings()),
     subquery_depth(subquery_depth_), columns(columns_),
     storage(storage_ ? storage_ : getTable()),
-    do_global(do_global_), subqueries_for_sets(subquery_for_set_)
+    do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
 {
     init();
 }

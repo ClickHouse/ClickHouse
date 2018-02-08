@@ -72,7 +72,8 @@ public:
         const StoragePtr & storage_,
         const NamesAndTypesList & columns_,
         size_t subquery_depth_ = 0,
-        bool do_global_ = false, SubqueriesForSets subquery_for_set_ = {});
+        bool do_global_ = false,
+        const SubqueriesForSets & subqueries_for_set_ = {});
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
