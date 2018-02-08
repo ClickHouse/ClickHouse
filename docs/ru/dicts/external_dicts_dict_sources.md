@@ -132,8 +132,9 @@
 
     sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 
-Настройка `/etc/odbc.ini` (или `~/.odbc.ini`): :
+Настройка `/etc/odbc.ini` (или `~/.odbc.ini`):
 
+```
     [DEFAULT]
     Driver = myconnection
 
@@ -150,6 +151,7 @@
     RowVersioning       = No
     ShowSystemTables    = No
     ConnSettings        =
+```
 
 Конфигурация словаря в ClickHouse:
 

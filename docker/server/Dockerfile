@@ -12,8 +12,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 
-RUN sed -i 's,<listen_host>127.0.0.1</listen_host>,<listen_host>0.0.0.0</listen_host>,' /etc/clickhouse-server/config.xml && \
-    sed -i 's,<listen_host>::1</listen_host>,,' /etc/clickhouse-server/config.xml
+COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 RUN chown -R clickhouse /etc/clickhouse-server/
 
 USER clickhouse

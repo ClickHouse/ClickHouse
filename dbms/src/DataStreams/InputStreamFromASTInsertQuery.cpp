@@ -1,9 +1,19 @@
+#include <Parsers/ASTInsertQuery.h>
+#include <Interpreters/Context.h>
+#include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <DataStreams/BlockIO.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     const ASTPtr & ast, ReadBuffer & input_buffer_tail_part, const BlockIO & streams, Context & context)

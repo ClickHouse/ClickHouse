@@ -309,7 +309,7 @@ public:
     {
         /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
-            bucket_count == 2     ? 0.351 :
+            bucket_count == 2  ? 0.351 :
             bucket_count == 4  ? 0.532 :
             bucket_count == 8  ? 0.626 :
             bucket_count == 16 ? 0.673 :
@@ -516,10 +516,8 @@ private:
     }
 
 private:
-    /// Maximum rank.
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
-    /// Rank storage.
     RankStore rank_store;
 
     /// Expression's denominator for HyperLogLog algorithm.

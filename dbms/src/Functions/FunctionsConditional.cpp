@@ -218,7 +218,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         types_of_branches.emplace_back(arg);
     });
 
-    DataTypePtr common_type_of_branches = getLeastCommonType(types_of_branches);
+    DataTypePtr common_type_of_branches = getLeastSupertype(types_of_branches);
 
     return have_nullable_condition
         ? makeNullable(common_type_of_branches)

@@ -17,7 +17,8 @@ struct DataHolder
     ClickHouseLibrary::ColumnsUInt64 columns;
 };
 
-extern "C" {
+extern "C"
+{
 
 void * ClickHouseDictionary_v1_loadIds(
     void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * columns, const struct ClickHouseLibrary::VectorUInt64 * ids)

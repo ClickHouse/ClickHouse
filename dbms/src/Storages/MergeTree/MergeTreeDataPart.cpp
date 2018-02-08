@@ -10,7 +10,7 @@
 #include <Core/Defines.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -273,19 +273,27 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
     return res;
 }
 
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksum(const String & name) const
+const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetChecksum(const String & name, const String & ext) const
 {
     if (checksums.empty())
         return nullptr;
 
     const auto & files = checksums.files;
-    const auto bin_file_name = escapeForFileName(name) + ".bin";
-    auto it = files.find(bin_file_name);
+    const auto file_name = escapeForFileName(name) + ext;
+    auto it = files.find(file_name);
 
     return (it == files.end()) ? nullptr : &it->second;
 }
 
+const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksum(const String & name) const
+{
+    return tryGetChecksum(name, ".bin");
+}
+
+const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetMrkChecksum(const String & name) const
+{
+    return tryGetChecksum(name, ".mrk");
+}
 
 static ReadBufferFromFile openForReading(const String & path)
 {
@@ -395,6 +403,13 @@ size_t MergeTreeDataPart::getColumnUncompressedSize(const String & name) const
 {
     const Checksum * checksum = tryGetBinChecksum(name);
     return checksum ? checksum->uncompressed_size : 0;
+}
+
+
+size_t MergeTreeDataPart::getColumnMrkSize(const String & name) const
+{
+    const Checksum * checksum = tryGetMrkChecksum(name);
+    return checksum ? checksum->file_size : 0;
 }
 
 
@@ -744,7 +759,8 @@ void MergeTreeDataPart::loadRowsCount()
 
             if (!(rows_count <= rows_approx && rows_approx < rows_count + storage.index_granularity))
                 throw Exception(
-                    "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows",
+                    "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows, expected "
+                    + toString(rows_approx) + "+-" + toString(storage.index_granularity) + " rows according to the index",
                     ErrorCodes::LOGICAL_ERROR);
 
             return;
@@ -923,6 +939,18 @@ size_t MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     size_t res = 0;
     for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
+    return res;
+}
+
+size_t MergeTreeDataPart::getTotalMrkSizeInBytes() const
+{
+    size_t res = 0;
+    for (const NameAndTypePair & it : columns)
+    {
+        const Checksum * checksum = tryGetMrkChecksum(it.name);
+        if (checksum)
+            res += checksum->file_size;
+    }
     return res;
 }
 

@@ -100,7 +100,8 @@ struct FastHash64
         UInt64 h = len * m;
         UInt64 v;
 
-        while (pos != end) {
+        while (pos != end)
+        {
             v = *pos++;
             h ^= mix(v);
             h *= m;
@@ -109,16 +110,17 @@ struct FastHash64
         pos2 = reinterpret_cast<const unsigned char*>(pos);
         v = 0;
 
-        switch (len & 7) {
-        case 7: v ^= static_cast<UInt64>(pos2[6]) << 48; [[fallthrough]];
-        case 6: v ^= static_cast<UInt64>(pos2[5]) << 40; [[fallthrough]];
-        case 5: v ^= static_cast<UInt64>(pos2[4]) << 32; [[fallthrough]];
-        case 4: v ^= static_cast<UInt64>(pos2[3]) << 24; [[fallthrough]];
-        case 3: v ^= static_cast<UInt64>(pos2[2]) << 16; [[fallthrough]];
-        case 2: v ^= static_cast<UInt64>(pos2[1]) << 8; [[fallthrough]];
-        case 1: v ^= static_cast<UInt64>(pos2[0]);
-            h ^= mix(v);
-            h *= m;
+        switch (len & 7)
+        {
+            case 7: v ^= static_cast<UInt64>(pos2[6]) << 48; [[fallthrough]];
+            case 6: v ^= static_cast<UInt64>(pos2[5]) << 40; [[fallthrough]];
+            case 5: v ^= static_cast<UInt64>(pos2[4]) << 32; [[fallthrough]];
+            case 4: v ^= static_cast<UInt64>(pos2[3]) << 24; [[fallthrough]];
+            case 3: v ^= static_cast<UInt64>(pos2[2]) << 16; [[fallthrough]];
+            case 2: v ^= static_cast<UInt64>(pos2[1]) << 8; [[fallthrough]];
+            case 1: v ^= static_cast<UInt64>(pos2[0]);
+                h ^= mix(v);
+                h *= m;
         }
 
         return mix(h);

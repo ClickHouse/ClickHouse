@@ -101,7 +101,7 @@ public:
             LOG_ERROR(log, "SystemLog queue is full");
     }
 
-private:
+protected:
     Context & context;
     const String database_name;
     const String table_name;
@@ -336,7 +336,9 @@ void SystemLog<LogElement>::prepareTable()
             "Storage to create table for " + LogElement::name());
         create->set(create->storage, storage_ast);
 
-        InterpreterCreateQuery(create, context).execute();
+        InterpreterCreateQuery interpreter(create, context);
+        interpreter.setInternal(true);
+        interpreter.execute();
 
         table = context.getTable(database_name, table_name);
     }

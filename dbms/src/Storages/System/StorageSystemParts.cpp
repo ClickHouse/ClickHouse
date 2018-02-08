@@ -14,10 +14,8 @@
 namespace DB
 {
 
-
-StorageSystemParts::StorageSystemParts(const std::string & name_)
-    : name(name_),
-    columns
+StorageSystemParts::StorageSystemParts(const std::string & name)
+    : StorageSystemPartsBase(name,
     {
         {"partition",           std::make_shared<DataTypeString>()},
         {"name",                std::make_shared<DataTypeString>()},
@@ -41,265 +39,52 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"table",               std::make_shared<DataTypeString>()},
         {"engine",              std::make_shared<DataTypeString>()}
     }
+    )
 {
 }
 
-
-BlockInputStreams StorageSystemParts::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemParts::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
 {
-    bool has_state_column = false;
-    Names real_column_names;
+    using State = MergeTreeDataPart::State;
 
-    for (const String & column_name : column_names)
+    for (size_t part_number = 0; part_number < info.all_parts.size(); ++part_number)
     {
-        if (column_name == "_state")
-            has_state_column = true;
-        else
-            real_column_names.emplace_back(column_name);
+        const auto & part = info.all_parts[part_number];
+        auto part_state = info.all_parts_state[part_number];
+
+        size_t i = 0;
+        {
+            WriteBufferFromOwnString out;
+            part->partition.serializeTextQuoted(*info.data, out);
+            columns[i++]->insert(out.str());
+        }
+        columns[i++]->insert(part->name);
+        columns[i++]->insert(static_cast<UInt64>(part_state == State::Committed));
+        columns[i++]->insert(static_cast<UInt64>(part->marks_count));
+        columns[i++]->insert(static_cast<UInt64>(part->getTotalMrkSizeInBytes()));
+        columns[i++]->insert(static_cast<UInt64>(part->rows_count));
+        columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
+        columns[i++]->insert(static_cast<UInt64>(part->modification_time));
+        columns[i++]->insert(static_cast<UInt64>(part->remove_time));
+
+        /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
+        columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
+
+        columns[i++]->insert(static_cast<UInt64>(part->getMinDate()));
+        columns[i++]->insert(static_cast<UInt64>(part->getMaxDate()));
+        columns[i++]->insert(part->info.min_block);
+        columns[i++]->insert(part->info.max_block);
+        columns[i++]->insert(static_cast<UInt64>(part->info.level));
+        columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
+        columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
+
+        columns[i++]->insert(info.database);
+        columns[i++]->insert(info.table);
+        columns[i++]->insert(info.engine);
+
+        if (has_state_column)
+            columns[i++]->insert(part->stateString());
     }
-
-    /// Do not check if only _state column is requested
-    if (!(has_state_column && real_column_names.empty()))
-        check(real_column_names);
-
-    processed_stage = QueryProcessingStage::FetchColumns;
-
-    /// Will apply WHERE to subset of columns and then add more columns.
-    /// This is kind of complicated, but we use WHERE to do less work.
-
-    Block block_to_filter;
-
-    std::map<std::pair<String, String>, StoragePtr> storages;
-
-    {
-        Databases databases = context.getDatabases();
-
-        /// Add column 'database'.
-        MutableColumnPtr database_column_mut = ColumnString::create();
-        for (const auto & database : databases)
-            database_column_mut->insert(database.first);
-        block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
-
-        /// Filter block_to_filter with column 'database'.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
-
-        if (!block_to_filter.rows())
-            return BlockInputStreams();
-
-        /// Add columns 'table', 'engine', 'active'
-        ColumnPtr database_column = block_to_filter.getByName("database").column;
-        size_t rows = database_column->size();
-
-        IColumn::Offsets offsets(rows);
-        MutableColumnPtr table_column_mut = ColumnString::create();
-        MutableColumnPtr engine_column_mut = ColumnString::create();
-        MutableColumnPtr active_column_mut = ColumnUInt8::create();
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            String database_name = (*database_column)[i].get<String>();
-            const DatabasePtr database = databases.at(database_name);
-
-            offsets[i] = i ? offsets[i - 1] : 0;
-            for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
-            {
-                String table_name = iterator->name();
-                StoragePtr storage = iterator->table();
-                String engine_name = storage->getName();
-
-                if (!dynamic_cast<StorageMergeTree *>(&*storage) &&
-                    !dynamic_cast<StorageReplicatedMergeTree *>(&*storage))
-                    continue;
-
-                storages[std::make_pair(database_name, iterator->name())] = storage;
-
-                /// Add all combinations of flag 'active'.
-                for (UInt64 active : {0, 1})
-                {
-                    table_column_mut->insert(table_name);
-                    engine_column_mut->insert(engine_name);
-                    active_column_mut->insert(active);
-                }
-
-                offsets[i] += 2;
-            }
-        }
-
-        for (size_t i = 0; i < block_to_filter.columns(); ++i)
-        {
-            ColumnPtr & column = block_to_filter.safeGetByPosition(i).column;
-            column = column->replicate(offsets);
-        }
-
-        block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
-        block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
-        block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
-    }
-
-    /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
-
-    /// If all was filtered out.
-    if (!block_to_filter.rows())
-        return {};
-
-    ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
-    ColumnPtr filtered_table_column = block_to_filter.getByName("table").column;
-    ColumnPtr filtered_active_column = block_to_filter.getByName("active").column;
-
-    /// Finally, create the result.
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-    if (has_state_column)
-        res_columns.push_back(ColumnString::create());
-
-    for (size_t i = 0; i < filtered_database_column->size();)
-    {
-        String database = (*filtered_database_column)[i].get<String>();
-        String table = (*filtered_table_column)[i].get<String>();
-
-        /// What 'active' value we need.
-        bool need[2]{}; /// [active]
-        for (; i < filtered_database_column->size() &&
-            (*filtered_database_column)[i].get<String>() == database &&
-            (*filtered_table_column)[i].get<String>() == table; ++i)
-        {
-            bool active = !!(*filtered_active_column)[i].get<UInt64>();
-            need[active] = true;
-        }
-
-        StoragePtr storage = storages.at(std::make_pair(database, table));
-        TableStructureReadLockPtr table_lock;
-
-        try
-        {
-            table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);    /// For table not to be dropped.
-        }
-        catch (const Exception & e)
-        {
-            /** There are case when IStorage::drop was called,
-              *  but we still own the object.
-              * Then table will throw exception at attempt to lock it.
-              * Just skip the table.
-              */
-            if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                continue;
-
-            throw;
-        }
-
-        String engine = storage->getName();
-
-        MergeTreeData * data = nullptr;
-
-        if (auto merge_tree = dynamic_cast<StorageMergeTree *>(&*storage))
-        {
-            data = &merge_tree->getData();
-        }
-        else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(&*storage))
-        {
-            data = &replicated_merge_tree->getData();
-        }
-        else
-        {
-            throw Exception("Unknown engine " + engine, ErrorCodes::LOGICAL_ERROR);
-        }
-
-        using State = MergeTreeDataPart::State;
-        MergeTreeData::DataPartStateVector all_parts_state;
-        MergeTreeData::DataPartsVector all_parts;
-
-        if (need[0])
-        {
-            /// If has_state_column is requested, return all states
-            if (!has_state_column)
-                all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, &all_parts_state);
-            else
-                all_parts = data->getAllDataPartsVector(&all_parts_state);
-        }
-        else
-            all_parts = data->getDataPartsVector({State::Committed}, &all_parts_state);
-
-
-        /// Finally, we'll go through the list of parts.
-        for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
-        {
-            const auto & part = all_parts[part_number];
-            auto part_state = all_parts_state[part_number];
-
-            size_t i = 0;
-            {
-                WriteBufferFromOwnString out;
-                part->partition.serializeTextQuoted(*data, out);
-                res_columns[i++]->insert(out.str());
-            }
-            res_columns[i++]->insert(part->name);
-            res_columns[i++]->insert(static_cast<UInt64>(part_state == State::Committed));
-            res_columns[i++]->insert(static_cast<UInt64>(part->marks_count));
-
-            size_t marks_size = 0;
-            for (const NameAndTypePair & it : part->columns)
-            {
-                String name = escapeForFileName(it.name);
-                auto checksum = part->checksums.files.find(name + ".mrk");
-                if (checksum != part->checksums.files.end())
-                    marks_size += checksum->second.file_size;
-            }
-            res_columns[i++]->insert(static_cast<UInt64>(marks_size));
-
-            res_columns[i++]->insert(static_cast<UInt64>(part->rows_count));
-            res_columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
-            res_columns[i++]->insert(static_cast<UInt64>(part->modification_time));
-            res_columns[i++]->insert(static_cast<UInt64>(part->remove_time));
-
-            /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-            res_columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
-
-            res_columns[i++]->insert(static_cast<UInt64>(part->getMinDate()));
-            res_columns[i++]->insert(static_cast<UInt64>(part->getMaxDate()));
-            res_columns[i++]->insert(part->info.min_block);
-            res_columns[i++]->insert(part->info.max_block);
-            res_columns[i++]->insert(static_cast<UInt64>(part->info.level));
-            res_columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
-            res_columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
-
-            res_columns[i++]->insert(database);
-            res_columns[i++]->insert(table);
-            res_columns[i++]->insert(engine);
-
-            if (has_state_column)
-                res_columns[i++]->insert(part->stateString());
-        }
-    }
-
-    Block block = getSampleBlock();
-    if (has_state_column)
-        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
 }
-
-NameAndTypePair StorageSystemParts::getColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return NameAndTypePair("_state", std::make_shared<DataTypeString>());
-
-    return ITableDeclaration::getColumn(column_name);
-}
-
-bool StorageSystemParts::hasColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return true;
-
-    return ITableDeclaration::hasColumn(column_name);
-}
-
 
 }

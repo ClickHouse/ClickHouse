@@ -9,7 +9,7 @@ target_link_libraries(analyze_columns dbms clickhouse_storages_system)
 
 add_executable(type_and_constant_inference type_and_constant_inference.cpp)
 target_link_libraries(type_and_constant_inference
-    clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions dbms)
+    clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 
 add_executable(analyze_result_of_query analyze_result_of_query.cpp)
 target_link_libraries(analyze_result_of_query dbms clickhouse_storages_system)

@@ -26,6 +26,7 @@
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -92,7 +93,8 @@ public:
 
 private:
     using StringSet = std::unordered_set<String>;
-    StringSet exit_strings {
+    StringSet exit_strings
+    {
         "exit", "quit", "logout",
         "учше", "йгше", "дщпщге",
         "exit;", "quit;", "logout;",
@@ -401,11 +403,13 @@ private:
                 << (!user.empty() ? " as user " + user : "")
                 << "." << std::endl;
 
-        connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
-            encryption,
+        ConnectionTimeouts timeouts(
             Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+
+        connection = std::make_unique<Connection>(
+            host, port, default_database, user, password, timeouts, "client", compression, encryption);
 
         String server_name;
         UInt64 server_version_major = 0;
@@ -427,12 +431,6 @@ private:
                       << " server version " << server_version
                       << "." << std::endl << std::endl;
         }
-    }
-
-
-    static bool isWhitespace(char c)
-    {
-        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
     }
 
 
@@ -458,7 +456,7 @@ private:
             free(line_);
 
             size_t ws = line.size();
-            while (ws > 0 && isWhitespace(line[ws - 1]))
+            while (ws > 0 && isWhitespaceASCII(line[ws - 1]))
                 --ws;
 
             if (ws == 0 && query.empty())
@@ -589,7 +587,7 @@ private:
                 query = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
-                while (isWhitespace(*begin) || *begin == ';')
+                while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
                 try
@@ -1063,7 +1061,8 @@ private:
     void onProgress(const Progress & value)
     {
         progress.incrementPiecewiseAtomically(value);
-        block_out_stream->onProgress(value);
+        if (block_out_stream)
+            block_out_stream->onProgress(value);
         writeProgress();
     }
 

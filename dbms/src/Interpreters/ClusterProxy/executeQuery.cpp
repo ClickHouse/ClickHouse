@@ -5,7 +5,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/queryToString.h>
-#include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/ProcessList.h>
 
 

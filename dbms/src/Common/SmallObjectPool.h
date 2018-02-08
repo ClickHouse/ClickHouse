@@ -62,7 +62,8 @@ public:
 
     void free(const void * ptr)
     {
-        union {
+        union
+        {
             const void * p_v;
             Block * block;
         };

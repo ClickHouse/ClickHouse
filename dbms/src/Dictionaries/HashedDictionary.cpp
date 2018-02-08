@@ -494,9 +494,9 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute &
 
     PaddedPODArray<Key> ids;
     ids.reserve(attr.size());
-    for (const auto & value : attr) {
+    for (const auto & value : attr)
         ids.push_back(value.first);
-    }
+
     return ids;
 }
 

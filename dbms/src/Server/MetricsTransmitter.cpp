@@ -44,7 +44,8 @@ void MetricsTransmitter::run()
     const std::string thread_name = "MericsTrns " + std::to_string(interval) + "s";
     setThreadName(thread_name.c_str());
 
-    const auto get_next_time = [](size_t seconds) {
+    const auto get_next_time = [](size_t seconds)
+    {
         /// To avoid time drift and transmit values exactly each interval:
         ///  next time aligned to system seconds
         /// (60s -> every minute at 00 seconds, 5s -> every minute:[00, 05, 15 ... 55]s, 3600 -> every hour:00:00

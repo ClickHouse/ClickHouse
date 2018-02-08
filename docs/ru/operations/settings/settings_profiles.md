@@ -13,15 +13,15 @@ SET profile = 'web'
 Пример:
 
 ```xml
-<!-- Профили настроек. -->
+<!-- Settings profiles -->
 <profiles>
-    <!-- Настройки по умолчанию -->
+    <!-- Default settings -->
     <default>
-        <!-- Максимальное количество потоков при выполнении одного запроса. -->
+        <!-- The maximum number of threads when running a single query. -->
         <max_threads>8</max_threads>
     </default>
 
-    <!-- Настройки для запросов из пользовательского интерфейса -->
+    <!-- Settings for quries from the user interface -->
     <web>
         <max_rows_to_read>1000000000</max_rows_to_read>
         <max_bytes_to_read>100000000000</max_bytes_to_read>

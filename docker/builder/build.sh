@@ -1,10 +1,11 @@
 #!/bin/bash
 
-NPROC=8
+export THREADS=$(grep -c ^processor /proc/cpuinfo)
+export CC=gcc-7
+export CXX=g++-7
 
 mkdir -p /server/build
 cd /server/build
 
-CXX=g++-5 CC=gcc-5 cmake /server
-
-make -j $(NPROC)
+cmake /server
+make -j $THREADS

@@ -74,7 +74,8 @@ void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_
 
     for (const auto i : ext::range(0, words.size()))
     {
-        if (words[i] == 0) {
+        if (words[i] == 0)
+        {
             if (cur.base == -1)
                 cur.base = i, cur.len = 1;
             else

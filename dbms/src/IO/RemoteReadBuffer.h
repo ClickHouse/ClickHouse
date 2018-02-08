@@ -37,9 +37,12 @@ public:
         {
             std::make_pair("action", "read"),
             std::make_pair("path", path),
-            std::make_pair("compress", (compress ? "true" : "false"))});
+            std::make_pair("compress", (compress ? "true" : "false"))
+        });
 
-        impl = std::make_unique<ReadWriteBufferFromHTTP>(uri, std::string(), ReadWriteBufferFromHTTP::OutStreamCallback(), buffer_size, HTTPTimeouts{connection_timeout, send_timeout, receive_timeout});
+        ConnectionTimeouts timeouts(connection_timeout, send_timeout, receive_timeout);
+        ReadWriteBufferFromHTTP::OutStreamCallback callback;
+        impl = std::make_unique<ReadWriteBufferFromHTTP>(uri, std::string(), callback, timeouts, buffer_size);
     }
 
     bool nextImpl() override
@@ -56,7 +59,7 @@ public:
         const std::string & host,
         int port,
         const std::string & path,
-        size_t timeout = 0)
+        const ConnectionTimeouts & timeouts)
     {
         Poco::URI uri;
         uri.setScheme("http");
@@ -67,7 +70,7 @@ public:
             std::make_pair("action", "list"),
             std::make_pair("path", path)});
 
-        ReadWriteBufferFromHTTP in(uri, {}, {}, {}, HTTPTimeouts{timeout});
+        ReadWriteBufferFromHTTP in(uri, {}, {}, timeouts);
 
         std::vector<std::string> files;
         while (!in.eof())

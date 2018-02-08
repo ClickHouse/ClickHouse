@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/config.h>
+#if Poco_DataODBC_FOUND
+
 #include <TableFunctions/ITableFunction.h>
 
 
@@ -20,3 +23,5 @@ public:
     StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
 };
 }
+
+#endif
