@@ -151,7 +151,7 @@ using TasksShard = std::vector<TaskShardPtr>;
 using TasksTable = std::list<TaskTable>;
 using ClusterPartitions = std::map<String, ClusterPartition>;
 
-/// Since we could drop only the whole parition on cluster, set of the same patitions in a cluster is atomic entity
+/// Contains all cluster shards (sorted by neighborhood) containig a partition
 struct ClusterPartition
 {
     TasksShard shards; /// having that partition
@@ -159,6 +159,8 @@ struct ClusterPartition
     Stopwatch watch;
     UInt64 bytes_copied = 0;
     UInt64 rows_copied = 0;
+
+    size_t total_tries = 0;
 };
 
 
@@ -257,6 +259,8 @@ struct TaskTable
     TasksShard local_shards;
 
     ClusterPartitions cluster_partitions;
+    NameSet finished_cluster_partitions;
+
     ClusterPartition & getClusterPartition(const String & partition_name)
     {
         auto it = cluster_partitions.find(partition_name);
@@ -705,6 +709,110 @@ public:
         zookeeper->createAncestors(getWorkersPath() + "/");
     }
 
+
+    static constexpr size_t max_table_tries = 1000;
+    static constexpr size_t max_partition_tries = 3;
+
+    bool tryProcessTable(TaskTable & task_table)
+    {
+        /// Process each partition that is present in cluster
+        for (auto & elem : task_table.cluster_partitions)
+        {
+            const String & partition_name = elem.first;
+            ClusterPartition & cluster_partition = elem.second;
+            const TasksShard & shards_with_partition = cluster_partition.shards;
+
+            if (cluster_partition.total_tries == 0)
+                cluster_partition.watch.restart();
+            else
+                cluster_partition.watch.start();
+            SCOPE_EXIT(cluster_partition.watch.stop());
+
+            bool partition_is_done = false;
+            size_t num_partition_tries = 0;
+
+            /// Retry partition processing
+            while (!partition_is_done && num_partition_tries < max_partition_tries)
+            {
+                ++num_partition_tries;
+                ++cluster_partition.total_tries;
+
+                LOG_DEBUG(log, "Processing partition " << partition_name << " for the whole cluster"
+                               << " (" << shards_with_partition.size() << " shards)");
+
+                size_t num_successful_shards = 0;
+
+                /// Process each source shard and copy current partition
+                /// NOTE: shards are sorted by "distance" to current host
+                for (const TaskShardPtr & shard : shards_with_partition)
+                {
+                    auto it_shard_partition = shard->partitions.find(partition_name);
+                    if (it_shard_partition == shard->partitions.end())
+                        throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+                    TaskPartition & task_shard_partition = it_shard_partition->second;
+                    if (processPartitionTask(task_shard_partition))
+                        ++num_successful_shards;
+                }
+
+                try
+                {
+                    partition_is_done = (num_successful_shards == shards_with_partition.size())
+                                        && checkPartitionIsDone(task_table, partition_name, shards_with_partition);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                    partition_is_done = false;
+                }
+
+                if (!partition_is_done)
+                    std::this_thread::sleep_for(default_sleep_time);
+            }
+
+            if (partition_is_done)
+            {
+                task_table.finished_cluster_partitions.emplace(partition_name);
+
+                task_table.bytes_copied += cluster_partition.bytes_copied;
+                task_table.rows_copied += cluster_partition.rows_copied;
+
+                double elapsed = cluster_partition.watch.elapsedSeconds();
+
+                LOG_INFO(log, "It took " << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name
+                                         << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied)
+                                         << " uncompressed bytes and "
+                                         << formatReadableQuantity(cluster_partition.rows_copied) << " rows are copied");
+
+                if (cluster_partition.rows_copied)
+                {
+                    LOG_INFO(log, "Average partition speed: "
+                        << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied / elapsed) << " per second.");
+                }
+
+                if (task_table.rows_copied)
+                {
+                    LOG_INFO(log, "Average table " << task_table.table_id << " speed: "
+                                                   << formatReadableSizeWithDecimalSuffix(task_table.bytes_copied / elapsed)
+                                                   << " per second.");
+                }
+            }
+        }
+
+        size_t required_partitions = task_table.cluster_partitions.size();
+        size_t finished_partitions = task_table.finished_cluster_partitions.size();
+
+        bool table_is_done = task_table.finished_cluster_partitions.size() >= task_table.cluster_partitions.size();
+        if (!table_is_done)
+        {
+            LOG_INFO(log, "Table " + task_table.table_id + " is not processed yet."
+                << "Copied " << finished_partitions << " of " << required_partitions << ", will retry");
+        }
+
+        return table_is_done;
+    }
+
+
     void process()
     {
         for (TaskTable & task_table : task_cluster->table_tasks)
@@ -714,91 +822,20 @@ public:
 
             task_table.watch.restart();
 
-            /// An optimization: first of all, try to process all partitions of the local shards
-//            for (const TaskShardPtr & shard : task_table.local_shards)
-//            {
-//                for (auto & task_partition : shard->partitions)
-//                {
-//                    LOG_DEBUG(log, "Processing partition " << task_partition.first << " for local shard " << shard->numberInCluster());
-//                    processPartitionTask(task_partition.second);
-//                }
-//            }
+            bool table_is_done = false;
+            size_t num_table_tries = 0;
 
-            /// Then check and copy all shards until the whole partition is copied
-            for (auto & elem : task_table.cluster_partitions)
+            /// Retry table processing
+            while (!table_is_done && num_table_tries < max_table_tries)
             {
-                const String & partition_name = elem.first;
-                ClusterPartition & cluster_partition = elem.second;
-                const TasksShard & shards_with_partition = cluster_partition.shards;
+                table_is_done = tryProcessTable(task_table);
+                ++num_table_tries;
+            }
 
-                cluster_partition.watch.restart();
-
-                bool is_done = false;
-                size_t num_tries = 0;
-                constexpr size_t max_tries = 1000;
-
-                do
-                {
-                    LOG_DEBUG(log, "Processing partition " << partition_name << " for the whole cluster"
-                        << " (" << shards_with_partition.size() << " shards)");
-
-                    size_t num_successful_shards = 0;
-
-                    for (const TaskShardPtr & shard : shards_with_partition)
-                    {
-                        auto it_shard_partition = shard->partitions.find(partition_name);
-                        if (it_shard_partition == shard->partitions.end())
-                            throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-                        TaskPartition & task_shard_partition = it_shard_partition->second;
-                        if (processPartitionTask(task_shard_partition))
-                            ++num_successful_shards;
-                    }
-
-                    try
-                    {
-                        is_done = (num_successful_shards == shards_with_partition.size())
-                            && checkPartitionIsDone(task_table, partition_name, shards_with_partition);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log);
-                        is_done = false;
-                    }
-
-                    if (!is_done)
-                        std::this_thread::sleep_for(default_sleep_time);
-
-                    ++num_tries;
-                } while (!is_done && num_tries < max_tries);
-
-                if (is_done)
-                {
-                    task_table.bytes_copied += cluster_partition.bytes_copied;
-                    task_table.rows_copied += cluster_partition.rows_copied;
-                    double elapsed = cluster_partition.watch.elapsedSeconds();
-
-                    LOG_INFO(log, "It took " << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name
-                                  << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied) << " uncompressed bytes"
-                                  << " and " << formatReadableQuantity(cluster_partition.rows_copied) << " rows are copied");
-
-                    if (cluster_partition.rows_copied)
-                    {
-                        LOG_INFO(log, "Average partition speed: "
-                                      << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied / elapsed) << " per second.");
-                    }
-
-                    if (task_table.rows_copied)
-                    {
-                        LOG_INFO(log, "Average table " << task_table.table_id << " speed: "
-                                      << formatReadableSizeWithDecimalSuffix(task_table.bytes_copied / elapsed) << " per second.");
-                    }
-                }
-                else
-                {
-                    throw Exception("Too many retries while copying partition " + partition_name + ". Try the next one",
-                                    ErrorCodes::UNFINISHED);
-                }
+            if (!table_is_done)
+            {
+                throw Exception("Too many tries to process table " + task_table.table_id + ". Abort remaining execution",
+                                ErrorCodes::UNFINISHED);
             }
         }
     }
