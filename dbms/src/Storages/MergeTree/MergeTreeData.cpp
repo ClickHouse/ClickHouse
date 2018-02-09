@@ -85,6 +85,7 @@ MergeTreeData::MergeTreeData(
     const ColumnDefaults & column_defaults_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
+    const ASTPtr & secondary_sort_expr_ast_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
@@ -99,6 +100,7 @@ MergeTreeData::MergeTreeData(
     merging_params(merging_params_),
     settings(settings_),
     primary_expr_ast(primary_expr_ast_),
+    secondary_sort_expr_ast(secondary_sort_expr_ast_),
     partition_expr_ast(partition_expr_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
@@ -193,19 +195,27 @@ void MergeTreeData::initPrimaryKey()
     if (!primary_expr_ast)
         return;
 
-    /// Initialize description of sorting.
-    sort_descr.clear();
-    sort_descr.reserve(primary_expr_ast->children.size());
-    for (const ASTPtr & ast : primary_expr_ast->children)
+    auto addSortDescription = [](SortDescription & descr, const ASTPtr & expr_ast)
     {
-        String name = ast->getColumnName();
-        sort_descr.emplace_back(name, 1, 1);
-    }
+        descr.reserve(descr.size() + expr_ast->children.size());
+        for (const ASTPtr & ast : expr_ast->children)
+        {
+            String name = ast->getColumnName();
+            descr.emplace_back(name, 1, 1);
+        }
+    };
+
+    /// Initialize description of sorting for primary key.
+    primary_sort_descr.clear();
+    addSortDescription(primary_sort_descr, primary_expr_ast);
 
     primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
 
-    ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
-    primary_key_sample = projected_expr->getSampleBlock();
+    {
+        ExpressionActionsPtr projected_expr =
+                ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
+        primary_key_sample = projected_expr->getSampleBlock();
+    }
 
     size_t primary_key_size = primary_key_sample.columns();
 
@@ -218,6 +228,20 @@ void MergeTreeData::initPrimaryKey()
     primary_key_data_types.resize(primary_key_size);
     for (size_t i = 0; i < primary_key_size; ++i)
         primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
+
+    sort_descr = primary_sort_descr;
+    if (secondary_sort_expr_ast)
+    {
+        addSortDescription(sort_descr, secondary_sort_expr_ast);
+        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+
+        ExpressionActionsPtr projected_expr =
+                ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumnsList()).getActions(true);
+        auto secondary_key_sample = projected_expr->getSampleBlock();
+
+        for (size_t i = 0; i < secondary_key_sample.columns(); ++i)
+            checkForAllowedKeyColumns(secondary_key_sample.getByPosition(i), "Secondary");
+    }
 }
 
 
@@ -853,17 +877,24 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
             columns_alter_forbidden.insert(col);
     }
 
-    if (primary_expr)
+    auto processSortingColumns =
+            [&columns_alter_forbidden, &columns_alter_metadata_only] (const ExpressionActionsPtr & expression)
     {
-        for (const ExpressionAction & action : primary_expr->getActions())
+        for (const ExpressionAction & action : expression->getActions())
         {
             auto action_columns = action.getNeededColumns();
             columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
         }
-        for (const String & col : primary_expr->getRequiredColumns())
+        for (const String & col : expression->getRequiredColumns())
             columns_alter_metadata_only.insert(col);
-    }
+    };
+
+    if (primary_expr)
+        processSortingColumns(primary_expr);
     /// We don't process sampling_expression separately because it must be among the primary key columns.
+
+    if (secondary_sort_expr)
+        processSortingColumns(secondary_sort_expr);
 
     if (!merging_params.sign_column.empty())
         columns_alter_forbidden.insert(merging_params.sign_column);
@@ -1111,6 +1142,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     size_t new_primary_key_file_size{};
     MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
 
+    /// TODO: Check the order of secondary sorting key columns.
     if (new_primary_key.get() != primary_expr_ast.get())
     {
         ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, new_columns).getActions(true);
@@ -2217,7 +2249,7 @@ bool MergeTreeData::isPrimaryKeyColumn(const ASTPtr &node) const
 {
     String column_name = node->getColumnName();
 
-    for (const auto & column : sort_descr)
+    for (const auto & column : primary_sort_descr)
         if (column_name == column.column_name)
             return true;
 
