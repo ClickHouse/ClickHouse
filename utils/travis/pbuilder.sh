@@ -16,7 +16,7 @@ env TEST_RUN=${TEST_RUN=1} \
     TEST_OPT="--no-long --skip 00281 00416 $TEST_OPT" \
     TEST_TRUE=${TEST_TRUE=false} \
     `# travisci will not upload ccache cache after timeout (48min), use our less timeout` \
-    PBUILDER_OPT="--timeout 35m $PBUILDER_OPT" \
+    PBUILDER_OPT="--timeout ${PBUILDER_TIMEOUT:=35m} $PBUILDER_OPT" \
     `# clang faster than gcc` \
     DEB_CC=${DEB_CC=$CC} DEB_CXX=${DEB_CXX=$CXX} \
     CCACHE_SIZE=${CCACHE_SIZE:=4G} SET_CCACHEDIR=${SET_CCACHEDIR:=$HOME/.ccache} \
