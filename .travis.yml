@@ -16,10 +16,10 @@ matrix:
           packages: [ g++-7,            libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo ]
 
       env:
-        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7 && export TEST_RUN="
+        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
 
       script:
-        - utils/travis/normal.sh
+        - env TEST_RUN= utils/travis/normal.sh
 
 
     # We need to have gcc7 headers to compile c++17 code on clang
@@ -77,10 +77,10 @@ matrix:
           packages: [ pbuilder, fakeroot, debhelper ]
 
       env:
-        - MATRIX_EVAL="export ARCH=i386 && export TEST_RUN="
+        - MATRIX_EVAL="export ARCH=i386"
 
       script:
-        - utils/travis/pbuilder.sh
+        - env PBUILDER_TIMEOUT=40m TEST_TRUE=true TEST_RUN= utils/travis/pbuilder.sh
 
 
 # TODO: Can't bootstrap bionic on trusty host
