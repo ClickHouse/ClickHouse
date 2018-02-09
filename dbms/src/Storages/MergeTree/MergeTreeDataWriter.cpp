@@ -178,7 +178,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         data.getPrimaryExpression()->execute(block);
         auto secondary_sort_expr = data.getSecondarySortExpression();
         if (secondary_sort_expr)
-            data.getPrimaryExpression()->execute(block);
+            secondary_sort_expr->execute(block);
     }
 
     SortDescription sort_descr = data.getSortDescription();
