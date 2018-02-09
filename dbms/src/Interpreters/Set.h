@@ -20,6 +20,9 @@ class FieldWithInfinity;
 using SetElements = std::vector<std::vector<Field>>;
 using SetElementsPtr = std::unique_ptr<SetElements>;
 
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+
 /** Data structure for implementation of IN expression.
   */
 class Set
@@ -175,7 +178,7 @@ public:
     {
         size_t tuple_index;
         size_t pk_index;
-        std::vector<FunctionPtr> functions;
+        std::vector<FunctionBasePtr> functions;
         DataTypePtr data_type;
     };
 

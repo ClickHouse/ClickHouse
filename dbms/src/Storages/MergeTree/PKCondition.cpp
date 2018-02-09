@@ -342,17 +342,15 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 
 
 static void applyFunction(
-    FunctionPtr & func,
+    const FunctionBasePtr & func,
     const DataTypePtr & arg_type, const Field & arg_value,
     DataTypePtr & res_type, Field & res_value)
 {
-    std::vector<ExpressionAction> unused_prerequisites;
-    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
-    func->getReturnTypeAndPrerequisites(arguments, res_type, unused_prerequisites);
+    res_type = func->getReturnType();
 
     Block block
     {
-        arguments[0],
+        { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
         { nullptr, res_type, "y" }
     };
 
@@ -526,14 +524,14 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        FunctionPtr func = FunctionFactory::instance().tryGet((*it)->name, context);
+        auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
+        ColumnsWithTypeAndName arguments{{ nullptr, primary_key_column_type, "" }};
+        auto func = func_builder->build(arguments);
+
         if (!func || !func->hasInformationAboutMonotonicity())
             return false;
 
-        std::vector<ExpressionAction> unused_prerequisites;
-        ColumnsWithTypeAndName arguments{{ nullptr, primary_key_column_type, "" }};
-        func->getReturnTypeAndPrerequisites(arguments, primary_key_column_type, unused_prerequisites);
-
+        primary_key_column_type = func->getReturnType();
         out_functions_chain.push_back(func);
     }
 

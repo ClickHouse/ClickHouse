@@ -1,12 +1,12 @@
-#include <DataTypes/DataTypeExpression.h>
+#include <DataTypes/DataTypeFunction.h>
 
 
 namespace DB
 {
 
-std::string DataTypeExpression::getName() const
+std::string DataTypeFunction::getName() const
 {
-    std::string res = "Expression(";
+    std::string res = "Function(";
     if (argument_types.size() > 1)
         res += "(";
     for (size_t i = 0; i < argument_types.size(); ++i)
@@ -24,7 +24,7 @@ std::string DataTypeExpression::getName() const
     return res;
 }
 
-bool DataTypeExpression::equals(const IDataType & rhs) const
+bool DataTypeFunction::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
 }
