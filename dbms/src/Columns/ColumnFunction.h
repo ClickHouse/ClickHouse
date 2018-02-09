@@ -19,9 +19,9 @@ class ColumnFunction final : public COWPtrHelper<IColumn, ColumnFunction>
 private:
     friend class COWPtrHelper<IColumn, ColumnFunction>;
 
-public:
     ColumnFunction(size_t size, FunctionBasePtr function, const ColumnsWithTypeAndName & columns_to_capture);
 
+public:
     const char * getFamilyName() const override { return "Function"; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
