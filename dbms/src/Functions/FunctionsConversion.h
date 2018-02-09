@@ -1633,7 +1633,7 @@ public:
 
     FunctionBuilderCast(const Context & context) : context(context) {}
 
-    String getName() const { return name; }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
