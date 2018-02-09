@@ -2345,10 +2345,7 @@ String FunctionArrayReduce::getName() const
     return name;
 }
 
-void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
-    const ColumnsWithTypeAndName & arguments,
-    DataTypePtr & out_return_type,
-    std::vector<ExpressionAction> & /*out_prerequisites*/)
+DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     /// The first argument is a constant string with the name of the aggregate function
     ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
@@ -2390,7 +2387,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
     }
 
-    out_return_type = aggregate_function->getReturnType();
+    return aggregate_function->getReturnType();
 }
 
 
