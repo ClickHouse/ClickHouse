@@ -331,9 +331,12 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
 )
 {
     Names primary_key_columns_dup = primary_key_expressions->getRequiredColumns();
-    Names secondary_key_columns_dup = secondary_key_expressions->getRequiredColumns();
     std::set<String> key_columns(primary_key_columns_dup.cbegin(), primary_key_columns_dup.cend());
-    key_columns.insert(secondary_key_columns_dup.begin(), secondary_key_columns_dup.end());
+    if (secondary_key_expressions)
+    {
+        Names secondary_key_columns_dup = secondary_key_expressions->getRequiredColumns();
+        key_columns.insert(secondary_key_columns_dup.begin(), secondary_key_columns_dup.end());
+    }
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
