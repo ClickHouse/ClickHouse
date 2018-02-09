@@ -82,7 +82,7 @@ private:
     std::string return_name;
 };
 
-/// Captures columns which are used bu lambda function but not in argument list.
+/// Captures columns which are used by lambda function but not in argument list.
 /// Returns ColumnFunction with captured columns.
 /// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
 ///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
