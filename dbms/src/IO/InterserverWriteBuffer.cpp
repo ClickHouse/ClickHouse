@@ -55,6 +55,8 @@ InterserverWriteBuffer::InterserverWriteBuffer(const std::string & host_, int po
     session.setTimeout(connection_timeout, send_timeout, receive_timeout);
 #else
     session.setTimeout(connection_timeout);
+    static_cast <void> (send_timeout);
+    static_cast <void> (receive_timeout);
 #endif
 
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str, Poco::Net::HTTPRequest::HTTP_1_1);
