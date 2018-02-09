@@ -11,7 +11,7 @@ namespace DB
 /// Counts how many bytes of `filt` are greater than zero.
 size_t countBytesInFilter(const IColumn::Filter & filt);
 
-/// Returns vector with num_columns elements. vector[i] is the number of i-th in selector.
+/// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
 std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector);
 
