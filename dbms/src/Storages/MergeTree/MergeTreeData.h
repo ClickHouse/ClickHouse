@@ -443,7 +443,7 @@ public:
     }
 
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
-    ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; }
+    ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; } /// may return nullptr
     SortDescription getPrimarySortDescription() const { return primary_sort_descr; }
     SortDescription getSortDescription() const { return sort_descr; }
 
