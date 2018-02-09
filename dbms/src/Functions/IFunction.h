@@ -22,7 +22,7 @@ namespace ErrorCodes
 /// The simplest executable object.
 /// Motivation:
 ///  * Prepare something heavy once before main execution loop instead of doing it for each block.
-///  * Provide const interface for IBaseFunction (later).
+///  * Provide const interface for IFunctionBase (later).
 class IPreparedFunction
 {
 public:
@@ -157,7 +157,7 @@ public:
 
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
-/// Creates IBaseFunction from argument types list.
+/// Creates IFunctionBase from argument types list.
 class IFunctionBuilder
 {
 public:
@@ -175,7 +175,7 @@ public:
     /// Throw if number of arguments is incorrect. Default implementation will check only in non-variadic case.
     virtual void checkNumberOfArguments(size_t number_of_arguments) const = 0;
 
-    /// Check arguments and return IBaseFunction.
+    /// Check arguments and return IFunctionBase.
     virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const = 0;
 
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
