@@ -323,14 +323,17 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns, ExpressionActionsPtr primary_key_expressions,
+static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns,
+    const ExpressionActionsPtr & primary_key_expressions, const ExpressionActionsPtr & secondary_key_expressions,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names
 )
 {
-    Names key_columns_dup = primary_key_expressions->getRequiredColumns();
-    std::set<String> key_columns(key_columns_dup.cbegin(), key_columns_dup.cend());
+    Names primary_key_columns_dup = primary_key_expressions->getRequiredColumns();
+    Names secondary_key_columns_dup = secondary_key_expressions->getRequiredColumns();
+    std::set<String> key_columns(primary_key_columns_dup.cbegin(), primary_key_columns_dup.cend());
+    key_columns.insert(secondary_key_columns_dup.begin(), secondary_key_columns_dup.end());
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -535,8 +538,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
-    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.merging_params,
-        gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.getSecondarySortExpression()
+            , data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, future_part.name, future_part.part_info);

@@ -281,6 +281,7 @@ public:
                   const ColumnDefaults & column_defaults_,
                   Context & context_,
                   const ASTPtr & primary_expr_ast_,
+                  const ASTPtr & secondary_sort_expr_ast_,
                   const String & date_column_name,
                   const ASTPtr & partition_expr_ast_,
                   const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
@@ -442,6 +443,8 @@ public:
     }
 
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
+    ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; }
+    SortDescription getPrimarySortDescription() const { return primary_sort_descr; }
     SortDescription getSortDescription() const { return sort_descr; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
@@ -517,6 +520,7 @@ public:
     const MergeTreeSettings settings;
 
     ASTPtr primary_expr_ast;
+    ASTPtr secondary_sort_expr_ast;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
@@ -546,6 +550,11 @@ private:
     bool require_part_metadata;
 
     ExpressionActionsPtr primary_expr;
+    /// Additional expression for sorting (of rows with the same primary keys).
+    ExpressionActionsPtr secondary_sort_expr;
+    /// Sort description for primary key. Is the prefix of sort_descr.
+    SortDescription primary_sort_descr;
+    /// Sort description for primary key + secondary sorting columns.
     SortDescription sort_descr;
 
     String database_name;
