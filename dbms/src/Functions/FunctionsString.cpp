@@ -31,6 +31,8 @@ using namespace GatherUtils;
 template <bool negative = false>
 struct EmptyImpl
 {
+    static constexpr auto is_fixed_to_constant = false;
+
     static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
@@ -42,13 +44,16 @@ struct EmptyImpl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt8 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt8 & /*res*/)
     {
-        res = negative ^ (n == 0);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt8> & /*res*/)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
     {
+        size_t size = data.size() / n;
+
+        for (size_t i = 0; i < size; ++i)
+            res[i] = negative ^ (n == 0 || data[i * n] == '\0');
     }
 
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
@@ -68,6 +73,8 @@ struct EmptyImpl
   */
 struct LengthImpl
 {
+    static constexpr auto is_fixed_to_constant = true;
+
     static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
@@ -100,6 +107,8 @@ struct LengthImpl
   */
 struct LengthUTF8Impl
 {
+    static constexpr auto is_fixed_to_constant = false;
+
     static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
@@ -554,8 +563,7 @@ public:
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            /// For a fixed string only `lengthUTF8` function returns not a constant.
-            if ("lengthUTF8" != getName())
+            if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
                 Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
