@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 /// The simplest executable object.
 /// Motivation:
-///  * Prepare something heavy once before main execution circle instead of doing it for each block.
+///  * Prepare something heavy once before main execution loop instead of doing it for each block.
 ///  * Provide const interface for IBaseFunction (later).
 class IPreparedFunction
 {
