@@ -492,6 +492,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
     }
 
+    ASTPtr secondary_sorting_expr_list;
+
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
         if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
@@ -549,7 +551,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
         if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
+        {
             merging_params.version_column = ast->name;
+            secondary_sorting_expr_list = std::make_shared<ASTExpressionList>();
+            secondary_sorting_expr_list->children.push_back(engine_args.back());
+        }
         else
             throw Exception(
                     "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -615,37 +621,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
-    /// MultiversionMergeTree must have version column in primary key.
-    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-    {
-        auto ast_primary_expr_list = typeid_cast<ASTExpressionList *>(primary_expr_list.get());
-        bool has_version_column_in_pk = false;
-        for (const auto & expr : ast_primary_expr_list->children)
-        {
-            if (auto ast = typeid_cast<const ASTIdentifier *>(expr.get()))
-            {
-                if (ast->name == merging_params.version_column)
-                    has_version_column_in_pk = true;
-            }
-        }
-
-        if (!has_version_column_in_pk)
-            throw Exception("VersionedCollapsingMergeTree must have version column in primary key.",
-                            ErrorCodes::BAD_ARGUMENTS);
-    }
-
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
             args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
-            args.context, primary_expr_list, date_column_name, partition_expr_list,
+            args.context, primary_expr_list, secondary_sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.data_path, args.database_name, args.table_name,
             args.columns, args.materialized_columns, args.alias_columns, args.column_defaults, args.attach,
-            args.context, primary_expr_list, date_column_name, partition_expr_list,
+            args.context, primary_expr_list, secondary_sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);
 }

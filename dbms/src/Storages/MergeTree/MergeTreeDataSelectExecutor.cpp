@@ -196,7 +196,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     processed_stage = QueryProcessingStage::FetchColumns;
 
     const Settings & settings = context.getSettingsRef();
-    SortDescription sort_descr = data.getSortDescription();
+    SortDescription sort_descr = data.getPrimarySortDescription();
 
     PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
         data.getPrimaryExpression());
@@ -813,7 +813,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
             case MergeTreeData::MergingParams::Summing:
                 merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
-                    data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
+                        data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
                 break;
 
             case MergeTreeData::MergingParams::Aggregating:
@@ -822,7 +822,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
             case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
                 merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
-                    data.getSortDescription(), data.merging_params.version_column, max_block_size);
+                        data.getSortDescription(), data.merging_params.version_column, max_block_size);
                 break;
 
             case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
