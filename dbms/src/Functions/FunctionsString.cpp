@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+    extern const int LOGICAL_ERROR;
 }
 
 using namespace GatherUtils;
@@ -31,6 +32,7 @@ using namespace GatherUtils;
 template <bool negative = false>
 struct EmptyImpl
 {
+    /// If the function will return constant value for FixedString data type.
     static constexpr auto is_fixed_to_constant = false;
 
     static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
@@ -44,17 +46,19 @@ struct EmptyImpl
         }
     }
 
+    /// Only make sense if is_fixed_to_constant.
     static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt8 & /*res*/)
     {
+        throw Exception("Logical error: 'vector_fixed_to_constant method' is called", ErrorCodes::LOGICAL_ERROR);
     }
 
     static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
     {
-        char * empty_chars[n] = {0};
+        std::vector<char> empty_chars(n);
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = negative ^ (n == 0 || 0 == memcmp(&data[i * size], empty_chars, n));
+            res[i] = negative ^ (n == 0 || 0 == memcmp(&data[i * size], empty_chars.data(), n));
     }
 
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
