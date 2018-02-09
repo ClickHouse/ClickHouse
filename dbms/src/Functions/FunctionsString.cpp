@@ -50,10 +50,11 @@ struct EmptyImpl
 
     static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
     {
+        char * empty_chars[n] = {0};
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = negative ^ (n == 0 || data[i * n] == '\0');
+            res[i] = negative ^ (n == 0 || 0 == memcmp(&data[i * size], empty_chars, n));
     }
 
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
