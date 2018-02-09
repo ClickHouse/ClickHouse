@@ -36,7 +36,7 @@ public:
 };
 
 
-/// Executes expression. Uses for lambda functions implementation. Isn't can't be created from factory.
+/// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
 class FunctionExpression : public IFunctionBase, public IPreparedFunction,
                            public std::enable_shared_from_this<FunctionExpression>
 {
