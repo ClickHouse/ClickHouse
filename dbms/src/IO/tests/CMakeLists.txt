@@ -82,3 +82,6 @@ target_link_libraries (limit_read_buffer clickhouse_common_io)
 
 add_executable (limit_read_buffer2 limit_read_buffer2.cpp ${SRCS})
 target_link_libraries (limit_read_buffer2 clickhouse_common_io)
+
+add_executable (parse_date_time_best_effort parse_date_time_best_effort.cpp ${SRCS})
+target_link_libraries (parse_date_time_best_effort clickhouse_common_io)
