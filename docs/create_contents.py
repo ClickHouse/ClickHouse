@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-SOURCES_TREE = 'en'
+SOURCES_TREE = 'ru'
 from os import walk
 
 def get_header(filepath):

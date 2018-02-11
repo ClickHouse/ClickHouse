@@ -21,7 +21,7 @@ theme:
     text: Roboto
     code: Roboto Mono
   logo: 'images/logo.svg'
-  favicon: 'assets/images/logo_ch.ico'
+  favicon: 'assets/images/favicon.ico'
   include_search_page: false
   search_index_only: true
   static_templates:
@@ -34,11 +34,10 @@ extra:
 
 
 pages:
-- 'Оглавление': 'index.md'
+- 'ClickHouse': 'index.md'
 
 - 'Введение':
 #  - 'Введение': 'introduction/index.md'
-  - 'Что такое ClickHouse': 'introduction/what_is_clickhouse.md'
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
   - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
@@ -148,7 +147,7 @@ pages:
   - 'XML': 'formats/xml.md'
 
 - 'Типы данных':
-#  - 'Типы данных': 'data_types/index.md'
+  - 'Введение': 'data_types/index.md'
   - 'Array(T)': 'data_types/array.md'
   - 'Булевы значения': 'data_types/boolean.md'
   - 'Date': 'data_types/date.md'

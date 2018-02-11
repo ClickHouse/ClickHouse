@@ -21,7 +21,7 @@ theme:
     text: Roboto
     code: Roboto Mono
   logo: 'images/logo.svg'
-  favicon: 'assets/images/logo_ch.ico'
+  favicon: 'assets/images/favicon.ico'
   include_search_page: false
   search_index_only: true
   static_templates:
@@ -34,11 +34,10 @@ extra:
 
 
 pages:
-- 'Contents': 'index.md'
+- 'ClickHouse': 'index.md'
 
 - 'Introduction':
 #  - 'Введение': 'introduction/index.md'
-  - 'What is ClickHouse?': 'introduction/what_is_clickhouse.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
@@ -65,7 +64,7 @@ pages:
   - 'Visual interfaces from third-party developers': 'interfaces/third-party_gui.md'
 
 - 'Query language':
-  - 'Query language': 'query_language/index.md'
+#  - 'Query language': 'query_language/index.md'
   - 'Queries': 'query_language/queries.md'
   - 'Syntax': 'query_language/syntax.md'
   - 'The clickhouse-local program': 'query_language/clickhouse_local.md'
@@ -147,7 +146,7 @@ pages:
   - 'XML': 'formats/xml.md'
 
 - 'Data types':
-#  - 'Типы данных': 'data_types/index.md'
+  - 'Introduction': 'data_types/index.md'
   - 'Array(T)': 'data_types/array.md'
   - 'Boolean values': 'data_types/boolean.md'
   - 'Date': 'data_types/date.md'

@@ -10,6 +10,9 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 `База данных` - это просто директория для таблиц.
 Если написано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если база данных уже существует.
 
+
+<a name="query_language-queries-create_table"></a>
+
 ## CREATE TABLE
 Запрос `CREATE TABLE` может иметь несколько форм.
 
