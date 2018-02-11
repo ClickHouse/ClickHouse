@@ -9,6 +9,7 @@ fi
 for lang in $LANGS; do
 	echo -e "\n\nLANG=$lang. Creating single page source"
 	mkdir $lang'_single_page'
+	cp -r $lang/images $lang'_single_page'
 	./concatenate.py $lang
 	echo -e "\n\nLANG=$lang. Building multipage..."
   	mkdocs build -f mkdocs_$lang.yml
