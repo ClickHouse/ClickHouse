@@ -587,6 +587,7 @@ BlockIO InterpreterCreateQuery::execute()
 {
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
     checkAccess(create);
+    ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
