@@ -1,8 +1,8 @@
 # ClickHouse release 1.1.54343, 2018-02-05
 
-* An ability to use macros for cluster name definition in distributed DDL queries and constructors of Distributed tables was added: `CREATE TABLE distr ON CLUSTER '{cluster}' (...) ENGINE = Distributed('{cluster}', 'db', 'table')`.
+* Added macros support for defining cluster names in distributed DDL queries and constructors of Distributed tables: `CREATE TABLE distr ON CLUSTER '{cluster}' (...) ENGINE = Distributed('{cluster}', 'db', 'table')`.
 * Now the index is used for conditions like `expr IN (subquery)`.
-* Duplicates processing when added to a Replicated table was improved, now they do not slow down the replication queue execution.
+* Improved processing of duplicates when inserting to Replicated tables, so they no longer slow down execution of the replication queue.
 
 # ClickHouse release 1.1.54342, 2018-01-22
 
