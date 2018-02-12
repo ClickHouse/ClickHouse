@@ -198,8 +198,10 @@ static std::unique_ptr<Poco::MongoDB::Cursor> createCursor(
 BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 {
     auto cursor = createCursor(db, collection, sample_block);
+    cursor->query().selector().addNewDocument("$query");
+
     return std::make_shared<MongoDBBlockInputStream>(
-        connection, cursor->query().selector().addNewDocument("$query"), sample_block, max_block_size);
+            connection, std::move(cursor), sample_block, max_block_size);
 }
 
 
@@ -207,8 +209,6 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 {
     if (!dict_struct.id)
         throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
-
-    auto cursor = createCursor(db, collection, sample_block);
 
     /** NOTE: While building array, Poco::MongoDB requires passing of different unused element names, along with values.
       * In general, Poco::MongoDB is quite inefficient and bulky.
@@ -218,6 +218,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
     for (const UInt64 id : ids)
         ids_array->add(DB::toString(id), Int32(id));
 
+    auto cursor = createCursor(db, collection, sample_block);
     auto & doc = cursor->query().selector().addNewDocument("$query");
     doc.addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
