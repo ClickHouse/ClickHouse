@@ -1097,15 +1097,9 @@ private:
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
 {
+    /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
-
-    /// Remove FORMAT ... INTO OUTFILE if exists
-    if (dynamic_cast<const ASTQueryWithOutput *>(query_ptr_.get()))
-    {
-        auto query_with_output = dynamic_cast<ASTQueryWithOutput *>(query_ptr.get());
-        query_with_output->out_file = nullptr;
-        query_with_output->format = nullptr;
-    }
+    ASTQueryWithOutput::resetOutputASTIfExist(*query_ptr);
 
     auto query = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
     if (!query)
