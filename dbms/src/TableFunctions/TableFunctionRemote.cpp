@@ -185,13 +185,12 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
-    const size_t max_args = is_cluster_function ? 3 : 5;
-
     if (args_func.size() != 1)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
+    const size_t max_args = is_cluster_function ? 3 : 5;
     if (args.size() < 2 || args.size() > max_args)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -278,8 +277,6 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
         if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
             id->kind = ASTIdentifier::Table;
 
-    size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
-
     ClusterPtr cluster;
     if (!cluster_name.empty())
     {
@@ -289,6 +286,7 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
     else
     {
         /// Create new cluster from the scratch
+        size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
         std::vector<String> shards = parseDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
