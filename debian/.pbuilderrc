@@ -56,11 +56,11 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
 UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
 # Mirrors to use. Update these to your preferred mirror.
-DEBIAN_MIRROR="deb.debian.org"
-#UBUNTU_MIRROR="mirrors.kernel.org"
+DEBIAN_MIRROR=${DEBIAN_MIRROR:=deb.debian.org}
+UBUNTU_MIRROR=${UBUNTU_MIRROR:=archive.ubuntu.com}
 
 #DEBIAN_MIRROR="mirror.yandex.ru"
-UBUNTU_MIRROR="mirror.yandex.ru"
+#UBUNTU_MIRROR="mirror.yandex.ru"
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
