@@ -11,6 +11,7 @@ namespace ErrorCodes
 extern const int TABLE_ALREADY_EXISTS;
 extern const int UNKNOWN_TABLE;
 extern const int LOGICAL_ERROR;
+extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & context)
@@ -59,7 +60,7 @@ bool DatabaseDictionary::isTableExist(
 
 StoragePtr DatabaseDictionary::tryGetTable(
     const Context & /*context*/,
-    const String & table_name)
+    const String & table_name) const
 {
     auto objects_map = external_dictionaries.getObjectsMap();
     const auto & dictionaries = objects_map.get();
@@ -161,7 +162,7 @@ ASTPtr DatabaseDictionary::getCreateQuery(
     const Context &,
     const String &) const
 {
-    throw Exception("DatabaseDictionary: getCreateQuery() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("There is no CREATE TABLE query for DatabaseDictionary tables", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 }
 
 void DatabaseDictionary::shutdown()
@@ -171,6 +172,11 @@ void DatabaseDictionary::shutdown()
 void DatabaseDictionary::drop()
 {
     /// Additional actions to delete database are not required.
+}
+
+String DatabaseDictionary::getDataPath(const Context &) const
+{
+    return {};
 }
 
 }

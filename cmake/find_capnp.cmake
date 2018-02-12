@@ -16,8 +16,10 @@ if (ENABLE_CAPNP)
 
     option (USE_INTERNAL_CAPNP_LIBRARY "Set to FALSE to use system capnproto library instead of bundled" ${USE_INTERNAL_CAPNP_LIBRARY_DEFAULT})
 
-    if (USE_INTERNAL_CAPNP_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/CMakeLists.txt")
-       message (WARNING "submodule contrib/capnproto is missing. to fix try run: \n git submodule update --init --recursive")
+    if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/CMakeLists.txt")
+       if (USE_INTERNAL_CAPNP_LIBRARY)
+           message (WARNING "submodule contrib/capnproto is missing. to fix try run: \n git submodule update --init --recursive")
+       endif ()
        set (USE_INTERNAL_CAPNP_LIBRARY 0)
        set (MISSING_INTERNAL_CAPNP_LIBRARY 1)
     endif ()

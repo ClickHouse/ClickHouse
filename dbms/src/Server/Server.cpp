@@ -2,42 +2,34 @@
 
 #include <memory>
 #include <sys/resource.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
-
 #include <ext/scope_guard.h>
-
+#include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/config.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-
 #include <IO/HTTPCommon.h>
-
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
-
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-
 #include "ConfigReloader.h"
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
@@ -48,7 +40,6 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
-
 
 namespace CurrentMetrics
 {
@@ -74,6 +65,18 @@ static std::string getCanonicalPath(std::string && path)
     if (path.back() != '/')
         path += '/';
     return path;
+}
+
+void Server::uninitialize()
+{
+    logger().information("shutting down");
+    BaseDaemon::uninitialize();
+}
+
+void Server::initialize(Poco::Util::Application & self)
+{
+    BaseDaemon::initialize(self);
+    logger().information("starting up");
 }
 
 std::string Server::getDefaultCorePath() const
@@ -256,11 +259,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Load global settings from default profile.
+    /// Load global settings from default_profile and system_profile.
+    global_context->setDefaultProfiles(config());
     Settings & settings = global_context->getSettingsRef();
-    String default_profile_name = config().getString("default_profile", "default");
-    global_context->setDefaultProfileName(default_profile_name);
-    global_context->setSetting("profile", default_profile_name);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
@@ -451,7 +452,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
+                if (try_listen && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
                     LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "

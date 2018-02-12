@@ -118,8 +118,7 @@ public:
         return {1};
     }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t count_arrays = 0;
 
@@ -135,10 +134,12 @@ public:
             throw Exception("First argument for function " + getName() + " must be tuple or array of tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         size_t index = getElementNum(arguments[1].column, *tuple);
-        out_return_type = tuple->getElements()[index];
+        DataTypePtr out_return_type = tuple->getElements()[index];
 
         for (; count_arrays; --count_arrays)
             out_return_type = std::make_shared<DataTypeArray>(out_return_type);
+
+        return out_return_type;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -174,7 +175,7 @@ public:
     }
 
 private:
-    size_t getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple)
+    size_t getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple) const
     {
         if (auto index_col = checkAndGetColumnConst<ColumnUInt8>(index_column.get()))
         {

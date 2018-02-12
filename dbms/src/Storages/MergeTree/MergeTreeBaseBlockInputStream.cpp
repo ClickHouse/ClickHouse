@@ -233,20 +233,18 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
               */
             if (constant_filter_description.always_false)
             {
-                if (pre_range_reader)
-                {
-                    /// Have to read rows from last partly read granula.
-                    if (!ranges_to_read.empty())
-                    {
-                        auto & range = ranges_to_read.back();
-                        task->current_range_reader = reader->readRange(range.begin, range.end);
-                    }
-                    /// But can just skip them.
-                    task->number_of_rows_to_skip = rows_was_read_in_last_range;
-                }
-                else
-                    task->current_range_reader.reset();
-
+	            /*
+                  If this filter is PREWHERE 0, MergeTree Stream can be marked as done,
+                  and this task can be clear. 
+                  If we don't mark this task finished here, readImpl could
+                  jump into endless loop.
+                  Error scenario:
+                  select * from table where isNull(NOT_NULLABLE_COLUMN) AND OTHER PRED;
+                  and isNull pred is promoted to PREWHERE.
+                  (though it is difficult to reproduce)
+                */	
+                task->current_range_reader.reset();
+                task->mark_ranges.clear();
                 res.clear();
                 return res;
             }

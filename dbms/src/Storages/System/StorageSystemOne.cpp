@@ -11,8 +11,9 @@ namespace DB
 
 
 StorageSystemOne::StorageSystemOne(const std::string & name_)
-    : name(name_), columns{{"dummy", std::make_shared<DataTypeUInt8>()}}
+    : name(name_)
 {
+    columns = NamesAndTypesList{{"dummy", std::make_shared<DataTypeUInt8>()}};
 }
 
 

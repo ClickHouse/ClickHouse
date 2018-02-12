@@ -1,5 +1,5 @@
 
-add_library (mysqlxx
+add_library (mysqlxx ${SPLIT_SHARED}
     src/Connection.cpp
     src/Exception.cpp
     src/Query.cpp

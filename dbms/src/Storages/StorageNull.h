@@ -20,8 +20,6 @@ public:
     std::string getName() const override { return "Null"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(
         const Names &,
         const SelectQueryInfo &,
@@ -47,7 +45,6 @@ public:
 
 private:
     String name;
-    NamesAndTypesList columns;
 
 protected:
     StorageNull(
@@ -56,7 +53,7 @@ protected:
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_)
-        : IStorage{materialized_columns_, alias_columns_, column_defaults_}, name(name_), columns(columns_) {}
+        : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, name(name_)  {}
 };
 
 }

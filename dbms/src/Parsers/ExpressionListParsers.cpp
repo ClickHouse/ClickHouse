@@ -8,7 +8,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -82,7 +82,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto list = std::make_shared<ASTExpressionList>();
     node = list;
 
-    while (1)
+    while (true)
     {
         if (first)
         {

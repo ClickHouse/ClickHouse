@@ -93,7 +93,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
+bool Set::insertFromBlock(const Block & block, bool fill_set_elements)
 {
     std::unique_lock lock(rwlock);
 
@@ -176,9 +176,18 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 #undef M
     }
 
-    if (create_ordered_set)
+    if (fill_set_elements)
+    {
         for (size_t i = 0; i < rows; ++i)
-            ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set for index works only for single key, not for tuples
+        {
+            std::vector<Field> new_set_elements;
+            for (size_t j = 0; j < keys_size; ++j)
+            {
+                new_set_elements.push_back((*key_columns[j])[i]);
+            }
+            set_elements->emplace_back(std::move(new_set_elements));
+        }
+    }
 
     if (!checkSetSizeLimits())
     {
@@ -203,7 +212,6 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
     return true;
 }
 
-
 static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
 {
     if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
@@ -220,7 +228,7 @@ static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const C
 }
 
 
-void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set)
+void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool fill_set_elements)
 {
     /// Will form a block with values from the set.
 
@@ -272,20 +280,11 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
             throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
     }
 
-    if (create_ordered_set)
-        ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
-
     Block block;
     for (size_t i = 0, size = types.size(); i < size; ++i)
         block.insert(ColumnWithTypeAndName(std::move(columns[i]), types[i], "_" + toString(i)));
 
-    insertFromBlock(block, create_ordered_set);
-
-    if (create_ordered_set)
-    {
-        std::sort(ordered_set_elements->begin(), ordered_set_elements->end());
-        ordered_set_elements->erase(std::unique(ordered_set_elements->begin(), ordered_set_elements->end()), ordered_set_elements->end());
-    }
+    insertFromBlock(block, fill_set_elements);
 }
 
 
@@ -507,106 +506,104 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container & 
 }
 
 
-/// Return the BoolMask.
-/// The first element is whether the `range` element can be an element of a set.
-/// The second element is whether the element in the `range` range is not from the set.
-BoolMask Set::mayBeTrueInRange(const Range & range) const
+MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && index_mapping_)
+    : ordered_set(),
+    indexes_mapping(std::move(index_mapping_))
 {
-    if (!ordered_set_elements)
-        throw Exception("Ordered set in not created.");
+    std::sort(indexes_mapping.begin(), indexes_mapping.end(),
+        [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
+        {
+            return std::forward_as_tuple(l.pk_index, l.tuple_index) < std::forward_as_tuple(r.pk_index, r.tuple_index);
+        });
 
-    if (ordered_set_elements->empty())
-        return {false, true};
+    std::unique(
+        indexes_mapping.begin(), indexes_mapping.end(),
+        [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
+        {
+            return l.pk_index == r.pk_index;
+        });
 
-    /// Range (-inf; + inf)
-    if (!range.left_bounded && !range.right_bounded)
-        return {true, true};
-
-    const Field & left = range.left;
-    const Field & right = range.right;
-
-    /// Range (-inf; right|
-    if (!range.left_bounded)
+    for (size_t i = 0; i < set_elements.size(); ++i)
     {
-        if (range.right_included)
-            return {ordered_set_elements->front() <= right, true};
-        else
-            return {ordered_set_elements->front() < right, true};
+        std::vector<FieldWithInfinity> new_set_values;
+        for (size_t j = 0; j < indexes_mapping.size(); ++j)
+        {
+            new_set_values.push_back(FieldWithInfinity(set_elements[i][indexes_mapping[j].tuple_index]));
+        }
+        ordered_set.emplace_back(std::move(new_set_values));
     }
 
-    /// Range |left; +Inf)
-    if (!range.right_bounded)
-    {
-        if (range.left_included)
-            return {ordered_set_elements->back() >= left, true};
-        else
-            return {ordered_set_elements->back() > left, true};
-    }
-
-    /// Range from one value [left].
-    if (range.left_included && range.right_included && left == right)
-    {
-        if (std::binary_search(ordered_set_elements->begin(), ordered_set_elements->end(), left))
-            return {true, false};
-        else
-            return {false, true};
-    }
-
-    /// The first element of the set that is greater than or equal to `left`.
-    auto left_it = std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left);
-
-    /// If `left` is not in the range (open range), then take the next element in the order of the set.
-    if (!range.left_included && left_it != ordered_set_elements->end() && *left_it == left)
-        ++left_it;
-
-    /// if the entire range is to the right of the set: `{ set } | range |`
-    if (left_it == ordered_set_elements->end())
-        return {false, true};
-
-    /// The first element of the set, which is strictly greater than `right`.
-    auto right_it = std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right);
-
-    /// the whole range to the left of the set: `| range | { set }`
-    if (right_it == ordered_set_elements->begin())
-        return {false, true};
-
-    /// The last element of the set that is less than or equal to `right`.
-    --right_it;
-
-    /// If `right` does not enter the range (open range), then take the previous element in the order of the set.
-    if (!range.right_included && *right_it == right)
-    {
-        /// the entire range to the left of the set, although the open range is tangent to the set: `| range) { set }`
-        if (right_it == ordered_set_elements->begin())
-            return {false, true};
-
-        --right_it;
-    }
-
-    /// The range does not contain any keys from the set, although it is located somewhere in the middle relative to its elements: * * * * [ ] * * * *
-    if (right_it < left_it)
-        return {false, true};
-
-    return {true, true};
+    std::sort(ordered_set.begin(), ordered_set.end());
 }
 
-
-std::string Set::describe() const
+/** Return the BoolMask where:
+  * 1: the intersection of the set and the range is non-empty
+  * 2: the range contains elements not in the set
+  */
+BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges)
 {
-    if (!ordered_set_elements)
-        return "{}";
+    std::vector<FieldWithInfinity> left_point;
+    std::vector<FieldWithInfinity> right_point;
+    left_point.reserve(indexes_mapping.size());
+    right_point.reserve(indexes_mapping.size());
 
-    bool first = true;
-    std::stringstream ss;
+    bool invert_left_infinities = false;
+    bool invert_right_infinities = false;
 
-    ss << "{";
-    for (const Field & f : *ordered_set_elements)
+    for (size_t i = 0; i < indexes_mapping.size(); ++i)
     {
-        ss << (first ? "" : ", ") << applyVisitor(FieldVisitorToString(), f);
-        first = false;
+        std::optional<Range> new_range = PKCondition::applyMonotonicFunctionsChainToRange(
+            key_ranges[indexes_mapping[i].pk_index],
+            indexes_mapping[i].functions,
+            indexes_mapping[i].data_type);
+
+        if (!new_range)
+            return {true, true};
+
+        /** A range that ends in (x, y, ..., +inf) exclusive is the same as a range
+          * that ends in (x, y, ..., -inf) inclusive and vice versa for the left bound.
+          */
+        if (new_range->left_bounded)
+        {
+            if (!new_range->left_included)
+                invert_left_infinities = true;
+
+            left_point.push_back(FieldWithInfinity(new_range->left));
+        }
+        else
+        {
+            if (invert_left_infinities)
+                left_point.push_back(FieldWithInfinity::getPlusinfinity());
+            else
+                left_point.push_back(FieldWithInfinity::getMinusInfinity());
+        }
+
+        if (new_range->right_bounded)
+        {
+            if (!new_range->right_included)
+                invert_right_infinities = true;
+
+            right_point.push_back(FieldWithInfinity(new_range->right));
+        }
+        else
+        {
+            if (invert_right_infinities)
+                right_point.push_back(FieldWithInfinity::getMinusInfinity());
+            else
+                right_point.push_back(FieldWithInfinity::getPlusinfinity());
+        }
     }
-    ss << "}";
-    return ss.str();
+
+    /** Because each parallelogram maps to a contiguous sequence of elements
+      * layed out in the lexicographically increasing order, the set intersects the range
+      * if and only if either bound coincides with an element or at least one element
+      * is between the lower bounds
+      */
+    auto left_lower = std::lower_bound(ordered_set.begin(), ordered_set.end(), left_point);
+    auto right_lower = std::lower_bound(ordered_set.begin(), ordered_set.end(), right_point);
+    return {left_lower != right_lower
+        || (left_lower != ordered_set.end() && *left_lower == left_point)
+        || (right_lower != ordered_set.end() && *right_lower == right_point), true};
 }
 
 }

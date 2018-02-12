@@ -49,8 +49,8 @@ You can compile packages and install them.
 You can also use programs without installing packages.
 
 ```text
-Клиент: dbms/src/Client/
-Сервер: dbms/src/Server/
+Client: dbms/src/Client/
+Server: dbms/src/Server/
 ```
 
 For the server, create a catalog with data, such as:

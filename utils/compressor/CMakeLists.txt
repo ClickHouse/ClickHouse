@@ -14,3 +14,7 @@ target_link_libraries (mutator clickhouse_common_io)
 
 add_executable (decompress_perf decompress_perf.cpp)
 target_link_libraries (decompress_perf clickhouse_common_io)
+
+if (NOT USE_INTERNAL_ZSTD_LIBRARY)
+    target_include_directories (zstd_test BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()

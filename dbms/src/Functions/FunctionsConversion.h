@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/Operators.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -339,7 +340,14 @@ enum class ConvertFromStringExceptionMode
     Null    /// Return ColumnNullable with NULLs when value cannot be parsed.
 };
 
-template <typename FromDataType, typename ToDataType, typename Name, ConvertFromStringExceptionMode mode>
+enum class ConvertFromStringParsingMode
+{
+    Normal,
+    BestEffort  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
+};
+
+template <typename FromDataType, typename ToDataType, typename Name,
+    ConvertFromStringExceptionMode exception_mode, ConvertFromStringParsingMode parsing_mode>
 struct ConvertThroughParsing
 {
     static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
@@ -366,11 +374,17 @@ struct ConvertThroughParsing
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const DateLUTImpl * time_zone [[maybe_unused]] = nullptr;
+        const DateLUTImpl * local_time_zone [[maybe_unused]] = nullptr;
+        const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
-        if (std::is_same_v<ToDataType, DataTypeDateTime>)
-            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+        {
+            local_time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
+
+            if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+                utc_time_zone = &DateLUT::instance("UTC");
+        }
 
         const IColumn * col_from = block.getByPosition(arguments[0]).column.get();
         const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
@@ -392,7 +406,7 @@ struct ConvertThroughParsing
 
         ColumnUInt8::MutablePtr col_null_map_to;
         ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-        if constexpr (mode == ConvertFromStringExceptionMode::Null)
+        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
         {
             col_null_map_to = ColumnUInt8::create(size);
             vec_null_map_to = &col_null_map_to->getData();
@@ -422,28 +436,48 @@ struct ConvertThroughParsing
 
             ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
-            if constexpr (mode == ConvertFromStringExceptionMode::Throw)
+            if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
-                parseImpl<ToDataType>(vec_to[i], read_buffer, time_zone);
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+                {
+                    time_t res;
+                    parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                    vec_to[i] = res;
+                }
+                else
+                {
+                    parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                }
 
                 if (!isAllRead(read_buffer))
                     throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
             }
             else
             {
-                bool parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer) && isAllRead(read_buffer);
+                bool parsed;
+
+                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
+                {
+                    time_t res;
+                    parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                    vec_to[i] = res;
+                }
+                else
+                {
+                    parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer) && isAllRead(read_buffer);
+                }
 
                 if (!parsed)
                     vec_to[i] = 0;
 
-                if constexpr (mode == ConvertFromStringExceptionMode::Null)
+                if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
                     (*vec_null_map_to)[i] = !parsed;
             }
 
             current_offset = next_offset;
         }
 
-        if constexpr (mode == ConvertFromStringExceptionMode::Null)
+        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
             block.getByPosition(result).column = ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
         else
             block.getByPosition(result).column = std::move(col_to);
@@ -453,20 +487,11 @@ struct ConvertThroughParsing
 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name>
-    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw> {};
+    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name>
-    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw> {};
-
-
-/** Conversion from String through parsing, which returns default value instead of throwing an exception.
-  */
-template <typename ToDataType, typename Name>
-struct ConvertOrZeroImpl : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Zero> {};
-
-template <typename ToDataType, typename Name>
-struct ConvertOrNullImpl : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null> {};
+    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple.
@@ -625,14 +650,16 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> &) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (arguments.size() != 1 && arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
-            out_return_type = std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
+            return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
         }
         else
         {
@@ -660,9 +687,9 @@ public:
             }
 
             if (std::is_same_v<ToDataType, DataTypeDateTime>)
-                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else
-                out_return_type = std::make_shared<ToDataType>();
+                return std::make_shared<ToDataType>();
         }
     }
 
@@ -754,76 +781,81 @@ private:
 };
 
 
-/** Functions toTOrZero (where T is number of date or datetime type):
+/** Function toTOrZero (where T is number of date or datetime type):
   *  try to convert from String to type T through parsing,
   *  if cannot parse, return default value instead of throwing exception.
-  * NOTE Also need implement tryToUnixTimestamp with timezone.
+  * Function toTOrNull will return Nullable type with NULL when cannot parse.
+  * NOTE Also need to implement tryToUnixTimestamp with timezone.
   */
-template <typename ToDataType, typename Name>
-class FunctionConvertOrZero : public IFunction
+template <typename ToDataType, typename Name,
+    ConvertFromStringExceptionMode exception_mode,
+    ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Normal>
+class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertOrZero>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertFromString>(); }
 
     String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<ToDataType>();
-    }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        if (arguments.size() != 1 && arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (checkAndGetDataType<DataTypeString>(from_type))
-            ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
-        else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
-                + ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'orZero'.",
+        if (!arguments[0].type->isStringOrFixedString())
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        /// Optional second argument with time zone is supported.
+
+        if (arguments.size() == 2)
+        {
+            if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime>)
+                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                    + toString(arguments.size()) + ", should be 1. Second argument makes sense only when converting to DateTime.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+            if (!arguments[1].type->isString())
+                throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        DataTypePtr res;
+
+        if (std::is_same_v<ToDataType, DataTypeDateTime>)
+            res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+        else
+            res = std::make_shared<ToDataType>();
+
+        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+            res = std::make_shared<DataTypeNullable>(res);
+
+        return res;
     }
-};
-
-
-template <typename ToDataType, typename Name>
-class FunctionConvertOrNull : public IFunction
-{
-public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertOrNull>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeNullable>(std::make_shared<ToDataType>());
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if (checkAndGetDataType<DataTypeString>(from_type))
-            ConvertOrNullImpl<ToDataType, Name>::execute(block, arguments, result);
+            ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(block, arguments, result);
+        else if (checkAndGetDataType<DataTypeFixedString>(from_type))
+            ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(block, arguments, result);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
-                + ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'orNull'.",
+                + ". Only String or FixedString argument is accepted for try-conversion function. For other arguments, use function without 'orZero' or 'orNull'.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
@@ -845,9 +877,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block &) override { return true; }
 
-    void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
-        DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & /*out_prerequisites*/) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!arguments[1].type->isUnsignedInteger())
             throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
@@ -857,7 +887,7 @@ public:
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
         const size_t n = arguments[1].column->getUInt(0);
-        out_return_type = std::make_shared<DataTypeFixedString>(n);
+        return std::make_shared<DataTypeFixedString>(n);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1095,17 +1125,21 @@ struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
 struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
 struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
+struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
+struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; };
 
-using FunctionToUInt8OrZero = FunctionConvertOrZero<DataTypeUInt8, NameToUInt8OrZero>;
-using FunctionToUInt16OrZero = FunctionConvertOrZero<DataTypeUInt16, NameToUInt16OrZero>;
-using FunctionToUInt32OrZero = FunctionConvertOrZero<DataTypeUInt32, NameToUInt32OrZero>;
-using FunctionToUInt64OrZero = FunctionConvertOrZero<DataTypeUInt64, NameToUInt64OrZero>;
-using FunctionToInt8OrZero = FunctionConvertOrZero<DataTypeInt8, NameToInt8OrZero>;
-using FunctionToInt16OrZero = FunctionConvertOrZero<DataTypeInt16, NameToInt16OrZero>;
-using FunctionToInt32OrZero = FunctionConvertOrZero<DataTypeInt32, NameToInt32OrZero>;
-using FunctionToInt64OrZero = FunctionConvertOrZero<DataTypeInt64, NameToInt64OrZero>;
-using FunctionToFloat32OrZero = FunctionConvertOrZero<DataTypeFloat32, NameToFloat32OrZero>;
-using FunctionToFloat64OrZero = FunctionConvertOrZero<DataTypeFloat64, NameToFloat64OrZero>;
+using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUInt32OrZero = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUInt64OrZero = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToInt8OrZero = FunctionConvertFromString<DataTypeInt8, NameToInt8OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToInt16OrZero = FunctionConvertFromString<DataTypeInt16, NameToInt16OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToInt32OrZero = FunctionConvertFromString<DataTypeInt32, NameToInt32OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToInt64OrZero = FunctionConvertFromString<DataTypeInt64, NameToInt64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToDateTimeOrZero = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
@@ -1117,32 +1151,108 @@ struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
 struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
 struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
+struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
+struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; };
 
-using FunctionToUInt8OrNull = FunctionConvertOrNull<DataTypeUInt8, NameToUInt8OrNull>;
-using FunctionToUInt16OrNull = FunctionConvertOrNull<DataTypeUInt16, NameToUInt16OrNull>;
-using FunctionToUInt32OrNull = FunctionConvertOrNull<DataTypeUInt32, NameToUInt32OrNull>;
-using FunctionToUInt64OrNull = FunctionConvertOrNull<DataTypeUInt64, NameToUInt64OrNull>;
-using FunctionToInt8OrNull = FunctionConvertOrNull<DataTypeInt8, NameToInt8OrNull>;
-using FunctionToInt16OrNull = FunctionConvertOrNull<DataTypeInt16, NameToInt16OrNull>;
-using FunctionToInt32OrNull = FunctionConvertOrNull<DataTypeInt32, NameToInt32OrNull>;
-using FunctionToInt64OrNull = FunctionConvertOrNull<DataTypeInt64, NameToInt64OrNull>;
-using FunctionToFloat32OrNull = FunctionConvertOrNull<DataTypeFloat32, NameToFloat32OrNull>;
-using FunctionToFloat64OrNull = FunctionConvertOrNull<DataTypeFloat64, NameToFloat64OrNull>;
+using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUInt32OrNull = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUInt64OrNull = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToInt8OrNull = FunctionConvertFromString<DataTypeInt8, NameToInt8OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToInt16OrNull = FunctionConvertFromString<DataTypeInt16, NameToInt16OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToInt32OrNull = FunctionConvertFromString<DataTypeInt32, NameToInt32OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToInt64OrNull = FunctionConvertFromString<DataTypeInt64, NameToInt64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
+
+struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
+struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
+struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
+
+using FunctionParseDateTimeBestEffort = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTimeBestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTimeBestEffortOrZero = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTimeBestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
 
-class FunctionCast final : public IFunction
+class PreparedFunctionCast : public PreparedFunctionImpl
 {
 public:
-    FunctionCast(const Context & context) : context(context) {}
+    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
+
+    explicit PreparedFunctionCast(WrapperType && wrapper_function, const char * name)
+            : wrapper_function(std::move(wrapper_function)), name(name) {}
+
+    String getName() const override { return name; }
+
+protected:
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        /// drop second argument, pass others
+        ColumnNumbers new_arguments{arguments.front()};
+        if (arguments.size() > 2)
+            new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
+
+        wrapper_function(block, new_arguments, result);
+    }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 private:
-    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
-    const Context & context;
     WrapperType wrapper_function;
-    std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
+    const char * name;
+};
+
+class FunctionCast final : public IFunctionBase
+{
+public:
+    using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
+    using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
+
+    FunctionCast(const Context & context, const char * name, MonotonicityForRange && monotonicity_for_range
+            , const DataTypes & argument_types, const DataTypePtr & return_type)
+            : context(context), name(name), monotonicity_for_range(monotonicity_for_range)
+            , argument_types(argument_types), return_type(return_type)
+    {
+    }
+
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
+    const DataTypePtr & getReturnType() const override { return return_type; }
+
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
+    {
+        return std::make_shared<PreparedFunctionCast>(prepare(getArgumentTypes()[0], getReturnType().get()), name);
+    }
+
+    String getName() const override { return name; }
+
+    bool hasInformationAboutMonotonicity() const override
+    {
+        return static_cast<bool>(monotonicity_for_range);
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        return monotonicity_for_range(type, left, right);
+    }
+
+private:
+
+    const Context & context;
+    const char * name;
+    MonotonicityForRange monotonicity_for_range;
+
+    DataTypes argument_types;
+    DataTypePtr return_type;
 
     template <typename DataType>
-    WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const)
+    WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const) const
     {
         using FunctionType = typename FunctionTo<DataType>::Type;
 
@@ -1150,9 +1260,7 @@ private:
 
         /// Check conversion using underlying function
         {
-            DataTypePtr unused_data_type;
-            std::vector<ExpressionAction> unused_prerequisites;
-            function->getReturnTypeAndPrerequisites({{ nullptr, from_type, "" }}, unused_data_type, unused_prerequisites);
+            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
         }
 
         return [function] (Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1174,7 +1282,7 @@ private:
         };
     }
 
-    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type)
+    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type) const
     {
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
@@ -1200,7 +1308,7 @@ private:
         }
 
         /// both from_type and to_type should be nullptr now is array types had same dimensions
-        if (from_type || to_type)
+        if ((from_type == nullptr) != (to_type == nullptr))
             throw Exception{
                 "CAST AS Array can only be performed between same-dimensional array types or from String",
                 ErrorCodes::TYPE_MISMATCH};
@@ -1235,7 +1343,7 @@ private:
         };
     }
 
-    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type)
+    WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
     {
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
@@ -1304,7 +1412,7 @@ private:
     }
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type)
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
     {
         using EnumType = DataTypeEnum<FieldType>;
         using Function = typename FunctionTo<EnumType>::Type;
@@ -1324,9 +1432,7 @@ private:
 
             /// Check conversion using underlying function
             {
-                DataTypePtr unused_data_type;
-                std::vector<ExpressionAction> unused_prerequisites;
-                function->getReturnTypeAndPrerequisites({{ nullptr, from_type, "" }}, unused_data_type, unused_prerequisites);
+                function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
             }
 
             return [function] (Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1342,7 +1448,7 @@ private:
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
-    void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type)
+    void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type) const
     {
         const auto & from_values = from_type->getValues();
         const auto & to_values = to_type->getValues();
@@ -1369,9 +1475,10 @@ private:
     };
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper()
+    WrapperType createStringToEnumWrapper() const
     {
-        return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
+        const char * function_name = name;
+        return [function_name] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             const auto first_col = block.getByPosition(arguments.front()).column.get();
 
@@ -1393,13 +1500,12 @@ private:
             }
             else
                 throw Exception{
-                    "Unexpected column " + first_col->getName() + " as first argument of function " +
-                        name,
+                    "Unexpected column " + first_col->getName() + " as first argument of function " + function_name,
                     ErrorCodes::LOGICAL_ERROR};
         };
     }
 
-    WrapperType createIdentityWrapper(const DataTypePtr &)
+    WrapperType createIdentityWrapper(const DataTypePtr &) const
     {
         return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
@@ -1407,7 +1513,7 @@ private:
         };
     }
 
-    WrapperType createNothingWrapper(const IDataType * to_type)
+    WrapperType createNothingWrapper(const IDataType * to_type) const
     {
         ColumnPtr res = to_type->createColumnConstWithDefaultValue(1);
         return [res] (Block & block, const ColumnNumbers &, const size_t result)
@@ -1424,7 +1530,7 @@ private:
         bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
+    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type) const
     {
         /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -1519,7 +1625,7 @@ private:
             return wrapper;
     }
 
-    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * to_type)
+    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * to_type) const
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
@@ -1569,99 +1675,95 @@ private:
             "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
             ErrorCodes::CANNOT_CONVERT_TYPE};
     }
+};
 
+class FunctionBuilderCast : public FunctionBuilderImpl
+{
+public:
+    using MonotonicityForRange = FunctionCast::MonotonicityForRange;
+
+    static constexpr auto name = "CAST";
+    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderCast>(context); }
+
+    FunctionBuilderCast(const Context & context) : context(context) {}
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+
+protected:
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        DataTypes data_types(arguments.size());
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        auto monotonicity = getMonotonicityInformation(arguments.front().type, return_type.get());
+        return std::make_shared<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
+        if (!type_col)
+            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return DataTypeFactory::instance().get(type_col->getValue<String>());
+    }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)
     {
         return FunctionTo<DataType>::Type::Monotonic::get;
     }
 
-    void prepareMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
+    MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type) const
     {
         if (const auto type = checkAndGetDataType<DataTypeUInt8>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
-            monotonicity_for_range = monotonicityForType(type);
+            return monotonicityForType(type);
         else if (from_type->isEnum())
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
-                monotonicity_for_range = monotonicityForType(type);
+                return monotonicityForType(type);
             else if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
-                monotonicity_for_range = monotonicityForType(type);
+                return monotonicityForType(type);
         }
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
+        return {};
     }
 
-public:
-    static constexpr auto name = "CAST";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCast>(context); }
-
-    String getName() const override { return name; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & /*out_prerequisites*/) override
-    {
-        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
-        if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        out_return_type = DataTypeFactory::instance().get(type_col->getValue<String>());
-
-        const DataTypePtr & from_type = arguments.front().type;
-        wrapper_function = prepare(from_type, out_return_type.get());
-        prepareMonotonicityInformation(from_type, out_return_type.get());
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
-    {
-        /// drop second argument, pass others
-        ColumnNumbers new_arguments{arguments.front()};
-        if (arguments.size() > 2)
-            new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
-
-        wrapper_function(block, new_arguments, result);
-    }
-
-    bool hasInformationAboutMonotonicity() const override
-    {
-        return static_cast<bool>(monotonicity_for_range);
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        return monotonicity_for_range(type, left, right);
-    }
+    const Context & context;
 };
 
 }

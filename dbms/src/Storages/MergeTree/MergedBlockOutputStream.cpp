@@ -2,7 +2,7 @@
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Poco/File.h>

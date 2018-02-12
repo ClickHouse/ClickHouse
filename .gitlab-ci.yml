@@ -1,0 +1,41 @@
+stages:
+  - builder
+  - build
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+builder:
+  stage: builder
+  when: manual
+  services:
+    - docker:dind
+  script:
+    - docker info
+    - apk add --no-cache git curl binutils ca-certificates
+    - docker login -u gitlab -p nopasswd $CI_REGISTRY
+    - docker build -t yandex/clickhouse-builder ./docker/builder
+    - docker tag yandex/clickhouse-builder $CI_REGISTRY/yandex/clickhouse-builder
+    - docker push $CI_REGISTRY/yandex/clickhouse-builder
+  tags:
+    - docker
+build:
+  stage: build
+  when: manual
+  services:
+    - docker:dind
+  script:
+    - apk add --no-cache git curl binutils ca-certificates
+    - git submodule sync --recursive
+    - git submodule update --init --recursive
+    - docker info
+    - docker login -u gitlab -p nopasswd $CI_REGISTRY
+    - docker pull $CI_REGISTRY/yandex/clickhouse-builder
+    - docker run --rm --volumes-from "${HOSTNAME}-build" --workdir "${CI_PROJECT_DIR}" --env CI_PROJECT_DIR=${CI_PROJECT_DIR} $CI_REGISTRY/yandex/clickhouse-builder /build_gitlab_ci.sh
+  # You can upload your binary to nexus
+    - curl -v --keepalive-time 60 --keepalive --user "$NEXUS_USER:$NEXUS_PASSWORD" -XPUT "http://$NEXUS_HOST/repository/binaries/$CI_PROJECT_NAME" --upload-file ./dbms/src/Server/clickhouse
+  # Or download artifacts from gitlab
+  artifacts:
+    paths:
+      - ./dbms/src/Server/clickhouse
+    expire_in: 1 day
+  tags:
+    - docker

@@ -42,8 +42,8 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_), source_database(source_database_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_), source_database(source_database_),
     table_name_regexp(table_name_regexp_), context(context_)
 {
 }

@@ -2,9 +2,7 @@
 
 ## How to import raw data
 
-See <https://github.com/toddwschneider/nyc-taxi-data>
-и <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html>
-для описания набора данных и инструкций по загрузке.
+See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for description of the dataset and loading instructions.
 
 Downloading will result in about 227 GB of uncompressed data in CSV files. The download takes about an hour over a 1 Gbit connection (parallel downloading from s3.amazonaws.com recovers at least half of a 1 Gbit channel).
 Some of the files might not download fully. Check the file sizes and re-download any that seem doubtful.

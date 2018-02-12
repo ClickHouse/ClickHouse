@@ -33,7 +33,7 @@ void FunctionFactory::registerFunction(const
 }
 
 
-FunctionPtr FunctionFactory::get(
+FunctionBuilderPtr FunctionFactory::get(
     const std::string & name,
     const Context & context) const
 {
@@ -44,7 +44,7 @@ FunctionPtr FunctionFactory::get(
 }
 
 
-FunctionPtr FunctionFactory::tryGet(
+FunctionBuilderPtr FunctionFactory::tryGet(
     const std::string & name,
     const Context & context) const
 {

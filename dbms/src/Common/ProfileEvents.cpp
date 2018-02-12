@@ -51,6 +51,7 @@
     M(DelayedInserts) \
     M(RejectedInserts) \
     M(DelayedInsertsMilliseconds) \
+    M(DuplicatedInsertedBlocks) \
     \
     M(ZooKeeperInit) \
     M(ZooKeeperTransactions) \

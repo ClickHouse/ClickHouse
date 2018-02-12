@@ -25,8 +25,6 @@ public:
     std::string getName() const override { return "SystemNumbers"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -37,7 +35,6 @@ public:
 
 private:
     const std::string name;
-    NamesAndTypesList columns;
     bool multithreaded;
     size_t limit;
 

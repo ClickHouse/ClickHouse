@@ -125,7 +125,10 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
       config_prefix{other.config_prefix},
       path{other.path},
       sample_block{other.sample_block},
-      context(other.context)
+      context(other.context),
+      library{other.library},
+      description{other.description},
+      settings{other.settings}
 {
 }
 
