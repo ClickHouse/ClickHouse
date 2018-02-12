@@ -121,13 +121,13 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
 void ColumnFunction::insertDefault()
 {
     for (auto & column : captured_columns)
-        column.column->assumeMutable()->insertDefault();
+        column.column->assumeMutableRef().insertDefault();
     ++size_;
 }
 void ColumnFunction::popBack(size_t n)
 {
     for (auto & column : captured_columns)
-        column.column->assumeMutable()->popBack(n);
+        column.column->assumeMutableRef().popBack(n);
     size_ -= n;
 }
 
