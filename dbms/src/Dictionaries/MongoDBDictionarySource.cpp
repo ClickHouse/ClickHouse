@@ -280,8 +280,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
      
     if (keys_array->size() == 1)
     {
-        Poco::MongoDB::Document::Ptr doc = keys_array->get(0);
-        cursor->query().selector().add("$query", doc);
+        cursor->query().selector().add("$query", keys_array->get(0));
     }
     /// If more than one key we should use $or
     else
