@@ -279,7 +279,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 
     if (requested_rows.size() == 1)
     {
-        auto & key = addRowToRequestSelector(cursor->query().selector(), 0, "$query", key_columns);
+        addRowToRequestSelector(cursor->query().selector(), 0, "$query", key_columns);
     }
     /// If more than one key we should use $or
     else
@@ -287,7 +287,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
         Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
         for (const auto row_idx : requested_rows)
         {
-            auto & key = addRowToRequestSelector(*keys_array, row_idx, DB::toString(row_idx), key_columns);
+            addRowToRequestSelector(*keys_array, row_idx, DB::toString(row_idx), key_columns);
         }
 
         auto & doc = cursor->query().selector().addNewDocument("$query");
