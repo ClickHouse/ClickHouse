@@ -32,7 +32,8 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_);
+    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
+                                 const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_);
 
     void write(const Block & block) override;
 
@@ -88,6 +89,7 @@ private:
     StorageDistributed & storage;
     ASTPtr query_ast;
     ClusterPtr cluster;
+    const Settings & settings;
     bool insert_sync;
     UInt64 insert_timeout;
     size_t blocks_inserted = 0;

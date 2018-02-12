@@ -11,6 +11,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 void DatabaseMemory::loadTables(
@@ -28,12 +29,12 @@ bool DatabaseMemory::isTableExist(
     const String & table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
-    return tables.count(table_name);
+    return tables.find(table_name) != tables.end();
 }
 
 StoragePtr DatabaseMemory::tryGetTable(
     const Context & /*context*/,
-    const String & table_name)
+    const String & table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
     auto it = tables.find(table_name);
@@ -124,7 +125,7 @@ ASTPtr DatabaseMemory::getCreateQuery(
     const Context &,
     const String &) const
 {
-    throw Exception("DatabaseMemory: getCreateQuery() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("There is no CREATE TABLE query for DatabaseMemory tables", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 }
 
 void DatabaseMemory::shutdown()
@@ -150,6 +151,11 @@ void DatabaseMemory::shutdown()
 void DatabaseMemory::drop()
 {
     /// Additional actions to delete database are not required.
+}
+
+String DatabaseMemory::getDataPath(const Context &) const
+{
+    return {};
 }
 
 }

@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -7,7 +6,6 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTWeightedZooKeeperPath.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/copyData.h>

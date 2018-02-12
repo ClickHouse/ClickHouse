@@ -107,6 +107,7 @@ Configuration example:
         <expression>rand64()</expression>
         <hierarchical>true</hierarchical>
         <injective>true</injective>
+        <is_object_id>true</is_object_id>
     </attribute>
 </structure>
 ```
@@ -119,4 +120,5 @@ Configuration fields:
 - `expression` – The attribute can be an expression. The tag is not required.
 - `hierarchical` – Hierarchical support. Mirrored to the parent identifier. By default, ` false`.
 - `injective` Whether the `id -> attribute` image is injective. If ` true`, then you can optimize the ` GROUP BY` clause. By default, `false`.
+- `is_object_id` - Used for query mongo documents by ObjectId
 

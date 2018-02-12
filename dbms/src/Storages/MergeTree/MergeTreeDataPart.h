@@ -130,7 +130,7 @@ struct MergeTreeDataPart
     String name;
     MergeTreePartInfo info;
 
-    /// A directory path (realative to storage's path) where part data is actually stored
+    /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
 

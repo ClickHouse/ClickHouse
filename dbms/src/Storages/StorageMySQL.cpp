@@ -23,11 +23,11 @@ StorageMySQL::StorageMySQL(
     mysqlxx::Pool && pool,
     const std::string & remote_database_name,
     const std::string & remote_table_name,
-    const NamesAndTypesList & columns)
-    : name(name)
+    const NamesAndTypesList & columns_)
+    : IStorage{columns_, {}, {}, {}}
+    , name(name)
     , remote_database_name(remote_database_name)
     , remote_table_name(remote_table_name)
-    , columns(columns)
     , pool(std::move(pool))
 {
 }

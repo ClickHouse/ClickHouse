@@ -1,6 +1,6 @@
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB

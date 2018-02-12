@@ -15,7 +15,7 @@ list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
 # Wrong library in freebsd:
 list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-l/usr/lib/libexecinfo.so")
 
-message(STATUS "Using libraries for LLVM: ${REQUIRED_LLVM_LIBRARIES}")
+message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
 target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
@@ -39,6 +39,7 @@ lldReaderWriter
 lldYAML
 lldCommon
 lldCore
+#lldWasm
 
 ${REQUIRED_LLVM_LIBRARIES}
 
