@@ -227,7 +227,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 }
 
 
-Poco::MongoDB::Document& MongoDBDictionarySource::addRowToRequestSelector(
+Poco::MongoDB::Document & MongoDBDictionarySource::addRowToRequestSelector(
         Poco::MongoDB::Document & selector, size_t row_idx, String row_key, const Columns & key_columns)
 {
     auto & key = selector.addNewDocument(row_key);
@@ -255,7 +255,6 @@ Poco::MongoDB::Document& MongoDBDictionarySource::addRowToRequestSelector(
             case AttributeUnderlyingType::String:
                 String _str(get<String>((*key_columns[attr.first])[row_idx]));
                 /// Convert string to ObjectID
-                /// TODO: add adequate check of objectid
                 if (attr.second.is_object_id)
                 {
                     Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
