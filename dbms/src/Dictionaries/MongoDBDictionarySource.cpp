@@ -225,6 +225,50 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 }
 
 
+Poco::MongoDB::Document& MongoDBDictionarySource::addRowToRequestSelector(
+        Poco::MongoDB::Document::Ptr selector, size_t row_idx, String row_key, const Columns & key_columns)
+{
+    auto & key = selector->addNewDocument(DB::toString(row_idx));
+    for (const auto attr : ext::enumerate(*dict_struct.key))
+    {
+        switch (attr.second.underlying_type)
+        {
+            case AttributeUnderlyingType::UInt8:
+            case AttributeUnderlyingType::UInt16:
+            case AttributeUnderlyingType::UInt32:
+            case AttributeUnderlyingType::UInt64:
+            case AttributeUnderlyingType::UInt128:
+            case AttributeUnderlyingType::Int8:
+            case AttributeUnderlyingType::Int16:
+            case AttributeUnderlyingType::Int32:
+            case AttributeUnderlyingType::Int64:
+                key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
+                break;
+
+            case AttributeUnderlyingType::Float32:
+            case AttributeUnderlyingType::Float64:
+                key.add(attr.second.name, applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
+                break;
+
+            case AttributeUnderlyingType::String:
+                String _str(get<String>((*key_columns[attr.first])[row_idx]));
+                /// Convert string to ObjectID
+                /// TODO: add adequate check of objectid
+                if (attr.second.is_object_id)
+                {
+                    Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
+                    key.add(attr.second.name, _id);
+                }
+                else
+                {
+                    key.add(attr.second.name, _str);
+                }
+                break;
+        }
+    }
+    return key;
+}
+
 BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
     const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
@@ -233,58 +277,20 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 
     auto cursor = createCursor(db, collection, sample_block);
 
-    Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
-
-    for (const auto row_idx : requested_rows)
+    if (requested_rows.size() == 1)
     {
-        auto & key = keys_array->addNewDocument(DB::toString(row_idx));
-
-        for (const auto attr : ext::enumerate(*dict_struct.key))
-        {
-            switch (attr.second.underlying_type)
-            {
-                case AttributeUnderlyingType::UInt8:
-                case AttributeUnderlyingType::UInt16:
-                case AttributeUnderlyingType::UInt32:
-                case AttributeUnderlyingType::UInt64:
-                case AttributeUnderlyingType::UInt128:
-                case AttributeUnderlyingType::Int8:
-                case AttributeUnderlyingType::Int16:
-                case AttributeUnderlyingType::Int32:
-                case AttributeUnderlyingType::Int64:
-                    key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
-                    break;
-
-                case AttributeUnderlyingType::Float32:
-                case AttributeUnderlyingType::Float64:
-                    key.add(attr.second.name, applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
-                    break;
-
-                case AttributeUnderlyingType::String:
-                    String _str(get<String>((*key_columns[attr.first])[row_idx]));
-                    /// Convert string to ObjectID
-                    /// TODO: add adequate check of objectid
-                    if (attr.second.is_object_id)
-                    {
-                        Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
-                        key.add(attr.second.name, _id);
-                    }
-                    else
-                    {
-                        key.add(attr.second.name, _str);
-                    }
-                    break;
-            }
-        }
-    }
-     
-    if (keys_array->size() == 1)
-    {
-        cursor->query().selector().add("$query", keys_array->get(0));
+        Poco::MongoDB::Document::Ptr doc(&cursor->query().selector());
+        auto & key = addRowToRequestSelector(doc, 0, "$query", key_columns);
     }
     /// If more than one key we should use $or
     else
     {
+        Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
+        for (const auto row_idx : requested_rows)
+        {
+            auto & key = addRowToRequestSelector(keys_array, row_idx, DB::toString(row_idx), key_columns);
+        }
+
         auto & doc = cursor->query().selector().addNewDocument("$query");
         doc.add("$or", keys_array);
     }
