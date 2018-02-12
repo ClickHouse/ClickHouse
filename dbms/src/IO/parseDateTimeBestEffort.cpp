@@ -62,7 +62,7 @@ inline void readDecimalNumber(T & res, const char * src)
 template <typename ReturnType>
 ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    auto on_error = [](const std::string & message, int code)
+    auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
             throw Exception(message, code);
