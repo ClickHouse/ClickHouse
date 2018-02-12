@@ -8,14 +8,19 @@ namespace DB
 
 class ReadBuffer;
 
-/** This function will use the following assumptions:
+/** https://xkcd.com/1179/
+  *
+  * The existence of this function is an example of bad practice
+  *  and contradicts our development principles.
+  *
+  * This function will recognize the following patterns:
   *
   * NNNNNNNNNN - 9..10 digits is a unix timestamp
   *
   * YYYYMMDDhhmmss - 14 numbers is always interpreted this way
   *
   * YYYYMMDD - 8 digits in a row
-  * YYYY*MM*DD - or with any delimiters after first 4-digit year component
+  * YYYY*MM*DD - or with any delimiter after first 4-digit year component and after month.
   *
   * DD/MM/YY
   * DD/MM/YYYY - when '/' separator is used, these are the only possible forms
@@ -29,7 +34,7 @@ class ReadBuffer;
   * YYYYMM - 6 digits is a year, month if year was not already read
   * hhmmss - 6 digits is a time if year was already read
   *
-  * .nnnnnnn - any number of digits after point is fractional part of second.
+  * .nnnnnnn - any number of digits after point is fractional part of second, if it is not YYYY.MM.DD
   *
   * T - means that time will follow
   *
@@ -42,12 +47,10 @@ class ReadBuffer;
   *
   * single whitespace can be used as a separator
   *
-  * AM/PM
+  * AM/PM - AM is ignored and PM means: add 12 hours if value is less than 12.
   *
-  * Jan/Feb/Mar/Apr/May/Jun/Jul/Aug/Sep/Oct/Nov/Dec
-  * Mon/Tue/Wed/Thu/Fri/Sat/Sun
-  *
-  * AD/BC - not used
+  * Jan/Feb/Mar/Apr/May/Jun/Jul/Aug/Sep/Oct/Nov/Dec - allowed to specify month
+  * Mon/Tue/Wed/Thu/Fri/Sat/Sun - simply ignored.
   */
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone);

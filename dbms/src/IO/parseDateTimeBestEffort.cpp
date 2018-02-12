@@ -444,7 +444,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
     }
 
     if (!year)
-        year = 1970;
+        year = 2000;
     if (!month)
         month = 1;
     if (!day_of_month)

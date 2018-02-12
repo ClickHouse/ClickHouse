@@ -832,10 +832,17 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
+        DataTypePtr res;
+
         if (std::is_same_v<ToDataType, DataTypeDateTime>)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         else
-            return std::make_shared<ToDataType>();
+            res = std::make_shared<ToDataType>();
+
+        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+            res = std::make_shared<DataTypeNullable>(res);
+
+        return res;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
