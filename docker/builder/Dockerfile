@@ -1,7 +1,5 @@
 FROM ubuntu:17.10
 
-#RUN apt update -y
-
 RUN apt update -y && \
     apt install -y cmake libssl-dev libcrypto++-dev \
         libglib2.0-dev libltdl-dev libicu-dev libmysql++-dev \
