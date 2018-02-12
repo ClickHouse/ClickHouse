@@ -3,6 +3,11 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/MongoDB/Document.h>
+#pragma GCC diagnostic pop
+
 
 namespace Poco
 {
