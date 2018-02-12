@@ -228,7 +228,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 Poco::MongoDB::Document& MongoDBDictionarySource::addRowToRequestSelector(
         Poco::MongoDB::Document & selector, size_t row_idx, String row_key, const Columns & key_columns)
 {
-    auto & key = selector.addNewDocument(DB::toString(row_idx));
+    auto & key = selector.addNewDocument(row_key);
     for (const auto attr : ext::enumerate(*dict_struct.key))
     {
         switch (attr.second.underlying_type)
