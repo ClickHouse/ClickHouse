@@ -65,8 +65,8 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     const auto one_sse = _mm_set1_epi8(1);
     const auto zero_sse = _mm_set1_epi8(0);
 
-    const auto align_sse = _mm_set1_epi8(0xFF - 0xC0);
-    const auto upper_bound = _mm_set1_epi8(0x7F + (0xFF - 0xC0) + 1);
+    const auto align_sse = _mm_set1_epi8(0xFF - 0xC0 + 1);
+    const auto upper_bound = _mm_set1_epi8(0x7F + (0xFF - 0xC0 + 1) + 1);
 
     for (; data < src_end_sse;)
     {
