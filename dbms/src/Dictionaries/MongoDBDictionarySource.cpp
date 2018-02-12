@@ -226,9 +226,9 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 
 
 Poco::MongoDB::Document& MongoDBDictionarySource::addRowToRequestSelector(
-        Poco::MongoDB::Document::Ptr selector, size_t row_idx, String row_key, const Columns & key_columns)
+        Poco::MongoDB::Document & selector, size_t row_idx, String row_key, const Columns & key_columns)
 {
-    auto & key = selector->addNewDocument(DB::toString(row_idx));
+    auto & key = selector.addNewDocument(DB::toString(row_idx));
     for (const auto attr : ext::enumerate(*dict_struct.key))
     {
         switch (attr.second.underlying_type)
@@ -279,8 +279,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 
     if (requested_rows.size() == 1)
     {
-        Poco::MongoDB::Document::Ptr doc(&cursor->query().selector());
-        auto & key = addRowToRequestSelector(doc, 0, "$query", key_columns);
+        auto & key = addRowToRequestSelector(cursor->query().selector(), 0, "$query", key_columns);
     }
     /// If more than one key we should use $or
     else
@@ -288,7 +287,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
         Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
         for (const auto row_idx : requested_rows)
         {
-            auto & key = addRowToRequestSelector(keys_array, row_idx, DB::toString(row_idx), key_columns);
+            auto & key = addRowToRequestSelector(*keys_array, row_idx, DB::toString(row_idx), key_columns);
         }
 
         auto & doc = cursor->query().selector().addNewDocument("$query");

@@ -3,11 +3,6 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-    #include <Poco/MongoDB/Document.h>
-#pragma GCC diagnostic pop
-
 
 namespace Poco
 {
@@ -19,6 +14,7 @@ namespace Poco
     namespace MongoDB
     {
         class Connection;
+        class Document;
     }
 }
 
@@ -75,7 +71,7 @@ private:
     std::shared_ptr<Poco::MongoDB::Connection> connection;
 
     Poco::MongoDB::Document& addRowToRequestSelector(
-            Poco::MongoDB::Document::Ptr selector, size_t row_idx, String row_key, const Columns & key_columns);
+            Poco::MongoDB::Document & selector, size_t row_idx, String row_key, const Columns & key_columns);
 };
 
 }
