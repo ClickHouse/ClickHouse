@@ -172,6 +172,11 @@ public:
     {
         return const_cast<COWPtr*>(this)->getPtr();
     }
+
+    Derived & assumeMutableRef() const
+    {
+        return const_cast<Derived &>(*derived());
+    }
 };
 
 
@@ -235,6 +240,6 @@ public:
   * 3. Store subobjects as immutable ptrs. Implement copy-constructor to do shallow copy.
   * But reimplement 'mutate' method, so it will call 'mutate' of all subobjects (do deep mutate).
   * It will guarantee, that mutable object have all subobjects unshared.
-  * From non-const method, you can modify subobjects with 'assumeMutable' method.
+  * From non-const method, you can modify subobjects with 'assumeMutableRef' method.
   * Drawback: it's more complex than other solutions.
   */
