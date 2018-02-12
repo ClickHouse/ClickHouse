@@ -2,10 +2,13 @@
 
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
-#include <iostream>
 
 #if __SSE2__
 #include <emmintrin.h>
+#endif
+
+#if __SSE4_1__
+#include <smmintrin.h>
 #endif
 
 namespace DB
@@ -55,34 +58,39 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     size_t res = 0;
     const auto end = data + size;
 
-#if __SSE2__
+#if __SSE2__ && __SSE4_1__
     const auto bytes_sse = sizeof(__m128i);
     const auto src_end_sse = (data + size) - (size % bytes_sse);
 
-    const auto fill_sse = _mm_set1_epi8(0xFF);
-    const auto upper_bound = _mm_set1_epi8(0x7F + 1);
-    const auto lower_bound = _mm_set1_epi8(0xC0 - 1);
+    const auto one_sse = _mm_set1_epi8(1);
+    const auto zero_sse = _mm_set1_epi8(0);
+
+    const auto align_sse = _mm_set1_epi8(0xFF - 0xC0);
+    const auto upper_bound = _mm_set1_epi8(0x7F + (0xFF - 0xC0) + 1);
 
     for (; data < src_end_sse;)
     {
-        UInt16 mem_res[8] = {0};
         auto sse_res = _mm_set1_epi8(0);
 
         for (int i = 0, limit = 0xFF; i < limit && data < src_end_sse; ++i, data += bytes_sse)
         {
             const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data));
 
-            const auto chars_cmpgt_res = _mm_or_si128(_mm_cmplt_epi8(chars, upper_bound),
-                                                      _mm_cmpgt_epi8(chars, lower_bound));
+            ///Align to zero for the solve two case
+            const auto align_res = _mm_add_epi8(chars, align_sse);
+            ///Because _mm_cmmpgt_epid8 return 0xFF if true
+            const auto choose_res = _mm_blendv_epi8(zero_sse, one_sse, _mm_cmpgt_epi8(align_res, upper_bound));
 
-            sse_res = _mm_add_epi8(sse_res, _mm_add_epi8(_mm_xor_si128(chars_cmpgt_res, fill_sse), _mm_set1_epi8(1)));
+            sse_res = _mm_add_epi8(sse_res, choose_res);
         }
 
-        auto horizontal_add = _mm_sad_epu8(sse_res, _mm_set1_epi8(0));
+        UInt16 mem_res[8] = {0};
+        auto horizontal_add = _mm_sad_epu8(sse_res, zero_sse);
         _mm_store_si128(reinterpret_cast<__m128i *>(mem_res), horizontal_add);
 
-        for (auto count : mem_res)
-            res += count;
+        /// Hack,Because only bytes MSB to LSB
+        res += mem_res[0];
+        res += mem_res[4];
     }
 
 #endif
