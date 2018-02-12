@@ -277,9 +277,18 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
             }
         }
     }
-
+     
+    if (keys_array->size() == 1)
+    {
+        Poco::MongoDB::Document::Ptr doc = keys_array->get(0);
+        cursor->query().selector().add("$query", doc);
+    }
     /// If more than one key we should use $or
-    cursor->query().selector().add("$or", keys_array);
+    else
+    {
+        auto & doc = cursor->query().selector().addNewDocument("$query");
+        doc.add("$or", keys_array);
+    }
 
     return std::make_shared<MongoDBBlockInputStream>(
         connection, std::move(cursor), sample_block, max_block_size);
