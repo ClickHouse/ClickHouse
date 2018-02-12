@@ -197,8 +197,9 @@ static std::unique_ptr<Poco::MongoDB::Cursor> createCursor(
 
 BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 {
+    auto cursor = createCursor(db, collection, sample_block);
     return std::make_shared<MongoDBBlockInputStream>(
-        connection, createCursor(db, collection, sample_block), sample_block, max_block_size);
+        connection, cursor->query().selector().addNewDocument("$query"), sample_block, max_block_size);
 }
 
 
@@ -217,8 +218,8 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
     for (const UInt64 id : ids)
         ids_array->add(DB::toString(id), Int32(id));
 
-    cursor->query().selector().addNewDocument(dict_struct.id->name)
-        .add("$in", ids_array);
+    auto & doc = cursor->query().selector().addNewDocument("$query");
+    doc.addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
     return std::make_shared<MongoDBBlockInputStream>(
         connection, std::move(cursor), sample_block, max_block_size);
