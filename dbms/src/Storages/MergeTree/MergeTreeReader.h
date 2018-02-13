@@ -39,12 +39,16 @@ public:
     const ValueSizeMap & getAvgValueSizeHints() const;
 
     /// Create MergeTreeRangeReader iterator, which allows reading arbitrary number of rows from range.
-    MergeTreeRangeReader readRange(size_t from_mark, size_t to_mark);
+    MergeTreePrewhereRangeReader readRange(size_t from_mark, size_t to_mark, MergeTreePrewhereRangeReader * prev_reader,
+                                           ExpressionActionsPtr prewhere_actions, const String * prewhere_column_name,
+                                           const Names * ordered_names, bool always_reorder);
 
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// If at least one column was added, reorders all columns in the block according to ordered_names.
     void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder = false);
+
+    const NamesAndTypesList & getColumns() const { return columns; }
 
 private:
     class Stream
@@ -117,7 +121,7 @@ private:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
-    friend class MergeTreeRangeReader;
+    friend class MergeTreePrewhereRangeReader::DelayedStream;
 };
 
 }
