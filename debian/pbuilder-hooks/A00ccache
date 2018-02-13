@@ -1,15 +1,10 @@
 #!/bin/sh
 
-set -x
-
 # CCACHEDIR - for pbuilder ; CCACHE_DIR - for ccache
 
 echo "CCACHEDIR=$CCACHEDIR CCACHE_DIR=$CCACHE_DIR SET_CCACHEDIR=$SET_CCACHEDIR"
 
 [ -z "$CCACHE_DIR" ] && export CCACHE_DIR=${CCACHEDIR:=${SET_CCACHEDIR=/var/cache/pbuilder/ccache}}
-
-df -h
-mount
 
 if [ -n "$CCACHE_DIR" ]; then
     mkdir -p $CCACHE_DIR || true
