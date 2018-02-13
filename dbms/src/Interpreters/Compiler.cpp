@@ -223,7 +223,7 @@ void Compiler::compile(
             " " INTERNAL_COMPILER_FLAGS
             /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
             /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
-            " -fuse-ld=/usr/bin/" INTERNAL_LINKER_EXECUTABLE
+            " -fuse-ld=" INTERNAL_LINKER_EXECUTABLE
 
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT
