@@ -6,8 +6,6 @@ echo "CCACHEDIR=$CCACHEDIR CCACHE_DIR=$CCACHE_DIR SET_CCACHEDIR=$SET_CCACHEDIR"
 
 [ -z "$CCACHE_DIR" ] && export CCACHE_DIR=${CCACHEDIR:=${SET_CCACHEDIR=/var/cache/pbuilder/ccache}}
 
-df -h
-
 if [ -n "$CCACHE_DIR" ]; then
     mkdir -p $CCACHE_DIR || true
     chown -R $BUILDUSERID:$BUILDUSERID $CCACHE_DIR || true
