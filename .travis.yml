@@ -28,6 +28,8 @@ matrix:
       cache:
         ccache: true
         timeout: 1000
+        directories:
+        - /home/travis/.ccache
 
       addons:
         apt:
