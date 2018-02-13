@@ -61,6 +61,13 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 {
     size_t num_elements = arguments.size();
 
+    if (num_elements == 0)
+    {
+        /// We should return constant empty array.
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
+        return;
+    }
+
     const DataTypePtr & return_type = block.getByPosition(result).type;
     const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
 
@@ -91,8 +98,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         columns[i] = columns_holder[i].get();
     }
 
-    /** Create and fill the result array.
-        */
+    /// Create and fill the result array.
 
     auto out = ColumnArray::create(elem_type->createColumn());
     IColumn & out_data = out->getData();

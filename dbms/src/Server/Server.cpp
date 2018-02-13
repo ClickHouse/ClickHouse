@@ -313,12 +313,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
-        bool try_listen = false;
+        bool listen_try = config().getUInt("listen_try", false);
         if (listen_hosts.empty())
         {
             listen_hosts.emplace_back("::1");
             listen_hosts.emplace_back("127.0.0.1");
-            try_listen = true;
+            listen_try = true;
         }
 
         auto make_socket_address = [&](const std::string & host, UInt16 port)
@@ -452,7 +452,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (try_listen && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
+                if (listen_try && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
                     LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "

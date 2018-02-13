@@ -190,6 +190,12 @@ StoragePtr StorageMaterializedView::getTargetTable() const
     return global_context.getTable(target_database_name, target_table_name);
 }
 
+bool StorageMaterializedView::checkTableCanBeDropped() const
+{
+    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
+    return has_inner_table ? getTargetTable()->checkTableCanBeDropped() : true;
+}
+
 
 void registerStorageMaterializedView(StorageFactory & factory)
 {
