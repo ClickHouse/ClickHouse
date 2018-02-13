@@ -53,10 +53,9 @@ void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged
     {
         first = false;
 
-        size_t i = 0;
-        for (auto it = source_blocks.begin(); it != source_blocks.end(); ++it, ++i)
+        for (size_t i = 0; i < source_blocks.size(); ++i)
         {
-            SharedBlockPtr & shared_block_ptr = *it;
+            SharedBlockPtr & shared_block_ptr = source_blocks[i];
 
             if (shared_block_ptr.get())
                 continue;
@@ -75,6 +74,8 @@ void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged
                 expected_block_size = std::min(rows, max_block_size);
 
             cursors[i] = SortCursorImpl(*shared_block_ptr, description, i);
+            shared_block_ptr->all_columns = cursors[i].all_columns;
+            shared_block_ptr->sort_columns = cursors[i].sort_columns;
             has_collation |= cursors[i].has_collation;
         }
 
@@ -173,25 +174,20 @@ Block MergingSortedBlockInputStream::readImpl()
 template <typename TSortCursor>
 void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
 {
-    size_t i = 0;
+    size_t order = current.impl->order;
     size_t size = cursors.size();
-    for (; i < size; ++i)
-    {
-        if (&cursors[i] == current.impl)
-        {
-            source_blocks[i] = new detail::SharedBlock(children[i]->read());
-            if (*source_blocks[i])
-            {
-                cursors[i].reset(*source_blocks[i]);
-                queue.push(TSortCursor(&cursors[i]));
-            }
 
-            break;
-        }
-    }
-
-    if (i == size)
+    if (order >= size || &cursors[order] != current.impl)
         throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
+
+    source_blocks[order] = new detail::SharedBlock(children[order]->read());
+    if (*source_blocks[order])
+    {
+        cursors[order].reset(*source_blocks[order]);
+        queue.push(TSortCursor(&cursors[order]));
+        source_blocks[order]->all_columns = cursors[order].all_columns;
+        source_blocks[order]->sort_columns = cursors[order].sort_columns;
+    }
 }
 
 template

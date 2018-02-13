@@ -203,7 +203,6 @@ void Compiler::compile(
 
     std::string prefix = path + "/" + file_name;
     std::string cpp_file_path = prefix + ".cpp";
-    std::string o_file_path = prefix + ".o";
     std::string so_file_path = prefix + ".so";
     std::string so_tmp_file_path = prefix + ".so.tmp";
 
@@ -219,8 +218,12 @@ void Compiler::compile(
     /// Slightly unconvenient.
     command <<
         "("
-            INTERNAL_COMPILER_EXECUTABLE
+            INTERNAL_COMPILER_ENV
+            " " INTERNAL_COMPILER_EXECUTABLE
             " " INTERNAL_COMPILER_FLAGS
+            /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
+            /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
+            " -fuse-ld=/usr/bin/" INTERNAL_LINKER_EXECUTABLE
 
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT
@@ -247,13 +250,7 @@ void Compiler::compile(
             " -I " INTERNAL_Boost_INCLUDE_DIRS
             " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
             " " << additional_compiler_flags <<
-            " -c -o " << o_file_path << " " << cpp_file_path
-            << " 2>&1"
-        ") && ("
-            INTERNAL_LINKER_EXECUTABLE
-            " -shared"
-            " -o " << so_tmp_file_path
-            << " " << o_file_path
+            " -shared -o " << so_tmp_file_path << " " << cpp_file_path
             << " 2>&1"
         ") || echo Return code: $?";
 
@@ -270,7 +267,6 @@ void Compiler::compile(
 
     /// If there was an error before, the file with the code remains for viewing.
     Poco::File(cpp_file_path).remove();
-    Poco::File(o_file_path).remove();
 
     Poco::File(so_tmp_file_path).renameTo(so_file_path);
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));

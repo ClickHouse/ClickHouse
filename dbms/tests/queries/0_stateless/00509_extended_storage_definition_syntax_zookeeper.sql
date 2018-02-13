@@ -45,6 +45,24 @@ SELECT * FROM test.replicated_collapsing;
 
 DROP TABLE test.replicated_collapsing;
 
+SELECT '*** Replicated VersionedCollapsing ***';
+
+DROP TABLE IF EXISTS test.replicated_versioned_collapsing;
+
+CREATE TABLE test.replicated_versioned_collapsing(d Date, x UInt32, sign Int8, version UInt8)
+    ENGINE = ReplicatedVersionedCollapsingMergeTree('/clickhouse/tables/test/replicated_versioned_collapsing', 'r1', sign, version)
+    PARTITION BY toYYYYMM(d) ORDER BY (d, version);
+
+INSERT INTO test.replicated_versioned_collapsing VALUES ('2017-10-23', 1, 1, 0);
+INSERT INTO test.replicated_versioned_collapsing VALUES ('2017-10-23', 1, -1, 0), ('2017-10-23', 2, 1, 0);
+INSERT INTO test.replicated_versioned_collapsing VALUES ('2017-10-23', 1, -1, 1), ('2017-10-23', 2, 1, 2);
+
+OPTIMIZE TABLE test.replicated_versioned_collapsing PARTITION 201710 FINAL;
+
+SELECT * FROM test.replicated_versioned_collapsing;
+
+DROP TABLE test.replicated_versioned_collapsing;
+
 SELECT '*** Table definition with SETTINGS ***';
 
 DROP TABLE IF EXISTS test.with_settings;
