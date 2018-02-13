@@ -5,8 +5,8 @@ else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
 endif ()
 
-set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
-set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
+set (INTERNAL_COMPILER_EXECUTABLE "${CMAKE_INSTALL_FULL_BINDIR}/clickhouse-clang" CACHE STRING "")
+set (INTERNAL_LINKER_EXECUTABLE "${CMAKE_INSTALL_FULL_BINDIR}/clickhouse-lld" CACHE STRING "")
 
 # Disabling asan reporting for these tools
 if (CMAKE_BUILD_TYPE_UC STREQUAL "ASAN")
