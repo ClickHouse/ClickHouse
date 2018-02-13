@@ -63,10 +63,10 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     const auto src_end_sse = (data + size) - (size % bytes_sse);
 
     const auto one_sse = _mm_set1_epi8(1);
-    const auto zero_sse = _mm_set1_epi8(0);
+    const auto zero_sse = _mm_setzero_si128();
 
-    const auto align_sse = _mm_set1_epi8(0xFF - 0xC0 + 1);
-    const auto upper_bound = _mm_set1_epi8(0x7F + (0xFF - 0xC0 + 1) + 1);
+    const auto align_sse = _mm_set1_epi8(0x40);
+    const auto upper_bound = _mm_set1_epi8(0xBF);
 
     for (; data < src_end_sse;)
     {
@@ -77,11 +77,12 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
             const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data));
 
             ///Align to zero for the solve two case
-            const auto align_res = _mm_add_epi8(chars, align_sse);
-            ///Because _mm_cmmpgt_epid8 return 0xFF if true
-            const auto choose_res = _mm_blendv_epi8(zero_sse, one_sse, _mm_cmpgt_epi8(align_res, upper_bound));
+            const auto align_res = _mm_adds_epu8(chars, align_sse);
+            const auto less_than_and_equals = _mm_cmpeq_epi8(_mm_min_epu8(align_res, upper_bound), align_res);
+            ///Because _mm_cmpeq_epi8 return 0xFF if true
+            const auto choose_res = _mm_blendv_epi8(zero_sse, one_sse, less_than_and_equals);
 
-            sse_res = _mm_add_epi8(sse_res, choose_res);
+            sse_res = _mm_adds_epu8(sse_res, choose_res);
         }
 
         UInt16 mem_res[8] = {0};
