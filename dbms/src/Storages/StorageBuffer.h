@@ -53,8 +53,6 @@ public:
     std::string getName() const override { return "Buffer"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -76,14 +74,12 @@ public:
     bool supportsPrewhere() const override { return false; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
-    bool supportsParallelReplicas() const override { return true; }
 
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
 private:
     String name;
-    NamesAndTypesListPtr columns;
 
     Context & context;
 
@@ -104,6 +100,7 @@ private:
     const String destination_database;
     const String destination_table;
     bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
+    bool allow_materialized;
 
     Poco::Logger * log;
 
@@ -126,13 +123,13 @@ protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)
       * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
       */
-    StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+    StorageBuffer(const std::string & name_, const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_);
+        const String & destination_database_, const String & destination_table_, bool allow_materialized_);
 };
 
 }

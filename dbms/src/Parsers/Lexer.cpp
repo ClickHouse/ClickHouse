@@ -1,5 +1,5 @@
 #include <Parsers/Lexer.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <common/find_first_symbols.h>
 
 

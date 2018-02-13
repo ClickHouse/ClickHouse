@@ -200,7 +200,7 @@ void Pool::initialize()
     {
         description = db + "@" + server + ":" + Poco::NumberFormatter::format(port) + " as user " + user;
 
-        for (unsigned i = 0; i < default_connections; i++)
+        for (unsigned i = 0; i < default_connections; ++i)
             allocConnection();
 
         initialized = true;

@@ -28,7 +28,7 @@ struct NameAndTypePair
 
     bool operator==(const NameAndTypePair & rhs) const
     {
-        return name == rhs.name && type->getName() == rhs.type->getName();
+        return name == rhs.name && type->equals(*rhs.type);
     }
 };
 
@@ -59,6 +59,7 @@ public:
     size_t sizeOfDifference(const NamesAndTypesList & rhs) const;
 
     Names getNames() const;
+    DataTypes getTypes() const;
 
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const NameSet & names) const;
@@ -69,7 +70,5 @@ public:
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
 };
-
-using NamesAndTypesListPtr = std::shared_ptr<NamesAndTypesList>;
 
 }

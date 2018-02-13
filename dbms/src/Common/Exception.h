@@ -112,13 +112,13 @@ void rethrowFirstException(const Exceptions & exceptions);
 
 
 template <typename T>
-typename std::enable_if<std::is_pointer<T>::value, T>::type exception_cast(std::exception_ptr e)
+std::enable_if_t<std::is_pointer_v<T>, T> exception_cast(std::exception_ptr e)
 {
     try
     {
         std::rethrow_exception(std::move(e));
     }
-    catch (typename std::remove_pointer<T>::type & concrete)
+    catch (std::remove_pointer_t<T> & concrete)
     {
         return &concrete;
     }

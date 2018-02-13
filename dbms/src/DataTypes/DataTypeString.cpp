@@ -297,6 +297,12 @@ MutableColumnPtr DataTypeString::createColumn() const
 }
 
 
+bool DataTypeString::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this);
+}
+
+
 void registerDataTypeString(DataTypeFactory & factory)
 {
     auto creator = static_cast<DataTypePtr(*)()>([] { return DataTypePtr(std::make_shared<DataTypeString>()); });

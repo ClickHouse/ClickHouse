@@ -1,6 +1,5 @@
 
 function(generate_function_register FUNCTION_AREA)
-  #set(FUNCTION_AREA_H Functions${FUNCTION_AREA}.h)
 
   foreach(FUNCTION IN LISTS ARGN)
     configure_file (registerFunction.h.in register${FUNCTION}.h)

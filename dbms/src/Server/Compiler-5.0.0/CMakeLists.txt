@@ -15,13 +15,13 @@ list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
 # Wrong library in freebsd:
 list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-l/usr/lib/libexecinfo.so")
 
-message(STATUS "Using libraries for LLVM: ${REQUIRED_LLVM_LIBRARIES}")
+message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
 target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
 # This is extracted almost directly from CMakeFiles/.../link.txt in LLVM build directory.
 
-target_link_libraries(clickhouse-compiler-lib
+target_link_libraries(clickhouse-compiler-lib PRIVATE
 
 clangBasic clangCodeGen clangDriver clangFrontend clangFrontendTool
 clangRewriteFrontend clangARCMigrate clangStaticAnalyzerFrontend
@@ -48,4 +48,6 @@ LLVMSupport
 #PollyPPCG
 
 libtinfo.a
-common)
+
+PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
+)

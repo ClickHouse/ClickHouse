@@ -68,7 +68,6 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         return std::move(res);
     }
 
-
     MutableColumnPtr res = function->getReturnType()->createColumn();
     res->reserve(getData().size());
 

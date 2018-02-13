@@ -1,5 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+
 
 namespace DB
 {
@@ -7,8 +9,11 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionCount(const std::string & /*name*/, const DataTypes & /*argument_types*/, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & /*argument_types*/, const Array & parameters)
 {
+    assertNoParameters(name, parameters);
+
+    /// 'count' accept any number of arguments and (in this case of non-Nullable types) simply ignore them.
     return std::make_shared<AggregateFunctionCount>();
 }
 
@@ -17,13 +22,6 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & /*name*/, 
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("count", createAggregateFunctionCount, AggregateFunctionFactory::CaseInsensitive);
-}
-
-AggregateFunctionPtr createAggregateFunctionCountNotNull(const DataTypes & argument_types)
-{
-    if (argument_types.size() == 1)
-        return std::make_shared<AggregateFunctionCountNotNullUnary>();
-    return std::make_shared<AggregateFunctionCountNotNullVariadic>();
 }
 
 }

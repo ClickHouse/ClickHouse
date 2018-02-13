@@ -221,7 +221,7 @@ struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    typename std::aligned_storage<sizeof(Cell), alignof(Cell)>::type zero_value_storage; /// Storage of element with zero key.
+    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -417,7 +417,7 @@ protected:
 
     void destroyElements()
     {
-        if (!std::is_trivially_destructible<Cell>::value)
+        if (!std::is_trivially_destructible_v<Cell>)
             for (iterator it = begin(); it != end(); ++it)
                 it.ptr->~Cell();
     }
@@ -426,8 +426,8 @@ protected:
     template <typename Derived, bool is_const>
     class iterator_base
     {
-        using Container = typename std::conditional<is_const, const Self, Self>::type;
-        using cell_type = typename std::conditional<is_const, const Cell, Cell>::type;
+        using Container = std::conditional_t<is_const, const Self, Self>;
+        using cell_type = std::conditional_t<is_const, const Cell, Cell>;
 
         Container * container;
         cell_type * ptr;

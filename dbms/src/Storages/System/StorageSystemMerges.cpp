@@ -13,7 +13,8 @@ namespace DB
 
 StorageSystemMerges::StorageSystemMerges(const std::string & name)
     : name{name}
-    , columns{
+{
+    columns = NamesAndTypesList{
         { "database",                    std::make_shared<DataTypeString>() },
         { "table",                       std::make_shared<DataTypeString>() },
         { "elapsed",                     std::make_shared<DataTypeFloat64>() },
@@ -30,8 +31,7 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
         { "columns_written",             std::make_shared<DataTypeUInt64>() },
         { "memory_usage",                std::make_shared<DataTypeUInt64>() },
         { "thread_number",               std::make_shared<DataTypeUInt64>() },
-    }
-{
+    };
 }
 
 

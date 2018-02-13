@@ -89,9 +89,16 @@ Names NamesAndTypesList::getNames() const
     Names res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
-    {
         res.push_back(column.name);
-    }
+    return res;
+}
+
+DataTypes NamesAndTypesList::getTypes() const
+{
+    DataTypes res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.push_back(column.type);
     return res;
 }
 
@@ -126,7 +133,7 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
         auto it = types.find(name);
         if (it == types.end())
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.push_back(NameAndTypePair(name, *it->second));
+        res.emplace_back(name, *it->second);
     }
     return res;
 }

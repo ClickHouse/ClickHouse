@@ -17,10 +17,11 @@ if (APPLE)
     target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
 endif ()
 
-add_library (common
+add_library (common ${SPLIT_SHARED}
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
-    src/exp10.cpp
+    src/exp10.c
+    src/shift10.cpp
     src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
@@ -34,6 +35,8 @@ add_library (common
     include/common/LocalDateTime.h
     include/common/ErrorHandlers.h
     include/common/exp10.h
+    include/common/shift10.h
+    include/common/intExp.h
     include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h
@@ -65,7 +68,12 @@ if (USE_JEMALLOC)
         message (STATUS "Link jemalloc : ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
 elseif (USE_TCMALLOC)
-    if (DEBUG_TCMALLOC)
+
+    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
+        message (WARNING "Requested DEBUG_TCMALLOC but debug lib not found. try install libgoogle-perftools-dev")
+    endif ()
+
+    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
         message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
         set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
     else ()
@@ -89,6 +97,10 @@ find_package (Threads)
 target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
 target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
 target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
+
+if (NOT USE_INTERNAL_BOOST_LIBRARY)
+    target_include_directories (common BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+endif ()
 
 target_link_libraries (
     common

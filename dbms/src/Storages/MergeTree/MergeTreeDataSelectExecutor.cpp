@@ -13,7 +13,7 @@
 
 /// Allow to use __uint128_t as a template parameter for boost::rational.
 // https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
-#if !defined(__GLIBCXX_BITSIZE_INT_N_0)
+#if !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
 namespace std
 {
     template <>
@@ -38,6 +38,7 @@ namespace std
 #include <DataStreams/SummingSortedBlockInputStream.h>
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -61,6 +62,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -135,12 +137,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams,
-    size_t * inout_part_index,
     Int64 max_block_number_to_read) const
 {
-    size_t part_index_var = 0;
-    if (!inout_part_index)
-        inout_part_index = &part_index_var;
+    size_t part_index = 0;
 
     MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
@@ -197,7 +196,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     processed_stage = QueryProcessingStage::FetchColumns;
 
     const Settings & settings = context.getSettingsRef();
-    SortDescription sort_descr = data.getSortDescription();
+    SortDescription sort_descr = data.getPrimarySortDescription();
 
     PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
         data.getPrimaryExpression());
@@ -519,7 +518,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     size_t sum_ranges = 0;
     for (auto & part : parts)
     {
-        RangesInDataPart ranges(part, (*inout_part_index)++);
+        RangesInDataPart ranges(part, part_index++);
 
         if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
             ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
@@ -785,7 +784,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     BlockInputStreams res;
     if (to_merge.size() == 1)
     {
-        if (!data.merging_params.sign_column.empty())
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
         {
             ExpressionActionsPtr sign_filter_expression;
             String sign_filter_column;
@@ -808,12 +807,13 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
                 break;
 
             case MergeTreeData::MergingParams::Collapsing:
-                merged = std::make_shared<CollapsingFinalBlockInputStream>(to_merge, data.getSortDescription(), data.merging_params.sign_column);
+                merged = std::make_shared<CollapsingFinalBlockInputStream>(
+                        to_merge, data.getSortDescription(), data.merging_params.sign_column);
                 break;
 
             case MergeTreeData::MergingParams::Summing:
                 merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
-                    data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
+                        data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
                 break;
 
             case MergeTreeData::MergingParams::Aggregating:
@@ -822,7 +822,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
             case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
                 merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
-                    data.getSortDescription(), data.merging_params.version_column, max_block_size);
+                        data.getSortDescription(), data.merging_params.version_column, max_block_size);
+                break;
+
+            case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
+                merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
+                        to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
                 break;
 
             case MergeTreeData::MergingParams::Unsorted:

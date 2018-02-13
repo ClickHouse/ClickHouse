@@ -608,7 +608,8 @@ Columns TrieDictionary::getKeyColumns() const
     auto mask_column = ColumnVector<UInt8>::create();
 
 #if defined(__SIZEOF_INT128__)
-    auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask) {
+    auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask)
+    {
         UInt64 * ip_array = reinterpret_cast<UInt64 *>(&ip);
         ip_array[0] = Poco::ByteOrder::fromNetwork(ip_array[0]);
         ip_array[1] = Poco::ByteOrder::fromNetwork(ip_array[1]);

@@ -1,7 +1,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -27,7 +27,8 @@ void AlterCommand::apply(
 {
     if (type == ADD_COLUMN)
     {
-        const auto exists_in = [this] (const NamesAndTypesList & columns) {
+        const auto exists_in = [this] (const NamesAndTypesList & columns)
+        {
             return columns.end() != std::find_if(columns.begin(), columns.end(),
                 std::bind(namesEqual, std::cref(column_name), std::placeholders::_1));
         };
@@ -80,12 +81,13 @@ void AlterCommand::apply(
             column_defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
 
         /// Slow, because each time a list is copied
-        columns = *DataTypeNested::expandNestedColumns(columns);
+        columns = Nested::flatten(columns);
     }
     else if (type == DROP_COLUMN)
     {
         /// look for a column in list and remove it if present, also removing corresponding entry from column_defaults
-        const auto remove_column = [&column_defaults, this] (NamesAndTypesList & columns) {
+        const auto remove_column = [&column_defaults, this] (NamesAndTypesList & columns)
+        {
             auto removed = false;
             NamesAndTypesList::iterator column_it;
 
@@ -120,7 +122,8 @@ void AlterCommand::apply(
             materialized_columns : alias_columns;
 
         /// find column or throw exception
-        const auto find_column = [this] (NamesAndTypesList & columns) {
+        const auto find_column = [this] (NamesAndTypesList & columns)
+        {
             const auto it = std::find_if(columns.begin(), columns.end(),
                 std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
             if (it == columns.end())
@@ -325,7 +328,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
             const auto & deduced_type = tmp_column.type;
 
             // column not specified explicitly in the ALTER query may require default_expression modification
-            if (explicit_type->getName() != deduced_type->getName())
+            if (!explicit_type->equals(*deduced_type))
             {
                 const auto default_it = defaults.find(column_name);
 

@@ -42,7 +42,7 @@ bool checkColumn(const IColumn * column)
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
-    if (!column->isColumnConst())
+    if (!column || !column->isColumnConst())
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
@@ -89,10 +89,10 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column);
 /// Returns the copy of a given block in which each column specified in
 /// the "arguments" parameter is replaced with its respective nested
 /// column if it is nullable.
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args);
 
 /// Similar function as above. Additionally transform the result type if needed.
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
 
 }

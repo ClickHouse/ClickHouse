@@ -181,18 +181,18 @@ template <typename A> struct ToInteger
 // CLICKHOUSE-29. The same depth, different signs
 // NOTE: This case is applied for 64-bit integers only (for backward compability), but could be used for any-bit integers
 template <typename A, typename B>
-using LeastGreatestSpecialCase = std::integral_constant<bool,
+constexpr bool LeastGreatestSpecialCase =
     std::is_integral_v<A> && std::is_integral_v<B>
     && (8 == sizeof(A) && sizeof(A) == sizeof(B))
-    && (std::is_signed_v<A> ^ std::is_signed_v<B>)>;
+    && (std::is_signed_v<A> ^ std::is_signed_v<B>);
 
 template <typename A, typename B>
-using ResultOfLeast = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
+using ResultOfLeast = std::conditional_t<LeastGreatestSpecialCase<A, B>,
     typename Construct<true, false, sizeof(A)>::Type,
     typename ResultOfIf<A, B>::Type>;
 
 template <typename A, typename B>
-using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>::value,
+using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>,
     typename Construct<false, false, sizeof(A)>::Type,
     typename ResultOfIf<A, B>::Type>;
 

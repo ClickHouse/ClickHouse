@@ -61,37 +61,28 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 
 void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier)
 {
-    /// We will not display the wrapper of the block stream in the AsynchronousBlockInputStream in the tree.
-    if (getName() != "Asynchronous")
+    ostr << String(indent, ' ') << getName();
+    if (multiplier > 1)
+        ostr << " × " << multiplier;
+    ostr << std::endl;
+    ++indent;
+
+    /// If the subtree is repeated several times, then we output it once with the multiplier.
+    using Multipliers = std::map<String, size_t>;
+    Multipliers multipliers;
+
+    for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+        ++multipliers[(*it)->getTreeID()];
+
+    for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
     {
-        ostr << String(indent, ' ') << getName();
-        if (multiplier > 1)
-            ostr << " × " << multiplier;
-        ostr << std::endl;
-        ++indent;
-
-        /// If the subtree is repeated several times, then we output it once with the multiplier.
-        using Multipliers = std::map<String, size_t>;
-        Multipliers multipliers;
-
-        for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
-            ++multipliers[(*it)->getTreeID()];
-
-        for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+        String id = (*it)->getTreeID();
+        size_t & subtree_multiplier = multipliers[id];
+        if (subtree_multiplier != 0)    /// Already printed subtrees are marked with zero in the array of multipliers.
         {
-            String id = (*it)->getTreeID();
-            size_t & subtree_multiplier = multipliers[id];
-            if (subtree_multiplier != 0)    /// Already printed subtrees are marked with zero in the array of multipliers.
-            {
-                (*it)->dumpTree(ostr, indent, subtree_multiplier);
-                subtree_multiplier = 0;
-            }
+            (*it)->dumpTree(ostr, indent, subtree_multiplier);
+            subtree_multiplier = 0;
         }
-    }
-    else
-    {
-        for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-            (*it)->dumpTree(ostr, indent, multiplier);
     }
 }
 

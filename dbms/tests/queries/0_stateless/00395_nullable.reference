@@ -1,38 +1,47 @@
+----- NULL value -----
 \N
 \N
 \N
 \N
+----- MergeTree engine -----
 1	1	a	a	[1]	[1]	['a']	['a']	2000-01-01
 1	1	a	a	[1]	[1]	['a']	[NULL]	2000-01-01
 1	1	a	a	[1]	[NULL]	['a']	['a']	2000-01-01
 1	1	a	\N	[1]	[1]	['a']	['a']	2000-01-01
 1	\N	a	a	[1]	[1]	['a']	['a']	2000-01-01
+----- Memory engine -----
 1	1	a	a	[1]	[1]	['a']	['a']	2000-01-01
 1	1	a	a	[1]	[1]	['a']	[NULL]	2000-01-01
 1	1	a	a	[1]	[NULL]	['a']	['a']	2000-01-01
 1	1	a	\N	[1]	[1]	['a']	['a']	2000-01-01
 1	\N	a	a	[1]	[1]	['a']	['a']	2000-01-01
+----- TinyLog engine -----
 1	1	a	a	[1]	[1]	['a']	['a']	2000-01-01
 1	1	a	a	[1]	[1]	['a']	[NULL]	2000-01-01
 1	1	a	a	[1]	[NULL]	['a']	['a']	2000-01-01
 1	1	a	\N	[1]	[1]	['a']	['a']	2000-01-01
 1	\N	a	a	[1]	[1]	['a']	['a']	2000-01-01
+----- Log engine -----
 1	1	a	a	[1]	[1]	['a']	['a']	2000-01-01
 1	1	a	a	[1]	[1]	['a']	[NULL]	2000-01-01
 1	1	a	a	[1]	[NULL]	['a']	['a']	2000-01-01
 1	1	a	\N	[1]	[1]	['a']	['a']	2000-01-01
 1	\N	a	a	[1]	[1]	['a']	['a']	2000-01-01
+----- StripeLog engine -----
 1	1	a	a	[1]	[1]	['a']	['a']	2000-01-01
 1	1	a	a	[1]	[1]	['a']	[NULL]	2000-01-01
 1	1	a	a	[1]	[NULL]	['a']	['a']	2000-01-01
 1	1	a	\N	[1]	[1]	['a']	['a']	2000-01-01
 1	\N	a	a	[1]	[1]	['a']	['a']	2000-01-01
+----- Insert with expression -----
 [2]
+----- Insert. Source and target columns have same types up to nullability. -----
 2	7
 4	3
 5	1
 6	9
 8	2
+----- Apply functions and aggregate functions on columns that may contain null values -----
 2	7	9	14
 5	1	6	35
 9	\N	\N	63
@@ -41,12 +50,14 @@
 \N	\N	\N	\N
 58
 406
+----- isNull, isNotNull -----
 2	7	0	1
 5	1	0	1
 9	\N	0	0
 42	42	0	1
 \N	6	1	1
 \N	\N	1	0
+----- ifNull, nullIf -----
 2	7	2
 5	1	5
 9	\N	9
@@ -59,6 +70,7 @@
 42	42	\N
 \N	6	\N
 \N	\N	\N
+----- coalesce -----
 \N
 1
 1
@@ -76,16 +88,19 @@
 42	42	42
 \N	6	6
 \N	\N	99
+----- assumeNotNull -----
 2
 5
 9
 42
+----- IS NULL, IS NOT NULL -----
 2
 5
 9
 42
 \N
 \N
+----- multiIf -----
 \N
 2
 \N
@@ -100,6 +115,7 @@ A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
 1
 99
 99
+----- Array functions -----
 [NULL]
 [NULL,NULL,NULL]
 [NULL,2,3]
@@ -108,6 +124,8 @@ A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
 [NULL,'b','c']
 ['a',NULL,'c']
 ['a','b',NULL]
+----- arrayElement -----
+----- constant arrays -----
 1
 \N
 2
@@ -120,6 +138,7 @@ d
 \N
 2
 3
+----- variable arrays -----
 2
 \N
 2
@@ -170,6 +189,8 @@ bc
 def
 ghij
 \N
+----- has -----
+----- constant arrays -----
 1
 1
 1
@@ -197,6 +218,7 @@ ghij
 1
 1
 1
+----- variable arrays -----
 1
 0
 1
@@ -270,6 +292,7 @@ ghij
 0
 0
 1
+----- Aggregation -----
 A	0	2
 A	1	2
 B	1	4

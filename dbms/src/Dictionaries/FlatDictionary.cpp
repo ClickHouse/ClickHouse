@@ -539,11 +539,8 @@ PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
 
     PaddedPODArray<Key> ids;
     for (auto idx : ext::range(0, ids_count))
-    {
-        if (loaded_ids[idx]) {
+        if (loaded_ids[idx])
             ids.push_back(idx);
-        }
-    }
     return ids;
 }
 

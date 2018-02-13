@@ -14,6 +14,9 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 
+#include <common/readline_use.h>
+#include <common/find_first_symbols.h>
+
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -22,8 +25,8 @@
 #include <Common/UnicodeBar.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
-#include <common/readline_use.h>
 #include <Common/Throttler.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -90,7 +93,8 @@ public:
 
 private:
     using StringSet = std::unordered_set<String>;
-    StringSet exit_strings {
+    StringSet exit_strings
+    {
         "exit", "quit", "logout",
         "учше", "йгше", "дщпщге",
         "exit;", "quit;", "logout;",
@@ -399,11 +403,13 @@ private:
                 << (!user.empty() ? " as user " + user : "")
                 << "." << std::endl;
 
-        connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
-            encryption,
+        ConnectionTimeouts timeouts(
             Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+
+        connection = std::make_unique<Connection>(
+            host, port, default_database, user, password, timeouts, "client", compression, encryption);
 
         String server_name;
         UInt64 server_version_major = 0;
@@ -425,12 +431,6 @@ private:
                       << " server version " << server_version
                       << "." << std::endl << std::endl;
         }
-    }
-
-
-    static bool isWhitespace(char c)
-    {
-        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
     }
 
 
@@ -456,10 +456,10 @@ private:
             free(line_);
 
             size_t ws = line.size();
-            while (ws > 0 && isWhitespace(line[ws - 1]))
+            while (ws > 0 && isWhitespaceASCII(line[ws - 1]))
                 --ws;
 
-            if (ws == 0 && query.empty())
+            if (ws == 0 && line.empty())
                 continue;
 
             bool ends_with_semicolon = line[ws - 1] == ';';
@@ -528,23 +528,25 @@ private:
 
     void nonInteractive()
     {
-        String line;
+        String text;
+
         if (config().has("query"))
-            line = config().getString("query");
+            text = config().getString("query");
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
             /// The query is read entirely into memory (streaming is disabled).
             ReadBufferFromFileDescriptor in(STDIN_FILENO);
-            readStringUntilEOF(line, in);
+            readStringUntilEOF(text, in);
         }
 
-        process(line);
+        process(text);
     }
 
 
-    bool process(const String & line)
+    bool process(const String & text)
     {
+        const auto ignore_error = config().getBool("ignore-error", false);
         if (config().has("multiquery"))
         {
             /// Several queries separated by ';'.
@@ -552,36 +554,54 @@ private:
 
             String query;
 
-            const char * begin = line.data();
-            const char * end = begin + line.size();
+            const char * begin = text.data();
+            const char * end = begin + text.size();
 
             while (begin < end)
             {
                 const char * pos = begin;
                 ASTPtr ast = parseQuery(pos, end, true);
                 if (!ast)
+                {
+                    if (ignore_error)
+                    {
+                        Tokens tokens(begin, end);
+                        TokenIterator token_iterator(tokens);
+                        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                            ++token_iterator;
+                        begin = token_iterator->end;
+
+                        continue;
+                    }
                     return true;
+                }
 
                 ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
                 if (insert && insert->data)
                 {
-                    pos = insert->data;
-                    while (*pos && *pos != '\n')
-                        ++pos;
+                    pos = find_first_symbols<'\n'>(insert->data, end);
                     insert->end = pos;
                 }
 
-                query = line.substr(begin - line.data(), pos - begin);
+                query = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
-                while (isWhitespace(*begin) || *begin == ';')
+                while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
-                if (!processSingleQuery(query, ast))
-                    return false;
+                try
+                {
+                    if (!processSingleQuery(query, ast) && !ignore_error)
+                        return false;
+                }
+                catch (...)
+                {
+                    std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                    got_exception = true;
+                }
 
-                if (got_exception)
+                if (got_exception && !ignore_error)
                 {
                     if (is_interactive)
                         break;
@@ -594,7 +614,7 @@ private:
         }
         else
         {
-            return processSingleQuery(line);
+            return processSingleQuery(text);
         }
     }
 
@@ -749,7 +769,9 @@ private:
         ParserQuery parser(end);
         ASTPtr res;
 
-        if (is_interactive)
+        const auto ignore_error = config().getBool("ignore-error", false);
+
+        if (is_interactive || ignore_error)
         {
             String message;
             res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements);
@@ -957,6 +979,7 @@ private:
             String pager = config().getString("pager", "");
             if (!pager.empty())
             {
+                signal(SIGPIPE, SIG_IGN);
                 pager_cmd = ShellCommand::execute(pager, true);
                 out_buf = &pager_cmd->in;
             }
@@ -1038,7 +1061,8 @@ private:
     void onProgress(const Progress & value)
     {
         progress.incrementPiecewiseAtomically(value);
-        block_out_stream->onProgress(value);
+        if (block_out_stream)
+            block_out_stream->onProgress(value);
         writeProgress();
     }
 
@@ -1267,6 +1291,7 @@ public:
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
+            ("ignore-error", "Do not stop processing in multiquery mode")
             ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -1372,6 +1397,8 @@ public:
             config().setBool("multiline", true);
         if (options.count("multiquery"))
             config().setBool("multiquery", true);
+        if (options.count("ignore-error"))
+            config().setBool("ignore-error", true);
         if (options.count("format"))
             config().setString("format", options["format"].as<std::string>());
         if (options.count("vertical"))

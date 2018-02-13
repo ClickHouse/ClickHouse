@@ -75,6 +75,8 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::DROP_DNS_CACHE:
             DNSCache::instance().drop();
+            /// Reinitialize clusters to update their resolved_addresses
+            context.reloadClusterConfig();
             break;
         case Type::DROP_MARK_CACHE:
             context.dropMarkCache();

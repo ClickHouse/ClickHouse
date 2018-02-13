@@ -22,8 +22,11 @@ using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
 
-class IFunction;
-using FunctionPtr = std::shared_ptr<IFunction>;
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+
+class IFunctionBuilder;
+using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -51,7 +54,6 @@ public:
             */
         ARRAY_JOIN,
 
-        /// INNER|LEFT JOIN.
         JOIN,
 
         /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.
@@ -69,9 +71,9 @@ public:
     ColumnPtr added_column;
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
-    mutable FunctionPtr function; /// mutable - to allow execute.
+    FunctionBuilderPtr function_builder;
+    FunctionBasePtr function;
     Names argument_names;
-    Names prerequisite_names;
 
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
@@ -86,7 +88,7 @@ public:
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
-        const FunctionPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
+        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
     static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
     static ExpressionAction removeColumn(const std::string & removed_name);

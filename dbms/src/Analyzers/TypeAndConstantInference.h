@@ -15,7 +15,7 @@ struct CollectAliases;
 struct AnalyzeColumns;
 struct AnalyzeLambdas;
 struct ExecuteTableFunctions;
-class IFunction;
+class IFunctionBase;
 class IAggregateFunction;
 
 
@@ -46,7 +46,7 @@ struct TypeAndConstantInference
         DataTypePtr data_type;
         bool is_constant_expression = false;
         Field value;    /// Has meaning if is_constant_expression == true.
-        std::shared_ptr<IFunction> function;
+        std::shared_ptr<IFunctionBase> function;
         std::shared_ptr<IAggregateFunction> aggregate_function;
     };
 

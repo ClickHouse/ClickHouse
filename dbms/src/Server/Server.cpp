@@ -2,41 +2,34 @@
 
 #include <memory>
 #include <sys/resource.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
-
 #include <ext/scope_guard.h>
-
+#include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/config.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-
 #include <IO/HTTPCommon.h>
-
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
-
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
-
+#include <Storages/registerStorages.h>
 #include "ConfigReloader.h"
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
@@ -47,7 +40,6 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
-
 
 namespace CurrentMetrics
 {
@@ -61,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -72,6 +65,18 @@ static std::string getCanonicalPath(std::string && path)
     if (path.back() != '/')
         path += '/';
     return path;
+}
+
+void Server::uninitialize()
+{
+    logger().information("shutting down");
+    BaseDaemon::uninitialize();
+}
+
+void Server::initialize(Poco::Util::Application & self)
+{
+    BaseDaemon::initialize(self);
+    logger().information("starting up");
 }
 
 std::string Server::getDefaultCorePath() const
@@ -86,6 +91,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerStorages();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
 
@@ -152,9 +158,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
                 LOG_WARNING(log,
-                    std::string("Cannot set max number of file descriptors to ") + std::to_string(rlim.rlim_cur)
-                        + ". Try to specify max_open_files according to your system limits. error: "
-                        + strerror(errno));
+                    "Cannot set max number of file descriptors to " << rlim.rlim_cur
+                        << ". Try to specify max_open_files according to your system limits. error: "
+                        << strerror(errno));
             else
                 LOG_DEBUG(log, "Set max number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
         }
@@ -253,11 +259,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Load global settings from default profile.
+    /// Load global settings from default_profile and system_profile.
+    global_context->setDefaultProfiles(config());
     Settings & settings = global_context->getSettingsRef();
-    String default_profile_name = config().getString("default_profile", "default");
-    global_context->setDefaultProfileName(default_profile_name);
-    global_context->setSetting("profile", default_profile_name);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
@@ -309,12 +313,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
-        bool try_listen = false;
+        bool listen_try = config().getUInt("listen_try", false);
         if (listen_hosts.empty())
         {
             listen_hosts.emplace_back("::1");
             listen_hosts.emplace_back("127.0.0.1");
-            try_listen = true;
+            listen_try = true;
         }
 
         auto make_socket_address = [&](const std::string & host, UInt16 port)
@@ -354,8 +358,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
                     Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("http_port"));
                     Poco::Net::ServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.receive_timeout);
-                    http_socket.setSendTimeout(settings.send_timeout);
+                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
+                    http_socket.setSendTimeout(settings.http_send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
@@ -373,8 +377,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     std::call_once(ssl_init_once, SSLInit);
                     Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
                     Poco::Net::SecureServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.receive_timeout);
-                    http_socket.setSendTimeout(settings.send_timeout);
+                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
+                    http_socket.setSendTimeout(settings.http_send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
@@ -384,7 +388,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     LOG_INFO(log, "Listening https://" + http_socket_address.toString());
 #else
-                    throw Exception{"https protocol disabled because poco library built without NetSSL support.",
+                    throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
@@ -421,7 +425,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                                                                   new Poco::Net::TCPServerParams));
                     LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
 #else
-                    throw Exception{"tcp_ssl protocol disabled because poco library built without NetSSL support.",
+                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
@@ -435,8 +439,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
                     Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_http_port"));
                     Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
-                    interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
-                    interserver_io_http_socket.setSendTimeout(settings.send_timeout);
+                    interserver_io_http_socket.setReceiveTimeout(settings.http_receive_timeout);
+                    interserver_io_http_socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
@@ -448,7 +452,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (try_listen && e.code() == POCO_EPROTONOSUPPORT)
+                if (listen_try && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
                     LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
@@ -491,7 +495,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             LOG_DEBUG(log,
                 "Closed all listening sockets."
-                    << (current_connections ? " Waiting for " + std::to_string(current_connections) + " outstanding connections." : ""));
+                    << (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
 
             if (current_connections)
             {
@@ -511,7 +515,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
 
             LOG_DEBUG(
-                log, "Closed connections." << (current_connections ? " But " + std::to_string(current_connections) + " remains."
+                log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             main_config_reloader.reset();

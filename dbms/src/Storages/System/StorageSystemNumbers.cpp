@@ -41,8 +41,9 @@ private:
 
 
 StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_)
-    : name(name_), columns{{"number", std::make_shared<DataTypeUInt64>()}}, multithreaded(multithreaded_), limit(limit_)
+    : name(name_), multithreaded(multithreaded_), limit(limit_)
 {
+    columns = NamesAndTypesList{{"number", std::make_shared<DataTypeUInt64>()}};
 }
 
 

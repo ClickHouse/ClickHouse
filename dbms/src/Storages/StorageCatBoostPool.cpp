@@ -90,14 +90,6 @@ static void checkCreationIsAllowed(const String & base_path, const String & path
             ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-StoragePtr StorageCatBoostPool::create(const Context & context,
-                                       const String & column_description_file_name,
-                                       const String & data_description_file_name)
-{
-    return ext::shared_ptr_helper<StorageCatBoostPool>::create(
-        context, column_description_file_name, data_description_file_name);
-}
-
 
 StorageCatBoostPool::StorageCatBoostPool(const Context & context,
                                          String column_description_file_name_,

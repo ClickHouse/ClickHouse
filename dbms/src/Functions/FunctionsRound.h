@@ -46,28 +46,28 @@ namespace ErrorCodes
     */
 
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && (sizeof(T) <= sizeof(UInt32)), T>::type
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && (sizeof(T) == sizeof(UInt64)), T>::type
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_same<T, Float32>::value, T>::type
+inline std::enable_if_t<std::is_same_v<T, Float32>, T>
 roundDownToPowerOfTwo(T x)
 {
     return ext::bit_cast<T>(ext::bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_same<T, Float64>::value, T>::type
+inline std::enable_if_t<std::is_same_v<T, Float64>, T>
 roundDownToPowerOfTwo(T x)
 {
     return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
@@ -461,9 +461,9 @@ public:
 };
 
 template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
-using FunctionRoundingImpl = typename std::conditional<std::is_floating_point<T>::value,
+using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
     FloatRoundingImpl<T, rounding_mode, scale_mode>,
-    IntegerRoundingImpl<T, rounding_mode, scale_mode>>::type;
+    IntegerRoundingImpl<T, rounding_mode, scale_mode>>;
 
 
 /** Select the appropriate processing algorithm depending on the scale.

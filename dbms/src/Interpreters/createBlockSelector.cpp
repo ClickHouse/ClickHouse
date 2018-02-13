@@ -27,7 +27,7 @@ IColumn::Selector createBlockSelector(
       * This is not suitable for our task. So we will process signed numbers as unsigned.
       * It is not near like remainder of division, but is suitable for our task.
       */
-    using UnsignedT = typename std::make_unsigned<T>::type;
+    using UnsignedT = std::make_unsigned_t<T>;
 
     /// const columns contain only one value, therefore we do not need to read it at every iteration
     if (column.isColumnConst())
@@ -39,7 +39,7 @@ IColumn::Selector createBlockSelector(
     else
     {
         /// libdivide support only UInt32 and UInt64.
-        using TUInt32Or64 = typename std::conditional<sizeof(UnsignedT) <= 4, UInt32, UInt64>::type;
+        using TUInt32Or64 = std::conditional_t<sizeof(UnsignedT) <= 4, UInt32, UInt64>;
 
         libdivide::divider<TUInt32Or64> divider(total_weight);
 

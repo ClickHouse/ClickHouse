@@ -1,6 +1,10 @@
 set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 if (APPLE)
     set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
+    # https://rt.openssl.org/Ticket/Display.html?user=guest&pass=guest&id=2232
+    if (USE_STATIC_LIBRARIES)
+        message(WARNING "Disable USE_STATIC_LIBRARIES if you have linking problems with OpenSSL on MacOS")
+    endif ()
 endif ()
 find_package (OpenSSL)
 if (NOT OPENSSL_FOUND)
@@ -14,10 +18,6 @@ if (NOT OPENSSL_FOUND)
         set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
         set (OPENSSL_FOUND 1)
     endif ()
-endif ()
-
-if (OPENSSL_FOUND)
-    include_directories (${OPENSSL_INCLUDE_DIR})
 endif ()
 
 message (STATUS "Using openssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")

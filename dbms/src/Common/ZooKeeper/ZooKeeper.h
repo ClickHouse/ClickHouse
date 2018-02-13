@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Common/ZooKeeper/Types.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include "Types.h"
+#include "KeeperException.h"
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unistd.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -35,7 +36,7 @@ const UInt32 BIG_SESSION_TIMEOUT = 600000;
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
 struct WatchContext;
-
+struct MultiTransactionInfo;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -160,11 +161,9 @@ public:
     int32_t tryRemoveEphemeralNodeWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
 
     bool exists(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    bool exists(const std::string & path, Stat * stat, const TaskHandlePtr & watch);
     bool existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
 
     std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    std::string get(const std::string & path, Stat * stat, const TaskHandlePtr & watch);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist. Returns false in this case.
@@ -201,6 +200,8 @@ public:
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
     int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
+    /// Like previous one, but does not throw any ZooKeeper exceptions
+    int32_t tryMultiUnsafe(const Ops & ops, MultiTransactionInfo & info);
     /// Use only with read-only operations.
     int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr, size_t * attempt = nullptr);
 
@@ -372,7 +373,6 @@ private:
     void tryRemoveChildrenRecursive(const std::string & path);
 
     static WatchCallback callbackForEvent(const EventPtr & event);
-    static WatchCallback callbackForTaskHandle(const TaskHandlePtr & task);
     WatchContext * createContext(WatchCallback && callback);
     static void destroyContext(WatchContext * context);
     static void processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx);
@@ -430,6 +430,7 @@ private:
     /// instead of continuing to use re-established session.
     bool is_dirty = false;
 };
+
 
 using ZooKeeperPtr = ZooKeeper::Ptr;
 
@@ -491,5 +492,42 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
+
+
+/// Simple structure to handle transaction execution results
+struct MultiTransactionInfo
+{
+    MultiTransactionInfo() = default;
+
+    const Ops * ops = nullptr;
+    int32_t code = ZOK;
+    OpResultsPtr op_results;
+
+    bool empty() const
+    {
+        return ops == nullptr;
+    }
+
+    bool hasFailedOp() const
+    {
+        return zkutil::isUserError(code);
+    }
+
+    const Op & getFailedOp() const
+    {
+        return *ops->at(getFailedOpIndex(op_results, code));
+    }
+
+    KeeperException getException() const
+    {
+        if (hasFailedOp())
+        {
+            size_t i = getFailedOpIndex(op_results, code);
+            return KeeperException("Transaction failed at op #" + std::to_string(i) + ": " + ops->at(i)->describe(), code);
+        }
+        else
+            return KeeperException(code);
+    }
+};
 
 }

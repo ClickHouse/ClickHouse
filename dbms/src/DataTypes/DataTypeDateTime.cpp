@@ -59,9 +59,15 @@ void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_nu
 void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
     time_t x;
-    assertChar('\'', istr);
-    readDateTimeText(x, istr, time_zone);
-    assertChar('\'', istr);
+    if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
+    {
+        readDateTimeText(x, istr, time_zone);
+        assertChar('\'', istr);
+    }
+    else /// Just 1504193808 or 01504193808
+    {
+        readIntText(x, istr);
+    }
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
@@ -75,12 +81,12 @@ void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num,
 void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
     time_t x;
-    if (checkChar('"', istr)) /// Cases: "2017-08-31 18:36:48" or "1504193808"
+    if (checkChar('"', istr))
     {
         readDateTimeText(x, istr, time_zone);
         assertChar('"', istr);
     }
-    else /// Just 1504193808 or 01504193808
+    else
     {
         readIntText(x, istr);
     }
@@ -99,6 +105,13 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     time_t x;
     readDateTimeCSV(x, istr, time_zone);
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
+}
+
+bool DataTypeDateTime::equals(const IDataType & rhs) const
+{
+    /// DateTime with different timezones are equal, because:
+    /// "all types with different time zones are equivalent and may be used interchangingly."
+    return typeid(rhs) == typeid(*this);
 }
 
 

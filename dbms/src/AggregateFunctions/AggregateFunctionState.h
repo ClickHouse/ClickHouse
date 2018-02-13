@@ -15,16 +15,16 @@ namespace DB
   * Return type - DataTypeAggregateFunction.
   */
 
-class AggregateFunctionState final : public IAggregateFunction
+class AggregateFunctionState final : public IAggregateFunctionHelper<AggregateFunctionState>
 {
 private:
-    AggregateFunctionPtr nested_func_owner;
-    IAggregateFunction * nested_func;
+    AggregateFunctionPtr nested_func;
     DataTypes arguments;
     Array params;
 
 public:
-    AggregateFunctionState(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
+    AggregateFunctionState(AggregateFunctionPtr nested, const DataTypes & arguments, const Array & params)
+        : nested_func(nested), arguments(arguments), params(params) {}
 
     String getName() const override
     {
@@ -32,18 +32,6 @@ public:
     }
 
     DataTypePtr getReturnType() const override;
-
-    void setArguments(const DataTypes & arguments_) override
-    {
-        arguments = arguments_;
-        nested_func->setArguments(arguments);
-    }
-
-    void setParameters(const Array & params_) override
-    {
-        params = params_;
-        nested_func->setParameters(params);
-    }
 
     void create(AggregateDataPtr place) const override
     {
@@ -103,14 +91,7 @@ public:
         return nested_func->allocatesMemoryInArena();
     }
 
-    AggregateFunctionPtr getNestedFunction() const { return nested_func_owner; }
-
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
-    {
-        static_cast<const AggregateFunctionState &>(*that).add(place, columns, row_num, arena);
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+    AggregateFunctionPtr getNestedFunction() const { return nested_func; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

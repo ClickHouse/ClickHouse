@@ -26,8 +26,6 @@ public:
     std::string getName() const override { return "Memory"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
-
     size_t getSize() const { return data.size(); }
 
     BlockInputStreams read(
@@ -45,7 +43,6 @@ public:
 
 private:
     String name;
-    NamesAndTypesListPtr columns;
 
     /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
     BlocksList data;
@@ -55,7 +52,7 @@ private:
 protected:
     StorageMemory(
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);

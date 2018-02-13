@@ -1,14 +1,22 @@
 #include <Storages/StorageFile.h>
+#include <Storages/StorageFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <fcntl.h>
 
@@ -21,6 +29,10 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_IDENTIFIER;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 };
 
 
@@ -42,13 +54,13 @@ StorageFile::StorageFile(
         const std::string & db_dir_path,
         const std::string & table_name_,
         const std::string & format_name_,
-        const NamesAndTypesListPtr & columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_)
-    : IStorage(materialized_columns_, alias_columns_, column_defaults_),
-    table_name(table_name_), format_name(format_name_), columns(columns_), context_global(context_), table_fd(table_fd_)
+    : IStorage(columns_, materialized_columns_, alias_columns_, column_defaults_),
+    table_name(table_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
     if (table_fd < 0) /// Will use file
     {
@@ -62,6 +74,9 @@ StorageFile::StorageFile(
         }
         else /// Is DB's file
         {
+            if (db_dir_path.empty())
+                throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+
             path = getTablePath(db_dir_path, table_name, format_name);
             is_db_table = true;
             Poco::File(Poco::Path(path).parent()).createDirectories();
@@ -254,6 +269,61 @@ void StorageFile::rename(const String & new_path_to_db, const String & /*new_dat
     Poco::File(path).renameTo(path_new);
 
     path = std::move(path_new);
+}
+
+
+void registerStorageFile(StorageFactory & factory)
+{
+    factory.registerStorage("File", [](const StorageFactory::Arguments & args)
+    {
+        ASTs & engine_args = args.engine_args;
+
+        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+            throw Exception(
+                "Storage File requires 1 or 2 arguments: name of used format and source.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        String format_name = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+
+        int source_fd = -1;
+        String source_path;
+        if (engine_args.size() >= 2)
+        {
+            /// Will use FD if engine_args[1] is int literal or identifier with std* name
+
+            if (ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(engine_args[1].get()))
+            {
+                if (identifier->name == "stdin")
+                    source_fd = STDIN_FILENO;
+                else if (identifier->name == "stdout")
+                    source_fd = STDOUT_FILENO;
+                else if (identifier->name == "stderr")
+                    source_fd = STDERR_FILENO;
+                else
+                    throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+                                    ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
+
+            if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            {
+                auto type = literal->value.getType();
+                if (type == Field::Types::Int64)
+                    source_fd = static_cast<int>(literal->value.get<Int64>());
+                else if (type == Field::Types::UInt64)
+                    source_fd = static_cast<int>(literal->value.get<UInt64>());
+            }
+
+            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+            source_path = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        }
+
+        return StorageFile::create(
+            source_path, source_fd,
+            args.data_path, args.table_name, format_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.context);
+    });
 }
 
 }

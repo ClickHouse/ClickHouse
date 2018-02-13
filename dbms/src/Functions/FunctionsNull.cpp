@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnNullable.h>
 
+
 namespace DB
 {
 
@@ -276,11 +277,7 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     FunctionIsNotNull{}.execute(temp_block, {arguments[0]}, is_not_null_pos);
     FunctionAssumeNotNull{}.execute(temp_block, {arguments[0]}, assume_not_null_pos);
 
-    std::cerr << temp_block.dumpStructure() << "\n";
-
     FunctionIf{}.execute(temp_block, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result);
-
-    std::cerr << temp_block.dumpStructure() << "\n";
 
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
@@ -304,7 +301,7 @@ DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    /// nullIf(col1, col2) == multiIf(col1 == col2, NULL, col1)
+    /// nullIf(col1, col2) == if(col1 == col2, NULL, col1)
 
     Block temp_block = block;
 

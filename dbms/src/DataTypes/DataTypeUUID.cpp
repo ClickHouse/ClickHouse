@@ -74,6 +74,12 @@ void DataTypeUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
 }
 
 
+bool DataTypeUUID::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this);
+}
+
+
 void registerDataTypeUUID(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType("UUID", [] { return DataTypePtr(std::make_shared<DataTypeUUID>()); });

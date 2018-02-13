@@ -10,6 +10,8 @@ namespace DB
 template <typename T>
 class DataTypeNumber final : public DataTypeNumberBase<T>
 {
+    bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }

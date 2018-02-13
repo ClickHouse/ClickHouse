@@ -8,10 +8,11 @@
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageFactory.h>
+
 #include <Storages/VirtualColumnFactory.h>
 
 #include <Common/typeid_cast.h>
-#include "StorageReplicatedMergeTree.h"
 
 
 namespace DB
@@ -59,13 +60,13 @@ StorageMaterializedView::StorageMaterializedView(
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     bool attach_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), global_context(local_context.getGlobalContext()), columns(columns_)
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
+    database_name(database_name_), global_context(local_context.getGlobalContext())
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -111,6 +112,7 @@ StorageMaterializedView::StorageMaterializedView(
         try
         {
             InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
+            create_interpreter.setInternal(true);
             create_interpreter.execute();
         }
         catch (...)
@@ -175,9 +177,36 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
+void StorageMaterializedView::shutdown()
+{
+    /// Make sure the dependency is removed after DETACH TABLE
+    global_context.removeDependency(
+        DatabaseAndTableName(select_database_name, select_table_name),
+        DatabaseAndTableName(database_name, table_name));
+}
+
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
     return global_context.getTable(target_database_name, target_table_name);
+}
+
+bool StorageMaterializedView::checkTableCanBeDropped() const
+{
+    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
+    return has_inner_table ? getTargetTable()->checkTableCanBeDropped() : true;
+}
+
+
+void registerStorageMaterializedView(StorageFactory & factory)
+{
+    factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
+    {
+        /// Pass local_context here to convey setting for inner table
+        return StorageMaterializedView::create(
+            args.table_name, args.database_name, args.local_context, args.query,
+            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.attach);
+    });
 }
 
 }

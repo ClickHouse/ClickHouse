@@ -50,6 +50,8 @@ public:
     bool isDateOrDateTime() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
+    bool equals(const IDataType & rhs) const override;
+
     const DateLUTImpl & getTimeZone() const { return time_zone; }
 
 private:

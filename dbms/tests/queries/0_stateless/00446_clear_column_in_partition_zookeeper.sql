@@ -1,15 +1,23 @@
+SELECT '===Ordinary case===';
+
 DROP TABLE IF EXISTS test.clear_column;
 CREATE TABLE test.clear_column (d Date, num Int64, str String) ENGINE = MergeTree(d, d, 8192);
 
 INSERT INTO test.clear_column VALUES ('2016-12-12', 1, 'a'), ('2016-11-12', 2, 'b');
 
+SELECT data_uncompressed_bytes FROM system.columns WHERE (database = 'test') AND (table = 'clear_column') AND (name = 'num');
+
 SELECT num, str FROM test.clear_column ORDER BY num;
 ALTER TABLE test.clear_column CLEAR COLUMN num IN PARTITION '201612';
 SELECT num, str FROM test.clear_column ORDER BY num;
 
+SELECT data_uncompressed_bytes FROM system.columns WHERE (database = 'test') AND (table = 'clear_column') AND (name = 'num');
+ALTER TABLE test.clear_column CLEAR COLUMN num IN PARTITION '201611';
+SELECT data_compressed_bytes, data_uncompressed_bytes FROM system.columns WHERE (database = 'test') AND (table = 'clear_column') AND (name = 'num');
+
 DROP TABLE test.clear_column;
 
--- Replicated case
+SELECT '===Replicated case===';
 
 DROP TABLE IF EXISTS test.clear_column1;
 DROP TABLE IF EXISTS test.clear_column2;

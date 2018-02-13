@@ -1,13 +1,11 @@
 #pragma once
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeExpression.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnExpression.h>
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -635,15 +633,16 @@ public:
             nested_types[i] = array_type->getNestedType();
         }
 
-        const DataTypeExpression * expression_type = checkAndGetDataType<DataTypeExpression>(&*arguments[0]);
-        if (!expression_type || expression_type->getArgumentTypes().size() != nested_types.size())
-            throw Exception("First argument for this overload of " + getName() + " must be an expression with "
+        const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(&*arguments[0]);
+        if (!function_type || function_type->getArgumentTypes().size() != nested_types.size())
+            throw Exception("First argument for this overload of " + getName() + " must be a function with "
                             + toString(nested_types.size()) + " arguments. Found "
                             + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        arguments[0] = std::make_shared<DataTypeExpression>(nested_types);
+        arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
 
+    /*
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t min_args = Impl::needExpression() ? 2 : 1;
@@ -693,10 +692,9 @@ public:
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
     }
+     */
 
-    void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
-                                        DataTypePtr & out_return_type,
-                                        ExpressionActions::Actions & out_prerequisites) override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t min_args = Impl::needExpression() ? 2 : 1;
         if (arguments.size() < min_args)
@@ -707,7 +705,7 @@ public:
 
         if (arguments.size() == 1)
         {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[0].type);
+            const auto array_type = checkAndGetDataType<DataTypeArray>(&*arguments[0].type);
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
@@ -719,7 +717,7 @@ public:
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
                                 + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            out_return_type = Impl::getReturnType(nested_type, nested_type);
+            return Impl::getReturnType(nested_type, nested_type);
         }
         else
         {
@@ -727,57 +725,31 @@ public:
                 throw Exception("Function " + getName() + " needs one array argument.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!arguments[0].column)
-                throw Exception("Type of first argument for function " + getName() + " must be an expression.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            const auto data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
-            const ColumnExpression * column_expression = typeid_cast<const ColumnExpression *>(arguments[0].column.get());
-
-            if (!column_expression)
-                throw Exception("Column of first argument for function " + getName() + " must be an expression.",
+            if (!data_type_function)
+                throw Exception("First argument for function " + getName() + " must be a function.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
-            /// Let's add to the block all the columns mentioned in the expression, multiplied into an array parallel to the one being processed.
-            const ExpressionActions & expression = *column_expression->getExpression();
-            const NamesAndTypesList & required_columns = expression.getRequiredColumnsWithTypes();
-
-            Names argument_name_vector = column_expression->getArgumentNames();
-            NameSet argument_names(argument_name_vector.begin(), argument_name_vector.end());
-
-            for (const auto & required_column : required_columns)
-            {
-                if (argument_names.count(required_column.name))
-                    continue;
-                Names replicate_arguments;
-                replicate_arguments.push_back(required_column.name);
-                replicate_arguments.push_back(arguments[1].name);
-                out_prerequisites.push_back(ExpressionAction::applyFunction(std::make_shared<FunctionReplicate>(), replicate_arguments));
-            }
-
-            DataTypePtr return_type = column_expression->getReturnType();
+            DataTypePtr return_type = data_type_function->getReturnType();
             if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*return_type))
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypeArray * first_array_type = checkAndGetDataType<DataTypeArray>(&*arguments[1].type);
+            const auto first_array_type = checkAndGetDataType<DataTypeArray>(&*arguments[1].type);
 
-            out_return_type = Impl::getReturnType(return_type, first_array_type->getNestedType());
+            return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        executeImpl(block, arguments, {}, result);
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
-    {
         if (arguments.size() == 1)
         {
             ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
-            const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+            const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
             {
@@ -795,30 +767,28 @@ public:
             const auto & column_with_type_and_name = block.getByPosition(arguments[0]);
 
             if (!column_with_type_and_name.column)
-                throw Exception("First argument for function " + getName() + " must be an expression.",
+                throw Exception("First argument for function " + getName() + " must be a function.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const ColumnExpression * column_expression = typeid_cast<const ColumnExpression *>(column_with_type_and_name.column.get());
+            const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
 
             ColumnPtr offsets_column;
-
-            Block temp_block;
-            const ExpressionActions & expression = *column_expression->getExpression();
-            NamesAndTypes expression_arguments = column_expression->getArguments();
-            NameSet argument_names;
 
             ColumnPtr column_first_array_ptr;
             const ColumnArray * column_first_array = nullptr;
 
-            /// Put the expression arguments in the block.
+            ColumnsWithTypeAndName arrays;
+            arrays.reserve(arguments.size() - 1);
 
-            for (size_t i = 0; i < expression_arguments.size(); ++i)
+            for (size_t i = 1; i < arguments.size(); ++i)
             {
-                const std::string & argument_name = expression_arguments[i].name;
-                DataTypePtr argument_type = expression_arguments[i].type;
+                const auto & array_with_type_and_name = block.getByPosition(arguments[i]);
 
-                ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
-                const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+                ColumnPtr column_array_ptr = array_with_type_and_name.column;
+                const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+
+                const DataTypePtr & array_type_ptr = array_with_type_and_name.type;
+                const auto * array_type = checkAndGetDataType<DataTypeArray>(array_type_ptr.get());
 
                 if (!column_array)
                 {
@@ -828,6 +798,9 @@ public:
                     column_array_ptr = column_const_array->convertToFullColumn();
                     column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
+
+                if (!array_type)
+                    throw Exception("Expected array type, found " + array_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (!offsets_column)
                 {
@@ -841,45 +814,23 @@ public:
                         throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
 
-                if (i == 0)
+                if (i == 1)
                 {
                     column_first_array_ptr = column_array_ptr;
                     column_first_array = column_array;
                 }
 
-                temp_block.insert(ColumnWithTypeAndName(
-                    column_array->getDataPtr(),
-                    argument_type,
-                    argument_name));
-
-                argument_names.insert(argument_name);
+                arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
+                                                          array_type->getNestedType(), array_with_type_and_name.name));
             }
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the block.
+            auto replicated_column_function_ptr = column_function->replicate(column_first_array->getOffsets());
+            auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
+            replicated_column_function->appendArguments(arrays);
 
-            Names required_columns = expression.getRequiredColumns();
-            size_t prerequisite_index = 0;
-
-            for (size_t i = 0; i < required_columns.size(); ++i)
-            {
-                const String & name = required_columns[i];
-
-                if (argument_names.count(name))
-                    continue;
-
-                ColumnWithTypeAndName replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
-
-                replicated_column.name = name;
-                replicated_column.column = typeid_cast<const ColumnArray &>(*replicated_column.column).getDataPtr();
-                replicated_column.type = typeid_cast<const DataTypeArray &>(*replicated_column.type).getNestedType(),
-                temp_block.insert(std::move(replicated_column));
-
-                ++prerequisite_index;
-            }
-
-            expression.execute(temp_block);
-
-            block.getByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
+            block.getByPosition(result).column = Impl::execute(*column_first_array,
+                                                               replicated_column_function->reduce().column);
         }
     }
 };

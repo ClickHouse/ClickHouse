@@ -29,10 +29,13 @@ class IColumn : public COWPtr<IColumn>
 private:
     friend class COWPtr<IColumn>;
 
-public:
     /// Creates the same column with the same data.
+    /// This is internal method to use from COWPtr.
+    /// It performs shallow copy with copy-ctor and not useful from outside.
+    /// If you want to copy column for modification, look at 'mutate' method.
     virtual MutablePtr clone() const = 0;
 
+public:
     /// Name of a Column. It is used in info messages.
     virtual std::string getName() const { return getFamilyName(); };
 

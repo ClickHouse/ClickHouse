@@ -63,7 +63,7 @@ add_check (hashing_read_buffer)
 add_executable (io_operators operators.cpp ${SRCS})
 target_link_libraries (io_operators clickhouse_common_io)
 
-if (NOT APPLE AND NOT CMAKE_SYSTEM MATCHES "FreeBSD")
+if (NOT APPLE AND NOT ARCH_FREEBSD)
     add_executable(write_buffer_aio write_buffer_aio.cpp)
     target_link_libraries (write_buffer_aio clickhouse_common_io ${Boost_FILESYSTEM_LIBRARY})
 
@@ -82,3 +82,6 @@ target_link_libraries (limit_read_buffer clickhouse_common_io)
 
 add_executable (limit_read_buffer2 limit_read_buffer2.cpp ${SRCS})
 target_link_libraries (limit_read_buffer2 clickhouse_common_io)
+
+add_executable (parse_date_time_best_effort parse_date_time_best_effort.cpp ${SRCS})
+target_link_libraries (parse_date_time_best_effort clickhouse_common_io)

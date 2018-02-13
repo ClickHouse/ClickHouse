@@ -1,10 +1,11 @@
+#include "ZooKeeper.h"
+
 #include <random>
 #include <pcg_random.hpp>
 #include <functional>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/randomSeed.h>
 
@@ -25,6 +26,15 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric ZooKeeperWatch;
+}
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 }
 
 
@@ -197,23 +207,6 @@ WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
     return callback;
 }
 
-WatchCallback ZooKeeper::callbackForTaskHandle(const TaskHandlePtr & task)
-{
-    WatchCallback callback;
-    if (task)
-    {
-        callback = [t=task](ZooKeeper &, int, int, const char *) mutable
-        {
-            if (t)
-            {
-                t->schedule();
-                t.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
-            }
-        };
-    }
-    return callback;
-}
-
 WatchContext * ZooKeeper::createContext(WatchCallback && callback)
 {
     if (callback)
@@ -273,7 +266,6 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 
     return code;
 }
-
 Strings ZooKeeper::getChildren(
     const std::string & path, Stat * stat, const EventPtr & watch)
 {
@@ -462,11 +454,6 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & 
     return existsWatch(path, stat_, callbackForEvent(watch));
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
-{
-    return existsWatch(path, stat, callbackForTaskHandle(watch));
-}
-
 bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
 {
     int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch_callback));
@@ -517,16 +504,6 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
     int code;
     std::string res;
     if (tryGet(path, res, stat, watch, &code))
-        return res;
-    else
-        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
-}
-
-std::string ZooKeeper::get(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
-{
-    int code;
-    std::string res;
-    if (tryGetWatch(path, res, stat, callbackForTaskHandle(watch), &code))
         return res;
     else
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
@@ -613,6 +590,7 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
     /// Copy the struct containing pointers with default copy-constructor.
     /// It is safe because it hasn't got a destructor.
     std::vector<zoo_op_t> ops;
+    ops.reserve(ops_.size());
     for (const auto & op : ops_)
         ops.push_back(*(op->data));
 
@@ -637,7 +615,7 @@ OpResultsPtr ZooKeeper::multi(const Ops & ops)
             for (size_t i = 0; i < ops.size(); ++i)
             {
                 if (results->at(i).err == code)
-                    throw KeeperException("multi() failed at op #" + std::to_string(i) + ", " + ops[i]->describe(), code);
+                    throw KeeperException("Transaction failed at op #" + std::to_string(i) + ": " + ops[i]->describe(), code);
             }
         }
 
@@ -651,13 +629,20 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
     int32_t code = multiImpl(ops_, out_results_);
 
     if (!(code == ZOK ||
-        code == ZNONODE ||
-        code == ZNODEEXISTS ||
-        code == ZNOCHILDRENFOREPHEMERALS ||
-        code == ZBADVERSION ||
-        code == ZNOTEMPTY))
+          code == ZNONODE ||
+          code == ZNODEEXISTS ||
+          code == ZNOCHILDRENFOREPHEMERALS ||
+          code == ZBADVERSION ||
+          code == ZNOTEMPTY))
         throw KeeperException(code);
     return code;
+}
+
+int32_t ZooKeeper::tryMultiUnsafe(const Ops & ops, MultiTransactionInfo & info)
+{
+    info.code = multiImpl(ops, &info.op_results);
+    info.ops = &ops;
+    return info.code;
 }
 
 int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results, size_t * attempt)
@@ -771,10 +756,10 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms);
 }
 
-Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl_, int32_t flags_)
-    : path(path_), value(value_), acl(acl_), flags(flags_), created_path(path.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
+Op::Create::Create(const std::string & path_pattern_, const std::string & value_, ACLPtr acl_, int32_t flags_)
+    : path_pattern(path_pattern_), value(value_), acl(acl_), flags(flags_), created_path(path_pattern_.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
 {
-    zoo_create_op_init(data.get(), path.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());
+    zoo_create_op_init(data.get(), path_pattern.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());
 }
 
 ACLPtr ZooKeeper::getDefaultACL()
@@ -1060,5 +1045,27 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMulti(const zkutil::Ops & ops)
 {
     return asyncMultiImpl(ops, true);
 }
+
+
+size_t getFailedOpIndex(const OpResultsPtr & op_results, int32_t transaction_return_code)
+{
+    if (op_results == nullptr || op_results->empty())
+        throw DB::Exception("OpResults is empty", DB::ErrorCodes::LOGICAL_ERROR);
+
+    for (size_t index = 0; index < op_results->size(); ++index)
+    {
+        if ((*op_results)[index].err != ZOK)
+            return index;
+    }
+
+    if (!isUserError(transaction_return_code))
+    {
+        throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(transaction_return_code) + "' is not valid response code for that",
+                            DB::ErrorCodes::LOGICAL_ERROR);
+    }
+
+    throw DB::Exception("There is no failed OpResult", DB::ErrorCodes::LOGICAL_ERROR);
+}
+
 
 }

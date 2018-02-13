@@ -31,27 +31,26 @@ using DB::UInt64;
 
 // Case 1. Is pair of floats or pair of ints or pair of uints
 template <typename A, typename B>
-using is_safe_conversion = std::integral_constant<bool, (std::is_floating_point<A>::value && std::is_floating_point<B>::value)
-    || (std::is_integral<A>::value && std::is_integral<B>::value && !(std::is_signed<A>::value ^ std::is_signed<B>::value))>;
+constexpr bool is_safe_conversion = (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
+    || (std::is_integral_v<A> && std::is_integral_v<B> && !(std::is_signed_v<A> ^ std::is_signed_v<B>));
 template <typename A, typename B>
-using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>::value, bool>;
+using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>, bool>;
 template <typename A, typename B>
-using bool_if_not_safe_conversion = std::enable_if_t<!is_safe_conversion<A, B>::value, bool>;
+using bool_if_not_safe_conversion = std::enable_if_t<!is_safe_conversion<A, B>, bool>;
 
 
 /// Case 2. Are params IntXX and UIntYY ?
 template <typename TInt, typename TUInt>
-using is_any_int_vs_uint = std::integral_constant<bool,
-                            std::is_integral<TInt>::value && std::is_integral<TUInt>::value &&
-                               std::is_signed<TInt>::value && std::is_unsigned<TUInt>::value>;
+constexpr bool is_any_int_vs_uint = std::is_integral_v<TInt> && std::is_integral_v<TUInt> &&
+                               std::is_signed_v<TInt> && std::is_unsigned_v<TUInt>;
 
 
 // Case 2a. Are params IntXX and UIntYY and sizeof(IntXX) >= sizeof(UIntYY) (in such case will use accurate compare)
 template <typename TInt, typename TUInt>
-using is_le_int_vs_uint_t = std::integral_constant<bool, is_any_int_vs_uint<TInt, TUInt>::value && (sizeof(TInt) <= sizeof(TUInt))>;
+constexpr bool is_le_int_vs_uint = is_any_int_vs_uint<TInt, TUInt> && (sizeof(TInt) <= sizeof(TUInt));
 
 template <typename TInt, typename TUInt>
-using bool_if_le_int_vs_uint_t = std::enable_if_t<is_le_int_vs_uint_t<TInt, TUInt>::value, bool>;
+using bool_if_le_int_vs_uint_t = std::enable_if_t<is_le_int_vs_uint<TInt, TUInt>, bool>;
 
 template <typename TInt, typename TUInt>
 inline bool_if_le_int_vs_uint_t<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
@@ -80,10 +79,10 @@ inline bool_if_le_int_vs_uint_t<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 
 // Case 2b. Are params IntXX and UIntYY and sizeof(IntXX) > sizeof(UIntYY) (in such case will cast UIntYY to IntXX and compare)
 template <typename TInt, typename TUInt>
-using is_gt_int_vs_uint = std::integral_constant<bool, is_any_int_vs_uint<TInt, TUInt>::value && (sizeof(TInt) > sizeof(TUInt))>;
+constexpr bool is_gt_int_vs_uint = is_any_int_vs_uint<TInt, TUInt> && (sizeof(TInt) > sizeof(TUInt));
 
 template <typename TInt, typename TUInt>
-using bool_if_gt_int_vs_uint = std::enable_if_t<is_gt_int_vs_uint<TInt, TUInt>::value, bool>;
+using bool_if_gt_int_vs_uint = std::enable_if_t<is_gt_int_vs_uint<TInt, TUInt>, bool>;
 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
@@ -113,7 +112,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 // Case 3a. Comparison via conversion to double.
 template <typename TAInt, typename TAFloat>
 using bool_if_double_can_be_used = std::enable_if_t<
-                                        std::is_integral<TAInt>::value && (sizeof(TAInt) <= 4) && std::is_floating_point<TAFloat>::value,
+                                        std::is_integral_v<TAInt> && (sizeof(TAInt) <= 4) && std::is_floating_point_v<TAFloat>,
                                         bool>;
 
 template <typename TAInt, typename TAFloat>

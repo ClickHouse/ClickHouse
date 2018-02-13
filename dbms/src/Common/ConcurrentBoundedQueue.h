@@ -11,7 +11,7 @@
 
 namespace detail
 {
-    template <typename T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable<T>::value>
+    template <typename T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable_v<T>>
     struct MoveOrCopyIfThrow;
 
     template <typename T>

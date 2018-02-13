@@ -13,12 +13,13 @@
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
@@ -150,12 +151,17 @@ bool MergeTreeDataMerger::selectPartsToMerge(
     FuturePart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
-    const AllowedMergingPredicate & can_merge_callback)
+    const AllowedMergingPredicate & can_merge_callback,
+    String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
 
     if (data_parts.empty())
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "There are no parts in the table";
         return false;
+    }
 
     time_t current_time = time(nullptr);
 
@@ -166,7 +172,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         const String & partition_id = part->info.partition_id;
-        if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part)))
+        if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part, nullptr)))
         {
             if (partitions.empty() || !partitions.back().empty())
                 partitions.emplace_back();
@@ -205,7 +211,11 @@ bool MergeTreeDataMerger::selectPartsToMerge(
         max_total_size_to_merge);
 
     if (parts_to_merge.empty())
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "There are no need to merge parts according to merge selector algorithm";
         return false;
+    }
 
     if (parts_to_merge.size() == 1)
         throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
@@ -229,7 +239,8 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     size_t available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
-    bool final)
+    bool final,
+    String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
@@ -237,7 +248,11 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
         return false;
 
     if (!final && parts.size() == 1)
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "There is only one part inside partition";
         return false;
+    }
 
     auto it = parts.begin();
     auto prev_it = it;
@@ -246,7 +261,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     while (it != parts.end())
     {
         /// For the case of one part, we check that it can be merged "with itself".
-        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it))
+        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it, out_disable_reason))
         {
             return false;
         }
@@ -258,7 +273,8 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     }
 
     /// Enough disk space to cover the new merge with a margin.
-    if (available_disk_space <= sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT)
+    auto required_disk_space = sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT;
+    if (available_disk_space <= required_disk_space)
     {
         time_t now = time(nullptr);
         if (now - disk_space_warning_time > 3600)
@@ -273,6 +289,11 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
                 << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
                 << "% on overhead); suppressing similar warnings for the next hour");
         }
+
+        if (out_disable_reason)
+            *out_disable_reason = "Insufficient available disk space, required " +
+                formatReadableSizeWithDecimalSuffix(required_disk_space);
+
         return false;
     }
 
@@ -302,14 +323,20 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns, ExpressionActionsPtr primary_key_expressions,
+static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns,
+    const ExpressionActionsPtr & primary_key_expressions, const ExpressionActionsPtr & secondary_key_expressions,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names
 )
 {
-    Names key_columns_dup = primary_key_expressions->getRequiredColumns();
-    std::set<String> key_columns(key_columns_dup.cbegin(), key_columns_dup.cend());
+    Names primary_key_columns_dup = primary_key_expressions->getRequiredColumns();
+    std::set<String> key_columns(primary_key_columns_dup.cbegin(), primary_key_columns_dup.cend());
+    if (secondary_key_expressions)
+    {
+        Names secondary_key_columns_dup = secondary_key_expressions->getRequiredColumns();
+        key_columns.insert(secondary_key_columns_dup.begin(), secondary_key_columns_dup.end());
+    }
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -318,6 +345,10 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     /// Force version column for Replacing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
         key_columns.emplace(merging_params.version_column);
+
+    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
+    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        key_columns.emplace(merging_params.sign_column);
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
@@ -510,8 +541,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
-    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.merging_params,
-        gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.getSecondarySortExpression()
+            , data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, future_part.name, future_part.part_info);
@@ -606,6 +637,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
+                    src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
+            break;
+
         case MergeTreeData::MergingParams::Unsorted:
             merged_stream = std::make_unique<ConcatBlockInputStream>(src_streams);
             break;
@@ -681,7 +717,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         {
             const String & column_name = it_name_and_type->name;
             const DataTypePtr & column_type = it_name_and_type->type;
-            const String offset_column_name = DataTypeNested::extractNestedTableName(column_name);
+            const String offset_column_name = Nested::extractTableName(column_name);
             Names column_name_{column_name};
             Float64 progress_before = merge_entry->progress;
             bool offset_written = offset_columns_written.count(offset_column_name);
@@ -772,7 +808,8 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
     bool is_supported_storage =
         data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
         data.merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+        data.merging_params.mode == MergeTreeData::MergingParams::Replacing ||
+        data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
     bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
 

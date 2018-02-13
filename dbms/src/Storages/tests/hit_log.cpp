@@ -98,7 +98,7 @@ try
 
     /// create a hit log table
 
-    StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list),
+    StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
         NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
     table->startup();
 

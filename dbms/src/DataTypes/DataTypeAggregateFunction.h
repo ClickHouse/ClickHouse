@@ -61,6 +61,8 @@ public:
 
     Field getDefault() const override;
 
+    bool equals(const IDataType & rhs) const override;
+
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return false; }

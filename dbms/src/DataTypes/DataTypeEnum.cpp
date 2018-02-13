@@ -68,17 +68,17 @@ void DataTypeEnum<Type>::fillMaps()
     {
         const auto name_to_value_pair = name_to_value_map.insert(
             { StringRef{name_and_value.first}, name_and_value.second });
+
         if (!name_to_value_pair.second)
-            throw Exception{
-                "Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+            throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
                     + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(name_to_value_pair.first->second),
                 ErrorCodes::SYNTAX_ERROR};
 
         const auto value_to_name_pair = value_to_name_map.insert(
             { name_and_value.second, StringRef{name_and_value.first} });
+
         if (!value_to_name_pair.second)
-            throw Exception{
-                "Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+            throw Exception{"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
                     + " and '" + value_to_name_pair.first->second.toString() + "' = " + toString(value_to_name_pair.first->first),
                 ErrorCodes::SYNTAX_ERROR};
     }
@@ -88,24 +88,15 @@ template <typename Type>
 DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
 {
     if (values.empty())
-        throw Exception{
-            "DataTypeEnum enumeration cannot be empty",
-            ErrorCodes::EMPTY_DATA_PASSED};
-
-    fillMaps();
+        throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
 
     std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
     {
         return left.second < right.second;
     });
 
-    name = generateName(values);
-}
-
-template <typename Type>
-DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.values}, name{other.name}
-{
     fillMaps();
+    name = generateName(values);
 }
 
 template <typename Type>
@@ -243,6 +234,13 @@ void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 }
 
 template <typename Type>
+bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && name == static_cast<const DataTypeEnum<Type> &>(rhs).name;
+}
+
+
+template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
 {
     for (const auto & elem : values)
@@ -317,7 +315,7 @@ template class DataTypeEnum<Int16>;
 template <typename DataTypeEnum>
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     typename DataTypeEnum::Values values;
@@ -351,8 +349,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         const auto value = value_literal->value.get<typename NearestFieldType<FieldType>::Type>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
-            throw Exception{
-                "Value " + toString(value) + " for element '" + name + "' exceeds range of " + EnumName<FieldType>::value,
+            throw Exception{"Value " + toString(value) + " for element '" + name + "' exceeds range of " + EnumName<FieldType>::value,
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         values.emplace_back(name, value);

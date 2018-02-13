@@ -23,7 +23,7 @@
 #include <common/Types.h>
 #include <common/logger_useful.h>
 #include <daemon/GraphiteWriter.h>
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 
 namespace Poco { class TaskManager; }
 

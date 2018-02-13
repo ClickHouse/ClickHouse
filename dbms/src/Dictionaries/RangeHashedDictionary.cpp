@@ -323,7 +323,8 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
                 auto & values = it->second;
 
                 const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-                    [] (const Value<StringRef> & lhs, const Range & range) {
+                    [] (const Value<StringRef> & lhs, const Range & range)
+                    {
                         return lhs.range < range;
                     });
 
@@ -391,10 +392,11 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPOD
     start_dates.reserve(attr.size());
     end_dates.reserve(attr.size());
 
-    for (const auto & key : attr) {
-        ids.push_back(key.first);
+    for (const auto & key : attr)
+    {
         for (const auto & value : key.second)
         {
+            ids.push_back(key.first);
             start_dates.push_back(value.range.first);
             end_dates.push_back(value.range.second);
         }

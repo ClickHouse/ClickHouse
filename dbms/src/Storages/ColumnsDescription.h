@@ -12,7 +12,7 @@ template <bool store>
 struct ColumnsDescription
 {
     template <typename T>
-    using by_value_or_cref = typename std::conditional<store, T, const T &>::type;
+    using by_value_or_cref = std::conditional_t<store, T, const T &>;
 
     by_value_or_cref<NamesAndTypesList> columns;
     by_value_or_cref<NamesAndTypesList> materialized;

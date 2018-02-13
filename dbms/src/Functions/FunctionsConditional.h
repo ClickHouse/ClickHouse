@@ -17,12 +17,15 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/getLeastCommonType.h>
-#include <Functions/GatherUtils.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Algorithms.h>
 
 
 namespace DB
 {
+
+using namespace GatherUtils;
 
 /** Selection function by condition: if(cond, then, else).
   * cond - UInt8
@@ -173,7 +176,7 @@ private:
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnArray * col_left_array)
     {
-        if constexpr (std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value)
+        if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
         else
         {
@@ -233,7 +236,7 @@ private:
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnConst * col_left_const_array)
     {
-        if constexpr (std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value)
+        if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
         else
         {
@@ -578,7 +581,7 @@ private:
         {
             Block temporary_block
             {
-                { static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumnPtr(), arg_cond.type, arg_cond.name },
+                { static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumnPtr(), removeNullable(arg_cond.type), arg_cond.name },
                 block.getByPosition(arguments[1]),
                 block.getByPosition(arguments[2]),
                 block.getByPosition(result)
@@ -586,11 +589,12 @@ private:
 
             executeImpl(temporary_block, {0, 1, 2}, 3);
 
-            MutableColumnPtr result_column = temporary_block.getByPosition(3).column->mutate();
-            if (ColumnNullable * result_nullable = typeid_cast<ColumnNullable *>(result_column.get()))
+            const ColumnPtr & result_column = temporary_block.getByPosition(3).column;
+            if (result_column->isColumnNullable())
             {
-                result_nullable->applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
-                block.getByPosition(result).column = std::move(result_nullable);
+                MutableColumnPtr mutable_result_column = result_column->mutate();
+                static_cast<ColumnNullable &>(*mutable_result_column).applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
+                block.getByPosition(result).column = std::move(mutable_result_column);
                 return true;
             }
             else if (result_column->onlyNull())
@@ -601,7 +605,7 @@ private:
             else
             {
                 block.getByPosition(result).column = ColumnNullable::create(
-                    materializeColumnIfConst(std::move(result_column)), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
+                    materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
                 return true;
             }
         }
@@ -740,7 +744,7 @@ private:
             {
                 if (arg_else.column->isColumnNullable())
                 {
-                    auto result_column = arg_else.column->clone();
+                    auto result_column = arg_else.column->mutate();
                     static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -781,7 +785,7 @@ private:
 
                 if (arg_then.column->isColumnNullable())
                 {
-                    auto result_column = arg_then.column->clone();
+                    auto result_column = arg_then.column->mutate();
                     static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -832,7 +836,7 @@ public:
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return getLeastCommonType({arguments[1], arguments[2]});
+        return getLeastSupertype({arguments[1], arguments[2]});
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

@@ -95,9 +95,6 @@ public:
     /** Returns true if the storage supports queries with the PREWHERE section. */
     virtual bool supportsPrewhere() const { return false; }
 
-    /** Returns true if the storage supports read from multiple replicas. Assumed isRemote. */
-    virtual bool supportsParallelReplicas() const { return false; }
-
     /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
     virtual bool supportsReplication() const { return false; }
 
@@ -279,6 +276,9 @@ public:
 
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }
+
+    /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */) const { return false; }
 
     /// Checks validity of the data
     virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }

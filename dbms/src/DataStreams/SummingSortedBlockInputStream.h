@@ -84,7 +84,6 @@ private:
         void init(const char * function_name, const DataTypes & argument_types)
         {
             function = AggregateFunctionFactory::instance().get(function_name, argument_types);
-            function->setArguments(argument_types);
             add_function = function->getAddressOfAddFunction();
             state.resize(function->sizeOfData());
         }

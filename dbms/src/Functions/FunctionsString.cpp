@@ -5,7 +5,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsArray.h>
-#include <Functions/GatherUtils.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
 #include <Common/UTF8Helpers.h>
 
@@ -22,12 +23,18 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+    extern const int LOGICAL_ERROR;
 }
 
+using namespace GatherUtils;
 
 template <bool negative = false>
 struct EmptyImpl
 {
+    /// If the function will return constant value for FixedString data type.
+    static constexpr auto is_fixed_to_constant = false;
+
     static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
@@ -39,13 +46,19 @@ struct EmptyImpl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt8 & res)
+    /// Only make sense if is_fixed_to_constant.
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt8 & /*res*/)
     {
-        res = negative ^ (n == 0);
+        throw Exception("Logical error: 'vector_fixed_to_constant method' is called", ErrorCodes::LOGICAL_ERROR);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt8> & /*res*/)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
     {
+        std::vector<char> empty_chars(n);
+        size_t size = data.size() / n;
+
+        for (size_t i = 0; i < size; ++i)
+            res[i] = negative ^ (0 == memcmp(&data[i * size], empty_chars.data(), n));
     }
 
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
@@ -65,6 +78,8 @@ struct EmptyImpl
   */
 struct LengthImpl
 {
+    static constexpr auto is_fixed_to_constant = true;
+
     static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
@@ -97,6 +112,8 @@ struct LengthImpl
   */
 struct LengthUTF8Impl
 {
+    static constexpr auto is_fixed_to_constant = false;
+
     static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
@@ -551,8 +568,7 @@ public:
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            /// For a fixed string only `lengthUTF8` function returns not a constant.
-            if ("lengthUTF8" != getName())
+            if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
                 Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);

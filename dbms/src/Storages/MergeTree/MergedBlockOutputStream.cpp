@@ -1,8 +1,8 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
-#include <DataTypes/DataTypeNested.h>
-#include <Common/StringUtils.h>
+#include <DataTypes/NestedUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Poco/File.h>
@@ -371,7 +371,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     OffsetColumns offset_columns;
 
-    auto sort_description = storage.getSortDescription();
+    auto sort_description = storage.getPrimarySortDescription();
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_columns(sort_description.size());

@@ -1,10 +1,10 @@
 #include <DataStreams/SummingSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/FieldVisitors.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -131,7 +131,6 @@ Block SummingSortedBlockInputStream::readImpl()
     if (current_row.empty())
     {
         current_row.resize(num_columns);
-        next_key.columns.resize(description.size());
 
         /// name of nested structure -> the column numbers that refer to it.
         std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
@@ -148,7 +147,7 @@ Block SummingSortedBlockInputStream::readImpl()
             /// Discover nested Maps and find columns for summation
             if (typeid_cast<const DataTypeArray *>(column.type.get()))
             {
-                const auto map_name = DataTypeNested::extractNestedTableName(column.name);
+                const auto map_name = Nested::extractTableName(column.name);
                 /// if nested table name ends with `Map` it is a possible candidate for special handling
                 if (map_name == column.name || !endsWith(map_name, "Map"))
                 {
@@ -323,8 +322,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         bool key_differs;
 
         if (current_key.empty())    /// The first key encountered.
-         {
-            current_key.columns.resize(description.size());
+        {
             setPrimaryKeyRef(current_key, current);
             key_differs = true;
         }
@@ -488,7 +486,7 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
             for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                 columns[i] = cursor->all_columns[desc.column_numbers[i]];
 
-            desc.add_function(desc.function.get(),desc.state.data(), columns.data(), cursor->pos, nullptr);
+            desc.add_function(desc.function.get(), desc.state.data(), columns.data(), cursor->pos, nullptr);
         }
     }
 }

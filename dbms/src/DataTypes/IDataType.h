@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Common/COWPtr.h>
+#include <boost/noncopyable.hpp>
 #include <Core/Field.h>
 
 
@@ -29,7 +30,7 @@ using DataTypes = std::vector<DataTypePtr>;
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType
+class IDataType : private boost::noncopyable
 {
 public:
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -82,7 +83,7 @@ public:
         Type type;
 
         /// Index of tuple element, starting at 1.
-        size_t tuple_element = 0;
+        String tuple_element_name;
 
         Substream(Type type) : type(type) {}
     };
@@ -219,10 +220,7 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     /// Checks that two instances belong to the same type
-    inline bool equals(const IDataType & rhs) const
-    {
-        return getName() == rhs.getName();
-    }
+    virtual bool equals(const IDataType & rhs) const = 0;
 
     virtual ~IDataType() {}
 
@@ -258,6 +256,12 @@ public:
       */
     virtual bool textCanContainOnlyValidUTF8() const { return false; };
 
+    /** Is it possible to compare for less/greater, to calculate min/max?
+      * Not necessarily totally comparable. For example, floats are comparable despite the fact that NaNs compares to nothing.
+      * The same for nullable of comparable types: they are comparable (but not totally-comparable).
+      */
+    virtual bool isComparable() const { return false; };
+
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */
@@ -269,7 +273,9 @@ public:
       */
     virtual bool canBeUsedAsVersion() const { return false; };
 
-    /** Values of data type can be summed. Example: numbers, even nullable. Not Date/DateTime.
+    /** Values of data type can be summed (possibly with overflow, within the same data type).
+      * Example: numbers, even nullable. Not Date/DateTime. Not Enum.
+      * Enums can be passed to aggregate function 'sum', but the result is Int64, not Enum, so they are not summable.
       */
     virtual bool isSummable() const { return false; };
 

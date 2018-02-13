@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
 #include <common/DateLUT.h>
+#include <Common/demangle.h>
 
 
 class SipHash;
@@ -31,7 +32,7 @@ struct StaticVisitor
 
 /// F is template parameter, to allow universal reference for field, that is useful for const and non-const values.
 template <typename Visitor, typename F>
-typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, F && field)
+typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F && field)
 {
     switch (field.getType())
     {
@@ -50,7 +51,7 @@ typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, 
 
 
 template <typename Visitor, typename F1, typename F2>
-static typename std::decay<Visitor>::type::ResultType applyBinaryVisitorImpl(Visitor && visitor, F1 && field1, F2 && field2)
+static typename std::decay_t<Visitor>::ResultType applyBinaryVisitorImpl(Visitor && visitor, F1 && field1, F2 && field2)
 {
     switch (field2.getType())
     {
@@ -68,7 +69,7 @@ static typename std::decay<Visitor>::type::ResultType applyBinaryVisitorImpl(Vis
 }
 
 template <typename Visitor, typename F1, typename F2>
-typename std::decay<Visitor>::type::ResultType applyVisitor(Visitor && visitor, F1 && field1, F2 && field2)
+typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F1 && field1, F2 && field2)
 {
     switch (field1.getType())
     {
@@ -135,22 +136,22 @@ class FieldVisitorConvertToNumber : public StaticVisitor<T>
 public:
     T operator() (const Null &) const
     {
-        throw Exception("Cannot convert NULL to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert NULL to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const String &) const
     {
-        throw Exception("Cannot convert String to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert String to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Array &) const
     {
-        throw Exception("Cannot convert Array to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert Array to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Tuple &) const
     {
-        throw Exception("Cannot convert Tuple to " + String(TypeName<T>::get()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const UInt64 & x) const { return x; }

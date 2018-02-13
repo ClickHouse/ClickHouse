@@ -169,10 +169,17 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                arguments->children[0]->formatImpl(settings, state, nested_need_parens);
-                settings.ostr << (settings.hilite ? hilite_operator : "") << "." << (settings.hilite ? hilite_none : "");
-                arguments->children[1]->formatImpl(settings, state, nested_need_parens);
-                written = true;
+                /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
+                if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(arguments->children[1].get()))
+                {
+                    if (lit->value.getType() == Field::Types::UInt64)
+                    {
+                        arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                        settings.ostr << (settings.hilite ? hilite_operator : "") << "." << (settings.hilite ? hilite_none : "");
+                        arguments->children[1]->formatImpl(settings, state, nested_need_parens);
+                        written = true;
+                    }
+                }
             }
 
             if (!written && 0 == strcmp(name.c_str(), "lambda"))

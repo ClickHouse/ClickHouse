@@ -77,6 +77,11 @@ void DataTypeDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
     static_cast<ColumnUInt16 &>(column).getData().push_back(value.getDayNum());
 }
 
+bool DataTypeDate::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this);
+}
+
 
 void registerDataTypeDate(DataTypeFactory & factory)
 {

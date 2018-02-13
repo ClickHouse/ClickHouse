@@ -15,32 +15,35 @@ namespace ErrorCodes
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)"))
+    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)")),
+    thread([this] { run(); })
 {
-    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeCleanupThread", [this]{ run(); });
-    task_handle->schedule();
 }
 
-ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
-{
-    storage.context.getSchedulePool().removeTask(task_handle);
-}
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
+    setThreadName("ReplMTCleanup");
+
     const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000;
 
-    try
+    while (!storage.shutdown_called)
     {
-        iterate();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            iterate();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
     }
 
-    task_handle->scheduleAfter(CLEANUP_SLEEP_MS);
+    LOG_DEBUG(log, "Cleanup thread finished");
 }
+
 
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
@@ -158,7 +161,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         int32_t rc = pair.second.get();
         if (rc == ZNOTEMPTY)
         {
-             /// Can happen if there are leftover block nodes with children created by previous server versions.
+            /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper->removeRecursive(path);
         }
         else if (rc != ZOK)
@@ -228,6 +231,13 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     }
 
     std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
+}
+
+
+ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
+{
+    if (thread.joinable())
+        thread.join();
 }
 
 }

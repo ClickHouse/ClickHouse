@@ -1,0 +1,6 @@
+#!/bin/sh
+
+if [ "$1" = "upgrade" ] || [ "$1" = "remove" ]; then
+    # Return etc/cron.d/clickhouse-server to original state
+    service clickhouse-server disable_cron || true
+fi

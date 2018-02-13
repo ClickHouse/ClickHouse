@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -154,7 +153,7 @@ public:
       * If next_update_event != nullptr, will call this event when new entries appear in the log.
       * Returns true if new entries have been.
       */
-    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_event);
+    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.

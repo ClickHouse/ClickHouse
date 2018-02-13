@@ -36,6 +36,7 @@
 
                <value>toStartOfMinute</value>
                <value>toStartOfFiveMinute</value>
+               <value>toStartOfFifteenMinutes</value>
                <value>toStartOfHour</value>
                <value>toStartOfDay</value>
                <value>toDate</value>

@@ -19,18 +19,25 @@ ALLSPHINXOPTS   = $(SPHINXOPTS) ru
 # the i18n builder cannot share the environment and doctrees with the others
 I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) ru
 
-.PHONY: default help clean html dirhtml singlehtml pickle json htmlhelp qthelp devhelp epub latex latexpdf text man changes linkcheck doctest gettext
+.PHONY: default en ru help clean html dirhtml singlehtml pickle json htmlhelp qthelp devhelp epub latex latexpdf text man changes linkcheck doctest gettext
 
 default:
 	$(SPHINXBUILD) -b html $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru
 	$(SPHINXBUILD) -b html $(SPHINXOPTS) en $(BUILDDIR)/docs/en
 	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru/single
-	sed -i "s|external\\\\\" href=\\\\\"[\.a-z_-\/]*#|external\\\\\" href=\\\\\"#|g" 'build/docs/ru/single/index.html'
 	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) en $(BUILDDIR)/docs/en/single
-	sed -i "s|external\\\\\" href=\\\\\"[\.a-z_-\/]*#|external\\\\\" href=\\\\\"#|g" 'build/docs/en/single/index.html'
+	perl -pi -e 's|external\\" href=\\"[^#":]+#|external\\" href=\\"#|g' $(BUILDDIR)/docs/ru/single/index.html $(BUILDDIR)/docs/en/single/index.html
+
+en:
+	$(SPHINXBUILD) -b html $(SPHINXOPTS) en $(BUILDDIR)/docs/en
+
+ru:
+	$(SPHINXBUILD) -b html $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
+	@echo "  en         to make multipage html english docs in build/en"
+	@echo "  ru         to make multipage html russian docs in build/ru"
 	@echo "  html       to make standalone HTML files"
 	@echo "  dirhtml    to make HTML files named index.html in directories"
 	@echo "  singlehtml to make a single large HTML file"

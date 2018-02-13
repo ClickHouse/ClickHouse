@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
+#include <IO/ConnectionTimeouts.h>
 
 
 namespace DB
@@ -51,6 +52,7 @@ public:
         const String & replica_path,
         const String & host,
         int port,
+        const ConnectionTimeouts & timeouts,
         bool to_detached = false);
 
     /// You need to stop the data transfer.

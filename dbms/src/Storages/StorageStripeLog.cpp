@@ -26,6 +26,7 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
+#include <Storages/StorageFactory.h>
 
 
 namespace DB
@@ -37,6 +38,8 @@ namespace ErrorCodes
 {
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -175,20 +178,20 @@ private:
 StorageStripeLog::StorageStripeLog(
     const std::string & path_,
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_), name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageStripeLog"))
 {
-    if (columns->empty())
-        throw Exception("Empty list of columns passed to StorageStripeLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = path + escapeForFileName(name) + '/';
     if (!attach)
@@ -269,6 +272,23 @@ bool StorageStripeLog::checkData() const
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
+}
+
+
+void registerStorageStripeLog(StorageFactory & factory)
+{
+    factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return StorageStripeLog::create(
+            args.data_path, args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.attach, args.context.getSettings().max_compress_block_size);
+    });
 }
 
 }

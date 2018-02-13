@@ -35,7 +35,7 @@ public:
 
     static StoragePtr createWithOwnCluster(
         const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
+        const NamesAndTypesList & columns_,        /// List of columns.
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,
@@ -46,9 +46,8 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
-    bool supportsParallelReplicas() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
@@ -95,7 +94,6 @@ public:
 
 
     String name;
-    NamesAndTypesListPtr columns;
     String remote_database;
     String remote_table;
 
@@ -124,6 +122,7 @@ public:
         void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
+    std::mutex cluster_nodes_mutex;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
@@ -131,17 +130,7 @@ public:
 protected:
     StorageDistributed(
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
-    StorageDistributed(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
@@ -149,8 +138,8 @@ protected:
         const String & remote_table_,
         const String & cluster_name_,
         const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
+        const ASTPtr & sharding_key_,
+        const String & data_path_);
 };
 
 }

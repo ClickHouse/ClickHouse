@@ -235,24 +235,25 @@ public:
         /// Merging mode. See above.
         enum Mode
         {
-            Ordinary    = 0,    /// Enum values are saved. Do not change them.
-            Collapsing  = 1,
-            Summing     = 2,
-            Aggregating = 3,
-            Unsorted    = 4,
-            Replacing   = 5,
-            Graphite    = 6,
+            Ordinary            = 0,    /// Enum values are saved. Do not change them.
+            Collapsing          = 1,
+            Summing             = 2,
+            Aggregating         = 3,
+            Unsorted            = 4,
+            Replacing           = 5,
+            Graphite            = 6,
+            VersionedCollapsing = 7,
         };
 
         Mode mode;
 
-        /// For collapsing mode.
+        /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
 
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
 
-        /// For Replacing mode. Can be empty.
+        /// For Replacing and VersionedCollapsing mode. Can be empty for Replacing.
         String version_column;
 
         /// For Graphite mode.
@@ -274,18 +275,18 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & full_path_, NamesAndTypesListPtr columns_,
+                  const String & full_path_, const NamesAndTypesList & columns_,
                   const NamesAndTypesList & materialized_columns_,
                   const NamesAndTypesList & alias_columns_,
                   const ColumnDefaults & column_defaults_,
                   Context & context_,
                   const ASTPtr & primary_expr_ast_,
+                  const ASTPtr & secondary_sort_expr_ast_,
                   const String & date_column_name,
                   const ASTPtr & partition_expr_ast_,
                   const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
-                  const String & log_name_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
@@ -301,12 +302,15 @@ public:
         return merging_params.mode == MergingParams::Collapsing
             || merging_params.mode == MergingParams::Summing
             || merging_params.mode == MergingParams::Aggregating
-            || merging_params.mode == MergingParams::Replacing;
+            || merging_params.mode == MergingParams::Replacing
+            || merging_params.mode == MergingParams::VersionedCollapsing;
     }
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const;
 
     Int64 getMaxDataPartIndex();
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -349,11 +353,11 @@ public:
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
 
-    /// Returns an comitted part with the given name or a part containing it. If there is no such part, returns nullptr.
+    /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
 
-    /// Returns the part with the given name (and state) or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states = {DataPartState::Committed});
+    /// Returns the part with the given name and state or nullptr if no such part.
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -430,7 +434,7 @@ public:
         bool skip_sanity_checks);
 
     /// Must be called with locked lockStructureForAlter().
-    void setColumnsList(const NamesAndTypesList & new_columns) { columns = std::make_shared<NamesAndTypesList>(new_columns); }
+    void setColumnsList(const NamesAndTypesList & new_columns) { columns = new_columns; }
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name)
@@ -439,6 +443,8 @@ public:
     }
 
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
+    ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; } /// may return nullptr
+    SortDescription getPrimarySortDescription() const { return primary_sort_descr; }
     SortDescription getSortDescription() const { return sort_descr; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
@@ -514,6 +520,7 @@ public:
     const MergeTreeSettings settings;
 
     ASTPtr primary_expr_ast;
+    ASTPtr secondary_sort_expr_ast;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
@@ -543,13 +550,16 @@ private:
     bool require_part_metadata;
 
     ExpressionActionsPtr primary_expr;
+    /// Additional expression for sorting (of rows with the same primary keys).
+    ExpressionActionsPtr secondary_sort_expr;
+    /// Sort description for primary key. Is the prefix of sort_descr.
+    SortDescription primary_sort_descr;
+    /// Sort description for primary key + secondary sorting columns.
     SortDescription sort_descr;
 
     String database_name;
     String table_name;
     String full_path;
-
-    NamesAndTypesListPtr columns;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizes column_sizes;
@@ -663,6 +673,9 @@ private:
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, std::unique_lock<std::mutex> & data_parts_lock);
+
+    /// Checks whether the column is in the primary key.
+    bool isPrimaryKeyColumn(const ASTPtr &node) const;
 };
 
 }

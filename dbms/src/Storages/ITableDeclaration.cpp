@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 
@@ -140,7 +141,7 @@ static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res) { return res
 template <typename Arg, typename... Args>
 static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res, const Arg & arg, const Args &... args)
 {
-    static_assert(std::is_same<Arg, NamesAndTypesList>::value, "getColumnsMap requires arguments of type NamesAndTypesList");
+    static_assert(std::is_same_v<Arg, NamesAndTypesList>, "getColumnsMap requires arguments of type NamesAndTypesList");
 
     for (const auto & column : arg)
         res.insert({column.name, column.type.get()});
@@ -202,7 +203,7 @@ void ITableDeclaration::check(const NamesAndTypesList & columns) const
             throw Exception("There is no column with name " + column.name + ". There are columns: "
                 + listOfColumns(available_columns), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-        if (column.type->getName() != it->second->getName())
+        if (!column.type->equals(*it->second))
             throw Exception("Type mismatch for column " + column.name + ". Column has type "
                 + it->second->getName() + ", got type " + column.type->getName(), ErrorCodes::TYPE_MISMATCH);
 
@@ -259,10 +260,10 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
     using NameSet = std::unordered_set<String>;
     NameSet names_in_block;
 
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+    block.checkNumberOfRows();
 
+    for (const auto & column : block)
+    {
         if (names_in_block.count(column.name))
             throw Exception("Duplicate column " + column.name + " in block",
                             ErrorCodes::DUPLICATE_COLUMN);
@@ -274,7 +275,7 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
             throw Exception("There is no column with name " + column.name + ". There are columns: "
                 + listOfColumns(available_columns), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-        if (column.type->getName() != it->second->getName())
+        if (!column.type->equals(*it->second))
             throw Exception("Type mismatch for column " + column.name + ". Column has type "
                 + it->second->getName() + ", got type " + column.type->getName(), ErrorCodes::TYPE_MISMATCH);
     }
@@ -287,6 +288,17 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
                 throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
+}
+
+ITableDeclaration::ITableDeclaration(const NamesAndTypesList & columns, const NamesAndTypesList & materialized_columns,
+                                     const NamesAndTypesList & alias_columns, const ColumnDefaults & column_defaults)
+    : columns{columns},
+      materialized_columns{materialized_columns},
+      alias_columns{alias_columns},
+      column_defaults{column_defaults}
+{
+    if (columns.empty())
+        throw Exception("Empty list of columns passed to storage constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 }
 
 }

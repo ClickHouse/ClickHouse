@@ -1,4 +1,5 @@
 #include <Storages/StorageSet.h>
+#include <Storages/StorageFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -6,13 +7,24 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
 #include <Poco/DirectoryIterator.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_FILE_NAME;
+}
 
 
 class SetOrJoinBlockOutputStream : public IBlockOutputStream
@@ -76,13 +88,17 @@ BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const
 StorageSetOrJoinBase::StorageSetOrJoinBase(
     const String & path_,
     const String & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_ + escapeForFileName(name_) + '/'), name(name_), columns(columns_)
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_)
 {
+    if (path_.empty())
+        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    path = path_ + escapeForFileName(name_) + '/';
 }
 
 
@@ -90,7 +106,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 StorageSet::StorageSet(
     const String & path_,
     const String & name_,
-    NamesAndTypesListPtr columns_,
+    const NamesAndTypesList & columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
@@ -101,7 +117,7 @@ StorageSet::StorageSet(
 }
 
 
-void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block, /*fill_set_elements=*/false); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
 
 
@@ -165,6 +181,22 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & 
 
     path = new_path + "/";
     name = new_table_name;
+}
+
+
+void registerStorageSet(StorageFactory & factory)
+{
+    factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return StorageSet::create(
+            args.data_path, args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults);
+    });
 }
 
 

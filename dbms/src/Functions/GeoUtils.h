@@ -582,7 +582,7 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 template <typename Linestring>
 float calcLinestringRotation(const Linestring & points)
 {
-    using Point = typename std::decay<decltype(*points.begin())>::type;
+    using Point = std::decay_t<decltype(*points.begin())>;
     float rotation = 0;
 
     auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
@@ -639,7 +639,7 @@ std::string serialize(Polygon && polygon)
     {
         WriteBufferFromString buffer(result);
 
-        using RingType = typename std::decay<Polygon>::type::ring_type;
+        using RingType = typename std::decay_t<Polygon>::ring_type;
 
         auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
         auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };

@@ -15,7 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/getLeastCommonType.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -133,7 +133,7 @@ public:
             if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastCommonType({type_arr_to_nested, type_default});
+                return getLeastSupertype({type_arr_to_nested, type_default});
             }
 
             /// TODO More checks.
@@ -149,7 +149,7 @@ public:
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
-        prepare(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
+        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
 
         const auto in = block.getByPosition(arguments.front()).column.get();
 
@@ -740,13 +740,13 @@ private:
 
     Field const_default_value;    /// Null, if not specified.
 
-    bool prepared = false;
+    bool initialized = false;
     std::mutex mutex;
 
     /// Can be called from different threads. It works only on the first call.
-    void prepare(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments)
+    void initialize(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments)
     {
-        if (prepared)
+        if (initialized)
             return;
 
         const size_t size = from.size();
@@ -755,7 +755,7 @@ private:
 
         std::lock_guard<std::mutex> lock(mutex);
 
-        if (prepared)
+        if (initialized)
             return;
 
         if (from.size() != to.size())
@@ -842,7 +842,7 @@ private:
             }
         }
 
-        prepared = true;
+        initialized = true;
     }
 };
 

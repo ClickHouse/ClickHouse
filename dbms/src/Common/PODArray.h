@@ -76,7 +76,7 @@ protected:
     }
 
     template <typename ... TAllocatorParams>
-    void alloc(size_t bytes, TAllocatorParams ... allocator_params)
+    void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
         c_end_of_storage = c_start + bytes - pad_right;
@@ -91,7 +91,7 @@ protected:
     }
 
     template <typename ... TAllocatorParams>
-    void realloc(size_t bytes, TAllocatorParams ... allocator_params)
+    void realloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         if (c_start == nullptr)
         {
@@ -119,10 +119,15 @@ protected:
     }
 
     template <typename ... TAllocatorParams>
-    void reserveForNextSize(TAllocatorParams ... allocator_params)
+    void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
         if (size() == 0)
-            realloc(std::max(INITIAL_SIZE, minimum_memory_for_elements(1)), std::forward<TAllocatorParams>(allocator_params)...);
+        {
+            // The allocated memory should be multiplication of sizeof(T) to hold the element, otherwise,
+            // memory issue such as corruption could appear in edge case.
+            realloc(std::max(((INITIAL_SIZE - 1) / sizeof(T) + 1) * sizeof(T), minimum_memory_for_elements(1)),
+                    std::forward<TAllocatorParams>(allocator_params)...);
+        }
         else
             realloc(allocated_bytes() * 2, std::forward<TAllocatorParams>(allocator_params)...);
     }
@@ -207,14 +212,14 @@ public:
     const_iterator cend() const   { return t_end(); }
 
     template <typename ... TAllocatorParams>
-    void reserve(size_t n, TAllocatorParams ... allocator_params)
+    void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
             realloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(n)), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename ... TAllocatorParams>
-    void resize(size_t n, TAllocatorParams ... allocator_params)
+    void resize(size_t n, TAllocatorParams &&... allocator_params)
     {
         reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
@@ -254,7 +259,7 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void push_back(const T & x, TAllocatorParams ... allocator_params)
+    void push_back(const T & x, TAllocatorParams &&... allocator_params)
     {
         if (unlikely(c_end == c_end_of_storage))
             reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
@@ -283,7 +288,7 @@ public:
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
     template <typename It1, typename It2, typename ... TAllocatorParams>
-    void insert(It1 from_begin, It2 from_end, TAllocatorParams ... allocator_params)
+    void insert(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         size_t required_capacity = size() + (from_end - from_begin);
         if (required_capacity > capacity())

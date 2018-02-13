@@ -16,8 +16,8 @@ namespace ErrorCodes
 {
     extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
-    extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 
@@ -73,68 +73,74 @@ void ASTSelectQuery::renameColumns(const ASTSelectQuery & source)
 
 void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_names)
 {
+    /// All columns are kept if we have DISTINCT.
+    if (distinct)
+        return;
+
+    /** Always keep columns that contain arrayJoin inside.
+      * In addition, keep all columns in 'required_column_names'.
+      * If SELECT has at least one asterisk, replace it with the rest of required_column_names
+      *  and ignore all other asterisks.
+      * We must keep columns in same related order.
+      */
+
+    /// Analyze existing expression list.
+
+    using ASTAndPosition = std::pair<ASTPtr, size_t>;
+
+    std::map<String, ASTAndPosition> columns_with_array_join;
+    std::map<String, ASTAndPosition> other_required_columns_in_select;
+    ASTAndPosition asterisk;
+
+    size_t position = 0;
+    for (const auto & child : select_expression_list->children)
+    {
+        if (typeid_cast<const ASTAsterisk *>(child.get()))
+        {
+            if (!asterisk.first)
+                asterisk = { child, position };
+        }
+        else
+        {
+            auto name = child->getAliasOrColumnName();
+
+            if (hasArrayJoin(child))
+                columns_with_array_join[name] = { child, position };
+            else if (required_column_names.end() != std::find(required_column_names.begin(), required_column_names.end(), name))
+                other_required_columns_in_select[name] = { child, position };
+        }
+        ++position;
+    }
+
+    /// Create a new expression list.
+
+    std::vector<ASTAndPosition> new_children;
+
+    for (const auto & name_child : other_required_columns_in_select)
+        new_children.push_back(name_child.second);
+
+    for (const auto & name_child : columns_with_array_join)
+        new_children.push_back(name_child.second);
+
+    for (const auto & name : required_column_names)
+    {
+        if (!other_required_columns_in_select.count(name) && !columns_with_array_join.count(name))
+        {
+            if (asterisk.first)
+                new_children.push_back({ std::make_shared<ASTIdentifier>(asterisk.first->range, name), asterisk.second });
+            else
+                throw Exception("SELECT query doesn't have required column: " + backQuoteIfNeed(name), ErrorCodes::THERE_IS_NO_COLUMN);
+        }
+    }
+
+    std::sort(new_children.begin(), new_children.end(), [](const auto & a, const auto & b) { return a.second < b.second; });
+
     ASTPtr result = std::make_shared<ASTExpressionList>();
-    ASTs asts = select_expression_list->children;
 
-    /// Create a mapping.
+    for (const auto & child : new_children)
+        result->children.push_back(child.first);
 
-    /// The element of mapping.
-    struct Arrow
-    {
-        Arrow() = default;
-        explicit Arrow(size_t to_position_) :
-            to_position(to_position_), is_selected(true)
-        {
-        }
-        size_t to_position = 0;
-        bool is_selected = false;
-    };
-
-    /// Mapping of one SELECT expression to another.
-    using Mapping = std::vector<Arrow>;
-
-    Mapping mapping(asts.size());
-
-    /// On which position in the SELECT expression is the corresponding column from `column_names`.
-    std::vector<size_t> positions_of_required_columns(required_column_names.size());
-
-    /// We will not throw out expressions that contain the `arrayJoin` function.
-    for (size_t i = 0; i < asts.size(); ++i)
-    {
-        if (hasArrayJoin(asts[i]))
-            mapping[i] = Arrow(i);
-    }
-
-    for (size_t i = 0; i < required_column_names.size(); ++i)
-    {
-        size_t j = 0;
-        for (; j < asts.size(); ++j)
-        {
-            if (asts[j]->getAliasOrColumnName() == required_column_names[i])
-            {
-                positions_of_required_columns[i] = j;
-                break;
-            }
-        }
-        if (j == asts.size())
-            throw Exception("Error while rewriting expression list for select query."
-                " Could not find alias: " + required_column_names[i],
-                DB::ErrorCodes::UNKNOWN_IDENTIFIER);
-    }
-
-    std::vector<size_t> positions_of_required_columns_in_subquery_order = positions_of_required_columns;
-    std::sort(positions_of_required_columns_in_subquery_order.begin(), positions_of_required_columns_in_subquery_order.end());
-
-    for (size_t i = 0; i < required_column_names.size(); ++i)
-        mapping[positions_of_required_columns_in_subquery_order[i]] = Arrow(positions_of_required_columns[i]);
-
-
-    /// Construct a new expression.
-    for (const auto & arrow : mapping)
-    {
-        if (arrow.is_selected)
-            result->children.push_back(asts[arrow.to_position]->clone());
-    }
+    /// Replace expression list in the query.
 
     for (auto & child : children)
     {
@@ -147,9 +153,9 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
     select_expression_list = result;
 
     /** NOTE: It might seem that we could spoil the query by throwing an expression with an alias that is used somewhere else.
-        *       This can not happen, because this method is always called for a query, for which ExpressionAnalyzer was created at least once,
-        *       which ensures that all aliases in it are already set. Not quite obvious logic.
-        */
+      * This can not happen, because this method is always called for a query, for which ExpressionAnalyzer was created at least once,
+      * which ensures that all aliases in it are already set. Not quite obvious logic.
+      */
 }
 
 ASTPtr ASTSelectQuery::clone() const
