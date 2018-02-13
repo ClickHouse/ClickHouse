@@ -26,6 +26,7 @@ var paths = {
     docstxt: ['docs/**/*.txt'],
     docsjson: ['docs/**/*.json'],
     docsxml: ['docs/**/*.xml'],
+    docssitemap: ['sitemap.xml'],
     scripts: [
         '**/*.js',
         '!gulpfile.js',
@@ -77,6 +78,11 @@ gulp.task('docsxml', ['docs'], function () {
         .pipe(gulp.dest(outputDir + '/docs'))
 });
 
+gulp.task('docssitemap', [], function () {
+    return gulp.src(paths.docssitemap)
+        .pipe(gulp.dest(outputDir + '/docs'))
+});
+
 gulp.task('presentations', [], function () {
     return gulp.src(paths.presentations)
         .pipe(gulp.dest(outputDir + '/presentations'))
@@ -87,7 +93,7 @@ gulp.task('robotstxt', [], function () {
         .pipe(gulp.dest(outputDir))
 });
 
-gulp.task('htmls', ['docs', 'docstxt', 'docsjson', 'docsxml'], function () {
+gulp.task('htmls', ['docs', 'docstxt', 'docsjson', 'docsxml', 'docssitemap'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())
