@@ -520,7 +520,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
-- partition_by - Устанавливает ключ партиционирования, доступные значения: day, week, month.
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
 
 
@@ -530,7 +530,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <part_log>
     <database>system</database>
     <table>part_log</table>
-    <partition_by>day</partition_by>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </part_log>
 ```
@@ -565,7 +565,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
-- partition_by - Устанавливает ключ партиционирования, доступные значения: day, week, month.
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
@@ -576,7 +576,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <query_log>
     <database>system</database>
     <table>query_log</table>
-    <partition_by>day</partition_by>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
 ```
