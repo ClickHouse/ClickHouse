@@ -234,7 +234,7 @@ pages:
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
   - 'How to build ClickHouse on Linux': 'development/build.md'
   - 'How to build ClickHouse on Mac OS X': 'development/build_osx.md'
-  - 'Как писать код на C++': 'development/style.md'
+  - 'How to write  C++ code': 'development/style.md'
   - 'How to run ClickHouse tests': 'development/tests.md'
 
 - 'Roadmap': 'roadmap.md'
