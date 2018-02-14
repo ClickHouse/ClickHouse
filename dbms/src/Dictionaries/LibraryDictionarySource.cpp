@@ -7,7 +7,6 @@
 #include <ext/bit_cast.h>
 #include <ext/range.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -41,59 +40,68 @@ public:
 private:
     std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
     Container strings_holder;
-
 };
 
 
 namespace
 {
+    const std::string lib_config_settings = ".settings";
 
-const std::string lib_config_settings = ".settings";
 
-
-CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
-{
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_root, config_keys);
-    CStringsHolder::Container strings;
-    for (const auto & key : config_keys)
+    CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
     {
-        std::string key_name = key;
-        auto bracket_pos = key.find('[');
-        if (bracket_pos != std::string::npos && bracket_pos > 0)
-            key_name = key.substr(0, bracket_pos);
-        strings.emplace_back(key_name);
-        strings.emplace_back(config.getString(config_root + '.' + key));
-    }
-    return CStringsHolder(strings);
-}
-
-
-Block dataToBlock(const Block & sample_block, const void * data)
-{
-    if (!data)
-        return sample_block.cloneEmpty();
-
-    auto columns_received = static_cast<const ClickHouseLibrary::ColumnsUInt64 *>(data);
-
-    MutableColumns columns(sample_block.columns());
-    for (const auto i : ext::range(0, columns.size()))
-        columns[i] = sample_block.getByPosition(i).column->cloneEmpty();
-
-    for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
-    {
-        if (columns.size() != columns_received->data[col_n].size)
-            throw Exception("Received unexpected number of columns: " + std::to_string(columns_received->data[col_n].size) + ", must be"
-                    + std::to_string(columns.size()),
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
-            columns[row_n]->insert(static_cast<UInt64>(columns_received->data[col_n].data[row_n]));
+        Poco::Util::AbstractConfiguration::Keys config_keys;
+        config.keys(config_root, config_keys);
+        CStringsHolder::Container strings;
+        for (const auto & key : config_keys)
+        {
+            std::string key_name = key;
+            auto bracket_pos = key.find('[');
+            if (bracket_pos != std::string::npos && bracket_pos > 0)
+                key_name = key.substr(0, bracket_pos);
+            strings.emplace_back(key_name);
+            strings.emplace_back(config.getString(config_root + '.' + key));
+        }
+        return CStringsHolder(strings);
     }
 
-    return sample_block.cloneWithColumns(std::move(columns));
-}
 
+    Block dataToBlock(const Block & sample_block, const void * data)
+    {
+        if (!data)
+            return sample_block.cloneEmpty();
+
+        auto columns_received = static_cast<const ClickHouseLibrary::ColumnsUInt64 *>(data);
+
+        MutableColumns columns(sample_block.columns());
+        for (const auto i : ext::range(0, columns.size()))
+            columns[i] = sample_block.getByPosition(i).column->cloneEmpty();
+
+        for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
+        {
+            if (columns.size() != columns_received->data[col_n].size)
+                throw Exception("Received unexpected number of columns: " + std::to_string(columns_received->data[col_n].size)
+                        + ", must be " + std::to_string(columns.size()),
+                    ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+            for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
+            {
+                const auto & type = sample_block.getByPosition(row_n).type;
+                if (type->isStringOrFixedString())
+                {
+                    const auto & data = ext::bit_cast<const char *>(columns_received->data[col_n].data[row_n]);
+                    auto len = strlen(data);
+                    columns[row_n]->insertData(data, len);
+                }
+                else
+                {
+                    columns[row_n]->insert(columns_received->data[col_n].data[row_n]);
+                }
+            }
+        }
+
+        return sample_block.cloneWithColumns(std::move(columns));
+    }
 }
 
 
@@ -102,12 +110,12 @@ LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dic
     const std::string & config_prefix,
     Block & sample_block,
     const Context & context)
-    : log(&Logger::get("LibraryDictionarySource")),
-      dict_struct{dict_struct_},
-      config_prefix{config_prefix},
-      path{config.getString(config_prefix + ".path", "")},
-      sample_block{sample_block},
-      context(context)
+    : log(&Logger::get("LibraryDictionarySource"))
+    , dict_struct{dict_struct_}
+    , config_prefix{config_prefix}
+    , path{config.getString(config_prefix + ".path", "")}
+    , sample_block{sample_block}
+    , context(context)
 {
     if (!Poco::File(path).exists())
     {
@@ -120,15 +128,15 @@ LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dic
 }
 
 LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource & other)
-    : log(&Logger::get("LibraryDictionarySource")),
-      dict_struct{other.dict_struct},
-      config_prefix{other.config_prefix},
-      path{other.path},
-      sample_block{other.sample_block},
-      context(other.context),
-      library{other.library},
-      description{other.description},
-      settings{other.settings}
+    : log(&Logger::get("LibraryDictionarySource"))
+    , dict_struct{other.dict_struct}
+    , config_prefix{other.config_prefix}
+    , path{other.path}
+    , sample_block{other.sample_block}
+    , context(other.context)
+    , library{other.library}
+    , description{other.description}
+    , settings{other.settings}
 {
 }
 
@@ -196,7 +204,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
         ++i;
     }
     columns_c[i] = nullptr;
-*/
+    */
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(key_columns.size());
     ClickHouseLibrary::CStrings columns_pass{
         static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), key_columns.size()};
@@ -206,7 +214,8 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
         columns_pass.data[key_columns_n] = column->getName().c_str();
         ++key_columns_n;
     }
-    const ClickHouseLibrary::VectorUInt64 requested_rows_c{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
+    const ClickHouseLibrary::VectorUInt64 requested_rows_c{
+        ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataAllocate call because library->get may throw.
