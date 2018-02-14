@@ -10,11 +10,14 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
-#include <AggregateFunctions/AggregateFunctionSequenceMatch.h>
-
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int SYNTAX_ERROR;
+}
 
 BlockIO InterpreterShowCreateQuery::execute()
 {
