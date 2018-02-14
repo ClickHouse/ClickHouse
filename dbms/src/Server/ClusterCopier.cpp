@@ -744,6 +744,9 @@ public:
         if (task_descprtion_current_version == version_to_update)
             return;
 
+        LOG_DEBUG(log, "Updating task description");
+        reloadTaskDescription();
+
         task_descprtion_current_version = version_to_update;
     }
 
@@ -816,7 +819,7 @@ public:
 
                 double elapsed = cluster_partition.watch.elapsedSeconds();
 
-                LOG_INFO(log, "It took " << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name
+                LOG_INFO(log, "It took " << std::fixed << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name
                                          << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied)
                                          << " uncompressed bytes and "
                                          << formatReadableQuantity(cluster_partition.rows_copied) << " rows are copied");
@@ -983,7 +986,10 @@ protected:
             {
                 LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")"
                     << ". Postpone processing " << description);
+
                 std::this_thread::sleep_for(default_sleep_time);
+
+                updateConfigIfNeeded();
             }
             else
             {
@@ -1122,7 +1128,7 @@ protected:
         catch (...)
         {
             tryLogCurrentException(log, "An error occurred while processing partition " + task_partition.name);
-            return false;
+            res = false;
         }
 
         /// At the end of each task check if the config is updated
