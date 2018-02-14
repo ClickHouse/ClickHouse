@@ -99,6 +99,8 @@ public:
         Addresses local_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
+        /// Connection pool for each replica, contains nullptr for local replicas
+        ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication;
     };
 
