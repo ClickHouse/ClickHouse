@@ -15,6 +15,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
+    bool temporary{false};
 
     ASTQueryWithTableAndOutput() = default;
     explicit ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}

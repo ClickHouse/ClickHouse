@@ -543,7 +543,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             false);
 
         if (create.is_temporary)
-            context.getSessionContext().addExternalTable(table_name, res);
+            context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
     }

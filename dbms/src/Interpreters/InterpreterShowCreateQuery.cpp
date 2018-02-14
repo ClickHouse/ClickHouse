@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
+#include <AggregateFunctions/AggregateFunctionSequenceMatch.h>
 
 
 namespace DB
@@ -35,8 +36,17 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
     const ASTShowCreateQuery & ast = typeid_cast<const ASTShowCreateQuery &>(*query_ptr);
 
+    if (ast.temporary && !ast.database.empty())
+        throw Exception("Can't add database When using `TEMPORARY`", ErrorCodes::SYNTAX_ERROR);
+
+    ASTPtr createQuery = (ast.temporary ? context.getCreateExternalQuery(ast.table) :
+                          context.getCreateQuery(ast.database, ast.table));
+
+    if (!createQuery && ast.temporary)
+        throw Exception("Unable to show the create query of " + ast.table + ", It maybe created by system.");
+
     std::stringstream stream;
-    formatAST(*context.getCreateQuery(ast.database, ast.table), stream, false, true);
+    formatAST(*createQuery, stream, false, true);
     String res = stream.str();
 
     MutableColumnPtr column = ColumnString::create();
