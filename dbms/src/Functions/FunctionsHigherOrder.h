@@ -62,7 +62,6 @@ struct ArrayCumSumImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
-        //return std::make_shared<DataTypeArray>(array_element);
         if (checkDataType<DataTypeUInt8>(&*expression_return) ||
             checkDataType<DataTypeUInt16>(&*expression_return) ||
             checkDataType<DataTypeUInt32>(&*expression_return) ||
@@ -79,7 +78,7 @@ struct ArrayCumSumImpl
             checkDataType<DataTypeFloat64>(&*expression_return))
         	return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
-        throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception("arrayCumSum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 
@@ -90,7 +89,7 @@ struct ArrayCumSumImpl
         if (!column)
            return false;
 
-        /*if (!column)
+        if (!column)
         {
             const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
 
@@ -99,9 +98,10 @@ struct ArrayCumSumImpl
 
             const Element x = column_const->template getValue<Element>();
 
-            auto res_nested = ColumnVector<Result>::create();
-            ColumnVector<Result>::Container & res_values = res_nested->getData();
-            res_values.resize(offsets.size());
+ i   	// create output column
+		auto res_nested = ColumnVector<Result>::create();
+		typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+		res_values.resize(data.size());
 
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
@@ -115,7 +115,7 @@ struct ArrayCumSumImpl
 
             res_ptr = ColumnArray::create(std::move(res_nested), offsets);
             return true;
-        }*/
+        }
 
         const IColumn::Offsets & offsets = array.getOffsets();
         const typename ColumnVector<Element>::Container & data = column->getData();
