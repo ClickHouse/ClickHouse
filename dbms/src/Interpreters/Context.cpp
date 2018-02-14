@@ -1423,13 +1423,24 @@ QueryLog & Context::getQueryLog()
 
         auto & config = getConfigRef();
 
-        String database = config.getString("query_log.database", "system");
-        String table = config.getString("query_log.table", "query_log");
+        String database     = config.getString("query_log.database",     "system");
+        String table        = config.getString("query_log.table",        "query_log");
+        String partition_by = config.getString("query_log.partition_by", "month");
         size_t flush_interval_milliseconds = config.getUInt64(
                 "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
+        
+        String engine;
 
-        system_logs->query_log = std::make_unique<QueryLog>(
-            *global_context, database, table, "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        if (partition_by == "day")
+            engine = "ENGINE = MergeTree() PARTITION BY (event_date) ORDER BY (event_time) SETTINGS index_granularity = 1024";
+        else if (partition_by == "week") 
+            engine = "ENGINE = MergeTree() PARTITION BY (toMonday(event_date)) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+        else if (partition_by == "month")
+            engine = "ENGINE = MergeTree(event_date, event_time, 1024)";
+        else
+            throw Exception("Logical error: invalid value for query_log.partition_by", ErrorCodes::LOGICAL_ERROR);
+
+        system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
     }
 
     return *system_logs->query_log;

@@ -226,7 +226,7 @@
         -->
         <database>system</database>
         <table>query_log</table>
-
+        <partition_by>month</partition_by> <!-- possible values day, month, week -->
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
