@@ -76,6 +76,9 @@ using DatabaseAndTableName = std::pair<String, String>;
 using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
 using Dependencies = std::vector<DatabaseAndTableName>;
 
+using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
+using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
+
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -102,7 +105,7 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-    Tables external_tables;                 /// Temporary tables.
+    TableAndCreateASTs external_tables;     /// Temporary tables.
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
     SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
@@ -162,6 +165,7 @@ public:
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
+    bool isExternalTableExist(const String & table_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
@@ -177,7 +181,7 @@ public:
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    void addExternalTable(const String & table_name, const StoragePtr & storage);
+    void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
     void addDatabase(const String & database_name, const DatabasePtr & database);
@@ -235,6 +239,7 @@ public:
 
     /// Get query for the CREATE table.
     ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
+    ASTPtr getCreateExternalQuery(const String & table_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
