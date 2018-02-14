@@ -31,18 +31,18 @@ target_include_directories (clickhouse-client-lib PRIVATE ${READLINE_INCLUDE_DIR
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
 
 add_library (clickhouse-benchmark-lib ${SPLIT_SHARED} Benchmark.cpp)
-target_link_libraries (clickhouse-benchmark-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-benchmark-lib clickhouse-client-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-benchmark-lib PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
 add_library (clickhouse-performance-test-lib ${SPLIT_SHARED} PerformanceTest.cpp)
-target_link_libraries (clickhouse-performance-test-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-performance-test-lib clickhouse_common_io dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-performance-test-lib PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
 add_library (clickhouse-compressor-lib ${SPLIT_SHARED} Compressor.cpp)
 target_link_libraries (clickhouse-compressor-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-format-lib ${SPLIT_SHARED} Format.cpp)
-target_link_libraries (clickhouse-format-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-format-lib dbms clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-cluster-copier-lib ClusterCopier.cpp)
 target_link_libraries (clickhouse-cluster-copier-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
@@ -69,7 +69,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-compressor clickhouse-compressor.cpp)
     target_link_libraries (clickhouse-compressor clickhouse-compressor-lib)
     add_executable (clickhouse-format clickhouse-format.cpp)
-    target_link_libraries (clickhouse-format clickhouse-format-lib dbms)
+    target_link_libraries (clickhouse-format clickhouse-format-lib)
     add_executable (clickhouse-cluster-copier clickhouse-cluster-copier.cpp)
     target_link_libraries (clickhouse-cluster-copier clickhouse-cluster-copier-lib)
 
