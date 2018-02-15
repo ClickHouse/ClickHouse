@@ -24,6 +24,9 @@ var paths = {
     reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
     docs: [docsDir + '/build/docs/**/*'],
     docstxt: ['docs/**/*.txt'],
+    docsjson: ['docs/**/*.json'],
+    docsxml: ['docs/**/*.xml'],
+    docssitemap: ['sitemap.xml'],
     scripts: [
         '**/*.js',
         '!gulpfile.js',
@@ -55,13 +58,28 @@ gulp.task('reference', [], function () {
 });
 
 gulp.task('docs', [], function () {
-    run('cd ' + docsDir + '; make');
+    run('cd ' + docsDir + '; ./build.sh');
     return gulp.src(paths.docs)
         .pipe(gulp.dest(outputDir + '/../docs'))
 });
 
 gulp.task('docstxt', ['docs'], function () {
     return gulp.src(paths.docstxt)
+        .pipe(gulp.dest(outputDir + '/docs'))
+});
+
+gulp.task('docsjson', ['docs'], function () {
+    return gulp.src(paths.docsjson)
+        .pipe(gulp.dest(outputDir + '/docs'))
+});
+
+gulp.task('docsxml', ['docs'], function () {
+    return gulp.src(paths.docsxml)
+        .pipe(gulp.dest(outputDir + '/docs'))
+});
+
+gulp.task('docssitemap', [], function () {
+    return gulp.src(paths.docssitemap)
         .pipe(gulp.dest(outputDir + '/docs'))
 });
 
@@ -75,7 +93,7 @@ gulp.task('robotstxt', [], function () {
         .pipe(gulp.dest(outputDir))
 });
 
-gulp.task('htmls', ['docs', 'docstxt'], function () {
+gulp.task('htmls', ['docs', 'docstxt', 'docsjson', 'docsxml', 'docssitemap'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())

@@ -2,12 +2,6 @@
 
 # Data types
 
-```eval_rst
-.. toctree::
-    :glob:
+ClickHouse table fields can contain data of different types.
 
-    *
-    */index
-
-```
-
+The topic contains descriptions of data types supported and specificity of their usage of implementation if exists.

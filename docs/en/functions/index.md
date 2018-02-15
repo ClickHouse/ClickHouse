@@ -6,13 +6,6 @@ In this section we discuss regular functions. For aggregate functions, see the s
 
 \* - There is a third type of function that the 'arrayJoin' function belongs to; table functions can also be mentioned separately.\*
 
-```eval_rst
-.. toctree::
-    :glob:
-
-    *
-```
-
 ## Strong typing
 
 In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn't make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
