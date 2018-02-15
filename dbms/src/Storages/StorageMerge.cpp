@@ -137,6 +137,7 @@ BlockInputStreams StorageMerge::read(
     const unsigned num_streams)
 {
     BlockInputStreams res;
+    Block header = getSampleBlockForColumns(column_names);
 
     Names virt_column_names, real_column_names;
     for (const auto & it : column_names)
@@ -223,13 +224,13 @@ BlockInputStreams StorageMerge::read(
             for (auto & stream : source_streams)
             {
                 /// will throw if some columns not convertible
-                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, getSampleBlock());
+                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, header);
             }
         }
         else
         {
             /// If many streams, initialize it lazily, to avoid long delay before start of query processing.
-            source_streams.emplace_back(std::make_shared<LazyBlockInputStream>([=]
+            source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(header, [=]
             {
                 QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
                 BlockInputStreams streams = table->read(
@@ -247,11 +248,11 @@ BlockInputStreams StorageMerge::read(
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
-                auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>(getSampleBlock()) : streams.front();
+                auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>(header) : streams.front();
                 if (!streams.empty())
                 {
                     /// will throw if some columns not convertible
-                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, getSampleBlock());
+                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, header);
                 }
                 return stream;
             }));
