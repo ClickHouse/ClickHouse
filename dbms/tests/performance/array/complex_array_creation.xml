@@ -1,0 +1,22 @@
+<test>
+    <name>complex_array_creation</name>
+    <type>once</type>
+
+    <stop_conditions>
+        <any_of>
+            <average_speed_not_changing_for_ms>10000</average_speed_not_changing_for_ms>
+            <total_time_ms>1000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <metrics>
+        <max_rows_per_second />
+    </metrics>
+
+    <main_metric>
+        <max_rows_per_second />
+    </main_metric>
+
+    <query>SELECT count() FROM system.numbers WHERE NOT ignore([[number], [number]])</query>
+    <query>SELECT count() FROM system.numbers WHERE NOT ignore([[], [number]])</query>
+</test>

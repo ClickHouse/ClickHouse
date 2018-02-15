@@ -277,4 +277,10 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
     return ITableDeclaration::hasColumn(column_name);
 }
 
+StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
+    : name(std::move(name_))
+{
+    columns = columns_;
+}
+
 }

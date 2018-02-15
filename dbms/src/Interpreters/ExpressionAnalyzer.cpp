@@ -12,17 +12,16 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/formatAST.h>
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeExpression.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnExpression.h>
 #include <Columns/ColumnConst.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -57,6 +56,8 @@
 
 #include <ext/range.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 
 
 namespace DB
@@ -157,11 +158,12 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const StoragePtr & storage_,
     const NamesAndTypesList & columns_,
     size_t subquery_depth_,
-    bool do_global_)
+    bool do_global_,
+    const SubqueriesForSets & subqueries_for_set_)
     : ast(ast_), context(context_), settings(context.getSettings()),
     subquery_depth(subquery_depth_), columns(columns_),
     storage(storage_ ? storage_ : getTable()),
-    do_global(do_global_)
+    do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
 {
     init();
 }
@@ -926,7 +928,16 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
     if (!alias.empty())
     {
         if (aliases.count(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
-            throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+        {
+            std::stringstream message;
+            message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":\n";
+            formatAST(*ast, message, false, true);
+            message << "\nand\n";
+            formatAST(*aliases[alias], message, false, true);
+            message << "\n";
+
+            throw Exception(message.str(), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+        }
 
         aliases[alias] = ast;
     }
@@ -1542,8 +1553,6 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
             return;
     }
 
-    set->finalizeOrderedSet();
-
     prepared_sets[subquery_or_table_name.get()] = std::move(set);
 }
 
@@ -1551,7 +1560,11 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
 void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block)
 {
     for (auto & child : node->children)
-        makeSetsForIndexImpl(child, sample_block);
+    {
+        /// Process expression only in current subquery
+        if (!typeid_cast<ASTSubquery *>(child.get()))
+            makeSetsForIndexImpl(child, sample_block);
+    }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
     if (func && func->kind == ASTFunction::FUNCTION && functionIsInOperator(func->name))
@@ -1570,13 +1583,18 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
             {
                 try
                 {
-                    makeExplicitSet(func, sample_block, true);
+                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(columns, settings);
+                    getRootActions(func->arguments->children.at(0), true, false, temp_actions);
+                    makeExplicitSet(func, temp_actions->getSampleBlock(), true);
                 }
                 catch (const Exception & e)
                 {
-                    /// in `sample_block` there are no columns that add `getActions`
-                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
+                    /// in `sample_block` there are no columns that are added by `getActions`
+                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
                         throw;
+
+                    /// TODO: Delete the catch in the next release
+                    tryLogCurrentException(&Poco::Logger::get("ExpressionAnalyzer"));
                 }
             }
         }
@@ -1856,11 +1874,9 @@ struct ExpressionAnalyzer::ScopeStack
         throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
-    void addAction(const ExpressionAction & action, const Names & additional_required_columns = Names())
+    void addAction(const ExpressionAction & action)
     {
         size_t level = 0;
-        for (size_t i = 0; i < additional_required_columns.size(); ++i)
-            level = std::max(level, getColumnLevel(additional_required_columns[i]));
         Names required = action.getNeededColumns();
         for (size_t i = 0; i < required.size(); ++i)
             level = std::max(level, getColumnLevel(required[i]));
@@ -2093,7 +2109,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 return;
             }
 
-            const FunctionPtr & function = FunctionFactory::instance().get(node->name, context);
+            const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, context);
 
             Names argument_names;
             DataTypes argument_types;
@@ -2117,7 +2133,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                         throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
 
                     has_lambda_arguments = true;
-                    argument_types.emplace_back(std::make_shared<DataTypeExpression>(DataTypes(lambda_args_tuple->arguments->children.size())));
+                    argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
                     /// Select the name in the next cycle.
                     argument_names.emplace_back();
                 }
@@ -2172,11 +2188,9 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
             if (only_consts && !arguments_present)
                 return;
 
-            Names additional_requirements;
-
             if (has_lambda_arguments && !only_consts)
             {
-                function->getLambdaArgumentTypes(argument_types);
+                function_builder->getLambdaArgumentTypes(argument_types);
 
                 /// Call recursively for lambda expressions.
                 for (size_t i = 0; i < node->arguments->children.size(); ++i)
@@ -2186,7 +2200,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
                     if (lambda && lambda->name == "lambda")
                     {
-                        const DataTypeExpression * lambda_type = typeid_cast<const DataTypeExpression *>(argument_types[i].get());
+                        const DataTypeFunction * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
                         ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
                         ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
                         NamesAndTypesList lambda_arguments;
@@ -2209,22 +2223,23 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                         String result_name = lambda->arguments->children.at(1)->getColumnName();
                         lambda_actions->finalize(Names(1, result_name));
                         DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
-                        argument_types[i] = std::make_shared<DataTypeExpression>(lambda_type->getArgumentTypes(), result_type);
 
-                        Names captured = lambda_actions->getRequiredColumns();
-                        for (size_t j = 0; j < captured.size(); ++j)
-                            if (findColumn(captured[j], lambda_arguments) == lambda_arguments.end())
-                                additional_requirements.push_back(captured[j]);
+                        Names captured;
+                        Names required = lambda_actions->getRequiredColumns();
+                        for (size_t j = 0; j < required.size(); ++j)
+                            if (findColumn(required[j], lambda_arguments) == lambda_arguments.end())
+                                captured.push_back(required[j]);
 
                         /// We can not name `getColumnName()`,
                         ///  because it does not uniquely define the expression (the types of arguments can be different).
-                        argument_names[i] = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
+                        String lambda_name = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
 
-                        ColumnWithTypeAndName lambda_column;
-                        lambda_column.column = ColumnExpression::create(1, lambda_actions, lambda_arguments, result_type, result_name);
-                        lambda_column.type = argument_types[i];
-                        lambda_column.name = argument_names[i];
-                        actions_stack.addAction(ExpressionAction::addColumn(lambda_column));
+                        auto function_capture = std::make_shared<FunctionCapture>(
+                                lambda_actions, captured, lambda_arguments, result_type, result_name);
+                        actions_stack.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
+
+                        argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
+                        argument_names[i] = lambda_name;
                     }
                 }
             }
@@ -2242,8 +2257,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
             }
 
             if (arguments_present)
-                actions_stack.addAction(ExpressionAction::applyFunction(function, argument_names, node->getColumnName()),
-                                        additional_requirements);
+                actions_stack.addAction(ExpressionAction::applyFunction(function_builder, argument_names, node->getColumnName()));
         }
     }
     else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(ast.get()))

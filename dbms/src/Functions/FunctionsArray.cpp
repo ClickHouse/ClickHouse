@@ -61,6 +61,13 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 {
     size_t num_elements = arguments.size();
 
+    if (num_elements == 0)
+    {
+        /// We should return constant empty array.
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
+        return;
+    }
+
     const DataTypePtr & return_type = block.getByPosition(result).type;
     const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
 
@@ -91,8 +98,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         columns[i] = columns_holder[i].get();
     }
 
-    /** Create and fill the result array.
-        */
+    /// Create and fill the result array.
 
     auto out = ColumnArray::create(elem_type->createColumn());
     IColumn & out_data = out->getData();
@@ -2345,10 +2351,7 @@ String FunctionArrayReduce::getName() const
     return name;
 }
 
-void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
-    const ColumnsWithTypeAndName & arguments,
-    DataTypePtr & out_return_type,
-    std::vector<ExpressionAction> & /*out_prerequisites*/)
+DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     /// The first argument is a constant string with the name of the aggregate function
     ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
@@ -2390,7 +2393,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
     }
 
-    out_return_type = aggregate_function->getReturnType();
+    return aggregate_function->getReturnType();
 }
 
 

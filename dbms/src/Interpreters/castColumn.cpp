@@ -24,16 +24,10 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
         }
     };
 
-    FunctionPtr func_cast = FunctionFactory::instance().get("CAST", context);
+    FunctionBuilderPtr func_builder_cast = FunctionFactory::instance().get("CAST", context);
 
-    {
-        DataTypePtr unused_return_type;
-        ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
-        std::vector<ExpressionAction> unused_prerequisites;
-
-        /// Prepares function to execution. TODO It is not obvious.
-        func_cast->getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
-    }
+    ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
+    auto func_cast = func_builder_cast->build(arguments);
 
     func_cast->execute(temporary_block, {0, 1}, 2);
     return temporary_block.getByPosition(2).column;

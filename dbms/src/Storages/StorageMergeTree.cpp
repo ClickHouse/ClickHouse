@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
 }
 
@@ -42,24 +43,28 @@ StorageMergeTree::StorageMergeTree(
     bool attach,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
+    const ASTPtr & secondary_sorting_expr_list_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
     path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
          materialized_columns_, alias_columns_, column_defaults_,
-         context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
+         context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
          sampling_expression_, merging_params_,
          settings_, false, attach),
     reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
+    if (path_.empty())
+        throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
     data.loadDataParts(has_force_restore_data_flag);
 
     if (!attach)

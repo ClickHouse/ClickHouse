@@ -85,6 +85,7 @@ MergeTreeData::MergeTreeData(
     const ColumnDefaults & column_defaults_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
+    const ASTPtr & secondary_sort_expr_ast_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
@@ -93,16 +94,18 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+    : ITableDeclaration{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    context(context_),
     sampling_expression(sampling_expression_),
     index_granularity(settings_.index_granularity),
     merging_params(merging_params_),
     settings(settings_),
     primary_expr_ast(primary_expr_ast_),
+    secondary_sort_expr_ast(secondary_sort_expr_ast_),
     partition_expr_ast(partition_expr_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
-    full_path(full_path_), columns(columns_),
+    full_path(full_path_),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_name(data_parts_indexes.get<TagByName>()),
@@ -193,19 +196,27 @@ void MergeTreeData::initPrimaryKey()
     if (!primary_expr_ast)
         return;
 
-    /// Initialize description of sorting.
-    sort_descr.clear();
-    sort_descr.reserve(primary_expr_ast->children.size());
-    for (const ASTPtr & ast : primary_expr_ast->children)
+    auto addSortDescription = [](SortDescription & descr, const ASTPtr & expr_ast)
     {
-        String name = ast->getColumnName();
-        sort_descr.emplace_back(name, 1, 1);
-    }
+        descr.reserve(descr.size() + expr_ast->children.size());
+        for (const ASTPtr & ast : expr_ast->children)
+        {
+            String name = ast->getColumnName();
+            descr.emplace_back(name, 1, 1);
+        }
+    };
+
+    /// Initialize description of sorting for primary key.
+    primary_sort_descr.clear();
+    addSortDescription(primary_sort_descr, primary_expr_ast);
 
     primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
 
-    ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
-    primary_key_sample = projected_expr->getSampleBlock();
+    {
+        ExpressionActionsPtr projected_expr =
+                ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
+        primary_key_sample = projected_expr->getSampleBlock();
+    }
 
     size_t primary_key_size = primary_key_sample.columns();
 
@@ -218,6 +229,20 @@ void MergeTreeData::initPrimaryKey()
     primary_key_data_types.resize(primary_key_size);
     for (size_t i = 0; i < primary_key_size; ++i)
         primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
+
+    sort_descr = primary_sort_descr;
+    if (secondary_sort_expr_ast)
+    {
+        addSortDescription(sort_descr, secondary_sort_expr_ast);
+        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+
+        ExpressionActionsPtr projected_expr =
+                ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumnsList()).getActions(true);
+        auto secondary_key_sample = projected_expr->getSampleBlock();
+
+        for (size_t i = 0; i < secondary_key_sample.columns(); ++i)
+            checkForAllowedKeyColumns(secondary_key_sample.getByPosition(i), "Secondary");
+    }
 }
 
 
@@ -271,11 +296,28 @@ void MergeTreeData::initPartitionKey()
 
 void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
 {
+    if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
+        throw Exception("Sign column for MergeTree cannot be specified in modes except Collapsing or VersionedCollapsing.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (!version_column.empty() && mode != MergingParams::Replacing && mode != MergingParams::VersionedCollapsing)
+        throw Exception("Version column for MergeTree cannot be specified in modes except Replacing or VersionedCollapsing.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (!columns_to_sum.empty() && mode != MergingParams::Summing)
+        throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.",
+                        ErrorCodes::LOGICAL_ERROR);
+
     /// Check that if the sign column is needed, it exists and is of type Int8.
-    if (mode == MergingParams::Collapsing)
+    auto check_sign_column = [this, & columns](bool is_optional, const std::string & storage)
     {
         if (sign_column.empty())
-            throw Exception("Logical error: Sign column for storage CollapsingMergeTree is empty", ErrorCodes::LOGICAL_ERROR);
+        {
+            if (is_optional)
+                return;
+
+            throw Exception("Logical error: Sign column for storage " + storage + " is empty", ErrorCodes::LOGICAL_ERROR);
+        }
 
         bool miss_column = true;
         for (const auto & column : columns)
@@ -283,59 +325,69 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             if (column.name == sign_column)
             {
                 if (!typeid_cast<const DataTypeInt8 *>(column.type.get()))
-                    throw Exception("Sign column (" + sign_column + ")"
-                        " for storage CollapsingMergeTree must have type Int8."
-                        " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                    throw Exception("Sign column (" + sign_column + ") for storage " + storage + " must have type Int8."
+                            " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
         }
         if (miss_column)
             throw Exception("Sign column " + sign_column + " does not exist in table declaration.");
-    }
-    else if (!sign_column.empty())
-        throw Exception("Sign column for MergeTree cannot be specified in all modes except Collapsing.", ErrorCodes::LOGICAL_ERROR);
+    };
 
-    /// If colums_to_sum are set, then check that such columns exist.
-    if (!columns_to_sum.empty())
+    /// that if the version_column column is needed, it exists and is of unsigned integer type.
+    auto check_version_column = [this, & columns](bool is_optional, const std::string & storage)
     {
-        if (mode != MergingParams::Summing)
-            throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.",
-                ErrorCodes::LOGICAL_ERROR);
+        if (version_column.empty())
+        {
+            if (is_optional)
+                return;
 
-        for (const auto & column_to_sum : columns_to_sum)
-            if (columns.end() == std::find_if(columns.begin(), columns.end(),
-                [&](const NameAndTypePair & name_and_type) { return column_to_sum == Nested::extractTableName(name_and_type.name); }))
-                throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
-    }
-
-    /// Check that version_column column is set only for Replacing mode and is of unsigned integer type.
-    if (!version_column.empty())
-    {
-        if (mode != MergingParams::Replacing)
-            throw Exception("Version column for MergeTree cannot be specified in all modes except Replacing.",
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: Version column for storage " + storage + " is empty", ErrorCodes::LOGICAL_ERROR);
+        }
 
         bool miss_column = true;
         for (const auto & column : columns)
         {
             if (column.name == version_column)
             {
-                if (!typeid_cast<const DataTypeUInt8 *>(column.type.get())
-                    && !typeid_cast<const DataTypeUInt16 *>(column.type.get())
-                    && !typeid_cast<const DataTypeUInt32 *>(column.type.get())
-                    && !typeid_cast<const DataTypeUInt64 *>(column.type.get())
-                    && !typeid_cast<const DataTypeDate *>(column.type.get())
-                    && !typeid_cast<const DataTypeDateTime *>(column.type.get()))
+                if (!column.type->isUnsignedInteger() && !column.type->isDateOrDateTime())
                     throw Exception("Version column (" + version_column + ")"
-                        " for storage ReplacingMergeTree must have type of UInt family or Date or DateTime."
-                        " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                            " for storage " + storage + " must have type of UInt family or Date or DateTime."
+                            " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
         }
         if (miss_column)
             throw Exception("Version column " + version_column + " does not exist in table declaration.");
+    };
+
+    if (mode == MergingParams::Collapsing)
+        check_sign_column(false, "CollapsingMergeTree");
+
+    if (mode == MergingParams::Summing)
+    {
+        /// If columns_to_sum are set, then check that such columns exist.
+        for (const auto & column_to_sum : columns_to_sum)
+        {
+            auto check_column_to_sum_exists = [& column_to_sum](const NameAndTypePair & name_and_type)
+            {
+                return column_to_sum == Nested::extractTableName(name_and_type.name);
+            };
+            if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
+                throw Exception(
+                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+        }
+    }
+
+    if (mode == MergingParams::Replacing)
+        check_version_column(true, "ReplacingMergeTree");
+
+    if (mode == MergingParams::VersionedCollapsing)
+    {
+        check_sign_column(false, "VersionedCollapsingMergeTree");
+        check_version_column(false, "VersionedCollapsingMergeTree");
     }
 
     /// TODO Checks for Graphite mode.
@@ -353,6 +405,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Unsorted:      return "Unsorted";
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
+        case VersionedCollapsing:  return "VersionedCollapsing";
 
         default:
             throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
@@ -825,17 +878,24 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
             columns_alter_forbidden.insert(col);
     }
 
-    if (primary_expr)
+    auto processSortingColumns =
+            [&columns_alter_forbidden, &columns_alter_metadata_only] (const ExpressionActionsPtr & expression)
     {
-        for (const ExpressionAction & action : primary_expr->getActions())
+        for (const ExpressionAction & action : expression->getActions())
         {
             auto action_columns = action.getNeededColumns();
             columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
         }
-        for (const String & col : primary_expr->getRequiredColumns())
+        for (const String & col : expression->getRequiredColumns())
             columns_alter_metadata_only.insert(col);
-    }
+    };
+
+    if (primary_expr)
+        processSortingColumns(primary_expr);
     /// We don't process sampling_expression separately because it must be among the primary key columns.
+
+    if (secondary_sort_expr)
+        processSortingColumns(secondary_sort_expr);
 
     if (!merging_params.sign_column.empty())
         columns_alter_forbidden.insert(merging_params.sign_column);
@@ -949,7 +1009,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 out_expression->add(ExpressionAction::addColumn(
                     { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
-                const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
+                const auto & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(
                     function, Names{column.name, new_type_name_column}), out_names);
 
@@ -1083,6 +1143,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     size_t new_primary_key_file_size{};
     MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
 
+    /// TODO: Check the order of secondary sorting key columns.
     if (new_primary_key.get() != primary_expr_ast.get())
     {
         ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, new_columns).getActions(true);
@@ -2189,7 +2250,7 @@ bool MergeTreeData::isPrimaryKeyColumn(const ASTPtr &node) const
 {
     String column_name = node->getColumnName();
 
-    for (const auto & column : sort_descr)
+    for (const auto & column : primary_sort_descr)
         if (column_name == column.column_name)
             return true;
 

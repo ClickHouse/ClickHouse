@@ -95,6 +95,7 @@ namespace ErrorCodes
     extern const int TOO_MUCH_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
 }
 
@@ -172,13 +173,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const ColumnDefaults & column_defaults_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
+    const ASTPtr & secondary_sorting_expr_list_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     current_zookeeper(context.getZooKeeper()), database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros().expand(zookeeper_path_)),
@@ -186,7 +188,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     data(database_name, table_name,
         full_path, columns_,
         materialized_columns_, alias_columns_, column_defaults_,
-        context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
+        context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
         sampling_expression_, merging_params_,
         settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
@@ -195,6 +197,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
+    if (path_.empty())
+        throw Exception("ReplicatedMergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
     /// If zookeeper chroot prefix is used, path should starts with '/', because chroot concatenates without it.

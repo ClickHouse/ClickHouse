@@ -149,7 +149,7 @@ public:
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
-        prepare(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
+        initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
 
         const auto in = block.getByPosition(arguments.front()).column.get();
 
@@ -740,13 +740,13 @@ private:
 
     Field const_default_value;    /// Null, if not specified.
 
-    bool prepared = false;
+    bool initialized = false;
     std::mutex mutex;
 
     /// Can be called from different threads. It works only on the first call.
-    void prepare(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments)
+    void initialize(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments)
     {
-        if (prepared)
+        if (initialized)
             return;
 
         const size_t size = from.size();
@@ -755,7 +755,7 @@ private:
 
         std::lock_guard<std::mutex> lock(mutex);
 
-        if (prepared)
+        if (initialized)
             return;
 
         if (from.size() != to.size())
@@ -842,7 +842,7 @@ private:
             }
         }
 
-        prepared = true;
+        initialized = true;
     }
 };
 

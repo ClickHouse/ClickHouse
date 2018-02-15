@@ -2,7 +2,7 @@
 
 ## Tabix
 
-Web interface for ClickHouse in the [Tabix](https://github.com/smi2/tabix.ui) project.
+Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
 
 Main features:
 

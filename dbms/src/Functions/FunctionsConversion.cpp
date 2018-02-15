@@ -47,7 +47,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFixedString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-    factory.registerFunction<FunctionCast>();
+    factory.registerFunction<FunctionBuilderCast>();
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
@@ -59,6 +59,8 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToInt64OrZero>();
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
+    factory.registerFunction<FunctionToDateOrZero>();
+    factory.registerFunction<FunctionToDateTimeOrZero>();
 
     factory.registerFunction<FunctionToUInt8OrNull>();
     factory.registerFunction<FunctionToUInt16OrNull>();
@@ -70,6 +72,12 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToInt64OrNull>();
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
+    factory.registerFunction<FunctionToDateOrNull>();
+    factory.registerFunction<FunctionToDateTimeOrNull>();
+
+    factory.registerFunction<FunctionParseDateTimeBestEffort>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
 
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();

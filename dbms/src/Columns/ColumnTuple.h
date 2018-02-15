@@ -65,13 +65,11 @@ public:
     size_t tupleSize() const { return columns.size(); }
 
     const IColumn & getColumn(size_t idx) const { return *columns[idx]; }
-    IColumn & getColumn(size_t idx) { return *columns[idx]->assumeMutable(); }
+    IColumn & getColumn(size_t idx) { return columns[idx]->assumeMutableRef(); }
 
     const Columns & getColumns() const { return columns; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
-    //ColumnPtr & getColumnPtr(size_t idx) { return columns[idx]; }
-    //MutableColumnPtr getColumnMutablePtr(size_t idx) { return columns[idx]->assumeMutable(); }
 };
 
 
