@@ -65,15 +65,15 @@ public:
     bool hasEqualOffsets(const ColumnArray & other) const;
 
     /** More efficient methods of manipulation */
-    IColumn & getData() { return *data->assumeMutable(); }
+    IColumn & getData() { return data->assumeMutableRef(); }
     const IColumn & getData() const { return *data; }
 
-    IColumn & getOffsetsColumn() { return *offsets->assumeMutable(); }
+    IColumn & getOffsetsColumn() { return offsets->assumeMutableRef(); }
     const IColumn & getOffsetsColumn() const { return *offsets; }
 
     Offsets & ALWAYS_INLINE getOffsets()
     {
-        return static_cast<ColumnOffsets &>(*offsets->assumeMutable()).getData();
+        return static_cast<ColumnOffsets &>(offsets->assumeMutableRef()).getData();
     }
 
     const Offsets & ALWAYS_INLINE getOffsets() const
@@ -81,11 +81,9 @@ public:
         return static_cast<const ColumnOffsets &>(*offsets).getData();
     }
 
-    //MutableColumnPtr getDataMutablePtr() { return data->assumeMutable(); }
     const ColumnPtr & getDataPtr() const { return data; }
     ColumnPtr & getDataPtr() { return data; }
 
-    //MutableColumnPtr getOffsetsMutablePtr() { return offsets->assumeMutable(); }
     const ColumnPtr & getOffsetsPtr() const { return offsets; }
     ColumnPtr & getOffsetsPtr() { return offsets; }
 

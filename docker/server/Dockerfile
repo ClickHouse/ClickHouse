@@ -3,17 +3,16 @@ FROM ubuntu:16.04
 ARG repository="deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/binary-amd64/"
 ARG version=\*
 
-RUN apt-get update && \
-    apt-get install -y apt-transport-https tzdata && \
+RUN apt update && \
+    apt install -y apt-transport-https && \
     mkdir -p /etc/apt/sources.list.d && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
-    apt-get update && \
-    apt-get install --allow-unauthenticated -y clickhouse-server-common=$version clickhouse-server-base=$version && \
+    apt update && \
+    apt install --allow-unauthenticated -y clickhouse-server-common=$version clickhouse-server-base=$version && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
-    apt-get clean
+    apt clean
 
-RUN sed -i 's,<listen_host>127.0.0.1</listen_host>,<listen_host>0.0.0.0</listen_host>,' /etc/clickhouse-server/config.xml && \
-    sed -i 's,<listen_host>::1</listen_host>,,' /etc/clickhouse-server/config.xml
+COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 RUN chown -R clickhouse /etc/clickhouse-server/
 
 USER clickhouse

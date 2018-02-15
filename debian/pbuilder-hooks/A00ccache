@@ -1,9 +1,16 @@
 #!/bin/sh
 
-mkdir -p $CCACHEDIR
-chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
-chmod -R a+rwx $CCACHEDIR
+# CCACHEDIR - for pbuilder ; CCACHE_DIR - for ccache
 
-CCACHE_SIZE=${CCACHE_SIZE:=32G}
+echo "CCACHEDIR=$CCACHEDIR CCACHE_DIR=$CCACHE_DIR SET_CCACHEDIR=$SET_CCACHEDIR"
+
+[ -z "$CCACHE_DIR" ] && export CCACHE_DIR=${CCACHEDIR:=${SET_CCACHEDIR=/var/cache/pbuilder/ccache}}
+
+if [ -n "$CCACHE_DIR" ]; then
+    mkdir -p $CCACHE_DIR || true
+    chown -R $BUILDUSERID:$BUILDUSERID $CCACHE_DIR || true
+    chmod -R a+rwx $CCACHE_DIR || true
+fi
+
 ccache --show-stats
-ccache -M $CCACHE_SIZE
+ccache -M ${CCACHE_SIZE:=32G}

@@ -14,8 +14,6 @@ public:
 
     std::string getTableName() const override { return table_name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(const Names & column_names,
                            const SelectQueryInfo & query_info,
                            const Context & context,
@@ -25,7 +23,7 @@ public:
 
 private:
     String table_name;
-    NamesAndTypesList columns;
+
     String column_description_file_name;
     String data_description_file_name;
     Block sample_block;

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+   <sitemap>
+      <loc>https://clickhouse.yandex/docs/ru/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.yandex/docs/ru/single_page/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.yandex/docs/en/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.yandex/docs/en/single_pabe/sitemap.xml</loc>
+   </sitemap>
+</sitemapindex>

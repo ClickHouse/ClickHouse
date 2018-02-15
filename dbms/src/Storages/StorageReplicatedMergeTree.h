@@ -123,6 +123,7 @@ public:
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
     bool checkTableCanBeDropped() const override;
 
@@ -341,6 +342,11 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
+    /// Do the merge or recommend to make the fetch instead of the merge
+    void tryExecuteMerge(const LogEntry & entry, bool & do_fetch);
+
+    bool executeFetch(const LogEntry & entry);
+
     void executeClearColumnInPartition(const LogEntry & entry);
 
     /** Updates the queue.
@@ -396,7 +402,9 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper);
+    /// Creates new block number and additionally perform precheck_ops while creates 'abandoned node'
+    AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+                                                   zkutil::Ops * precheck_ops = nullptr);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
@@ -441,6 +449,7 @@ protected:
         const ColumnDefaults & column_defaults_,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
+        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,

@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
 }
 
@@ -42,24 +43,28 @@ StorageMergeTree::StorageMergeTree(
     bool attach,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
+    const ASTPtr & secondary_sorting_expr_list_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
     path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
          materialized_columns_, alias_columns_, column_defaults_,
-         context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
+         context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
          sampling_expression_, merging_params_,
          settings_, false, attach),
     reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
+    if (path_.empty())
+        throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
     data.loadDataParts(has_force_restore_data_flag);
 
     if (!attach)
@@ -330,45 +335,66 @@ bool StorageMergeTree::merge(
         merging_tagger.emplace(future_part.parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(future_part.parts), *this);
     }
 
-    MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
+    MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
 
     /// Logging
     Stopwatch stopwatch;
+    MergeTreeData::MutableDataPartPtr new_part;
 
-    auto new_part = merger.mergePartsToTemporaryPart(
-        future_part, *merge_entry_ptr, aio_threshold, time(nullptr), merging_tagger->reserved_space.get(), deduplicate);
-
-    merger.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
-
-    if (auto part_log = context.getPartLog(database_name, table_name))
+    auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        PartLogElement elem;
-        elem.event_time = time(nullptr);
-
-        elem.merged_from.reserve(future_part.parts.size());
-        for (const auto & part : future_part.parts)
-            elem.merged_from.push_back(part->name);
-        elem.event_type = PartLogElement::MERGE_PARTS;
-        elem.size_in_bytes = new_part->size_in_bytes;
-
-        elem.database_name = new_part->storage.getDatabaseName();
-        elem.table_name = new_part->storage.getTableName();
-        elem.part_name = new_part->name;
-
-        elem.duration_ms = stopwatch.elapsed() / 1000000;
-
-        part_log->add(elem);
-
-        elem.duration_ms = 0;
-        elem.event_type = PartLogElement::REMOVE_PART;
-        elem.merged_from = Strings();
-
-        for (const auto & part : future_part.parts)
+        try
         {
-            elem.part_name = part->name;
-            elem.size_in_bytes = part->size_in_bytes;
-            part_log->add(elem);
+            auto part_log = context.getPartLog(database_name, table_name);
+            if (!part_log)
+                return;
+
+            PartLogElement part_log_elem;
+
+            part_log_elem.event_type = PartLogElement::MERGE_PARTS;
+            part_log_elem.event_time = time(nullptr);
+            part_log_elem.duration_ms = stopwatch.elapsed() / 1000000;
+
+            part_log_elem.database_name = database_name;
+            part_log_elem.table_name = table_name;
+            part_log_elem.part_name = future_part.name;
+
+            if (new_part)
+                part_log_elem.bytes_compressed_on_disk = new_part->size_in_bytes;
+
+            part_log_elem.source_part_names.reserve(future_part.parts.size());
+            for (const auto & source_part : future_part.parts)
+                part_log_elem.source_part_names.push_back(source_part->name);
+
+            part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
+            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
+
+            part_log_elem.rows = (*merge_entry)->rows_written;
+            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
+
+            part_log_elem.error = static_cast<UInt16>(execution_status.code);
+            part_log_elem.exception = execution_status.message;
+
+            part_log->add(part_log_elem);
         }
+        catch (...)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        }
+    };
+
+    try
+    {
+        new_part = merger.mergePartsToTemporaryPart(future_part, *merge_entry, aio_threshold, time(nullptr),
+                                                    merging_tagger->reserved_space.get(), deduplicate);
+        merger.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
+
+        write_part_log({});
+    }
+    catch (...)
+    {
+        write_part_log(ExecutionStatus::fromCurrentException());
+        throw;
     }
 
     return true;

@@ -39,7 +39,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES+=" debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc gdb bash expect python python-lxml python-termcolor curl perl sudo"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo"
         shift
     else
         echo "Unknown option $1"
@@ -58,7 +58,7 @@ then
     # GLIBC_COMPATIBILITY отключен по умолчанию
     export DEB_CC=clang-5.0
     export DEB_CXX=clang++-5.0
-    EXTRAPACKAGES+=" clang-5.0 "
+    EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 "
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
@@ -90,11 +90,17 @@ else
     export DIST=${DIST:=artful}
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
+
+
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
-        sudo --preserve-env pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+        echo Creating base system $BASETGZ
+        [ ! -e "/usr/share/debootstrap/scripts/${DIST}" ] && sudo ln -s gutsy /usr/share/debootstrap/scripts/${DIST}
+        sudo --preserve-env bash -x pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
 
-    if [[ -n "$PBUILDER_UPDATE" ]] ; then
+    # Update every 3 days (60*24*3 minutes)
+    if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +4320` ; then
+        echo Updating base system $BASETGZ
         sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
 

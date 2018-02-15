@@ -35,6 +35,8 @@
 # without sse for old systems and some VM:
 # env DH_VERBOSE=1 CMAKE_FLAGS="-DHAVE_SSE41=0 -DHAVE_SSE42=0 -DHAVE_POPCNT=0 -DHAVE_SSE2_INTRIN=0 -DSSE2FLAG=' ' -DHAVE_SSE42_INTRIN=0 -DSSE4FLAG=' ' -DHAVE_PCLMULQDQ_INTRIN=0 -DPCLMULFLAG=' '" DIST=artful pdebuild --configfile debian/.pbuilderrc
 
+# Note: on trusty host creating some future dists can fail (debootstrap error).
+
 # Your packages built here: /var/cache/pbuilder/*-*/result
 
 # from https://wiki.debian.org/PbuilderTricks :
@@ -54,11 +56,11 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
 UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
 # Mirrors to use. Update these to your preferred mirror.
-DEBIAN_MIRROR="deb.debian.org"
-#UBUNTU_MIRROR="mirrors.kernel.org"
+DEBIAN_MIRROR=${DEBIAN_MIRROR:=deb.debian.org}
+UBUNTU_MIRROR=${UBUNTU_MIRROR:=archive.ubuntu.com}
 
 #DEBIAN_MIRROR="mirror.yandex.ru"
-UBUNTU_MIRROR="mirror.yandex.ru"
+#UBUNTU_MIRROR="mirror.yandex.ru"
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
@@ -94,6 +96,10 @@ BUILDRESULT=${SET_BUILDRESULT}
 BUILDRESULT=${BUILDRESULT:="/var/cache/pbuilder/$NAME/result/"}
 APTCACHE="/var/cache/pbuilder/$NAME/aptcache/"
 BUILDPLACE="/var/cache/pbuilder/build/"
+ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
+
+#DEBOOTSTRAPOPTS=( '--variant=buildd' $SET_DEBOOTSTRAPOPTS )
+
 
 if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
     # Debian configuration
@@ -120,12 +126,12 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     MIRRORSITE="http://$UBUNTU_MIRROR/$OSNAME/"
     COMPONENTS="main restricted universe multiverse"
 
-    OTHERMIRROR+="deb $MIRRORSITE $DIST-updates main restricted universe multiverse |"
-    OTHERMIRROR+="deb $MIRRORSITE $DIST-security main restricted universe multiverse |"
+    OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-updates main restricted universe multiverse"
+    OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-security main restricted universe multiverse"
 
     case "$DIST" in
        "trusty" | "xenial" )
-           OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main |"
+           OTHERMIRROR="$OTHERMIRROR | deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main"
            ALLOWUNTRUSTED=yes
            ;;
     esac
@@ -143,7 +149,7 @@ case "$DIST" in
         # ccache broken
         ;;
     *)
-        CCACHEDIR=${CCACHEDIR:="/var/cache/pbuilder/ccache"}
+        CCACHEDIR=${SET_CCACHEDIR:="/var/cache/pbuilder/ccache"}
         ;;
 esac
 
@@ -156,7 +162,11 @@ case "$DIST" in
 esac
 
 case "$DIST" in
-    "bionic" | "artful" | "experimental" | "unstable" | "testing" )
+    "bionic" )
+        EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
+        export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 -DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
+        ;;
+    "artful" | "experimental" | "unstable" | "testing" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
         ;;
@@ -172,6 +182,8 @@ esac
 # will test symbols
 EXTRAPACKAGES+=" gdb "
 
+[[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX "
+
 export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
@@ -179,7 +191,6 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 [ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR
 # chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
-# echo "DEBOOTSTRAPOPTS = ${DEBOOTSTRAPOPTS[@]}"
 
 # Use current dir to make package (by default should have src archive)
 # echo "3.0 (native)" > debian/source/format
@@ -189,3 +200,7 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 DEBBUILDOPTS="--source-option=--format=\"3.0 (native)\""
 
 HOOKDIR="debian/pbuilder-hooks"
+
+#echo "DEBOOTSTRAPOPTS=${DEBOOTSTRAPOPTS[@]}"
+#echo "ALLOWUNTRUSTED=${ALLOWUNTRUSTED} OTHERMIRROR=${OTHERMIRROR}"
+#echo "EXTRAPACKAGES=${EXTRAPACKAGES}"

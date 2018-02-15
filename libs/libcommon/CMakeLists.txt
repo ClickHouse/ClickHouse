@@ -17,7 +17,7 @@ if (APPLE)
     target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
 endif ()
 
-add_library (common
+add_library (common ${SPLIT_SHARED}
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/exp10.c

@@ -101,7 +101,7 @@ public:
             LOG_ERROR(log, "SystemLog queue is full");
     }
 
-private:
+protected:
     Context & context;
     const String database_name;
     const String table_name;

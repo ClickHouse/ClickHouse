@@ -26,8 +26,6 @@ public:
     std::string getName() const override { return "Log"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -59,7 +57,6 @@ protected:
 private:
     String path;
     String name;
-    NamesAndTypesList columns;
 
     mutable std::shared_mutex rwlock;
 
