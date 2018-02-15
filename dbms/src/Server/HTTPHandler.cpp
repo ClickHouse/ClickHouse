@@ -10,7 +10,7 @@
 #include <ext/scope_guard.h>
 
 #include <Common/ExternalTable.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 
 #include <IO/ReadBufferFromIStream.h>

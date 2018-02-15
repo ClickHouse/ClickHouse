@@ -1,5 +1,7 @@
 #pragma once
 
+#if !(defined(__FreeBSD__) || defined(__APPLE__))
+
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -107,3 +109,5 @@ private:
 };
 
 }
+
+#endif

@@ -5,6 +5,7 @@ Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake3 | cmake,
                gcc-7, g++-7,
+               libc6-dev,
                libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
                libltdl-dev,
@@ -48,7 +49,7 @@ Description: debugging symbols for clickhouse-server-base
  This package contains the debugging symbols for clickhouse-server-base.
 
 Package: clickhouse-test
-#Priority: extra
+Priority: extra
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo
 Description: Clickhouse tests

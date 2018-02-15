@@ -36,7 +36,6 @@ Names ExpressionAction::getNeededColumns() const
 {
     Names res = argument_names;
 
-    res.insert(res.end(), prerequisite_names.begin(), prerequisite_names.end());
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
     for (const auto & column : projection)
@@ -49,7 +48,7 @@ Names ExpressionAction::getNeededColumns() const
 }
 
 
-ExpressionAction ExpressionAction::applyFunction(const FunctionPtr & function_,
+ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_)
 {
@@ -68,7 +67,7 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionPtr & function_,
     ExpressionAction a;
     a.type = APPLY_FUNCTION;
     a.result_name = result_name_;
-    a.function = function_;
+    a.function_builder = function_;
     a.argument_names = argument_names_;
     return a;
 }
@@ -128,7 +127,7 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     a.array_join_is_left = array_join_is_left;
 
     if (array_join_is_left)
-        a.function = FunctionFactory::instance().get("emptyArrayToSingle", context);
+        a.function_builder = FunctionFactory::instance().get("emptyArrayToSingle", context);
 
     return a;
 }
@@ -160,13 +159,8 @@ ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_blo
             arguments[i] = sample_block.getByName(argument_names[i]);
         }
 
-        function->getReturnTypeAndPrerequisites(arguments, result_type, res);
-
-        for (size_t i = 0; i < res.size(); ++i)
-        {
-            if (res[i].result_name != "")
-                prerequisite_names.push_back(res[i].result_name);
-        }
+        function = function_builder->build(arguments);
+        result_type = function->getReturnType();
     }
 
     return res;
@@ -201,15 +195,6 @@ void ExpressionAction::prepare(Block & sample_block)
                     all_const = false;
             }
 
-            ColumnNumbers prerequisites(prerequisite_names.size());
-            for (size_t i = 0; i < prerequisite_names.size(); ++i)
-            {
-                prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
-                ColumnPtr col = sample_block.safeGetByPosition(prerequisites[i]).column;
-                if (!col || !col->isColumnConst())
-                    all_const = false;
-            }
-
             ColumnPtr new_column;
 
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
@@ -222,7 +207,7 @@ void ExpressionAction::prepare(Block & sample_block)
                 new_column.type = result_type;
                 sample_block.insert(std::move(new_column));
 
-                function->execute(sample_block, arguments, prerequisites, result_position);
+                function->execute(sample_block, arguments, result_position);
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -343,19 +328,11 @@ void ExpressionAction::execute(Block & block) const
                 arguments[i] = block.getPositionByName(argument_names[i]);
             }
 
-            ColumnNumbers prerequisites(prerequisite_names.size());
-            for (size_t i = 0; i < prerequisite_names.size(); ++i)
-            {
-                if (!block.has(prerequisite_names[i]))
-                    throw Exception("Not found column: '" + prerequisite_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-                prerequisites[i] = block.getPositionByName(prerequisite_names[i]);
-            }
-
             size_t num_columns_without_result = block.columns();
             block.insert({ nullptr, result_type, result_name});
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
-            function->execute(block, arguments, prerequisites, num_columns_without_result);
+            function->execute(block, arguments, num_columns_without_result);
 
             break;
         }
@@ -383,7 +360,7 @@ void ExpressionAction::execute(Block & block) const
 
                     Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-                    function->execute(tmp_block, {0}, 1);
+                    function_builder->build({src_col})->execute(tmp_block, {0}, 1);
                     non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
                 }
 
@@ -837,6 +814,7 @@ void ExpressionActions::finalize(const Names & output_columns)
                         action.type = ExpressionAction::ADD_COLUMN;
                         action.result_type = result.type;
                         action.added_column = result.column;
+                        action.function_builder = nullptr;
                         action.function = nullptr;
                         action.argument_names.clear();
                         in.clear();
@@ -889,9 +867,6 @@ void ExpressionActions::finalize(const Names & output_columns)
         for (const auto & name : action.argument_names)
             ++columns_refcount[name];
 
-        for (const auto & name : action.prerequisite_names)
-            ++columns_refcount[name];
-
         for (const auto & name_alias : action.projection)
             ++columns_refcount[name_alias.first];
     }
@@ -918,9 +893,6 @@ void ExpressionActions::finalize(const Names & output_columns)
             process(action.source_name);
 
         for (const auto & name : action.argument_names)
-            process(name);
-
-        for (const auto & name : action.prerequisite_names)
             process(name);
 
         /// For `projection`, there is no reduction in `refcount`, because the `project` action replaces the names of the columns, in effect, already deleting them under the old names.

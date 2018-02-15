@@ -27,7 +27,7 @@ perform "bad_union_all" "SELECT 1, 2 INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_o
 perform "describe_table" "DESCRIBE TABLE system.one INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_describe_table.out'"
 
 echo "performing test: clickhouse-local"
-echo -e '1\t2' | ${CLICKHOUSE_LOCAL} --structure 'col1 UInt32, col2 UInt32' --query "SELECT col1 + 1, col2 + 1 FROM table INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_clickhouse-local.out'" 2>/dev/null
+echo -e '1\t2' | ${CLICKHOUSE_LOCAL} -s --structure 'col1 UInt32, col2 UInt32' --query "SELECT col1 + 1, col2 + 1 FROM table INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_clickhouse-local.out'"
 if [ "$?" -eq 0 ]; then
     cat "${CLICKHOUSE_TMP}/test_into_outfile_clickhouse-local.out"
 else

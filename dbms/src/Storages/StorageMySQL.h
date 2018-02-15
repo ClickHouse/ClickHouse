@@ -24,11 +24,10 @@ public:
         mysqlxx::Pool && pool,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const NamesAndTypesList & columns);
+        const NamesAndTypesList & columns_);
 
     std::string getName() const override { return "MySQL"; }
     std::string getTableName() const override { return name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -44,7 +43,7 @@ private:
     std::string remote_database_name;
     std::string remote_table_name;
 
-    NamesAndTypesList columns;
+
     mysqlxx::Pool pool;
 };
 

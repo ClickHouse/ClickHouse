@@ -42,6 +42,7 @@ static void executeCreateQuery(
     ast_create_query.database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
+    interpreter.setInternal(true);
     if (pool)
         interpreter.setDatabaseLoadingThreadpool(*pool);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
@@ -135,7 +136,7 @@ void loadMetadataSystem(Context & context)
         Poco::File(global_path + "data/" SYSTEM_DATABASE).createDirectories();
         Poco::File(global_path + "metadata/" SYSTEM_DATABASE).createDirectories();
 
-        auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE);
+        auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE, context);
         context.addDatabase(SYSTEM_DATABASE, system_database);
     }
 

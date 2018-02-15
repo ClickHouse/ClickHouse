@@ -87,8 +87,8 @@ StorageMemory::StorageMemory(
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_)
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_)
 {
 }
 
