@@ -1,8 +1,0 @@
-{% if theme_extra_nav_links %}
-<ul id="extra-nav-links">
-    {% for text, uri in theme_extra_nav_links.items() %}
-    <li class="toctree-l1"><a href="{{ uri }}">{{ text }}</a></li>
-    {% endfor %}
-</ul>
-{% endif %}
-{{ toctree(includehidden=theme_sidebar_includehidden, collapse=builder != "singlehtml") }}
