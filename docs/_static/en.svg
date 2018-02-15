@@ -1,7 +1,0 @@
-<svg xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" version="1.1" id="svg-flag" viewBox="0 0 25 15" height="12" width="20" border="1">
-	<defs id="defs14"/>
-	<rect id="rect4" fill="#00247d" height="15" width="25"/>
-	<path id="path6" stroke-width="3" stroke="#fff" d="M0 0L25 15M25 0L0 15"/>
-	<path id="path8" stroke-width="5" stroke="#fff" d="M12.5 0V15M0 7.5H25"/>
-	<path id="path10" stroke-width="3" stroke="#cf142b" d="M12.5 0V15M0 7.5H25"/>
-</svg>
