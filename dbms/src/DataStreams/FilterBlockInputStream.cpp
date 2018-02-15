@@ -30,6 +30,7 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
 
     /// Determine position of filter column.
     Block src_header = expression->getSampleBlock();
+
     filter_column = src_header.getPositionByName(filter_column_name);
 }
 
