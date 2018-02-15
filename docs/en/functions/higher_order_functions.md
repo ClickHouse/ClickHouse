@@ -73,7 +73,7 @@ Returns the index of the first element in the 'arr1' array for which 'func' retu
 
 ### arrayCumSum(\[func,\] arr1, ...)
 
-Returns the cummulative sum of the array obtained from the original application of the 'func' function to each element in the 'arr' array.
+Returns the cumulative sum of the array obtained from the original application of the 'func' function to each element in the 'arr' array.
 
 Example:
 
