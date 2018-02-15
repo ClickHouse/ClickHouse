@@ -14,13 +14,12 @@ namespace DB
 
 StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::string & name_, const AsynchronousMetrics & async_metrics_)
     : name(name_),
-    columns
-    {
-        {"metric", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeFloat64>()},
-    },
     async_metrics(async_metrics_)
 {
+    columns = NamesAndTypesList{
+        {"metric", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeFloat64>()},
+    };
 }
 
 

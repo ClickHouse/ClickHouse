@@ -19,7 +19,7 @@ using namespace DB;
 
 TEST(Common, RWLockFIFO_1)
 {
-    constexpr int cycles = 10000;
+    constexpr int cycles = 1000;
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};
 
     static std::atomic<int> readers{0};
@@ -128,7 +128,7 @@ TEST(Common, RWLockFIFO_Recursive)
 
 TEST(Common, RWLockFIFO_PerfTest_Readers)
 {
-    constexpr int cycles = 1000000; // 1 mln
+    constexpr int cycles = 100000; // 100k
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};
 
     static auto fifo_lock = RWLockFIFO::create();

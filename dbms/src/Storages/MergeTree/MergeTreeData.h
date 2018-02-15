@@ -235,24 +235,25 @@ public:
         /// Merging mode. See above.
         enum Mode
         {
-            Ordinary    = 0,    /// Enum values are saved. Do not change them.
-            Collapsing  = 1,
-            Summing     = 2,
-            Aggregating = 3,
-            Unsorted    = 4,
-            Replacing   = 5,
-            Graphite    = 6,
+            Ordinary            = 0,    /// Enum values are saved. Do not change them.
+            Collapsing          = 1,
+            Summing             = 2,
+            Aggregating         = 3,
+            Unsorted            = 4,
+            Replacing           = 5,
+            Graphite            = 6,
+            VersionedCollapsing = 7,
         };
 
         Mode mode;
 
-        /// For collapsing mode.
+        /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
 
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
 
-        /// For Replacing mode. Can be empty.
+        /// For Replacing and VersionedCollapsing mode. Can be empty for Replacing.
         String version_column;
 
         /// For Graphite mode.
@@ -280,6 +281,7 @@ public:
                   const ColumnDefaults & column_defaults_,
                   Context & context_,
                   const ASTPtr & primary_expr_ast_,
+                  const ASTPtr & secondary_sort_expr_ast_,
                   const String & date_column_name,
                   const ASTPtr & partition_expr_ast_,
                   const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
@@ -300,8 +302,11 @@ public:
         return merging_params.mode == MergingParams::Collapsing
             || merging_params.mode == MergingParams::Summing
             || merging_params.mode == MergingParams::Aggregating
-            || merging_params.mode == MergingParams::Replacing;
+            || merging_params.mode == MergingParams::Replacing
+            || merging_params.mode == MergingParams::VersionedCollapsing;
     }
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const;
 
     Int64 getMaxDataPartIndex();
 
@@ -438,6 +443,8 @@ public:
     }
 
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
+    ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; } /// may return nullptr
+    SortDescription getPrimarySortDescription() const { return primary_sort_descr; }
     SortDescription getSortDescription() const { return sort_descr; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
@@ -513,6 +520,7 @@ public:
     const MergeTreeSettings settings;
 
     ASTPtr primary_expr_ast;
+    ASTPtr secondary_sort_expr_ast;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
@@ -542,13 +550,16 @@ private:
     bool require_part_metadata;
 
     ExpressionActionsPtr primary_expr;
+    /// Additional expression for sorting (of rows with the same primary keys).
+    ExpressionActionsPtr secondary_sort_expr;
+    /// Sort description for primary key. Is the prefix of sort_descr.
+    SortDescription primary_sort_descr;
+    /// Sort description for primary key + secondary sorting columns.
     SortDescription sort_descr;
 
     String database_name;
     String table_name;
     String full_path;
-
-    NamesAndTypesList columns;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizes column_sizes;
@@ -662,6 +673,9 @@ private:
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, std::unique_lock<std::mutex> & data_parts_lock);
+
+    /// Checks whether the column is in the primary key.
+    bool isPrimaryKeyColumn(const ASTPtr &node) const;
 };
 
 }

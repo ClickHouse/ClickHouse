@@ -95,7 +95,8 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
             ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
             tail = head_query.next_union_all;
 
-            interpreter->next_select_in_union_all = std::make_unique<InterpreterSelectQuery>(head, context, to_stage, subquery_depth);
+            interpreter->next_select_in_union_all =
+                std::make_unique<InterpreterSelectQuery>(head, context, to_stage, subquery_depth);
             interpreter = interpreter->next_select_in_union_all.get();
         }
     }
@@ -120,7 +121,17 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
     {
         renameColumns();
         if (!required_column_names.empty())
+        {
             rewriteExpressionList(required_column_names);
+
+            if (is_first_select_inside_union_all)
+            {
+                for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
+                    p->query_analyzer = std::make_unique<ExpressionAnalyzer>(
+                        p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth,
+                        false, p->query_analyzer->getSubqueriesForSets());
+            }
+        }
 
         basicInit(input);
     }
@@ -209,12 +220,10 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
 
 void InterpreterSelectQuery::initQueryAnalyzer()
 {
-    query_analyzer.reset(
-        new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
+    query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
 
     for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        p->query_analyzer.reset(
-            new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze));
+        p->query_analyzer = std::make_unique<ExpressionAnalyzer>(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
@@ -667,7 +676,7 @@ void InterpreterSelectQuery::executeSingleQuery()
             if (query.limit_length && hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
                 executePreLimit();
 
-            if (union_within_single_query || stream_with_non_joined_data || need_second_distinct_pass)
+            if (stream_with_non_joined_data || need_second_distinct_pass)
                 union_within_single_query = true;
 
             /// To execute LIMIT BY we should merge all streams together.

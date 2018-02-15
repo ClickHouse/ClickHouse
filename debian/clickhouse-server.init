@@ -292,6 +292,12 @@ main()
     initdb)
         initdb
         ;;
+    enable_cron)
+        enable_cron
+        ;;
+    disable_cron)
+        disable_cron
+        ;;
     *)
         echo "Usage: $0 $SUPPORTED_COMMANDS"
         exit 2

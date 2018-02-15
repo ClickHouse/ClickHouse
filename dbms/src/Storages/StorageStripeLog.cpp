@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -183,14 +184,14 @@ StorageStripeLog::StorageStripeLog(
     const ColumnDefaults & column_defaults_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_), name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageStripeLog"))
 {
-    if (columns.empty())
-        throw Exception("Empty list of columns passed to StorageStripeLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = path + escapeForFileName(name) + '/';
     if (!attach)

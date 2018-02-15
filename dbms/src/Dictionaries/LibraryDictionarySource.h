@@ -1,26 +1,25 @@
 #pragma once
 
-#include <Common/SharedLibrary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalResultDescription.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Common/SharedLibrary.h>
 #include <common/LocalDateTime.h>
 
 
 namespace Poco
 {
-    class Logger;
+class Logger;
 
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+namespace Util
+{
+    class AbstractConfiguration;
+}
 }
 
 
 namespace DB
 {
-
 class CStringsHolder;
 
 /// Allows loading dictionaries from dynamic libraries (.so)
@@ -68,5 +67,4 @@ private:
     ExternalResultDescription description;
     std::shared_ptr<CStringsHolder> settings;
 };
-
 }

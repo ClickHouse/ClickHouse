@@ -8,3 +8,6 @@ set_target_properties(util-clickhouse-compressor PROPERTIES OUTPUT_NAME "clickho
 
 add_executable (zstd_test zstd_test.cpp)
 target_link_libraries (zstd_test ${ZSTD_LIBRARY} Threads::Threads)
+if (NOT USE_INTERNAL_ZSTD_LIBRARY)
+    target_include_directories (zstd_test BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()

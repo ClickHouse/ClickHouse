@@ -41,6 +41,8 @@ LLVM_ATTRIBUTE_NORETURN static void die(const Twine &S) {
   exit(1);
 }
 
+#if 0
+
 static Flavor getFlavor(StringRef S) {
   return StringSwitch<Flavor>(S)
       .CasesLower("ld", "ld.lld", "gnu", Gnu)
@@ -90,6 +92,8 @@ static Flavor parseFlavor(std::vector<const char *> &V) {
   return parseProgname(Arg0);
 }
 
+#endif
+
 /// Universal linker main(). This linker emulates the gnu, darwin, or
 /// windows linker based on the argv[0] or -flavor option.
 int mainEntryClickHouseLLD(int Argc, char **Argv) {
@@ -99,12 +103,12 @@ int mainEntryClickHouseLLD(int Argc, char **Argv) {
   llvm_shutdown_obj Shutdown;
 
   std::vector<const char *> Args(Argv, Argv + Argc);
-/*
+#if 0
   switch (parseFlavor(Args)) {
   case Gnu:
-*/
+#endif
     return !elf::link(Args, true);
-/*
+#if 0
   case WinLink:
     return !coff::link(Args);
   case Darwin:
@@ -113,5 +117,5 @@ int mainEntryClickHouseLLD(int Argc, char **Argv) {
     die("lld is a generic driver.\n"
         "Invoke ld.lld (Unix), ld (macOS) or lld-link (Windows) instead.");
   }
-*/
+#endif
 }

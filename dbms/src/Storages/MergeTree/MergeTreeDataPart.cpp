@@ -10,7 +10,7 @@
 #include <Core/Defines.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -644,7 +644,7 @@ void MergeTreeDataPart::loadIndex()
             .getSize() / MERGE_TREE_MARK_SIZE;
     }
 
-    size_t key_size = storage.sort_descr.size();
+    size_t key_size = storage.primary_sort_descr.size();
 
     if (key_size)
     {
@@ -759,7 +759,8 @@ void MergeTreeDataPart::loadRowsCount()
 
             if (!(rows_count <= rows_approx && rows_approx < rows_count + storage.index_granularity))
                 throw Exception(
-                    "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows",
+                    "Unexpected size of column " + column.name + ": " + toString(rows_count) + " rows, expected "
+                    + toString(rows_approx) + "+-" + toString(storage.index_granularity) + " rows according to the index",
                     ErrorCodes::LOGICAL_ERROR);
 
             return;
@@ -819,7 +820,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
     if (!checksums.empty())
     {
-        if (!storage.sort_descr.empty() && !checksums.files.count("primary.idx"))
+        if (!storage.primary_sort_descr.empty() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
@@ -869,7 +870,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         };
 
         /// Check that the primary key index is not empty.
-        if (!storage.sort_descr.empty())
+        if (!storage.primary_sort_descr.empty())
             check_file_not_empty(path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)

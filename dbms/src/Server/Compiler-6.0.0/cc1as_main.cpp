@@ -397,7 +397,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
     if (Opts.ShowEncoding) {
       CE = TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx);
       MCTargetOptions Options;
-      MAB = TheTarget->createMCAsmBackend(*MRI, Opts.Triple, Opts.CPU, Options);
+      MAB = TheTarget->createMCAsmBackend(*STI, *MRI, Options);
     }
     auto FOut = llvm::make_unique<formatted_raw_ostream>(*Out);
     Str.reset(TheTarget->createAsmStreamer(
@@ -415,8 +415,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
 
     MCCodeEmitter *CE = TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx);
     MCTargetOptions Options;
-    MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*MRI, Opts.Triple,
-                                                      Opts.CPU, Options);
+    MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*STI, *MRI, Options);
     Triple T(Opts.Triple);
     Str.reset(TheTarget->createMCObjectStreamer(
                 T, Ctx, std::unique_ptr<MCAsmBackend>(MAB), *Out, std::unique_ptr<MCCodeEmitter>(CE), *STI,
@@ -442,7 +441,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
     auto Pair = StringRef(S).split('=');
     auto Sym = Pair.first;
     auto Val = Pair.second;
-    int64_t Value = 0;
+    int64_t Value;
     // We have already error checked this in the driver.
     Val.getAsInteger(0, Value);
     Ctx.setSymbolValue(Parser->getStreamer(), Sym, Value);
@@ -468,7 +467,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
 }
 
 static void LLVMErrorHandler(void *UserData, const std::string &Message,
-                             bool /*GenCrashDiag*/) {
+                             bool GenCrashDiag) {
   DiagnosticsEngine &Diags = *static_cast<DiagnosticsEngine*>(UserData);
 
   Diags.Report(diag::err_fe_error_backend) << Message;
@@ -477,7 +476,7 @@ static void LLVMErrorHandler(void *UserData, const std::string &Message,
   exit(1);
 }
 
-int cc1as_main(ArrayRef<const char *> Argv, const char * /*Argv0*/, void * /*MainAddr*/) {
+int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   // Initialize targets and assembly printers/parsers.
   InitializeAllTargetInfos();
   InitializeAllTargetMCs();

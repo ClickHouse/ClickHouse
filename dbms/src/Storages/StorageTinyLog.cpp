@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -284,14 +285,14 @@ StorageTinyLog::StorageTinyLog(
     const ColumnDefaults & column_defaults_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_), name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
-    if (columns.empty())
-        throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = path + escapeForFileName(name) + '/';
     if (!attach)

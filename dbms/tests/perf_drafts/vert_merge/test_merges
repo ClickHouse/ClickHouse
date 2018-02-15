@@ -22,8 +22,8 @@ table_name="ontime"
 table="test.ontime"
 
 function read_src_data {
-	clickhouse-local --file "$SOURCE" --input-format CSV --structure "$STRUCT" -of Native --query "$@" 2>/dev/null
-	#clickhouse-local --file "$SOURCE" --input-format Native --structure "$STRUCT" -of Native --query "$@" 2>/dev/null
+	clickhouse-local -s --file "$SOURCE" --input-format CSV --structure "$STRUCT" -of Native --query "$@"
+	#clickhouse-local -s --file "$SOURCE" --input-format Native --structure "$STRUCT" -of Native --query "$@"
 }
 
 function set_vertical_alg {
@@ -71,7 +71,7 @@ function get_last_merge_time {
 }
 
 function total_merge_time_from_log {
-    cat /var/log/clickhouse-server/clickhouse-server.log | grep "(Merger): Merge sorted" | cut -d " " -f 21 | clickhouse-local -S "d Float64" --query "SELECT round(sum(d), 3) FROM table" 2>/dev/null
+    cat /var/log/clickhouse-server/clickhouse-server.log | grep "(Merger): Merge sorted" | cut -d " " -f 21 | clickhouse-local -s -S "d Float64" --query "SELECT round(sum(d), 3) FROM table"
 }
 
 function get_max_clickhouse_server_memory {
