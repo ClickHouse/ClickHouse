@@ -280,128 +280,100 @@ void HashedDictionary::createAttributes()
     }
 }
 
+void HashedDictionary::blockToAttributes(const Block &block)
+{
+    const auto & id_column = *block.safeGetByPosition(0).column;
+    element_count += id_column.size();
+
+    for (const auto attribute_idx : ext::range(0, attributes.size()))
+    {
+        const auto &attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+        auto &attribute = attributes[attribute_idx];
+
+        for (const auto row_idx : ext::range(0, id_column.size()))
+            setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
+    }
+}
+
 void HashedDictionary::updateData()
 {
-    if (!saved_block || saved_block->rows() == 0) {
-        auto stream = source_ptr->loadAll();
+    if (!saved_block || saved_block->rows() == 0)
+    {
+        auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
-        while (const auto block = stream->read()) {
+        while (const auto block = stream->read())
+        {
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!saved_block)
                 saved_block = std::make_shared<DB::Block>(block.cloneEmpty());
-            for (const auto attribute_idx : ext::range(0, attributes.size() + 1)) {
+            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
+            {
                 const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
                 MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->mutate();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
         stream->readSuffix();
-
     }
     else
     {
-        auto stream = source_ptr->loadAll();
+        auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
-        const auto &saved_id_column = *saved_block->safeGetByPosition(0).column;
         while (const auto block = stream->read())
         {
+            const auto &saved_id_column = *saved_block->safeGetByPosition(0).column;
             const auto &update_id_column = *block.safeGetByPosition(0).column;
-            const auto &saved_columns = saved_block->mutateColumns();
 
-            std::vector<int> update_indices, saved_indices;
-            for (size_t i = 0; i < saved_id_column.size(); ++i)
+            std::unordered_map<Key, std::vector<size_t>> update_ids;
+            for (size_t row = 0; row < update_id_column.size(); ++row)
             {
-                for (size_t j = 0; j < update_id_column.size(); ++j)
-                {
-                    int need_update = saved_id_column.compareAt(i, j, update_id_column, -1);
-                    if (need_update == 0)
-                    {
-                        update_indices.push_back(j); ///Indices of columns that are for update
-                        saved_indices.push_back(i);  ///Indices of columns that need to be updated
-                    }
-                }
+                const auto id = update_id_column.get64(row);
+                update_ids[id].push_back(row);
             }
 
-            BlockPtr temp_block = std::make_shared<DB::Block>(saved_block->cloneEmpty());
+            const size_t saved_rows = saved_id_column.size();
+            IColumn::Filter filter(saved_rows);
+            std::unordered_map<Key, std::vector<size_t>>::iterator it;
+
+            for (size_t row = 0; row < saved_id_column.size(); ++row)
+            {
+                auto id = saved_id_column.get64(row);
+                it = update_ids.find(id);
+
+                if (it != update_ids.end())
+                    filter[row] = 0;
+                else
+                    filter[row] = 1;
+            }
+
+            auto block_columns = block.mutateColumns();
             for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
             {
-                if (update_indices.empty())
-                    saved_columns[attribute_idx]->insertRangeFrom(*block.safeGetByPosition(attribute_idx).column, 0,
-                                                                  block.safeGetByPosition(attribute_idx).column->size());
-                else
-                {
-                    const auto &temp_columns = temp_block->mutateColumns();
-                    for (size_t i = 0; i < saved_block->rows(); ++i)
-                    {
-                        std::vector<int>::iterator it;
-                        it = std::find(saved_indices.begin(), saved_indices.end(), i);
-                        if (it != saved_indices.end())
-                        {
-                            int pos = std::distance(saved_indices.begin(), it);
-                            temp_columns[attribute_idx]->insertFrom(*block.safeGetByPosition(attribute_idx).column, pos);
-                        }
-                        else
-                            temp_columns[attribute_idx]->insertFrom(*saved_block->safeGetByPosition(attribute_idx).column, i);
-                    }
-                    for (size_t i = 0; i < update_id_column.size(); ++i)
-                    {
-                        bool exists = std::any_of(update_indices.begin(), update_indices.end(), [&](size_t x)
-                        {
-                            return x == i;
-                        });
-                        if (!exists)
-                            temp_columns[attribute_idx]->insertFrom(*block.safeGetByPosition(attribute_idx).column, i);
-                    }
-                }
+                auto & column = saved_block->safeGetByPosition(attribute_idx).column;
+                const auto & filtered_column = column->filter(filter, -1);
+
+                block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
             }
-            if (temp_block->rows() != 0)
-            {
-                saved_block.reset();
-                saved_block = std::make_shared<DB::Block>(*temp_block);
-                temp_block.reset();
-            }
+
+            saved_block->setColumns(std::move(block_columns));
         }
         stream->readSuffix();
     }
 
     if (saved_block)
-    {
-        const auto &id_column = *saved_block->safeGetByPosition(0).column;
-        element_count += id_column.size();
-
-        for (const auto attribute_idx : ext::range(0, attributes.size()))
-        {
-            const auto &attribute_column = *saved_block->safeGetByPosition(attribute_idx + 1).column;
-            auto &attribute = attributes[attribute_idx];
-
-            for (const auto row_idx : ext::range(0, id_column.size()))
-                setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
-        }
-    }
+        blockToAttributes(*saved_block.get());
 }
 
 void HashedDictionary::loadData()
 {
-
-    if(!source_ptr->hasUpdateField()) {
+    if (!source_ptr->hasUpdateField()) {
         auto stream = source_ptr->loadAll();
         stream->readPrefix();
 
-        while (const auto block = stream->read()) {
-            const auto &id_column = *block.safeGetByPosition(0).column;
-
-            element_count += id_column.size();
-
-            for (const auto attribute_idx : ext::range(0, attributes.size())) {
-                const auto &attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-                auto &attribute = attributes[attribute_idx];
-
-                for (const auto row_idx : ext::range(0, id_column.size()))
-                    setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
-            }
-        }
+        while (const auto block = stream->read())
+            blockToAttributes(block);
 
         stream->readSuffix();
     }

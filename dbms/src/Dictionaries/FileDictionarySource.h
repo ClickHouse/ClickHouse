@@ -21,6 +21,11 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override
+    {
+        throw Exception{"Method loadUpdatedAll is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception{"Method loadIds is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};

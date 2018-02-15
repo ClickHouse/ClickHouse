@@ -155,6 +155,7 @@ private:
     };
 
     void createAttributes();
+    void blockToAttributes(const Block & block);
     void updateData();
     void loadData();
 
@@ -220,7 +221,6 @@ private:
     mutable std::atomic<size_t> query_count{0};
 
     std::chrono::time_point<std::chrono::system_clock> creation_time;
-    std::chrono::time_point<std::chrono::system_clock> update_time;
 
     std::exception_ptr creation_exception;
 

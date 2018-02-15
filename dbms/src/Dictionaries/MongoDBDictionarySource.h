@@ -42,6 +42,11 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override
+    {
+        throw Exception{"Method loadUpdatedAll is unsupported for MongoDBDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
+
     bool supportsSelectiveLoad() const override { return true; }
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;

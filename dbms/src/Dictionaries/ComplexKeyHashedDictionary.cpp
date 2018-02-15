@@ -227,6 +227,47 @@ void ComplexKeyHashedDictionary::createAttributes()
     }
 }
 
+void ComplexKeyHashedDictionary::blockToAttributes(const Block & block)
+{
+    /// created upfront to avoid excess allocations
+    const auto keys_size = dict_struct.key->size();
+    StringRefs keys(keys_size);
+
+    const auto attributes_size = attributes.size();
+    const auto rows = block.rows();
+    element_count += rows;
+
+    const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
+                                                   [&](const size_t attribute_idx) {
+                                                       return block.safeGetByPosition(attribute_idx).column;
+                                                   });
+
+    const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
+                                                         [&](const size_t attribute_idx) {
+                                                             return block.safeGetByPosition(
+                                                                     keys_size + attribute_idx).column;
+                                                         });
+
+    for (const auto row_idx : ext::range(0, rows)) {
+        /// calculate key once per row
+        const auto key = placeKeysInPool(row_idx, key_column_ptrs, keys, keys_pool);
+
+        auto should_rollback = false;
+
+        for (const auto attribute_idx : ext::range(0, attributes_size)) {
+            const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
+            auto &attribute = attributes[attribute_idx];
+            const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
+            if (!inserted)
+                should_rollback = true;
+        }
+
+        /// @note on multiple equal keys the mapped value for the first one is stored
+        if (should_rollback)
+            keys_pool.rollback(key.size);
+    }
+}
+
 void ComplexKeyHashedDictionary::updateData()
 {
     /// created upfront to avoid excess allocations
@@ -237,7 +278,7 @@ void ComplexKeyHashedDictionary::updateData()
 
     if (!saved_block || saved_block->rows() == 0)
     {
-        auto stream = source_ptr->loadAll();
+        auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
         while (const auto block = stream->read())
@@ -252,135 +293,63 @@ void ComplexKeyHashedDictionary::updateData()
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
-
         stream->readSuffix();
     }
     else
     {
-        auto stream = source_ptr->loadAll();
-
-        const auto saved_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
-        {
-            return saved_block->safeGetByPosition(key_idx).column;
-        });
+        auto stream = source_ptr->loadUpdatedAll();
 
         stream->readPrefix();
         while (const auto block = stream->read())
         {
+            const auto saved_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
+            {
+                return saved_block->safeGetByPosition(key_idx).column;
+            });
+
             const auto update_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
             {
                 return block.safeGetByPosition(key_idx).column;
             });
 
+            Arena temp_key_pool;
+            ContainerType <std::vector<size_t>> update_key_hash;
 
-            std::vector<int> update_indices, saved_indices;
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                const auto u_key = placeKeysInPool(i, update_key_column_ptrs, keys, temp_key_pool);
+                update_key_hash[u_key].push_back(i);
+            }
+
+            const size_t rows = saved_block->rows();
+            IColumn::Filter filter(rows);
+
             for (size_t i = 0; i < saved_block->rows(); ++i)
             {
-                for (size_t j = 0; j < block.rows(); ++j)
-                {
-                    Arena s_temp_key_pool;
-                    Arena u_temp_key_pool;
-                    const auto s_key = placeKeysInPool(i, saved_key_column_ptrs, keys, s_temp_key_pool);
-                    const auto u_key = placeKeysInPool(j, update_key_column_ptrs, keys, s_temp_key_pool);
-                    if (s_key.toString() == u_key.toString())
-                    {
-                        update_indices.push_back(j); ///Indices of columns that are for update
-                        saved_indices.push_back(i);  ///Indices of columns that need to be updated
-                    }
-                    s_temp_key_pool.rollback(s_key.size);
-                    u_temp_key_pool.rollback(u_key.size);
-                }
+                const auto s_key = placeKeysInPool(i, saved_key_column_ptrs, keys, temp_key_pool);
+                auto it = update_key_hash.find(s_key);
+                if (it != std::end(update_key_hash))
+                    filter[i] = 0;
+                else
+                    filter[i] = 1;
             }
 
-            auto saved_columns = saved_block->mutateColumns();
-
-            BlockPtr temp_block = std::make_shared<DB::Block>(saved_block->cloneEmpty());
+            auto block_columns = block.mutateColumns();
             for (const auto attribute_idx : ext::range(0, keys_size + attributes_size))
             {
-                if (update_indices.empty())
-                    saved_columns[attribute_idx]->insertRangeFrom(*block.safeGetByPosition(attribute_idx).column, 0,
-                                                                  block.safeGetByPosition(attribute_idx).column->size());
-                else
-                {
-                    const auto &temp_columns = temp_block->mutateColumns();
-                    for (size_t i = 0; i < saved_block->rows(); ++i)
-                    {
-                        std::vector<int>::iterator it;
-                        it = std::find(saved_indices.begin(), saved_indices.end(), i);
-                        if (it != saved_indices.end())
-                        {
-                            int pos = std::distance(saved_indices.begin(), it);
-                            temp_columns[attribute_idx]->insertFrom(*block.safeGetByPosition(attribute_idx).column, pos);
-                        }
-                        else
-                        {
-                            temp_columns[attribute_idx]->insertFrom(*saved_block->safeGetByPosition(attribute_idx).column, i);
-                        }
-                    }
+                auto & column = saved_block->safeGetByPosition(attribute_idx).column;
+                const auto & filtered_column = column->filter(filter, -1);
 
-                    for (size_t i = 0; i < block.rows(); ++i)
-                    {
-                        bool exists = std::any_of(update_indices.begin(), update_indices.end(), [&](size_t x)
-                        {
-                            return x == i;
-                        });
-                        if (!exists)
-                            temp_columns[attribute_idx]->insertFrom(*block.safeGetByPosition(attribute_idx).column, i);
-                    }
-                }
+                block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
+            }
 
-            }
-            if (temp_block->rows() != 0)
-            {
-                saved_block.reset();
-                saved_block = std::make_shared<DB::Block>(*temp_block);
-                temp_block.reset();
-            }
-            else
-                saved_block->setColumns(std::move(saved_columns));
+            saved_block->setColumns(std::move(block_columns));
         }
         stream->readSuffix();
     }
 
-
     if (saved_block)
-    {
-        const auto rows = saved_block->rows();
-        element_count += rows;
-
-        const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
-            [&](const size_t attribute_idx)
-            {
-                return saved_block->safeGetByPosition(attribute_idx).column;
-            });
-
-        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
-            [&](const size_t attribute_idx)
-            {
-                return saved_block->safeGetByPosition(keys_size + attribute_idx).column;
-            });
-
-        for (const auto row_idx : ext::range(0, rows))
-        {
-            /// calculate key once per row
-            const auto key = placeKeysInPool(row_idx, key_column_ptrs, keys, keys_pool);
-
-            auto should_rollback = false;
-
-            for (const auto attribute_idx : ext::range(0, attributes_size))
-            {
-                const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
-                auto &attribute = attributes[attribute_idx];
-                const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
-                if (!inserted)
-                    should_rollback = true;
-            }
-
-            /// @note on multiple equal keys the mapped value for the first one is stored
-            if (should_rollback)
-                keys_pool.rollback(key.size);
-        }
-    }
+        blockToAttributes(*saved_block.get());
 }
 
 void ComplexKeyHashedDictionary::loadData()
@@ -389,47 +358,8 @@ void ComplexKeyHashedDictionary::loadData()
         auto stream = source_ptr->loadAll();
         stream->readPrefix();
 
-        /// created upfront to avoid excess allocations
-        const auto keys_size = dict_struct.key->size();
-        StringRefs keys(keys_size);
-
-        const auto attributes_size = attributes.size();
-
-        while (const auto block = stream->read()) {
-            const auto rows = block.rows();
-            element_count += rows;
-
-            const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
-                [&](const size_t attribute_idx) {
-                    return block.safeGetByPosition(attribute_idx).column;
-                });
-
-            const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
-                [&](const size_t attribute_idx) {
-                    return block.safeGetByPosition(
-                            keys_size + attribute_idx).column;
-                });
-
-            for (const auto row_idx : ext::range(0, rows)) {
-                /// calculate key once per row
-                const auto key = placeKeysInPool(row_idx, key_column_ptrs, keys, keys_pool);
-
-                auto should_rollback = false;
-
-                for (const auto attribute_idx : ext::range(0, attributes_size)) {
-                    const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
-                    auto &attribute = attributes[attribute_idx];
-                    const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
-                    if (!inserted)
-                        should_rollback = true;
-                }
-
-                /// @note on multiple equal keys the mapped value for the first one is stored
-                if (should_rollback)
-                    keys_pool.rollback(key.size);
-            }
-
-        }
+        while (const auto block = stream->read())
+            blockToAttributes(block);
 
         stream->readSuffix();
     }

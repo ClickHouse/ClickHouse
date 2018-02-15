@@ -25,6 +25,8 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override;
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(
@@ -40,17 +42,16 @@ public:
 
     std::string toString() const override;
 
-    void setDate();
 
 private:
+    std::string getUpdateFieldAndDate();
+
     Poco::Logger * log;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string command;
-    std::string command_update;
     const std::string update_field;
-    std::string date;
     const std::string format;
     Block sample_block;
     const Context & context;
