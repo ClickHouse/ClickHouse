@@ -198,7 +198,7 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        res.emplace_back(std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", lazily_create_stream));
+        res.emplace_back(std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream));
     }
     else
         emplace_remote_stream();

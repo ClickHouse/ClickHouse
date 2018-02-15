@@ -115,7 +115,6 @@ std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what
 std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
 {
     stream << "SubqueryForSet(source = " << what.source
-    << ", source_sample = " <<  what.source_sample
     // TODO: << ", set = " <<  what.set << ", join = " <<  what.join
     << ", table = " << what.table
     << ")";
