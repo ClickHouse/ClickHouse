@@ -156,6 +156,8 @@ private:
 
     void createAttributes();
 
+    void blockToAttributes(const Block & block);
+
     void updateData();
 
     void loadData();

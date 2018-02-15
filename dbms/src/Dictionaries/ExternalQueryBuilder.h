@@ -43,7 +43,7 @@ struct ExternalQueryBuilder
     std::string composeLoadAllQuery() const;
 
     /** Generate a query to load data after certain time point*/
-    std::string composeUpdateQuery(const std::string &update_field, std::string &time_point) const;
+    std::string composeUpdateQuery(const std::string &update_field, const std::string &time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
     std::string composeLoadIdsQuery(const std::vector<UInt64> & ids);

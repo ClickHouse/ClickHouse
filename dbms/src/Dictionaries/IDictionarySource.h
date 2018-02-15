@@ -19,6 +19,9 @@ public:
     /// Returns an input stream with all the data available from this source.
     virtual BlockInputStreamPtr loadAll() = 0;
 
+    /// Returns an input stream with updated data available from this source.
+    virtual BlockInputStreamPtr loadUpdatedAll() = 0;
+
     /** Indicates whether this source supports "random access" loading of data
       *  loadId and loadIds can only be used if this function returns true.
       */

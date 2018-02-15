@@ -35,6 +35,8 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override;
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(
@@ -50,9 +52,9 @@ public:
 
     std::string toString() const override;
 
-    void setDate();
-
 private:
+    std::string getUpdateFieldAndDate();
+
     static std::string quoteForLike(const std::string s);
 
     LocalDateTime getLastModification() const;
@@ -68,13 +70,11 @@ private:
     const std::string table;
     const std::string where;
     const std::string update_field;
-    std::string date;
     const bool dont_check_update_time;
     Block sample_block;
     mutable mysqlxx::PoolWithFailover pool;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    std::string load_all_query_update;
     LocalDateTime last_modification;
     std::string invalidate_query;
     mutable std::string invalidate_query_response;

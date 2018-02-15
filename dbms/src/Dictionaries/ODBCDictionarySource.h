@@ -38,6 +38,8 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override;
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(
@@ -47,23 +49,26 @@ public:
 
     bool supportsSelectiveLoad() const override;
 
-    ///Not yet supported
-    bool hasUpdateField() const override { return false; }
+    bool hasUpdateField() const override;
 
     DictionarySourcePtr clone() const override;
 
     std::string toString() const override;
 
 private:
+    std::string getUpdateFieldAndDate();
+
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
     Poco::Logger * log;
 
+    std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string db;
     const std::string table;
     const std::string where;
+    const std::string update_field;
     Block sample_block;
     std::shared_ptr<Poco::Data::SessionPool> pool = nullptr;
     ExternalQueryBuilder query_builder;
