@@ -56,7 +56,6 @@ struct ArrayMapImpl
     }
 };
 
-
 struct ArrayFilterImpl
 {
     static bool needBoolean() { return true; }
