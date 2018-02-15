@@ -73,6 +73,7 @@ public:
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
     bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
     bool checkTableCanBeDropped() const override;
 
@@ -139,6 +140,7 @@ protected:
         bool attach,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
+        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.

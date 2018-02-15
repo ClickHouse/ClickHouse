@@ -1163,17 +1163,18 @@ bool run()
     return performTests(entries);
 }
 
-static DB::Context context = DB::Context::createGlobal();
 
 TestResult check(const TestEntry & entry)
 {
+    static DB::Context context = DB::Context::createGlobal();
+
     try
     {
 
         auto storage_distributed_visits = StorageDistributedFake::create("remote_db", "remote_visits", entry.shard_count);
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);
 
-        DB::DatabasePtr database = std::make_shared<DB::DatabaseOrdinary>("test", "./metadata/test/");
+        DB::DatabasePtr database = std::make_shared<DB::DatabaseOrdinary>("test", "./metadata/test/", context);
         context.addDatabase("test", database);
         database->attachTable("visits_all", storage_distributed_visits);
         database->attachTable("hits_all", storage_distributed_hits);

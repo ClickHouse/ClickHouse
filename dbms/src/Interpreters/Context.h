@@ -318,8 +318,10 @@ public:
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
+    void setClustersConfig(const ConfigurationPtr & config, const String & config_name = "remote_servers");
+    /// Sets custom cluster, but doesn't update configuration
+    void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     void reloadClusterConfig();
-    void setClustersConfig(const ConfigurationPtr & config);
 
     Compiler & getCompiler();
     QueryLog & getQueryLog();
@@ -351,9 +353,10 @@ public:
     ApplicationType getApplicationType() const;
     void setApplicationType(ApplicationType type);
 
-    /// Set once
+    /// Sets default_profile and system_profile, must be called once during the initialization
+    void setDefaultProfiles(const Poco::Util::AbstractConfiguration & config);
     String getDefaultProfileName() const;
-    void setDefaultProfileName(const String & name);
+    String getSystemProfileName() const;
 
     /// Base path for format schemas
     String getFormatSchemaPath() const;

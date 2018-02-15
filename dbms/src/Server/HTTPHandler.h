@@ -19,7 +19,6 @@ namespace DB
 {
 
 class WriteBufferFromHTTPServerResponse;
-class CascadeWriteBuffer;
 
 
 class HTTPHandler : public Poco::Net::HTTPRequestHandler

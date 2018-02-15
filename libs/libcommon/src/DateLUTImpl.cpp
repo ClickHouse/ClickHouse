@@ -1,5 +1,14 @@
-#include <cctz/civil_time.h>
+#if __has_include(<cctz/civil_time.h>)
+#include <cctz/civil_time.h> // bundled, debian
+#else
+#include <civil_time.h> // freebsd
+#endif
+
+#if __has_include(<cctz/time_zone.h>)
 #include <cctz/time_zone.h>
+#else
+#include <time_zone.h>
+#endif
 
 #include <common/DateLUTImpl.h>
 #include <Poco/Exception.h>

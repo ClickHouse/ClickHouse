@@ -133,9 +133,9 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        MutableColumnPtr mutable_data = data->assumeMutable();
-        auto res = mutable_data->deserializeAndInsertFromArena(pos);
-        mutable_data->popBack(1);
+        auto & mutable_data = data->assumeMutableRef();
+        auto res = mutable_data.deserializeAndInsertFromArena(pos);
+        mutable_data.popBack(1);
         ++s;
         return res;
     }
@@ -191,7 +191,7 @@ public:
 
     /// Not part of the common interface.
 
-    IColumn & getDataColumn() { return *data->assumeMutable(); }
+    IColumn & getDataColumn() { return data->assumeMutableRef(); }
     const IColumn & getDataColumn() const { return *data; }
     //MutableColumnPtr getDataColumnMutablePtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }

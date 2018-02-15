@@ -30,8 +30,8 @@ StorageDictionary::StorageDictionary(
     const ColumnDefaults & column_defaults_,
     const DictionaryStructure & dictionary_structure_,
     const String & dictionary_name_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    columns(columns_), dictionary_name(dictionary_name_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
+    dictionary_name(dictionary_name_),
     logger(&Poco::Logger::get("StorageDictionary"))
 {
     checkNamesAndTypesCompatibleWithDictionary(dictionary_structure_);
