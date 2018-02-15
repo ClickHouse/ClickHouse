@@ -21,6 +21,15 @@ BlockIO InterpreterExistsQuery::execute()
 }
 
 
+Block InterpreterExistsQuery::getSampleBlock()
+{
+    return Block{{
+        ColumnUInt8::create(),
+        std::make_shared<DataTypeUInt8>(),
+        "result" }};
+}
+
+
 BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
 {
     const ASTExistsQuery & ast = typeid_cast<const ASTExistsQuery &>(*query_ptr);

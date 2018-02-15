@@ -149,37 +149,48 @@ bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
 
 void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
 {
-    auto query_table = query.table();
-
-    if (query_table && typeid_cast<ASTSelectQuery *>(query_table.get()))
+    /// Read from prepared input.
+    if (input)
     {
         if (table_column_names.empty())
-        {
-            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getNamesAndTypesList();
-        }
+            table_column_names = input->getHeader().getNamesAndTypesList();
     }
     else
     {
-        if (query_table && typeid_cast<const ASTFunction *>(query_table.get()))
+        auto table_expression = query.table();
+
+        /// Read from subquery.
+        if (table_expression && typeid_cast<const ASTSelectQuery *>(table_expression.get()))
         {
-            /// Get the table function
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
-            /// Run it and remember the result
-            storage = table_function_ptr->execute(query_table, context);
+            if (table_column_names.empty())
+                table_column_names = InterpreterSelectQuery::getSampleBlock(table_expression, context).getNamesAndTypesList();
         }
         else
         {
-            String database_name;
-            String table_name;
+            /// Read from table function.
+            if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
+            {
+                /// Get the table function
+                TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
+                    typeid_cast<const ASTFunction *>(table_expression.get())->name, context);
+                /// Run it and remember the result
+                storage = table_function_ptr->execute(table_expression, context);
+            }
+            else
+            {
+                /// Read from table.
+                String database_name;
+                String table_name;
 
-            getDatabaseAndTableNames(database_name, table_name);
+                getDatabaseAndTableNames(database_name, table_name);
 
-            storage = context.getTable(database_name, table_name);
+                storage = context.getTable(database_name, table_name);
+            }
+
+            table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+            if (table_column_names.empty())
+                table_column_names = storage->getColumnsListNonMaterialized();
         }
-
-        table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
-        if (table_column_names.empty())
-            table_column_names = storage->getColumnsListNonMaterialized();
     }
 
     if (table_column_names.empty())
@@ -849,7 +860,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                 optimize_prewhere(*merge_tree);
         }
 
-        streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+        /// If there was no already prepared input.
+        if (streams.empty())
+            streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         /// The storage has no data for this query.
         if (streams.empty())

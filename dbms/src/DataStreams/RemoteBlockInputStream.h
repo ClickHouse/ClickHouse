@@ -24,7 +24,7 @@ public:
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             Connection & connection,
-            const String & query_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -32,7 +32,7 @@ public:
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -40,7 +40,7 @@ public:
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -78,7 +78,7 @@ public:
         return multiplexed_connections->getBlockExtraInfo();
     }
 
-    Block getHeader() override;
+    Block getHeader() override { return header; }
 
 protected:
     /// Send all temporary tables to remote servers
