@@ -9,6 +9,9 @@ namespace DB
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const Context & context)
 {
+    if (arg.type->equals(*type))
+        return arg.column;
+
     Block temporary_block
     {
         arg,

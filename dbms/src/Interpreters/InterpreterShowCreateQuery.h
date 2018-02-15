@@ -21,6 +21,8 @@ public:
 
     BlockIO execute() override;
 
+    static Block getSampleBlock();
+
 private:
     ASTPtr query_ptr;
     const Context & context;

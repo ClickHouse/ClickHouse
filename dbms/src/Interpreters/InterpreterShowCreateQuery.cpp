@@ -23,6 +23,15 @@ BlockIO InterpreterShowCreateQuery::execute()
 }
 
 
+Block InterpreterShowCreateQuery::getSampleBlock()
+{
+    return Block{{
+        ColumnString::create(),
+        std::make_shared<DataTypeString>(),
+        "statement"}};
+}
+
+
 BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
     const ASTShowCreateQuery & ast = typeid_cast<const ASTShowCreateQuery &>(*query_ptr);
