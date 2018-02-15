@@ -174,7 +174,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     /// If you need to calculate some columns to sort, we do it.
     if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    {
         data.getPrimaryExpression()->execute(block);
+        auto secondary_sort_expr = data.getSecondarySortExpression();
+        if (secondary_sort_expr)
+            secondary_sort_expr->execute(block);
+    }
 
     SortDescription sort_descr = data.getSortDescription();
 

@@ -1560,7 +1560,11 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
 void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block)
 {
     for (auto & child : node->children)
-        makeSetsForIndexImpl(child, sample_block);
+    {
+        /// Process expression only in current subquery
+        if (!typeid_cast<ASTSubquery *>(child.get()))
+            makeSetsForIndexImpl(child, sample_block);
+    }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
     if (func && func->kind == ASTFunction::FUNCTION && functionIsInOperator(func->name))
@@ -1585,9 +1589,12 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 }
                 catch (const Exception & e)
                 {
-                    /// in `sample_block` there are no columns that add `getActions`
-                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
+                    /// in `sample_block` there are no columns that are added by `getActions`
+                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
                         throw;
+
+                    /// TODO: Delete the catch in the next release
+                    tryLogCurrentException(&Poco::Logger::get("ExpressionAnalyzer"));
                 }
             }
         }

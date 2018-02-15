@@ -34,8 +34,6 @@ Block AggregatingSortedBlockInputStream::readImpl()
     /// Additional initialization.
     if (next_key.empty())
     {
-        next_key.columns.resize(description.size());
-
         /// Fill in the column numbers that need to be aggregated.
         for (size_t i = 0; i < num_columns; ++i)
         {
@@ -88,7 +86,6 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
 
         if (current_key.empty())    /// The first key encountered.
         {
-            current_key.columns.resize(description.size());
             setPrimaryKeyRef(current_key, current);
             key_differs = true;
         }
