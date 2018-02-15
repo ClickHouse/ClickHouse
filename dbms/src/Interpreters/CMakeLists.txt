@@ -5,8 +5,8 @@ else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
 endif ()
 
-set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
-set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
+set (INTERNAL_COMPILER_EXECUTABLE "${CMAKE_INSTALL_FULL_BINDIR}/clickhouse-clang" CACHE STRING "")
+set (INTERNAL_LINKER_EXECUTABLE "${CMAKE_INSTALL_FULL_BINDIR}/clickhouse-lld" CACHE STRING "")
 
 # Disabling asan reporting for these tools
 if (CMAKE_BUILD_TYPE_UC STREQUAL "ASAN")
@@ -20,7 +20,7 @@ set (INTERNAL_COMPILER_HEADERS "${PATH_SHARE}/clickhouse/headers" CACHE STRING "
 set (INTERNAL_COMPILER_HEADERS_ROOT "${INTERNAL_COMPILER_HEADERS}" CACHE STRING "")
 set (INTERNAL_COMPILER_CUSTOM_ROOT ON CACHE INTERNAL "")
 
-set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE} ${CXX_FLAGS_INTERNAL_COMPILER} -x c++ -march=native -fPIC -fvisibility=hidden -fno-implement-inlines -nostdinc -nostdinc++ -Wno-unused-command-line-argument -Bprefix=${PATH_SHARE}/clickhouse -isysroot=${INTERNAL_COMPILER_HEADERS_ROOT}" CACHE STRING "")
+set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE_UC}} ${CXX_FLAGS_INTERNAL_COMPILER} -x c++ -march=native -fPIC -fvisibility=hidden -fno-implement-inlines -nostdinc -nostdinc++ -Wno-unused-command-line-argument -Bprefix=${PATH_SHARE}/clickhouse -isysroot=${INTERNAL_COMPILER_HEADERS_ROOT}" CACHE STRING "")
 string(REPLACE "-no-pie" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
 if (INTERNAL_COMPILER_NO_WARNING)
     string (REPLACE "-Wall" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})

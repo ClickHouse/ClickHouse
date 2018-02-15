@@ -486,9 +486,11 @@ static void terminate_handler()
 }
 
 
-static std::string createDirectory(const std::string & _path)
+static std::string createDirectory(const std::string & file)
 {
-    auto path = Poco::Path(_path).makeDirectory().popDirectory();
+    auto path = Poco::Path(file).makeParent();
+    if (path.toString().empty())
+        return "";
     Poco::File(path).createDirectories();
     return path.toString();
 };

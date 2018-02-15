@@ -371,7 +371,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     OffsetColumns offset_columns;
 
-    auto sort_description = storage.getSortDescription();
+    auto sort_description = storage.getPrimarySortDescription();
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_columns(sort_description.size());

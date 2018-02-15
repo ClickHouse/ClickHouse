@@ -185,9 +185,12 @@ SharedLibraryPtr Compiler::getOrCount(
 static void addCodeToAssertHeadersMatch(WriteBuffer & out)
 {
     out <<
+        "#define STRING2(x) #x\n"
+        "#define STRING(x) STRING2(x)\n"
         "#include <Common/config_version.h>\n"
         "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
-        "#error \"ClickHouse headers revision doesn't match runtime revision of the server.\"\n"
+        "#pragma message \"ClickHouse headers revision = \" STRING(VERSION_REVISION) \n"
+        "#error \"ClickHouse headers revision doesn't match runtime revision of the server (" << ClickHouseRevision::get() << ").\"\n"
         "#endif\n\n";
 }
 
@@ -223,7 +226,7 @@ void Compiler::compile(
             " " INTERNAL_COMPILER_FLAGS
             /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
             /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
-            " -fuse-ld=/usr/bin/" INTERNAL_LINKER_EXECUTABLE
+            " -fuse-ld=" INTERNAL_LINKER_EXECUTABLE
 
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT

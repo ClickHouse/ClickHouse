@@ -131,7 +131,6 @@ Block SummingSortedBlockInputStream::readImpl()
     if (current_row.empty())
     {
         current_row.resize(num_columns);
-        next_key.columns.resize(description.size());
 
         /// name of nested structure -> the column numbers that refer to it.
         std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
@@ -323,8 +322,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         bool key_differs;
 
         if (current_key.empty())    /// The first key encountered.
-         {
-            current_key.columns.resize(description.size());
+        {
             setPrimaryKeyRef(current_key, current);
             key_differs = true;
         }
