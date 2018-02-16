@@ -72,7 +72,7 @@ const Block & TotalsHavingBlockInputStream::getTotals()
                 addToTotals(overflow_aggregates, nullptr);
         }
 
-        totals = unfinalized_header.cloneWithColumns(std::move(current_totals));
+        totals = children.at(0)->getHeader().cloneWithColumns(std::move(current_totals));
         finalize(totals);
     }
 
@@ -86,7 +86,6 @@ const Block & TotalsHavingBlockInputStream::getTotals()
 Block TotalsHavingBlockInputStream::getHeader()
 {
     Block res = children.at(0)->getHeader();
-    unfinalized_header = res;
     finalize(res);
     if (expression)
         expression->execute(res);
@@ -96,9 +95,6 @@ Block TotalsHavingBlockInputStream::getHeader()
 
 Block TotalsHavingBlockInputStream::readImpl()
 {
-    if (!unfinalized_header)
-        getHeader();
-
     Block finalized;
     Block block;
 
