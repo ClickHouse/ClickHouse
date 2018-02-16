@@ -1026,7 +1026,7 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
-    size_t rows = result.size();
+    size_t rows = result.sizeWithoutOverflowRow();
     LOG_TRACE(log, std::fixed << std::setprecision(3)
         << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."

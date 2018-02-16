@@ -160,6 +160,8 @@ static Block adaptBlockStructure(const Block & block, const Block & header, cons
         return block;
 
     Block res;
+    res.info = block.info;
+
     for (const auto & elem : header)
         res.insert({ castColumn(block.getByName(elem.name), elem.type, context), elem.type, elem.name });
     return res;
