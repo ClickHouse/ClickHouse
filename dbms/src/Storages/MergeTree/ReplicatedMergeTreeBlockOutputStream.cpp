@@ -146,8 +146,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             LOG_DEBUG(log, "Wrote block with " << block.rows() << " rows");
         }
 
-
-
         try
         {
             commitPart(zookeeper, part, block_id);
