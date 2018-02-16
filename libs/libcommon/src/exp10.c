@@ -172,7 +172,7 @@ obstacle to adoption, that text has been removed.
 #include <math.h>
 #include <stdint.h>
 
-double exp10(double x)
+double musl_exp10(double x)
 {
     static const double p10[] = {
         1e-15, 1e-14, 1e-13, 1e-12, 1e-11, 1e-10,
@@ -191,7 +191,7 @@ double exp10(double x)
     return pow(10.0, x);
 }
 
-float exp10f(float x)
+float musl_exp10f(float x)
 {
     static const float p10[] = {
         1e-7f, 1e-6f, 1e-5f, 1e-4f, 1e-3f, 1e-2f, 1e-1f,
@@ -208,12 +208,12 @@ float exp10f(float x)
     return exp2(3.32192809488736234787031942948939 * x);
 }
 
-double pow10(double x)
+double musl_pow10(double x)
 {
-    return exp10(x);
+    return musl_exp10(x);
 }
 
-float pow10f(float x)
+float musl_pow10f(float x)
 {
-    return exp10f(x);
+    return musl_exp10f(x);
 }

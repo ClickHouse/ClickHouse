@@ -147,7 +147,7 @@ static double readFloatText(const char * buf, const char * end)
             {
                 ++buf;
                 Int32 exponent = readIntText(buf, end);
-                x *= exp10(exponent);
+                x *= musl_exp10(exponent);
 
                 run = false;
                 break;
