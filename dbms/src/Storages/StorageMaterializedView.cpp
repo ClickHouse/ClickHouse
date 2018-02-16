@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-static void extractDependentTable(const ASTSelectQuery & query, String & select_database_name, String & select_table_name)
+static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
     auto query_table = query.table();
 
@@ -36,12 +36,14 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
     {
         auto query_database = query.database();
 
-        if (query_database)
-            select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
+        if (!query_database)
+            query.setDatabaseIfNeeded(select_database_name);
 
         select_table_name = ast_id->name;
+        select_database_name = query_database ? typeid_cast<const ASTIdentifier &>(*query_database).name : select_database_name;
+
     }
-    else if (auto ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<ASTSelectQuery *>(query_table.get()))
     {
         extractDependentTable(*ast_select, select_database_name, select_table_name);
     }
