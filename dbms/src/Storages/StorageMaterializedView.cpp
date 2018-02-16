@@ -36,12 +36,9 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
     {
         auto query_database = query.database();
 
-        if (!query_database)
-            throw Exception("Logical error while creating StorageMaterializedView."
-                " Could not retrieve database name from select query.",
-                DB::ErrorCodes::LOGICAL_ERROR);
+        if (query_database)
+            select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
 
-        select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
         select_table_name = ast_id->name;
     }
     else if (auto ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
@@ -76,6 +73,8 @@ StorageMaterializedView::StorageMaterializedView(
             "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
             ErrorCodes::INCORRECT_QUERY);
 
+    /// Default value, if only table name exist in the query
+    select_database_name = local_context.getCurrentDatabase();
     extractDependentTable(*query.select, select_database_name, select_table_name);
 
     if (!select_table_name.empty())
