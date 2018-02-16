@@ -177,7 +177,7 @@ void * ClickHouseDictionary_v2_dataAllocate(void* lib_ptr)
     return data_ptr;
 }
 
-void ClickHouseDictionary_v2_dataDelete(void* lib_ptr, void * data_ptr)
+void ClickHouseDictionary_v2_dataDelete(void* /*lib_ptr*/, void * data_ptr)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     delete ptr;
