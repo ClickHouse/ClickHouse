@@ -812,8 +812,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     {
         switch (type_)
         {
-            case Type::EMPTY:        break;
-            case Type::without_key:    break;
+            case Type::EMPTY:       break;
+            case Type::without_key: break;
 
         #define M(NAME, IS_TWO_LEVEL) \
             case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
@@ -832,8 +832,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     {
         switch (type)
         {
-            case Type::EMPTY:        return 0;
-            case Type::without_key:    return 1;
+            case Type::EMPTY:       return 0;
+            case Type::without_key: return 1;
 
         #define M(NAME, IS_TWO_LEVEL) \
             case Type::NAME: return NAME->data.size() + (without_key != nullptr);
@@ -850,8 +850,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     {
         switch (type)
         {
-            case Type::EMPTY:        return 0;
-            case Type::without_key:    return 1;
+            case Type::EMPTY:       return 0;
+            case Type::without_key: return 1;
 
             #define M(NAME, IS_TWO_LEVEL) \
             case Type::NAME: return NAME->data.size();
@@ -867,8 +867,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     {
         switch (type)
         {
-            case Type::EMPTY:        return "EMPTY";
-            case Type::without_key:    return "without_key";
+            case Type::EMPTY:       return "EMPTY";
+            case Type::without_key: return "without_key";
 
         #define M(NAME, IS_TWO_LEVEL) \
             case Type::NAME: return #NAME;
@@ -884,8 +884,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     {
         switch (type)
         {
-            case Type::EMPTY:        return false;
-            case Type::without_key:    return false;
+            case Type::EMPTY:       return false;
+            case Type::without_key: return false;
 
         #define M(NAME, IS_TWO_LEVEL) \
             case Type::NAME: return IS_TWO_LEVEL;
