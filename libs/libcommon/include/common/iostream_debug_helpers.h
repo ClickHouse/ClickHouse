@@ -22,6 +22,7 @@
 #define DUMP3(V1, V2, V3) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3) << "\n";
 #define DUMP4(V1, V2, V3, V4) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << "\n";
 #define DUMP5(V1, V2, V3, V4, V5) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << ", " << DUMPS(V5) << "\n";
+#define DUMP6(V1, V2, V3, V4, V5, V6) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << ", " << DUMPS(V5) << ", " << DUMPS(V6) << "\n";
 
 
 namespace std

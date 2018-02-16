@@ -17,11 +17,12 @@ struct DataHolder
     ClickHouseLibrary::ColumnsUInt64 columns;
 };
 
-extern "C"
-{
+extern "C" {
 
-void * ClickHouseDictionary_v1_loadIds(
-    void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * columns, const struct ClickHouseLibrary::VectorUInt64 * ids)
+void * ClickHouseDictionary_v2_loadIds(void * data_ptr,
+    ClickHouseLibrary::CStrings * settings,
+    ClickHouseLibrary::CStrings * columns,
+    const struct ClickHouseLibrary::VectorUInt64 * ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
 
@@ -73,7 +74,7 @@ void * ClickHouseDictionary_v1_loadIds(
     return nullptr;
 }
 
-void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * /*columns*/)
+void * ClickHouseDictionary_v2_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * /*columns*/)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll lib call ptr=" << data_ptr << " => " << ptr << "\n";
@@ -113,7 +114,7 @@ void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLibrary::CStri
     return nullptr;
 }
 
-void * ClickHouseDictionary_v1_loadKeys(void * data_ptr,
+void * ClickHouseDictionary_v2_loadKeys(void * data_ptr,
     ClickHouseLibrary::CStrings * settings,
     ClickHouseLibrary::CStrings * columns,
     const ClickHouseLibrary::VectorUInt64 * requested_rows)
@@ -148,13 +149,13 @@ void * ClickHouseDictionary_v1_loadKeys(void * data_ptr,
     return nullptr;
 }
 
-void * ClickHouseDictionary_v1_dataAllocate()
+void * ClickHouseDictionary_v2_dataAllocate()
 {
     auto data_ptr = new DataHolder;
     return data_ptr;
 }
 
-void ClickHouseDictionary_v1_dataDelete(void * data_ptr)
+void ClickHouseDictionary_v2_dataDelete(void * data_ptr)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     delete ptr;

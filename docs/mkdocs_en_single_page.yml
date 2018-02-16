@@ -7,6 +7,9 @@ use_directory_urls: false
 repo_name: 'yandex/ClickHouse'
 repo_url: 'https://github.com/yandex/ClickHouse/'
 
+extra_css:
+  - assets/stylesheets/yandex_fonts.css
+
 theme:
   name: null
   custom_dir: 'mkdocs-material-theme'
@@ -16,9 +19,9 @@ theme:
   palette:
     primary: 'white'
     accent: 'white'
-  font:
-    text: Roboto
-    code: Roboto Mono
+  font: false
+#    text: Roboto
+#    code: Roboto Mono
   logo: 'images/logo.svg'
   favicon: 'assets/images/favicon.ico'
   include_search_page: false
