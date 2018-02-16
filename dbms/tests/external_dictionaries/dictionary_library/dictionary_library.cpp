@@ -1,5 +1,7 @@
 /// c++ sample dictionary library
 
+/// proller: TODO: Update to v2 api, describe
+
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -10,12 +12,20 @@
 //#define DUMPS(VAR) #VAR " = " << VAR
 //#define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n";
 
+
+struct LibHolder
+{
+    //Some your data, maybe service connection
+};
+
 struct DataHolder
 {
     std::vector<std::vector<uint64_t>> vector;
     std::unique_ptr<ClickHouseLibrary::VectorUInt64[]> columnsHolder;
     ClickHouseLibrary::ColumnsUInt64 columns;
+    LibHolder * lib = nullptr;
 };
+
 
 extern "C" {
 
@@ -149,16 +159,29 @@ void * ClickHouseDictionary_v2_loadKeys(void * data_ptr,
     return nullptr;
 }
 
-void * ClickHouseDictionary_v2_dataAllocate()
+void* ClickHouseDictionary_v2_libAllocate() {
+    auto lib_ptr = new LibHolder;
+    return lib_ptr;
+}
+
+void ClickHouseDictionary_v2_libDelete(void* lib_ptr) {
+    auto ptr = static_cast<LibHolder*>(lib_ptr);
+    delete ptr;
+    return;
+}
+
+void * ClickHouseDictionary_v2_dataAllocate(void* lib_ptr)
 {
     auto data_ptr = new DataHolder;
+    data_ptr->lib = static_cast<decltype(data_ptr->lib)>(lib_ptr);
     return data_ptr;
 }
 
-void ClickHouseDictionary_v2_dataDelete(void * data_ptr)
+void ClickHouseDictionary_v2_dataDelete(void* lib_ptr, void * data_ptr)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     delete ptr;
     return;
 }
+
 }
