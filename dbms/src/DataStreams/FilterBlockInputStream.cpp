@@ -29,9 +29,9 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     children.push_back(input);
 
     /// Determine position of filter column.
-    Block src_header = expression->getSampleBlock();
-
-    filter_column = src_header.getPositionByName(filter_column_name);
+    Block input_header = input->getHeader();
+    expression->execute(input_header);
+    filter_column = input_header.getPositionByName(filter_column_name);
 }
 
 

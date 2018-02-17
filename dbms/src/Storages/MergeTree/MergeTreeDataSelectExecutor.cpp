@@ -473,13 +473,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
                 filter_function->children.push_back(filter_function->arguments);
             }
 
-            /// Add all other columns: expression must save them.
-            ASTPtr expr_with_filter = std::make_shared<ASTExpressionList>();
-            for (const auto & name : column_names_to_read)
-                expr_with_filter->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), name));
-            expr_with_filter->children.push_back(filter_function);
-
-            filter_expression = ExpressionAnalyzer(expr_with_filter, context, nullptr, available_real_columns).getActions(true);
+            filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(true);
 
             /// Add columns needed for `sampling_expression` to `column_names_to_read`.
             std::vector<String> add_columns = filter_expression->getRequiredColumns();
