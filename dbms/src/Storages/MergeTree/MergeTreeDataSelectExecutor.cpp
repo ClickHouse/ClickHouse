@@ -473,7 +473,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
                 filter_function->children.push_back(filter_function->arguments);
             }
 
-            filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(true);
+            filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(false);
 
             /// Add columns needed for `sampling_expression` to `column_names_to_read`.
             std::vector<String> add_columns = filter_expression->getRequiredColumns();
