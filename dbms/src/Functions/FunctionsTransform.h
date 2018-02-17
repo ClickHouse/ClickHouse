@@ -195,7 +195,7 @@ private:
         ColumnNumbers tmp_arguments;
 
         tmp_block.insert(block.getByPosition(arguments[0]));
-        tmp_block.getByPosition(0).column = static_cast<const ColumnConst *>(tmp_block.getByPosition(0).column.get())->getDataColumnPtr();
+        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(block.rows())->convertToFullColumnIfConst();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
