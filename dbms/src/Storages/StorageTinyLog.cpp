@@ -69,7 +69,7 @@ public:
         for (const auto & name_type : columns)
             res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        return res;
+        return Nested::flatten(res);
     };
 
 protected:
