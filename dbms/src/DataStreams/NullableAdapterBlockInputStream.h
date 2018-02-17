@@ -1,11 +1,33 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <optional>
 
 namespace DB
 {
 
+/// Given a column of a block we have just read,
+/// how must we process it?
+struct Action
+{
+public:
+    enum Type
+    {
+        /// Do nothing.
+        NONE = 0,
+        /// Convert nullable column to ordinary column.
+        TO_ORDINARY,
+        /// Convert non-nullable column to nullable column.
+        TO_NULLABLE
+    };
+
+    Type type;
+    size_t position;
+    String new_name;
+
+    static Action create(Type type, size_t position, String new_name);
+
+    void execute(Block & old_block, Block & new_block);
+};
 /// This stream allows perfoming INSERT requests in which the types of
 /// the target and source blocks are compatible up to nullability:
 ///
@@ -29,18 +51,6 @@ protected:
     Block readImpl() override;
 
 private:
-    /// Given a column of a block we have just read,
-    /// how must we process it?
-    enum Action
-    {
-        /// Do nothing.
-        NONE = 0,
-        /// Convert nullable column to ordinary column.
-        TO_ORDINARY,
-        /// Convert non-nullable column to nullable column.
-        TO_NULLABLE
-    };
-
     /// Actions to be taken for each column of a block.
     using Actions = std::vector<Action>;
 
@@ -53,7 +63,6 @@ private:
 
 private:
     Actions actions;
-    std::vector<std::optional<String>> rename;
     bool must_transform = false;
 };
 
