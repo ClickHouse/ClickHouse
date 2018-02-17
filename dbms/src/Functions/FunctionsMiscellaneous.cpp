@@ -606,6 +606,9 @@ public:
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const ColumnConst &>(*col).getField());
         size_t size = col->size();
 
+        if (seconds < 0)
+            throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+
         /// We do not sleep if the block is empty.
         if (size > 0)
         {
