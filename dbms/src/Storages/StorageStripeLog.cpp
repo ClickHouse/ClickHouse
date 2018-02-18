@@ -21,6 +21,8 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 
+#include <DataTypes/DataTypeFactory.h>
+
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
@@ -64,14 +66,18 @@ public:
         return s.str();
     }
 
-    Block getHeader() override
+    Block getHeader() const override
     {
-        start();
-
-        if (block_in)
-            return block_in->getHeader();
-        else
+        if (index_begin == index_end)
             return {};
+
+        Block header;
+        for (const auto & column : index_begin->columns)
+        {
+            auto type = DataTypeFactory::instance().get(column.type);
+            header.insert({ type->createColumn(), type, column.name });
+        }
+        return header;
     };
 
 protected:

@@ -16,7 +16,7 @@ public:
 
     String getName() const override { return "One"; }
 
-    Block getHeader() override
+    Block getHeader() const override
     {
         Block res;
         for (const auto & elem : block)

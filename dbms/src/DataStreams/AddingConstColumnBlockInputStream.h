@@ -31,7 +31,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override
+    Block getHeader() const override
     {
         Block res = children.back()->getHeader();
         res.insert({data_type->createColumn(), data_type, column_name});

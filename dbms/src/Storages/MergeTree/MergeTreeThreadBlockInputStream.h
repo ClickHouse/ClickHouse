@@ -34,7 +34,7 @@ public:
 
     ~MergeTreeThreadBlockInputStream() override;
 
-    Block getHeader() override;
+    Block getHeader() const override;
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one

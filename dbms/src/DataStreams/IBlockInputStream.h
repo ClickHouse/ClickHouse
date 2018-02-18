@@ -52,7 +52,7 @@ public:
       * Header block contains column names, data types, columns of size 0. Constant columns must have corresponding values.
       * It is guaranteed that method "read" returns blocks of exactly that structure.
       */
-    virtual Block getHeader() = 0;
+    virtual Block getHeader() const = 0;
 
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).

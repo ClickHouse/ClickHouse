@@ -40,7 +40,7 @@ public:
 
     String getID() const override;
 
-    Block getHeader() override;
+    Block getHeader() const override;
 
     /// Closes readers and unlock part locks
     void finish();

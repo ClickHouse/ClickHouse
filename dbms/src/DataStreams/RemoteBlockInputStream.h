@@ -78,7 +78,7 @@ public:
         return multiplexed_connections->getBlockExtraInfo();
     }
 
-    Block getHeader() override { return header; }
+    Block getHeader() const override { return header; }
 
 protected:
     /// Send all temporary tables to remote servers

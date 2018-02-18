@@ -29,7 +29,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override;
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

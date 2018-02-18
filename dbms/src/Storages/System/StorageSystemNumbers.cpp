@@ -18,7 +18,7 @@ public:
     String getName() const override { return "Numbers"; }
     String getID() const override { return "Numbers"; }
 
-    Block getHeader() override
+    Block getHeader() const override
     {
         return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
     }

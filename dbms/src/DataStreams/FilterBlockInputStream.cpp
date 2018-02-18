@@ -29,9 +29,28 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     children.push_back(input);
 
     /// Determine position of filter column.
-    Block input_header = input->getHeader();
-    expression->execute(input_header);
-    filter_column = input_header.getPositionByName(filter_column_name);
+    header = input->getHeader();
+    expression->execute(header);
+
+    filter_column = header.getPositionByName(filter_column_name);
+
+    /// Isn't the filter already constant?
+    ColumnPtr column = header.safeGetByPosition(filter_column).column;
+
+    if (!have_constant_filter_description)
+    {
+        have_constant_filter_description = true;
+        if (column)
+            constant_filter_description = ConstantFilterDescription(*column);
+    }
+
+    if (!constant_filter_description.always_false
+        && !constant_filter_description.always_true)
+    {
+        /// Replace the filter column to a constant with value 1.
+        auto header_filter_elem = header.getByPosition(filter_column);
+        header_filter_elem.column = header_filter_elem.type->createColumnConst(header.rows(), UInt64(1));
+    }
 }
 
 
@@ -58,29 +77,9 @@ const Block & FilterBlockInputStream::getTotals()
 }
 
 
-Block FilterBlockInputStream::getHeader()
+Block FilterBlockInputStream::getHeader() const
 {
-    Block res = children.back()->getHeader();
-    expression->execute(res);
-
-    /// Isn't the filter already constant?
-    ColumnPtr column = res.safeGetByPosition(filter_column).column;
-
-    if (!have_constant_filter_description)
-    {
-        have_constant_filter_description = true;
-        if (column)
-            constant_filter_description = ConstantFilterDescription(*column);
-    }
-
-    if (constant_filter_description.always_false
-        || constant_filter_description.always_true)
-        return res;
-
-    /// Replace the filter column to a constant with value 1.
-    auto res_filter_elem = res.getByPosition(filter_column);
-    res_filter_elem.column = res_filter_elem.type->createColumnConst(res.rows(), UInt64(1));
-    return res;
+    return header;
 }
 
 

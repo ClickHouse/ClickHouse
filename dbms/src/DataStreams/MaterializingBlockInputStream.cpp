@@ -22,7 +22,7 @@ String MaterializingBlockInputStream::getID() const
     return res.str();
 }
 
-Block MaterializingBlockInputStream::getHeader()
+Block MaterializingBlockInputStream::getHeader() const
 {
     return materializeBlock(children.back()->getHeader());
 }

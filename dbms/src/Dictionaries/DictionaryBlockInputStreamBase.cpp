@@ -26,7 +26,7 @@ Block DictionaryBlockInputStreamBase::readImpl()
     return block;
 }
 
-Block DictionaryBlockInputStreamBase::getHeader()
+Block DictionaryBlockInputStreamBase::getHeader() const
 {
     return getBlock(0, 0);
 }

@@ -1595,7 +1595,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override { return aggregator.getHeader(final); }
+    Block getHeader() const override { return aggregator.getHeader(final); }
 
     ~MergingAndConvertingBlockInputStream()
     {

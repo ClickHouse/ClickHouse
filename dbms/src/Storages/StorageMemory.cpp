@@ -37,7 +37,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override { return storage.getSampleBlockForColumns(column_names); }
+    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); }
 
 protected:
     Block readImpl() override

@@ -35,7 +35,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override { return {}; }
+    Block getHeader() const override { return {}; }
 
 protected:
     Block readImpl() override

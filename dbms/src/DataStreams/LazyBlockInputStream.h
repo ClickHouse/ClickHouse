@@ -33,7 +33,7 @@ public:
         IProfilingBlockInputStream::cancel();
     }
 
-    Block getHeader() override
+    Block getHeader() const override
     {
         return header;
     }
