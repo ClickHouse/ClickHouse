@@ -21,7 +21,6 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -462,7 +461,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
     union_within_single_query = false;
 
-    /** Take out the data from Storage. from_stage - to what stage the request was completed in Storage. */
+    /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns();
 
     LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
@@ -864,18 +863,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         if (streams.empty())
             streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
-        /// The storage has no data for this query.
         if (streams.empty())
-        {
-            from_stage = QueryProcessingStage::FetchColumns;
-            Block header;
-            for (const auto & name : required_columns)
-            {
-                auto type = storage->getDataTypeByName(name);
-                header.insert({ type->createColumn(), type, name });
-            }
-            streams.emplace_back(std::make_shared<OneBlockInputStream>(header));
-        }
+            streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
 
         if (alias_actions)
         {
@@ -971,7 +960,8 @@ void InterpreterSelectQuery::executeAggregation(const ExpressionActionsPtr & exp
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
-        settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath());
+        settings.limits.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+        context.getTemporaryPath());
 
     /// If there are several sources, then we perform parallel aggregation
     if (streams.size() > 1)
