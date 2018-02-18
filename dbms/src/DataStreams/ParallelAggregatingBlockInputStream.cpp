@@ -197,6 +197,13 @@ void ParallelAggregatingBlockInputStream::execute()
         << "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."
         << " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+    /// If there was no data, and we aggregate without keys, we must return single row with the result of empty aggregation.
+    /// To do this, we pass a block with zero rows to aggregate.
+    if (total_src_rows == 0 && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+        aggregator.executeOnBlock(children.at(0)->getHeader(), *many_data[0],
+            threads_data[0].key_columns, threads_data[0].aggregate_columns,
+            threads_data[0].key, no_more_keys);
 }
 
 }
