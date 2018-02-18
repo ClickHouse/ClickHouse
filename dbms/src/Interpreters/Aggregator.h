@@ -1009,6 +1009,10 @@ public:
 
         /// Settings to flush temporary data to the filesystem (external aggregation).
         const size_t max_bytes_before_external_group_by;        /// 0 - do not use external aggregation.
+
+        /// Return empty result when aggregating without keys on empty set.
+        bool empty_result_for_aggregation_by_empty_set;
+
         const std::string tmp_path;
 
         Params(
@@ -1017,20 +1021,24 @@ public:
             bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
             Compiler * compiler_, UInt32 min_count_to_compile_,
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
-            size_t max_bytes_before_external_group_by_, const std::string & tmp_path_)
+            size_t max_bytes_before_external_group_by_,
+            bool empty_result_for_aggregation_by_empty_set_,
+            const std::string & tmp_path_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
             compiler(compiler_), min_count_to_compile(min_count_to_compile_),
             group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
-            max_bytes_before_external_group_by(max_bytes_before_external_group_by_), tmp_path(tmp_path_)
+            max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
+            empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
+            tmp_path(tmp_path_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, "")
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, false, "")
         {
             intermediate_header = intermediate_header_;
         }
@@ -1050,7 +1058,7 @@ public:
     using AggregateFunctionsPlainPtrs = std::vector<IAggregateFunction *>;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
-    bool executeOnBlock(Block & block, AggregatedDataVariants & result,
+    bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
         StringRefs & keys,                                        /// - pass the corresponding objects that are initially empty.
         bool & no_more_keys);

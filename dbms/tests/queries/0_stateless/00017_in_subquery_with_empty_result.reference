@@ -9,10 +9,12 @@
 
 	"data":
 	[
-
+		{
+			"count()": "0"
+		}
 	],
 
-	"rows": 0,
+	"rows": 1,
 
 	"rows_before_limit_at_least": 1000
 }

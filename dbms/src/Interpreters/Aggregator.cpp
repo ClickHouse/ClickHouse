@@ -648,7 +648,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 }
 
 
-bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
+bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, StringRefs & key,
     bool & no_more_keys)
 {
@@ -1022,6 +1022,11 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
         if (!executeOnBlock(block, result, key_columns, aggregate_columns, key, no_more_keys))
             break;
     }
+
+    /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
+    /// To do this, we pass a block with zero rows to aggregate.
+    if (result.empty() && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+        executeOnBlock(stream->getHeader(), result, key_columns, aggregate_columns, key, no_more_keys);
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();
