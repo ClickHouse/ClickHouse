@@ -83,14 +83,12 @@ private:
         StringRefs key;
         ColumnRawPtrs key_columns;
         Aggregator::AggregateColumns aggregate_columns;
-        Sizes key_sizes;
 
         ThreadData(size_t keys_size, size_t aggregates_size)
         {
             key.resize(keys_size);
             key_columns.resize(keys_size);
             aggregate_columns.resize(aggregates_size);
-            key_sizes.resize(keys_size);
         }
     };
 
