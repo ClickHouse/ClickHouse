@@ -29,13 +29,6 @@ public:
 
     String getName() const override { return "BlockInputStreamFromRowInputStream"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << this;
-        return res.str();
-    }
-
     RowInputStreamPtr & getRowInput() { return row_input; }
 
     Block getHeader() const override { return sample; }

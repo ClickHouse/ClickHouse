@@ -66,13 +66,6 @@ public:
 
     String getName() const override { return "Remote"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << this;
-        return res.str();
-    }
-
     BlockExtraInfo getBlockExtraInfo() const override
     {
         return multiplexed_connections->getBlockExtraInfo();

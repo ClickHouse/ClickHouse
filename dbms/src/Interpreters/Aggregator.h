@@ -1090,9 +1090,6 @@ public:
       */
     void setCancellationHook(const CancellationHook cancellation_hook);
 
-    /// For IBlockInputStream.
-    String getID() const;
-
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants);
 

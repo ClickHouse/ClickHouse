@@ -8,13 +8,6 @@ DictionaryBlockInputStreamBase::DictionaryBlockInputStreamBase(size_t rows_count
 {
 }
 
-String DictionaryBlockInputStreamBase::getID() const
-{
-    std::stringstream ss;
-    ss << static_cast<const void*>(this);
-    return ss.str();
-}
-
 Block DictionaryBlockInputStreamBase::readImpl()
 {
     if (next_row == rows_count)

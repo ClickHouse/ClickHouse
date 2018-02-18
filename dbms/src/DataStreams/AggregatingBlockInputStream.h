@@ -30,13 +30,6 @@ public:
 
     String getName() const override { return "Aggregating"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Aggregating(" << children.back()->getID() << ", " << aggregator.getID() << ")";
-        return res.str();
-    }
-
     Block getHeader() const override;
 
 protected:

@@ -27,8 +27,6 @@ private:
 
     String getName() const override { return "Owning"; }
 
-    String getID() const override {  return "Owning(" + stream->getID() + ")"; }
-
 protected:
     BlockInputStreamPtr stream;
     std::unique_ptr<OwnType> own;

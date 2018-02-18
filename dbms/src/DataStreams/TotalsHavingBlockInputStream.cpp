@@ -30,15 +30,6 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
 }
 
 
-String TotalsHavingBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TotalsHavingBlockInputStream(" << children.back()->getID()
-        << "," << filter_column_name << ")";
-    return res.str();
-}
-
-
 static void finalize(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)

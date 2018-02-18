@@ -18,7 +18,7 @@ namespace DB
 
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
-    stream << "IBlockInputStream(id = " << what.getID() << ", name = " << what.getName() << ")";
+    stream << "IBlockInputStream(name = " << what.getName() << ")";
     //what.dumpTree(stream); // todo: set const
     return stream;
 }

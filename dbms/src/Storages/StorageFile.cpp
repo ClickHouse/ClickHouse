@@ -144,18 +144,6 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "File(" << storage.format_name << ", ";
-        if (!storage.path.empty())
-            res_stream << storage.path;
-        else
-            res_stream << storage.table_fd;
-        res_stream << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
         return reader->read();

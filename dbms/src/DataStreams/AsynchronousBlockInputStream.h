@@ -35,13 +35,6 @@ public:
 
     String getName() const override { return "Asynchronous"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Asynchronous(" << children.back()->getID() << ")";
-        return res.str();
-    }
-
     void readPrefix() override
     {
         /// Do not call `readPrefix` on the child, so that the corresponding actions are performed in a separate thread.

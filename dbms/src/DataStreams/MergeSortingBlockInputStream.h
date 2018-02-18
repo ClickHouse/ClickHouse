@@ -33,7 +33,6 @@ public:
         size_t max_merged_block_size_, size_t limit_ = 0);
 
     String getName() const override { return "MergeSortingBlocks"; }
-    String getID() const override { return getName(); }
 
     bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
@@ -81,18 +80,6 @@ public:
     }
 
     String getName() const override { return "MergeSorting"; }
-
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "MergeSorting(" << children.back()->getID();
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
 
     bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }

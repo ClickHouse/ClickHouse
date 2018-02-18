@@ -27,8 +27,6 @@ public:
 
     String getName() const override { return "ParallelAggregating"; }
 
-    String getID() const override;
-
     void cancel() override;
 
     Block getHeader() const override;

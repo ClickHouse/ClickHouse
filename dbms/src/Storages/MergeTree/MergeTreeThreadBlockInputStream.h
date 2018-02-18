@@ -30,8 +30,6 @@ public:
 
     String getName() const override { return "MergeTreeThread"; }
 
-    String getID() const override;
-
     ~MergeTreeThreadBlockInputStream() override;
 
     Block getHeader() const override;

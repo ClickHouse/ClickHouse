@@ -22,18 +22,6 @@ public:
 
     String getName() const override { return "RemoveColumns"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "RemoveColumns(" << children.back()->getID();
-
-        for (const auto & it : columns_to_remove)
-            res << ", " << it;
-
-        res << ")";
-        return res.str();
-    }
-
     Block getHeader() const override
     {
         Block res = children.back()->getHeader();

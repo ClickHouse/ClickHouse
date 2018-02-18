@@ -161,13 +161,6 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "Kafka(" << storage.topics.size() << ", " << storage.format_name << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
         if (isCancelled())

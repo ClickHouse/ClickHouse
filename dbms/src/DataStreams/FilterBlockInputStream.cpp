@@ -57,14 +57,6 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
 String FilterBlockInputStream::getName() const { return "Filter"; }
 
 
-String FilterBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "Filter(" << children.back()->getID() << ", " << expression->getID() << ", " << filter_column << ")";
-    return res.str();
-}
-
-
 const Block & FilterBlockInputStream::getTotals()
 {
     if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))

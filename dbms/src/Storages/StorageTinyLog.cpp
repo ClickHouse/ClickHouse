@@ -60,8 +60,6 @@ public:
 
     String getName() const override { return "TinyLog"; }
 
-    String getID() const override;
-
     Block getHeader() const override
     {
         Block res;
@@ -152,19 +150,6 @@ private:
 
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams);
 };
-
-
-String TinyLogBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TinyLog(" << storage.getTableName() << ", " << &storage;
-
-    for (const auto & name_type : columns)
-        res << ", " << name_type.name;
-
-    res << ")";
-    return res.str();
-}
 
 
 Block TinyLogBlockInputStream::readImpl()

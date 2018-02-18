@@ -23,24 +23,6 @@ namespace ErrorCodes
 }
 
 
-String SummingSortedBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "SummingSorted(inputs";
-
-    for (size_t i = 0; i < children.size(); ++i)
-        res << ", " << children[i]->getID();
-
-    res << ", description";
-
-    for (size_t i = 0; i < description.size(); ++i)
-        res << ", " << description[i].getID();
-
-    res << ")";
-    return res.str();
-}
-
-
 void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion)
 {
     for (auto & desc : columns_to_aggregate)
