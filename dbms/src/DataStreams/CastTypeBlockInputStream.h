@@ -19,7 +19,7 @@ public:
 
     String getID() const override;
 
-    Block getHeader() override { return ref_definition; }
+    Block getHeader() const override { return ref_definition; }
 
 protected:
     Block readImpl() override;

@@ -38,7 +38,7 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
 }
 
 
-Block MergeTreeThreadBlockInputStream::getHeader()
+Block MergeTreeThreadBlockInputStream::getHeader() const
 {
     return pool->getHeader();
 };

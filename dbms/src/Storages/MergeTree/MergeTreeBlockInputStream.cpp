@@ -63,7 +63,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
 }
 
 
-Block MergeTreeBlockInputStream::getHeader()
+Block MergeTreeBlockInputStream::getHeader() const
 {
     return storage.getSampleBlockForColumns(ordered_names);
 }

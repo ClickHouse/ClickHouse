@@ -101,7 +101,7 @@ public:
         }
     }
 
-    Block getHeader() override { return stream->getHeader(); };
+    Block getHeader() const override { return stream->getHeader(); };
 
 private:
     Block readImpl() override { return stream->read(); }

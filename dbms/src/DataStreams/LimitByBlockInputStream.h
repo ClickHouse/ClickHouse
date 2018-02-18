@@ -22,7 +22,7 @@ public:
 
     String getName() const override { return "LimitBy"; }
 
-    Block getHeader() override { return children.at(0)->getHeader(); }
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     Block readImpl() override;

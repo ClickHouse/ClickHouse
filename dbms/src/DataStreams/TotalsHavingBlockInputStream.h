@@ -31,7 +31,7 @@ public:
 
     const Block & getTotals() override;
 
-    Block getHeader() override;
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

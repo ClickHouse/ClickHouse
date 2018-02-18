@@ -161,7 +161,7 @@ public:
         return reader->read();
     }
 
-    Block getHeader() override { return reader->getHeader(); };
+    Block getHeader() const override { return reader->getHeader(); };
 
     void readPrefixImpl() override
     {

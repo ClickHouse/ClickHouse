@@ -29,7 +29,7 @@ ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
 }
 
 
-Block ParallelAggregatingBlockInputStream::getHeader()
+Block ParallelAggregatingBlockInputStream::getHeader() const
 {
     return aggregator.getHeader(final);
 }

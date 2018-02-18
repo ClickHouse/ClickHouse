@@ -1045,7 +1045,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override { return result_sample_block; };
+    Block getHeader() const override { return result_sample_block; };
 
 
 protected:

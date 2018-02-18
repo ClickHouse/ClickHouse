@@ -14,7 +14,7 @@ public:
     NullBlockInputStream(const Block & header) : header(header) {}
 
     Block read() override { return {}; }
-    Block getHeader() override { return header; }
+    Block getHeader() const override { return header; }
     String getName() const override { return "Null"; }
 
 private:

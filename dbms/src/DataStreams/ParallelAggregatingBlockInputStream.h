@@ -31,7 +31,7 @@ public:
 
     void cancel() override;
 
-    Block getHeader() override;
+    Block getHeader() const override;
 
 protected:
     /// Do nothing that preparation to execution of the query be done in parallel, in ParallelInputsProcessor.

@@ -90,7 +90,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::MergingAggregatedMemoryEfficie
 }
 
 
-Block MergingAggregatedMemoryEfficientBlockInputStream::getHeader()
+Block MergingAggregatedMemoryEfficientBlockInputStream::getHeader() const
 {
     return aggregator.getHeader(final);
 }

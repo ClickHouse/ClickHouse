@@ -6,7 +6,7 @@
 namespace DB
 {
 
-Block MergingAggregatedBlockInputStream::getHeader()
+Block MergingAggregatedBlockInputStream::getHeader() const
 {
     return aggregator.getHeader(final);
 }

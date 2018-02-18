@@ -43,6 +43,9 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
     if (!istr_concrete)
         throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
 
+    if (index_block_it == index_block_end)
+        return;
+
     index_column_it = index_block_it->columns.begin();
 
     /// Initialize header from the index.
@@ -64,7 +67,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 }
 
 
-Block NativeBlockInputStream::getHeader()
+Block NativeBlockInputStream::getHeader() const
 {
     return header;
 }

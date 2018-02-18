@@ -15,7 +15,7 @@ protected:
 
     virtual Block getBlock(size_t start, size_t length) const = 0;
 
-    Block getHeader() override;
+    Block getHeader() const override;
 
 private:
     const size_t rows_count;

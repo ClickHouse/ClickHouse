@@ -74,7 +74,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override
+    Block getHeader() const override
     {
         Block res;
 

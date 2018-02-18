@@ -14,7 +14,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-Block AggregatingBlockInputStream::getHeader()
+Block AggregatingBlockInputStream::getHeader() const
 {
     return aggregator.getHeader(final);
 }

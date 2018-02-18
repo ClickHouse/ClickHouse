@@ -31,7 +31,7 @@ public:
         return res.str();
     }
 
-    Block getHeader() override { return children.back()->getHeader(); }
+    Block getHeader() const override { return children.back()->getHeader(); }
 
 protected:
     Block readImpl() override

@@ -15,7 +15,7 @@ String FilterColumnsBlockInputStream::getID() const
     return res.str();
 }
 
-Block FilterColumnsBlockInputStream::getHeader()
+Block FilterColumnsBlockInputStream::getHeader() const
 {
     Block block = children.back()->getHeader();
     Block filtered;

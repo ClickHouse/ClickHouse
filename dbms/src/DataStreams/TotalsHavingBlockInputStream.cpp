@@ -83,7 +83,7 @@ const Block & TotalsHavingBlockInputStream::getTotals()
 }
 
 
-Block TotalsHavingBlockInputStream::getHeader()
+Block TotalsHavingBlockInputStream::getHeader() const
 {
     Block res = children.at(0)->getHeader();
     finalize(res);

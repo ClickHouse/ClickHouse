@@ -26,7 +26,7 @@ public:
 
     String getID() const override;
 
-    Block getHeader() override;
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

@@ -28,7 +28,7 @@ public:
     String getName() const override { return "InputStreamFromASTInsertQuery"; }
     String getID() const override { return "InputStreamFromASTInsertQuery(" + toString(std::intptr_t(this)) + ")"; }
 
-    Block getHeader() override { return res_stream->getHeader(); }
+    Block getHeader() const override { return res_stream->getHeader(); }
 
 private:
     std::unique_ptr<ReadBuffer> input_buffer_ast_part;
