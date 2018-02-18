@@ -59,13 +59,6 @@ public:
 
     String getName() const override { return "StripeLog"; }
 
-    String getID() const override
-    {
-        std::stringstream s;
-        s << this;
-        return s.str();
-    }
-
     Block getHeader() const override
     {
         if (index_begin == index_end)

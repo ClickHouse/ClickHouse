@@ -23,13 +23,6 @@ NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
     children.push_back(input);
 }
 
-String NullableAdapterBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "NullableAdapterBlockInputStream(" << children.back()->getID() << ")";
-    return res.str();
-}
-
 Block NullableAdapterBlockInputStream::readImpl()
 {
     Block block = children.back()->read();

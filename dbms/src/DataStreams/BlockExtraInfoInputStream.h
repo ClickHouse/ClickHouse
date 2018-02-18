@@ -24,13 +24,6 @@ public:
 
     String getName() const override { return "BlockExtraInfoInput"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "BlockExtraInfoInput(" << children.back()->getID() << ")";
-        return res.str();
-    }
-
     Block getHeader() const override { return children.back()->getHeader(); }
 
 protected:

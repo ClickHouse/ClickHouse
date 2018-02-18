@@ -964,11 +964,6 @@ public:
         return "DDLQueryStatusInputSream";
     }
 
-    String getID() const override
-    {
-        return "DDLQueryStatusInputSream(" + node_path + ")";
-    }
-
     Block getHeader() const override { return sample; };
 
     Block readImpl() override

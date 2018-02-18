@@ -22,8 +22,6 @@ public:
 
     String getName() const override { return "NullableAdapterBlockInputStream"; }
 
-    String getID() const override;
-
     Block getHeader() const override { return header; }
 
 protected:

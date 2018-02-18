@@ -24,8 +24,6 @@ public:
         return "FilterColumnsBlockInputStream";
     }
 
-    String getID() const override;
-
     Block getHeader() const override;
 
 protected:

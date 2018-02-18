@@ -96,17 +96,6 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::getHeader() const
 }
 
 
-String MergingAggregatedMemoryEfficientBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "MergingAggregatedMemoryEfficient(" << aggregator.getID();
-    for (size_t i = 0, size = children.size(); i < size; ++i)
-        res << ", " << children.back()->getID();
-    res << ")";
-    return res.str();
-}
-
-
 void MergingAggregatedMemoryEfficientBlockInputStream::readPrefix()
 {
     start();

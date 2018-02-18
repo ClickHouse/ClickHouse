@@ -35,25 +35,6 @@ public:
 
     String getName() const override { return "CreatingSets"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "CreatingSets(";
-
-        Strings children_ids(children.size());
-        for (size_t i = 0; i < children.size(); ++i)
-            children_ids[i] = children[i]->getID();
-
-        /// Let's assume that the order of creating sets does not matter.
-        std::sort(children_ids.begin(), children_ids.end() - 1);
-
-        for (size_t i = 0; i < children_ids.size(); ++i)
-            res << (i == 0 ? "" : ", ") << children_ids[i];
-
-        res << ")";
-        return res.str();
-    }
-
     Block getHeader() const override { return children.back()->getHeader(); }
 
     /// Takes `totals` only from the main source, not from subquery sources.

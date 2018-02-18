@@ -62,18 +62,6 @@ public:
 
     String getName() const override { return "Log"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
-
-        for (const auto & name_type : columns)
-            res << ", " << name_type.name;
-
-        res << ")";
-        return res.str();
-    }
-
     Block getHeader() const override
     {
         Block res;

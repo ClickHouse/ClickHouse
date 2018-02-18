@@ -69,26 +69,6 @@ Block MergeTreeBlockInputStream::getHeader() const
 }
 
 
-String MergeTreeBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "MergeTree(" << path << ", columns";
-
-    for (const NameAndTypePair & column : columns)
-        res << ", " << column.name;
-
-    if (prewhere_actions)
-        res << ", prewhere, " << prewhere_actions->getID();
-
-    res << ", marks";
-
-    for (size_t i = 0; i < all_mark_ranges.size(); ++i)
-        res << ", " << all_mark_ranges[i].begin << ", " << all_mark_ranges[i].end;
-
-    res << ")";
-    return res.str();
-}
-
 bool MergeTreeBlockInputStream::getNewTask()
 try
 {

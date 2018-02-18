@@ -44,15 +44,6 @@ Block MergeTreeThreadBlockInputStream::getHeader() const
 };
 
 
-String MergeTreeThreadBlockInputStream::getID() const
-{
-    std::stringstream res;
-    /// @todo print some meaningful information
-    res << static_cast<const void *>(this);
-    return res.str();
-}
-
-
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadBlockInputStream::getNewTask()
 {

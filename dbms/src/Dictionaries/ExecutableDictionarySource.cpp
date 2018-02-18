@@ -120,7 +120,6 @@ private:
     }
 
     String getName() const override { return "WithBackgroundThread"; }
-    String getID() const override { return "WithBackgroundThread(" + stream->getID() + ")"; }
 
     BlockInputStreamPtr stream;
     std::unique_ptr<ShellCommand> command;

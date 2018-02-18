@@ -24,13 +24,6 @@ public:
 
     String getName() const override { return "AddingConstColumn"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "AddingConstColumn(" << children.back()->getID() << ")";
-        return res.str();
-    }
-
     Block getHeader() const override
     {
         Block res = children.back()->getHeader();

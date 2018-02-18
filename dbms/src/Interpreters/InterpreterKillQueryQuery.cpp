@@ -118,11 +118,6 @@ public:
         return "SynchronousQueryKiller";
     }
 
-    String getID() const override
-    {
-        return "SynchronousQueryKiller_" + toString(intptr_t(this));
-    }
-
     Block getHeader() const override { return res_sample_block; };
 
     Block readImpl() override

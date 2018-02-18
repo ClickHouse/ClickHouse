@@ -16,7 +16,6 @@ public:
         : block_size(block_size_), next(offset_), step(step_) {}
 
     String getName() const override { return "Numbers"; }
-    String getID() const override { return "Numbers"; }
 
     Block getHeader() const override
     {

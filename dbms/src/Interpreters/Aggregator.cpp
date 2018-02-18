@@ -1588,13 +1588,6 @@ public:
 
     String getName() const override { return "MergingAndConverting"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << this;
-        return res.str();
-    }
-
     Block getHeader() const override { return aggregator.getHeader(final); }
 
     ~MergingAndConvertingBlockInputStream()
@@ -2405,21 +2398,6 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
         throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 }
 
-
-String Aggregator::getID() const
-{
-    std::stringstream res;
-
-    res << "keys";
-    for (size_t i = 0; i < params.keys.size(); ++i)
-        res << ", " << params.keys[i];
-
-    res << ", aggregates";
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-        res << ", " << params.aggregates[i].column_name;
-
-    return res.str();
-}
 
 void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
 {

@@ -25,18 +25,6 @@ public:
 
     String getName() const override { return "Memory"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Memory(" << &*begin << ", " << &*end;
-
-        for (const auto & name : column_names)
-            res << ", " << name;
-
-        res << ")";
-        return res.str();
-    }
-
     Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); }
 
 protected:

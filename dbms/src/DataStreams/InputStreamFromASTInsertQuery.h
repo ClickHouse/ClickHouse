@@ -26,7 +26,6 @@ public:
     void readSuffixImpl() override { return res_stream->readSuffix(); }
 
     String getName() const override { return "InputStreamFromASTInsertQuery"; }
-    String getID() const override { return "InputStreamFromASTInsertQuery(" + toString(std::intptr_t(this)) + ")"; }
 
     Block getHeader() const override { return res_stream->getHeader(); }
 

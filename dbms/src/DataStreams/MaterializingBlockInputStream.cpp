@@ -15,13 +15,6 @@ String MaterializingBlockInputStream::getName() const
     return "Materializing";
 }
 
-String MaterializingBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "Materializing(" << children.back()->getID() << ")";
-    return res.str();
-}
-
 Block MaterializingBlockInputStream::getHeader() const
 {
     return materializeBlock(children.back()->getHeader());

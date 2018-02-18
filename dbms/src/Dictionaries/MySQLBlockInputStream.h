@@ -21,8 +21,6 @@ public:
 
     String getName() const override { return "MySQL"; }
 
-    String getID() const override;
-
     Block getHeader() const override { return description.sample_block; };
 
 private:

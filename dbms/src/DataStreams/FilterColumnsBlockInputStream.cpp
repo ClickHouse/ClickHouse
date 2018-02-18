@@ -3,18 +3,6 @@
 namespace DB
 {
 
-String FilterColumnsBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "FilterColumnsBlockInputStream(" << children.back()->getID();
-
-    for (const auto & it : columns_to_save)
-        res << ", " << it;
-
-    res << ")";
-    return res.str();
-}
-
 Block FilterColumnsBlockInputStream::getHeader() const
 {
     Block block = children.back()->getHeader();

@@ -61,8 +61,6 @@ public:
 
     String getName() const override { return "ColumnGatherer"; }
 
-    String getID() const override;
-
     Block readImpl() override;
 
     void readSuffixImpl() override;

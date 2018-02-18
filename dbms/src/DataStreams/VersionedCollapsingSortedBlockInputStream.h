@@ -185,24 +185,6 @@ public:
 
     String getName() const override { return "VersionedCollapsingSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "VersionedCollapsingSortedBlockInputStream(inputs";
-
-        for (const auto & child : children)
-            res << ", " << child->getID();
-
-        res << ", description";
-
-        for (const auto & descr : description)
-            res << ", " << descr.getID();
-
-        res << ", sign_column, " << sign_column;
-        res << ", version_column, " << sign_column << ")";
-        return res.str();
-    }
-
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;
