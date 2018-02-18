@@ -1064,7 +1064,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
         {
             Block left_sample_block;
             for (const auto & input_elem : input_columns)
-                left_sample_block.insert({ nullptr, input_elem.type, input_elem.name });
+                left_sample_block.insert(ColumnWithTypeAndName{ input_elem.type, input_elem.name });
 
             return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
         }
