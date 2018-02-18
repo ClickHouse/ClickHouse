@@ -158,6 +158,8 @@ Aggregator::Aggregator(const Params & params_)
         if (!params.aggregates[i].function->hasTrivialDestructor())
             all_aggregates_has_trivial_destructor = false;
     }
+
+    method = chooseAggregationMethod();
 }
 
 
@@ -351,7 +353,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 }
 
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(Sizes & key_sizes) const
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 {
     /// If no keys. All aggregating to single row.
     if (params.keys_size == 0)
@@ -647,8 +649,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
 
 bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
-    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,
-    Sizes & key_sizes, StringRefs & key,
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, StringRefs & key,
     bool & no_more_keys)
 {
     if (isCancelled())
@@ -707,7 +708,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
     /// How to perform the aggregation?
     if (result.empty())
     {
-        result.init(chooseAggregationMethod(key_sizes));
+        result.init(method);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
@@ -994,7 +995,6 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
     AggregateColumns aggregate_columns(params.aggregates_size);
-    Sizes key_sizes;
 
     /** Used if there is a limit on the maximum number of rows in the aggregation,
       *  and if group_by_overflow_mode == ANY.
@@ -1019,9 +1019,7 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
         src_rows += block.rows();
         src_bytes += block.bytes();
 
-        if (!executeOnBlock(block, result,
-            key_columns, aggregate_columns, key_sizes, key,
-            no_more_keys))
+        if (!executeOnBlock(block, result, key_columns, aggregate_columns, key, no_more_keys))
             break;
     }
 
@@ -1984,9 +1982,6 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
     if (bucket_to_blocks.empty())
         return;
 
-    Sizes key_sizes;
-    AggregatedDataVariants::Type method = chooseAggregationMethod(key_sizes);
-
     /** `minus one` means the absence of information about the bucket
       * - in the case of single-level aggregation, as well as for blocks with "overflowing" values.
       * If there is at least one block with a bucket number greater than zero, then there was a two-level aggregation.
@@ -2027,7 +2022,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, &key_sizes, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
         {
             current_memory_tracker = memory_tracker;
 
@@ -2038,7 +2033,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(block, key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
+                    mergeStreamsImpl(block, result.key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
 
                 if (false) {}
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2106,7 +2101,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+                mergeStreamsImpl(block, result.key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -2129,9 +2124,6 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
     LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << bucket_num << ").");
     Stopwatch watch;
-
-    Sizes key_sizes;
-    AggregatedDataVariants::Type method = chooseAggregationMethod(key_sizes);
 
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
       * Better hash function is needed because during external aggregation,
@@ -2287,13 +2279,12 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 
     StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
-    Sizes key_sizes;
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
         key_columns[i] = block.safeGetByPosition(i).column.get();
 
-    AggregatedDataVariants::Type type = chooseAggregationMethod(key_sizes);
+    AggregatedDataVariants::Type type = method;
     data.keys_size = params.keys_size;
     data.key_sizes = key_sizes;
 

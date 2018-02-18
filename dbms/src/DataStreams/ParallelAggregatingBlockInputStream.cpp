@@ -108,8 +108,7 @@ void ParallelAggregatingBlockInputStream::Handler::onBlock(Block & block, size_t
 {
     parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],
         parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
-        parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key,
-        parent.no_more_keys);
+        parent.threads_data[thread_num].key, parent.no_more_keys);
 
     parent.threads_data[thread_num].src_rows += block.rows();
     parent.threads_data[thread_num].src_bytes += block.bytes();

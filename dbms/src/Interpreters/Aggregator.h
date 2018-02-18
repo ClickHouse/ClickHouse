@@ -1052,7 +1052,7 @@ public:
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(Block & block, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        Sizes & key_sizes, StringRefs & keys,                                        /// - pass the corresponding objects that are initially empty.
+        StringRefs & keys,                                        /// - pass the corresponding objects that are initially empty.
         bool & no_more_keys);
 
     /** Convert the aggregation data structure into a block.
@@ -1120,6 +1120,9 @@ protected:
 
     Params params;
 
+    AggregatedDataVariants::Type method;
+    Sizes key_sizes;
+
     AggregateFunctionsPlainPtrs aggregate_functions;
 
     /** This array serves two purposes.
@@ -1179,7 +1182,7 @@ protected:
     TemporaryFiles temporary_files;
 
     /** Select the aggregation method based on the number and types of keys. */
-    AggregatedDataVariants::Type chooseAggregationMethod(Sizes & key_sizes) const;
+    AggregatedDataVariants::Type chooseAggregationMethod();
 
     /** Create states of aggregate functions for one key.
       */
