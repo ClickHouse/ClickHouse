@@ -883,7 +883,6 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
 
     external_tables[external_table_name] = external_storage;
     subqueries_for_sets[external_table_name].source = interpreter->execute().in;
-    subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
     subqueries_for_sets[external_table_name].table = external_storage;
 
     /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
@@ -1661,8 +1660,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
         {
             auto interpreter = interpretSubquery(arg, context, subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                [interpreter]() mutable { return interpreter->execute().in; });
-            subquery_for_set.source_sample = interpreter->getSampleBlock();
+                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
 
             /** Why is LazyBlockInputStream used?
               *
@@ -2486,13 +2484,14 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
                 table = table_to_join.subquery;
 
             auto interpreter = interpretSubquery(table, context, subquery_depth, required_joined_columns);
-            subquery_for_set.source = std::make_shared<LazyBlockInputStream>([interpreter]() mutable { return interpreter->execute().in; });
-            subquery_for_set.source_sample = interpreter->getSampleBlock();
+            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
+                interpreter->getSampleBlock(),
+                [interpreter]() mutable { return interpreter->execute().in; });
         }
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_set.join = join;
-        subquery_for_set.join->setSampleBlock(subquery_for_set.source_sample);
+        subquery_for_set.join->setSampleBlock(subquery_for_set.source->getHeader());
     }
 
     addJoinAction(step.actions, false);

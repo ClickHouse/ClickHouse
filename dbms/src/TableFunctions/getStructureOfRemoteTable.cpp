@@ -1,5 +1,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterDescribeQuery.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
@@ -33,7 +34,7 @@ NamesAndTypesList getStructureOfRemoteTable(
     if (shard_info.isLocal())
         return context.getTable(database, table)->getColumnsList();
 
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, context);
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context);
     input->setPoolMode(PoolMode::GET_ONE);
     input->setMainTable(QualifiedTableName{database, table});
     input->readPrefix();

@@ -157,7 +157,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ReadBufferFromFile backup_buf(file_path);
     CompressedReadBuffer compressed_backup_buf(backup_buf);
-    NativeBlockInputStream backup_stream(compressed_backup_buf);
+    NativeBlockInputStream backup_stream(compressed_backup_buf, 0);
 
     backup_stream.readPrefix();
     while (Block block = backup_stream.read())

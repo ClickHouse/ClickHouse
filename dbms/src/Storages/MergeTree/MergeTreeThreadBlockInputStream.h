@@ -1,5 +1,5 @@
 #pragma once
-#include "MergeTreeBaseBlockInputStream.h"
+#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
 
 
 namespace DB
@@ -30,9 +30,9 @@ public:
 
     String getName() const override { return "MergeTreeThread"; }
 
-    String getID() const override;
-
     ~MergeTreeThreadBlockInputStream() override;
+
+    Block getHeader() const override;
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one

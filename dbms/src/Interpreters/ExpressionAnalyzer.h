@@ -41,7 +41,6 @@ struct SubqueryForSet
 {
     /// The source is obtained using the InterpreterSelectQuery subquery.
     BlockInputStreamPtr source;
-    Block source_sample;
 
     /// If set, build it from result.
     SetPtr set;

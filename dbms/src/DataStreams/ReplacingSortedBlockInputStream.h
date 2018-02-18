@@ -24,23 +24,6 @@ public:
 
     String getName() const override { return "ReplacingSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "ReplacingSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ", version_column, " << version_column << ")";
-        return res.str();
-    }
-
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;

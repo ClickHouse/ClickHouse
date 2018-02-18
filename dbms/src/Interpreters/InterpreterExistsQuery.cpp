@@ -17,15 +17,16 @@ BlockIO InterpreterExistsQuery::execute()
 {
     BlockIO res;
     res.in = executeImpl();
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 
 
 Block InterpreterExistsQuery::getSampleBlock()
 {
-    return {{ std::make_shared<DataTypeUInt8>(), "result" }};
+    return Block{{
+        ColumnUInt8::create(),
+        std::make_shared<DataTypeUInt8>(),
+        "result" }};
 }
 
 

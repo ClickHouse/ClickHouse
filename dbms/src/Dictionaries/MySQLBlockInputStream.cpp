@@ -33,12 +33,6 @@ MySQLBlockInputStream::MySQLBlockInputStream(
 }
 
 
-String MySQLBlockInputStream::getID() const
-{
-    return "MySQL(" + query.str() + ")";
-}
-
-
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;

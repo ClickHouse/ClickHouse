@@ -910,45 +910,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 }
 
 
-std::string ExpressionActions::getID() const
-{
-    std::stringstream ss;
-
-    for (size_t i = 0; i < actions.size(); ++i)
-    {
-        if (i)
-            ss << ", ";
-        if (actions[i].type == ExpressionAction::APPLY_FUNCTION)
-            ss << actions[i].result_name;
-        if (actions[i].type == ExpressionAction::ARRAY_JOIN)
-        {
-            ss << (actions[i].array_join_is_left ? "LEFT ARRAY JOIN" : "ARRAY JOIN") << "{";
-            for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
-                 it != actions[i].array_joined_columns.end(); ++it)
-            {
-                if (it != actions[i].array_joined_columns.begin())
-                    ss << ", ";
-                ss << *it;
-            }
-            ss << "}";
-        }
-
-        /// TODO JOIN
-    }
-
-    ss << ": {";
-    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
-    for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
-    {
-        if (it != output_columns.begin())
-            ss << ", ";
-        ss << it->name;
-    }
-    ss << "}";
-
-    return ss.str();
-}
-
 std::string ExpressionActions::dumpActions() const
 {
     std::stringstream ss;
@@ -1064,7 +1025,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
         {
             Block left_sample_block;
             for (const auto & input_elem : input_columns)
-                left_sample_block.insert({ nullptr, input_elem.type, input_elem.name });
+                left_sample_block.insert(ColumnWithTypeAndName{ input_elem.type, input_elem.name });
 
             return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
         }
