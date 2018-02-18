@@ -415,7 +415,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                         + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
 
-
     if (quorum)
     {
         /// We are waiting for quorum to be satisfied.

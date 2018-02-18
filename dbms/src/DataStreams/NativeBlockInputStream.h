@@ -60,35 +60,33 @@ struct IndexForNativeFormat
 class NativeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /** If a non-zero server_revision is specified, additional block information may be expected and read.
-      *
-      * `index` is not required parameter. If set, only parts of columns specified in the index will be read.
-      */
-    NativeBlockInputStream(
-        ReadBuffer & istr_, UInt64 server_revision_ = 0,
-        bool use_index_ = false,
-        IndexForNativeFormat::Blocks::const_iterator index_block_it_ = IndexForNativeFormat::Blocks::const_iterator{},
-        IndexForNativeFormat::Blocks::const_iterator index_block_end_ = IndexForNativeFormat::Blocks::const_iterator{});
+    /// If a non-zero server_revision is specified, additional block information may be expected and read.
+    NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_);
+
+    /// For cases when data structure (header) is known in advance.
+    /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
+    NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
+
+    /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
+    NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,
+        IndexForNativeFormat::Blocks::const_iterator index_block_it_,
+        IndexForNativeFormat::Blocks::const_iterator index_block_end_);
 
     String getName() const override { return "Native"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << this;
-        return res.str();
-    }
-
     static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
+
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;
 
 private:
     ReadBuffer & istr;
+    Block header;
     UInt64 server_revision;
 
-    bool use_index;
+    bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;
     IndexForNativeFormat::Blocks::const_iterator index_block_end;
     IndexOfBlockForNativeFormat::Columns::const_iterator index_column_it;

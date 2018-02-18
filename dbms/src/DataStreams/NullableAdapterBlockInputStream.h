@@ -18,12 +18,11 @@ namespace DB
 class NullableAdapterBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & in_sample_,
-        const Block & out_sample_);
+    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & in_sample_, const Block & out_sample_);
 
     String getName() const override { return "NullableAdapterBlockInputStream"; }
 
-    String getID() const override;
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
@@ -52,6 +51,7 @@ private:
     void buildActions(const Block & in_sample, const Block & out_sample);
 
 private:
+    Block header;
     Actions actions;
     std::vector<std::optional<String>> rename;
     bool must_transform = false;

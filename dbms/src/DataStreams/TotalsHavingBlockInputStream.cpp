@@ -1,6 +1,7 @@
 #include <DataStreams/TotalsHavingBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
@@ -29,26 +30,18 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
 }
 
 
-String TotalsHavingBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TotalsHavingBlockInputStream(" << children.back()->getID()
-        << "," << filter_column_name << ")";
-    return res.str();
-}
-
-
 static void finalize(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
         ColumnWithTypeAndName & current = block.safeGetByPosition(i);
-        const ColumnAggregateFunction * unfinalized_column = typeid_cast<const ColumnAggregateFunction *>(current.column.get());
+        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
 
-        if (unfinalized_column)
+        if (unfinalized_type)
         {
-            current.type = unfinalized_column->getAggregateFunction()->getReturnType();
-            current.column = unfinalized_column->convertToValues();
+            current.type = unfinalized_type->getReturnType();
+            if (current.column)
+                current.column = typeid_cast<const ColumnAggregateFunction &>(*current.column).convertToValues();
         }
     }
 }
@@ -70,7 +63,7 @@ const Block & TotalsHavingBlockInputStream::getTotals()
                 addToTotals(overflow_aggregates, nullptr);
         }
 
-        totals = header.cloneWithColumns(std::move(current_totals));
+        totals = children.at(0)->getHeader().cloneWithColumns(std::move(current_totals));
         finalize(totals);
     }
 
@@ -78,6 +71,16 @@ const Block & TotalsHavingBlockInputStream::getTotals()
         expression->execute(totals);
 
     return totals;
+}
+
+
+Block TotalsHavingBlockInputStream::getHeader() const
+{
+    Block res = children.at(0)->getHeader();
+    finalize(res);
+    if (expression)
+        expression->execute(res);
+    return res;
 }
 
 
@@ -89,9 +92,6 @@ Block TotalsHavingBlockInputStream::readImpl()
     while (1)
     {
         block = children[0]->read();
-
-        if (!header)
-            header = block.cloneEmpty();
 
         /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
         if (overflow_row && block && block.info.is_overflows)

@@ -475,7 +475,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
             filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(false);
 
-            /// Add columns needed for `sampling_expression`.
+            /// Add columns needed for `sampling_expression` to `column_names_to_read`.
             std::vector<String> add_columns = filter_expression->getRequiredColumns();
             column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
             std::sort(column_names_to_read.begin(), column_names_to_read.end());
@@ -508,7 +508,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
           * They are done before the execution of the pipeline; they can not be interrupted; during the computation, packets of progress are not sent.
           */
         if (!prewhere_subqueries.empty())
-            CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(), prewhere_subqueries, settings.limits).read();
+            CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(Block()), prewhere_subqueries, settings.limits).read();
     }
 
     RangesInDataParts parts_with_ranges;

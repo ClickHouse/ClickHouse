@@ -1669,7 +1669,7 @@ namespace
 
             if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
             {
-                if (out_reason) 
+                if (out_reason)
                     *out_reason = "Quorum 'last part' condition is unsatisfied";
                 return false;
             }
@@ -3213,7 +3213,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.database,
         "", "", timeouts, "ClickHouse replica");
 
-    RemoteBlockInputStream stream(connection, formattedAST(new_query), context, &settings);
+    RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
     NullBlockOutputStream output;
 
     copyData(stream, output);

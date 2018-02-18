@@ -29,23 +29,9 @@ ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
 }
 
 
-String ParallelAggregatingBlockInputStream::getID() const
+Block ParallelAggregatingBlockInputStream::getHeader() const
 {
-    std::stringstream res;
-    res << "ParallelAggregating(";
-
-    Strings children_ids(children.size());
-    for (size_t i = 0; i < children.size(); ++i)
-        children_ids[i] = children[i]->getID();
-
-    /// Order does not matter.
-    std::sort(children_ids.begin(), children_ids.end());
-
-    for (size_t i = 0; i < children_ids.size(); ++i)
-        res << (i == 0 ? "" : ", ") << children_ids[i];
-
-    res << ", " << aggregator.getID() << ")";
-    return res.str();
+    return aggregator.getHeader(final);
 }
 
 
@@ -122,8 +108,7 @@ void ParallelAggregatingBlockInputStream::Handler::onBlock(Block & block, size_t
 {
     parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],
         parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
-        parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key,
-        parent.no_more_keys);
+        parent.threads_data[thread_num].key, parent.no_more_keys);
 
     parent.threads_data[thread_num].src_rows += block.rows();
     parent.threads_data[thread_num].src_bytes += block.bytes();

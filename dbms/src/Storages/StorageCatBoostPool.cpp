@@ -39,11 +39,6 @@ public:
         return "CatBoostDatasetBlockInputStream";
     }
 
-    String getID() const override
-    {
-        return "CatBoostDataset(" + format_name + ", " + file_name + ")";
-    }
-
     Block readImpl() override
     {
         return reader->read();
@@ -58,6 +53,8 @@ public:
     {
         reader->readSuffix();
     }
+
+    Block getHeader() const override { return sample_block; };
 
 private:
     Block sample_block;
