@@ -37,7 +37,6 @@ private:
     ssize_t filter_column;
 
     ConstantFilterDescription constant_filter_description;
-    bool have_constant_filter_description = false;
 };
 
 }

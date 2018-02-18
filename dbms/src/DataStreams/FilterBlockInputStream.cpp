@@ -37,12 +37,8 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     /// Isn't the filter already constant?
     ColumnPtr column = header.safeGetByPosition(filter_column).column;
 
-    if (!have_constant_filter_description)
-    {
-        have_constant_filter_description = true;
-        if (column)
-            constant_filter_description = ConstantFilterDescription(*column);
-    }
+    if (column)
+        constant_filter_description = ConstantFilterDescription(*column);
 
     if (!constant_filter_description.always_false
         && !constant_filter_description.always_true)
@@ -79,12 +75,8 @@ Block FilterBlockInputStream::readImpl()
 {
     Block res;
 
-    if (!have_constant_filter_description)
-    {
-        getHeader();
-        if (constant_filter_description.always_false)
-            return res;
-    }
+    if (constant_filter_description.always_false)
+        return res;
 
     /// Until non-empty block after filtering or end of stream.
     while (1)
