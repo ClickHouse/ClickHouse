@@ -22,21 +22,34 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-NativeBlockInputStream::NativeBlockInputStream(
-    ReadBuffer & istr_, UInt64 server_revision_,
-    bool use_index_,
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_)
+    : istr(istr_), server_revision(server_revision_)
+{
+}
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
+    : istr(istr_), header(header_), server_revision(server_revision_)
+{
+}
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,
     IndexForNativeFormat::Blocks::const_iterator index_block_it_,
     IndexForNativeFormat::Blocks::const_iterator index_block_end_)
     : istr(istr_), server_revision(server_revision_),
-    use_index(use_index_), index_block_it(index_block_it_), index_block_end(index_block_end_)
+    use_index(true), index_block_it(index_block_it_), index_block_end(index_block_end_)
 {
-    if (use_index)
-    {
-        istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
-        if (!istr_concrete)
-            throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
+    istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
+    if (!istr_concrete)
+        throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
 
-        index_column_it = index_block_it->columns.begin();
+    index_column_it = index_block_it->columns.begin();
+
+    /// Initialize header from the index.
+    for (const auto & column : index_block_it->columns)
+    {
+        auto type = DataTypeFactory::instance().get(column.type);
+        header.insert({ type->createColumn(), type, column.name });
     }
 }
 
@@ -53,17 +66,7 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 
 Block NativeBlockInputStream::getHeader()
 {
-    /// Note: we may read first block and stash it for further use just to get header.
-    if (!use_index)
-        throw Exception("Method getHeader for NativeBlockInputStream requires index", ErrorCodes::NOT_IMPLEMENTED);
-
-    Block res;
-    for (const auto & column : index_block_it->columns)
-    {
-        auto type = DataTypeFactory::instance().get(column.type);
-        res.insert({ type->createColumn(), type, column.name });
-    }
-    return res;
+    return header;
 }
 
 
