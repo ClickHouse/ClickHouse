@@ -44,7 +44,7 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
         && !constant_filter_description.always_true)
     {
         /// Replace the filter column to a constant with value 1.
-        auto header_filter_elem = header.getByPosition(filter_column);
+        auto & header_filter_elem = header.getByPosition(filter_column);
         header_filter_elem.column = header_filter_elem.type->createColumnConst(header.rows(), UInt64(1));
     }
 }
