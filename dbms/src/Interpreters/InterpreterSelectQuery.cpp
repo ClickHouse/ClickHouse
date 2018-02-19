@@ -361,17 +361,6 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 }
 
 
-DataTypes InterpreterSelectQuery::getReturnTypes()
-{
-    DataTypes res;
-    const NamesAndTypesList & columns = query_analyzer->getSelectSampleBlock().getNamesAndTypesList();
-    for (auto & column : columns)
-        res.push_back(column.type);
-
-    return res;
-}
-
-
 Block InterpreterSelectQuery::getSampleBlock()
 {
     return query_analyzer->getSelectSampleBlock();
