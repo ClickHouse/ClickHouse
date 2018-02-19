@@ -208,6 +208,8 @@ class BufferBlockOutputStream : public IBlockOutputStream
 public:
     explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     void write(const Block & block) override
     {
         if (!block)

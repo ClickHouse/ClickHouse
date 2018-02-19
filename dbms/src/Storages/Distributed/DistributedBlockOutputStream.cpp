@@ -33,6 +33,7 @@
 #include <condition_variable>
 #include <mutex>
 
+
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
@@ -53,11 +54,17 @@ namespace ErrorCodes
 }
 
 
-DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
-                                                           const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_)
-    : storage(storage), query_ast(query_ast), cluster(cluster_), settings(settings_), insert_sync(insert_sync_),
-      insert_timeout(insert_timeout_)
+DistributedBlockOutputStream::DistributedBlockOutputStream(
+    StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
+    const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_)
+    : storage(storage), query_ast(query_ast), cluster(cluster_), settings(settings_), insert_sync(insert_sync_), insert_timeout(insert_timeout_)
 {
+}
+
+
+Block DistributedBlockOutputStream::getHeader() const
+{
+    return storage.getSampleBlock();
 }
 
 
@@ -469,7 +476,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
             WriteBufferFromFile out{block_file_tmp_path};
             CompressedWriteBuffer compress{out};
-            NativeBlockOutputStream stream{compress, ClickHouseRevision::get()};
+            NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
             writeStringBinary(query_string, out);
 
