@@ -550,11 +550,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         auto insert = std::make_shared<ASTInsertQuery>();
 
-        insert->database = database_name;
+        if (!create.is_temporary)
+            insert->database = database_name;
+
         insert->table = table_name;
         insert->select = create.select->clone();
 
-        return InterpreterInsertQuery(insert, context, context.getSettingsRef().insert_allow_materialized_columns).execute();
+        return InterpreterInsertQuery(insert, context.getSessionContext(), context.getSettingsRef().insert_allow_materialized_columns).execute();
     }
 
     return {};

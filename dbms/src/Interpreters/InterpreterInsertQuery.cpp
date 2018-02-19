@@ -22,6 +22,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 
+
 namespace ProfileEvents
 {
     extern const Event InsertQuery;
@@ -29,6 +30,7 @@ namespace ProfileEvents
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NO_SUCH_COLUMN_IN_TABLE;
@@ -54,7 +56,7 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
         return factory.get(table_function->name, context)->execute(query.table_function, context);
     }
 
-    /// In what table to write.
+    /// Into what table to write.
     return context.getTable(query.database, query.table);
 }
 
@@ -116,13 +118,10 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::move(out_wrapper);
 
     BlockIO res;
+    res.out = std::move(out);
 
     /// What type of query: INSERT or INSERT SELECT?
-    if (!query.select)
-    {
-        res.out = std::move(out);
-    }
-    else
+    if (query.select)
     {
         InterpreterSelectQuery interpreter_select{query.select, context};
 
@@ -130,7 +129,9 @@ BlockIO InterpreterInsertQuery::execute()
 
         res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in->getHeader(), res.out->getHeader());
         res.in = std::make_shared<CastTypeBlockInputStream>(context, res.in, res.out->getHeader());
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
+
+        res.out = nullptr;
 
         if (!allow_materialized)
         {
