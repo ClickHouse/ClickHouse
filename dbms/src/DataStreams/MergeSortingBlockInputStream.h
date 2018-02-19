@@ -38,13 +38,14 @@ public:
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
-    Block getHeader() const override { return blocks.at(0).cloneEmpty(); }
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
 
 private:
     Blocks & blocks;
+    Block header;
     SortDescription description;
     size_t max_merged_block_size;
     size_t limit;
