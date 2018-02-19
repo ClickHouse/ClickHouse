@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-static void checkBlockStructure(const Block & block, const Block & header) [[maybe_unused]]
+[[maybe_unused]] static void checkBlockStructure(const Block & block, const Block & header)
 {
     size_t columns = header.columns();
     if (block.columns() != columns)
