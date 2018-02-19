@@ -2653,7 +2653,13 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
 
     temp_actions->add(ExpressionAction::project(result_columns));
 
-    return temp_actions->getSampleBlock();
+    Block res = temp_actions->getSampleBlock();
+
+    for (auto & elem : res)
+        if (!elem.column)
+            elem.column = elem.type->createColumn();
+
+    return res;
 }
 
 void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries)
