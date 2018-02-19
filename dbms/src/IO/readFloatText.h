@@ -213,7 +213,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         else
             x = converter.StringToFloat(buf.position(), buf.buffer().end() - buf.position(), &num_processed_characters);
 
-        if (num_processed_characters <= 0)
+        if (num_processed_characters < 0)
         {
             if constexpr (throw_exception)
                 throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
@@ -317,6 +317,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
+    x = 0;
     UInt64 before_point = 0;
     UInt64 after_point = 0;
     int after_point_exponent = 0;
@@ -445,13 +446,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
                 return ReturnType(true);
             }
             return ReturnType(false);
-        }
-        else
-        {
-            if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
-            else
-                return false;
         }
     }
 
