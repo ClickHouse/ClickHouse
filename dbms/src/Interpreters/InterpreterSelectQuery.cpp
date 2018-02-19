@@ -374,15 +374,7 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 
 Block InterpreterSelectQuery::getSampleBlock()
 {
-    Block block = query_analyzer->getSelectSampleBlock();
-    /// create non-zero columns so that SampleBlock can be
-    /// written (read) with BlockOut(In)putStreams
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnWithTypeAndName & col = block.safeGetByPosition(i);
-        col.column = col.type->createColumn();
-    }
-    return block;
+    return query_analyzer->getSelectSampleBlock();
 }
 
 
