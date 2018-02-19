@@ -43,6 +43,14 @@ struct MergeTreePartInfo
             && level >= rhs.level;
     }
 
+    /// True if parts do not intersect in any way.
+    bool isDisjoint(const MergeTreePartInfo & rhs) const
+    {
+        return partition_id != rhs.partition_id
+            || min_block > rhs.max_block
+            || max_block < rhs.min_block;
+    }
+
     String getPartName() const;
     String getPartNameV0(DayNum_t left_date, DayNum_t right_date) const;
 
