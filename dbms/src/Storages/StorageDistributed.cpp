@@ -1,4 +1,5 @@
 #include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
 
 #include <Databases/IDatabase.h>
 
@@ -195,8 +196,8 @@ BlockInputStreams StorageDistributed::read(
     if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
         external_tables = context.getExternalTables();
 
-    Block header = InterpreterSelectQuery(query_info.query, context, processed_stage, 0,
-        std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader();
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, processed_stage, 0,
+        std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
         header, processed_stage, QualifiedTableName{remote_database, remote_table}, external_tables);
