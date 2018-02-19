@@ -29,6 +29,11 @@ struct MergeTreePartInfo
             < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level);
     }
 
+    bool operator==(const MergeTreePartInfo & rhs) const
+    {
+        return !(*this < rhs || rhs < *this);
+    }
+
     /// Contains another part (obtained after merging another part with some other)
     bool contains(const MergeTreePartInfo & rhs) const
     {
