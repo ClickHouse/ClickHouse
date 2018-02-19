@@ -88,34 +88,38 @@ inline StringView getURLScheme(const StringView & url)
 /// Extracts host from given url.
 inline StringView getURLHost(const StringView & url)
 {
-    StringView scheme = getURLScheme(url);
-    const char * p = url.data() + scheme.size();
-    const char * end = url.data() + url.size();
+    Pos pos = url.data();
+    Pos end = url.data() + url.size();
 
-    // Colon must follows after scheme.
-    if (p == end || *p != ':')
+    if (nullptr == (pos = strchr(pos, '/')))
         return StringView();
-    // Authority component must starts with "//".
-    if (end - p < 2 || (p[1] != '/' || p[2] != '/'))
-        return StringView();
-    else
-        p += 3;
 
-    const char * st = p;
-
-    for (; p < end; ++p)
+    if (pos != url.data())
     {
-        if (*p == '@')
+        StringView scheme = getURLScheme(url);
+        Pos scheme_end = url.data() + scheme.size();
+
+        // Colon must follows after scheme.
+        if (*(scheme_end++) != ':' || scheme_end != pos)
+            return StringView();
+    }
+
+    if (end - pos < 2 || *(pos++) != '/' || *(pos++) != '/')
+        return StringView();
+
+    const char *st = pos;
+    for (; pos < end; ++pos)
+    {
+        if (*pos == '@')
         {
-            st = p + 1;
-        }
-        else if (*p == ':' || *p == '/' || *p == '?' || *p == '#')
+            st = pos + 1;
+        } else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
         {
             break;
         }
     }
 
-    return (p == st) ? StringView() : StringView(st, p - st);
+    return (pos == st) ? StringView() : StringView(st, pos - st);
 }
 
 
