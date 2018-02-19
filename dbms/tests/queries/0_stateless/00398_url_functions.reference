@@ -1,18 +1,29 @@
+====SCHEMA====
 http
 https
 svn+ssh
 
 http
+
+====HOST====
 www.example.com
 
 www.example.com
 127.0.0.1
+www.example.com
+www.example.com
 example.com
+example.com
+====DOMAIN====
 com
 
 ru
 ru
+com
+====PATH====
 П
 %D%9
+/?query=hello world+foo+bar
+/?query=hello world+foo+bar
 /?query=hello world+foo+bar
 /?query=hello world+foo+bar
