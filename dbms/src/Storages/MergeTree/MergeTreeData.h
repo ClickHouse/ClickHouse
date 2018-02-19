@@ -680,6 +680,7 @@ private:
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.
     DataPartsVector getActivePartsToReplace(
         const MergeTreePartInfo & new_part_info,
+        const String & new_part_name,
         DataPartPtr & out_covering_part,
         std::lock_guard<std::mutex> & data_parts_lock) const;
 

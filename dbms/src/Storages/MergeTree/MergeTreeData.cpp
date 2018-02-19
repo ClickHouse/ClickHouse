@@ -1364,6 +1364,7 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 
 MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     const MergeTreePartInfo & new_part_info,
+    const String & new_part_name,
     DataPartPtr & out_covering_part,
     std::lock_guard<std::mutex> & /* data_parts_lock */) const
 {
@@ -1384,6 +1385,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
                 out_covering_part = *prev;
                 return {};
             }
+
+            if (!new_part_info.isDisjoint((*prev)->info))
+                throw Exception("Part " + new_part_name + " intersects previous part " + (*prev)->getNameWithState() +
+                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
             break;
         }
 
@@ -1404,6 +1410,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
                 out_covering_part = *end;
                 return {};
             }
+
+            if (!new_part_info.isDisjoint((*end)->info))
+                throw Exception("Part " + new_part_name + " intersects next part " + (*end)->getNameWithState() +
+                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
             break;
         }
 
@@ -1472,7 +1483,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     }
 
     DataPartPtr covering_part;
-    DataPartsVector covered_parts = getActivePartsToReplace(part_info, covering_part, lock);
+    DataPartsVector covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock);
 
     if (covering_part)
     {
@@ -2156,7 +2167,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
         for (const DataPartPtr & part : precommitted_parts)
         {
             DataPartPtr covering_part;
-            DataPartsVector covered_parts = data->getActivePartsToReplace(part->info, covering_part, data_parts_lock);
+            DataPartsVector covered_parts = data->getActivePartsToReplace(part->info, part->name, covering_part, data_parts_lock);
             if (covering_part)
             {
                 LOG_WARNING(data->log, "Tried to commit obsolete part " << part->name
