@@ -520,7 +520,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     {
         RangesInDataPart ranges(part, part_index++);
 
-        if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+        if (data.hasPrimaryKey())
             ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
         else
             ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
@@ -829,9 +829,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
                 merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
                         to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
                 break;
-
-            case MergeTreeData::MergingParams::Unsorted:
-                throw Exception("UnsortedMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
 
             case MergeTreeData::MergingParams::Graphite:
                 throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);

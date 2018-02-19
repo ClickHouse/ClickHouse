@@ -113,10 +113,8 @@ MergeTreeData::MergeTreeData(
 {
     merging_params.check(columns);
 
-    if (primary_expr_ast && merging_params.mode == MergingParams::Unsorted)
-        throw Exception("Primary key cannot be set for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
-    if (!primary_expr_ast && merging_params.mode != MergingParams::Unsorted)
-        throw Exception("Primary key can be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+    if (!primary_expr_ast)  /// TODO Allow tables without primary key.
+        throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
     initPrimaryKey();
 
@@ -402,7 +400,6 @@ String MergeTreeData::MergingParams::getModeName() const
         case Collapsing:    return "Collapsing";
         case Summing:       return "Summing";
         case Aggregating:   return "Aggregating";
-        case Unsorted:      return "Unsorted";
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
         case VersionedCollapsing:  return "VersionedCollapsing";
