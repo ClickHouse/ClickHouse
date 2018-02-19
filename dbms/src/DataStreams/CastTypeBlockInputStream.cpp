@@ -8,11 +8,35 @@ namespace DB
 
 CastTypeBlockInputStream::CastTypeBlockInputStream(
     const Context & context_,
-    const BlockInputStreamPtr & input_,
-    const Block & reference_definition_)
-    : context(context_), ref_definition(reference_definition_)
+    const BlockInputStreamPtr & input,
+    const Block & reference_definition)
+    : context(context_)
 {
-    children.emplace_back(input_);
+    children.emplace_back(input);
+
+    Block input_header = input->getHeader();
+
+    for (size_t col_num = 0, num_columns = input_header.columns(); col_num < num_columns; ++col_num)
+    {
+        const auto & elem = input_header.getByPosition(col_num);
+
+        /// Skip, if it is a problem, it will be detected on the next pipeline stage
+        if (!reference_definition.has(elem.name))
+            continue;
+
+        const auto & ref_column = reference_definition.getByName(elem.name);
+
+        /// Force conversion if source and destination types is different.
+        if (ref_column.type->equals(*elem.type))
+        {
+            header.insert(elem);
+        }
+        else
+        {
+            header.insert({ castColumn(elem, ref_column.type, context), ref_column.type, elem.name });
+            cast_description.emplace(col_num, ref_column.type);
+        }
+    }
 }
 
 String CastTypeBlockInputStream::getName() const
@@ -26,12 +50,6 @@ Block CastTypeBlockInputStream::readImpl()
 
     if (!block)
         return block;
-
-    if (!initialized)
-    {
-        initialized = true;
-        initialize(block);
-    }
 
     if (cast_description.empty())
         return block;
@@ -51,25 +69,6 @@ Block CastTypeBlockInputStream::readImpl()
     }
 
     return res;
-}
-
-
-void CastTypeBlockInputStream::initialize(const Block & src_block)
-{
-    for (size_t src_col = 0, num_columns = src_block.columns(); src_col < num_columns; ++src_col)
-    {
-        const auto & src_column = src_block.getByPosition(src_col);
-
-        /// Skip, if it is a problem, it will be detected on the next pipeline stage
-        if (!ref_definition.has(src_column.name))
-            continue;
-
-        const auto & ref_column = ref_definition.getByName(src_column.name);
-
-        /// Force conversion if source and destination types is different.
-        if (!ref_column.type->equals(*src_column.type))
-            cast_description.emplace(src_col, ref_column.type);
-    }
 }
 
 }
