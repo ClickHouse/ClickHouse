@@ -16,10 +16,10 @@ namespace ErrorCodes
 
 NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
     const BlockInputStreamPtr & input,
-    const Block & in_sample_, const Block & out_sample_)
-    : header(out_sample_)
+    const Block & src_header_, const Block & res_header_)
+    : header(res_header_)
 {
-    buildActions(in_sample_, out_sample_);
+    buildActions(src_header_, res_header_);
     children.push_back(input);
 }
 
@@ -83,12 +83,12 @@ Block NullableAdapterBlockInputStream::readImpl()
 }
 
 void NullableAdapterBlockInputStream::buildActions(
-    const Block & in_sample,
-    const Block & out_sample)
+    const Block & src_header,
+    const Block & res_header)
 {
-    size_t in_size = in_sample.columns();
+    size_t in_size = src_header.columns();
 
-    if (out_sample.columns() != in_size)
+    if (res_header.columns() != in_size)
         throw Exception("Number of columns in INSERT SELECT doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
     actions.reserve(in_size);
@@ -96,8 +96,8 @@ void NullableAdapterBlockInputStream::buildActions(
 
     for (size_t i = 0; i < in_size; ++i)
     {
-        const auto & in_elem  = in_sample.getByPosition(i);
-        const auto & out_elem = out_sample.getByPosition(i);
+        const auto & in_elem  = src_header.getByPosition(i);
+        const auto & out_elem = res_header.getByPosition(i);
 
         bool is_in_nullable = in_elem.type->isNullable();
         bool is_out_nullable = out_elem.type->isNullable();

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-void AddingDefaultBlockOutputStream::write(const DB::Block & block)
+void AddingDefaultBlockOutputStream::write(const Block & block)
 {
     Block res = block;
 

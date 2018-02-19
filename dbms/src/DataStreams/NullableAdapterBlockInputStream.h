@@ -18,7 +18,7 @@ namespace DB
 class NullableAdapterBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & in_sample_, const Block & out_sample_);
+    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & src_header_, const Block & res_header_);
 
     String getName() const override { return "NullableAdapterBlockInputStream"; }
 
@@ -48,7 +48,7 @@ private:
     /// which describes the columns from which we fetch data inside an INSERT
     /// query, and the target sample block which contains the columns
     /// we insert data into.
-    void buildActions(const Block & in_sample, const Block & out_sample);
+    void buildActions(const Block & src_header, const Block & res_header);
 
 private:
     Block header;
