@@ -11,6 +11,8 @@
 #include <Interpreters/NullableUtils.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
+
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
 
@@ -281,7 +283,7 @@ void Join::setSampleBlock(const Block & block)
     /// Choose data structure to use for JOIN.
     init(chooseMethod(key_columns, key_sizes));
 
-    sample_block_with_columns_to_add = block;
+    sample_block_with_columns_to_add = materializeBlock(block);
 
     /// Move from `sample_block_with_columns_to_add` key columns to `sample_block_with_keys`, keeping the order.
     size_t pos = 0;
@@ -462,8 +464,8 @@ bool Join::insertFromBlock(const Block & block)
 
     if (getFullness(kind))
     {
-        /** Transfer the key columns to the beginning of the block.
-          * This is where NonJoinedBlockInputStream will wait for them.
+        /** Move the key columns to the beginning of the block.
+          * This is where NonJoinedBlockInputStream will expect.
           */
         size_t key_num = 0;
         for (const auto & name : key_names_right)
