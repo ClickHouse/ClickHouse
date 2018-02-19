@@ -65,7 +65,9 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
 
 Block MergeTreeBlockInputStream::getHeader() const
 {
-    return storage.getSampleBlockForColumns(ordered_names);
+    Block res = storage.getSampleBlockForColumns(ordered_names);
+    injectVirtualColumns(res);
+    return res;
 }
 
 

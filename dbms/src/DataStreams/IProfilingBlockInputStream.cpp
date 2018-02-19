@@ -4,6 +4,8 @@
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <Columns/ColumnConst.h>
+
 
 namespace DB
 {
@@ -15,6 +17,38 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
+}
+
+
+static void checkBlockStructure(const Block & block, const Block & header) [[maybe_unused]]
+{
+    size_t columns = header.columns();
+    if (block.columns() != columns)
+        throw Exception("Block structure mismatch: different number of columns:\n"
+            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+    for (size_t i = 0; i < columns; ++i)
+    {
+        const auto & expected = header.getByPosition(i);
+        const auto & actual = block.getByPosition(i);
+
+        if (actual.name != expected.name)
+            throw Exception("Block structure mismatch: different names of columns:\n"
+            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (!actual.type->equals(*expected.type))
+            throw Exception("Block structure mismatch: different types:\n"
+            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (actual.column->getName() != expected.column->getName())
+            throw Exception("Block structure mismatch: different columns:\n"
+            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (actual.column->isColumnConst() && expected.column->isColumnConst()
+            && static_cast<const ColumnConst &>(*actual.column).getField() != static_cast<const ColumnConst &>(*expected.column).getField())
+            throw Exception("Block structure mismatch: different values of constants", ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+    }
 }
 
 
@@ -69,6 +103,15 @@ Block IProfilingBlockInputStream::read()
     }
 
     progress(Progress(res.rows(), res.bytes()));
+
+#ifndef NDEBUG
+    if (res)
+    {
+        Block header = getHeader();
+        if (header)
+            checkBlockStructure(res, header);
+    }
+#endif
 
     return res;
 }
