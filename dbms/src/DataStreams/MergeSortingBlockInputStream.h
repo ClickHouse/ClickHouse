@@ -38,7 +38,7 @@ public:
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
-    Block getHeader() const override { return blocks.at(0)->cloneEmpty(); }
+    Block getHeader() const override { return blocks.at(0).cloneEmpty(); }
 
 protected:
     Block readImpl() override;
