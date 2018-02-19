@@ -14,32 +14,19 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
-NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
-    const BlockInputStreamPtr & input,
-    const Block & src_header_, const Block & res_header_)
-    : header(res_header_)
-{
-    buildActions(src_header_, res_header_);
-    children.push_back(input);
-}
 
-Block NullableAdapterBlockInputStream::readImpl()
+static Block transform(const Block & block, const NullableAdapterBlockInputStream::Actions & actions, const std::vector<std::optional<String>> & rename)
 {
-    Block block = children.back()->read();
-
-    if (!block && !must_transform)
-        return block;
+    size_t num_columns = block.columns();
 
     Block res;
-    size_t s = block.columns();
-
-    for (size_t i = 0; i < s; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & elem = block.getByPosition(i);
 
         switch (actions[i])
         {
-            case TO_ORDINARY:
+            case NullableAdapterBlockInputStream::TO_ORDINARY:
             {
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
@@ -54,11 +41,10 @@ Block NullableAdapterBlockInputStream::readImpl()
                     res.insert({
                         nullable_col.getNestedColumnPtr(),
                         nullable_type.getNestedType(),
-                        rename[i].value_or(elem.name)
-                    });
+                        rename[i].value_or(elem.name)});
                 break;
             }
-            case TO_NULLABLE:
+            case NullableAdapterBlockInputStream::TO_NULLABLE:
             {
                 ColumnPtr null_map = ColumnUInt8::create(elem.column->size(), 0);
 
@@ -68,18 +54,36 @@ Block NullableAdapterBlockInputStream::readImpl()
                     rename[i].value_or(elem.name)});
                 break;
             }
-            case NONE:
+            case NullableAdapterBlockInputStream::NONE:
             {
-                if (rename[i])
-                    res.insert({elem.column, elem.type, *rename[i]});
-                else
-                    res.insert(elem);
+                res.insert({elem.column, elem.type, rename[i].value_or(elem.name)});
                 break;
             }
         }
     }
 
     return res;
+}
+
+
+NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
+    const BlockInputStreamPtr & input,
+    const Block & src_header, const Block & res_header)
+{
+    buildActions(src_header, res_header);
+    children.push_back(input);
+    header = transform(src_header, actions, rename);
+}
+
+
+Block NullableAdapterBlockInputStream::readImpl()
+{
+    Block block = children.back()->read();
+
+    if (!block)
+        return block;
+
+    return transform(block, actions, rename);
 }
 
 void NullableAdapterBlockInputStream::buildActions(
@@ -113,9 +117,6 @@ void NullableAdapterBlockInputStream::buildActions(
             rename.emplace_back(std::make_optional(out_elem.name));
         else
             rename.emplace_back();
-
-        if (actions.back() != NONE || rename.back())
-            must_transform = true;
     }
 }
 

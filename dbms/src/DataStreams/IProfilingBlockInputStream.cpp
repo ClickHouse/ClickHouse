@@ -21,11 +21,11 @@ namespace ErrorCodes
 }
 
 
-[[maybe_unused]] static void checkBlockStructure(const Block & block, const Block & header)
+void IProfilingBlockInputStream::checkBlockStructure(const Block & block, const Block & header)
 {
     size_t columns = header.columns();
     if (block.columns() != columns)
-        throw Exception("Block structure mismatch: different number of columns:\n"
+        throw Exception("Block structure mismatch in " + getName() + " stream: different number of columns:\n"
             + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
     for (size_t i = 0; i < columns; ++i)
@@ -34,20 +34,21 @@ namespace ErrorCodes
         const auto & actual = block.getByPosition(i);
 
         if (actual.name != expected.name)
-            throw Exception("Block structure mismatch: different names of columns:\n"
-            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            throw Exception("Block structure mismatch in " + getName() + " stream: different names of columns:\n"
+                + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
         if (!actual.type->equals(*expected.type))
-            throw Exception("Block structure mismatch: different types:\n"
-            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            throw Exception("Block structure mismatch in " + getName() + " stream: different types:\n"
+                + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
         if (actual.column->getName() != expected.column->getName())
-            throw Exception("Block structure mismatch: different columns:\n"
-            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            throw Exception("Block structure mismatch in " + getName() + " stream: different columns:\n"
+                + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
         if (actual.column->isColumnConst() && expected.column->isColumnConst()
             && static_cast<const ColumnConst &>(*actual.column).getField() != static_cast<const ColumnConst &>(*expected.column).getField())
-            throw Exception("Block structure mismatch: different values of constants", ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            throw Exception("Block structure mismatch in " + getName() + " stream: different values of constants",
+                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
     }
 }
 
