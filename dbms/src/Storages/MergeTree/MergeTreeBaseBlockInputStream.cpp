@@ -125,7 +125,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     &prewhere_column_name, &task->ordered_names, task->should_reorder);
 
             task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, &task->pre_range_reader, nullptr, nullptr, nullptr, true);
+                    reader.get(), index_granularity, &task->pre_range_reader, nullptr,
+                    nullptr, &task->ordered_names, true);
         }
         else
         {
