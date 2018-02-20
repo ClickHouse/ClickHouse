@@ -64,6 +64,7 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
     ostr << String(indent, ' ') << getName();
     if (multiplier > 1)
         ostr << " × " << multiplier;
+    // ostr << ": " << getHeader().dumpStructure();
     ostr << std::endl;
     ++indent;
 
@@ -124,14 +125,6 @@ void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, const BlockInputS
         for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
             (*it)->getLeavesImpl(res, *it);
 }
-
-/// By default all instances is different streams
-String IBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << getName() << "(" << this << ")";
-    return res.str();
-};
 
 }
 

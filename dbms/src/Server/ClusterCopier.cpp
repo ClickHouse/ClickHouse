@@ -25,6 +25,8 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterExistsQuery.h>
+#include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -49,6 +51,7 @@
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <Common/isLocalAddress.h>
 #include <DataStreams/copyData.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -1405,14 +1408,16 @@ protected:
     bool existsRemoteTable(const DatabaseAndTableName & table, Connection & connection)
     {
         String query = "EXISTS " + getDatabaseDotTable(table);
-        Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(connection, query, context));
+        Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
+            connection, query, InterpreterExistsQuery::getSampleBlock(), context));
         return block.safeGetByPosition(0).column->getUInt(0) != 0;
     }
 
     String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings = nullptr)
     {
         String query = "SHOW CREATE TABLE " + getDatabaseDotTable(table);
-        Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(connection, query, context, settings));
+        Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
+            connection, query, InterpreterShowCreateQuery::getSampleBlock(), context, settings));
 
         return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
     }
@@ -1426,7 +1431,8 @@ protected:
                << " database = " << DB::quote << table.first
                << " AND table = " << DB::quote << table.second;
 
-            block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(connection, wb.str(), context, settings));
+            block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
+                connection, wb.str(), Block{{ ColumnString::create(), std::make_shared<DataTypeString>(), "partition" }}, context, settings));
         }
 
         Strings res;
@@ -1449,8 +1455,8 @@ protected:
     }
 
     /** Executes simple query (without output streams, for example DDL queries) on each shard of the cluster
-     * Returns number of shards for which at least one replica executed query successfully
-     */
+      * Returns number of shards for which at least one replica executed query successfully
+      */
     size_t executeQueryOnCluster(
         const ClusterPtr & cluster,
         const String & query,
@@ -1513,7 +1519,7 @@ protected:
                     {
                         try
                         {
-                            RemoteBlockInputStream stream(*connection, query, context, &current_settings);
+                            RemoteBlockInputStream stream(*connection, query, {}, context, &current_settings);
                             NullBlockOutputStream output;
                             copyData(stream, output);
 

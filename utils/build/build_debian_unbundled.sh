@@ -16,7 +16,7 @@ env TEST_RUN=1 \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00416 requires patched poco from contrib/` \
-    TEST_OPT="--no-long --skip 00281 00416 $TEST_OPT" \
+    TEST_OPT="--skip long compile 00416 $TEST_OPT" \
     TEST_TRUE=false \
     DH_VERBOSE=1 \
     CMAKE_FLAGS="-DUNBUNDLED=1 $CMAKE_FLAGS" \

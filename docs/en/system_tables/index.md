@@ -6,10 +6,3 @@ System tables don't have files with data on the disk or files with metadata. The
 System tables are read-only.
 System tables are located in the 'system' database.
 
-```eval_rst
-.. toctree::
-    :glob:
-
-    *
-```
-

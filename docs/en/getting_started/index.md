@@ -132,12 +132,4 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can try to download from the test data sets:
-
-```eval_rst
-.. toctree::
-    :glob:
-
-    example_datasets/*
-```
-
+To continue experimenting, you can try to download from the test data sets.

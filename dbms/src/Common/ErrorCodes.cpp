@@ -367,6 +367,8 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE = 388;
     extern const int INSERT_WAS_DEDUPLICATED = 389;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY = 390;
+    extern const int EXTERNAL_LIBRARY_ERROR = 391;
+
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

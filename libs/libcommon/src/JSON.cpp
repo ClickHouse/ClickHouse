@@ -5,7 +5,7 @@
 #include <Poco/NumberParser.h>
 #include <common/JSON.h>
 #include <common/find_first_symbols.h>
-#include <common/exp10.h>
+#include <common/preciseExp10.h>
 
 #include <iostream>
 
@@ -147,7 +147,7 @@ static double readFloatText(const char * buf, const char * end)
             {
                 ++buf;
                 Int32 exponent = readIntText(buf, end);
-                x *= exp10(exponent);
+                x *= preciseExp10(exponent);
 
                 run = false;
                 break;

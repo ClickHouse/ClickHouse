@@ -22,16 +22,15 @@ public:
 
     String getName() const override { return "RemoveColumns"; }
 
-    String getID() const override
+    Block getHeader() const override
     {
-        std::stringstream res;
-        res << "RemoveColumns(" << children.back()->getID();
+        Block res = children.back()->getHeader();
 
         for (const auto & it : columns_to_remove)
-            res << ", " << it;
+            if (res.has(it))
+                res.erase(it);
 
-        res << ")";
-        return res.str();
+        return res;
     }
 
 protected:

@@ -81,7 +81,7 @@ void ColumnTuple::insert(const Field & x)
         throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->assumeMutable()->insert(tuple[i]);
+        columns[i]->assumeMutableRef().insert(tuple[i]);
 }
 
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
@@ -93,19 +93,19 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
         throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->assumeMutable()->insertFrom(*src.columns[i], n);
+        columns[i]->assumeMutableRef().insertFrom(*src.columns[i], n);
 }
 
 void ColumnTuple::insertDefault()
 {
     for (auto & column : columns)
-        column->assumeMutable()->insertDefault();
+        column->assumeMutableRef().insertDefault();
 }
 
 void ColumnTuple::popBack(size_t n)
 {
     for (auto & column : columns)
-        column->assumeMutable()->popBack(n);
+        column->assumeMutableRef().popBack(n);
 }
 
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -120,7 +120,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 {
     for (auto & column : columns)
-        pos = column->assumeMutable()->deserializeAndInsertFromArena(pos);
+        pos = column->assumeMutableRef().deserializeAndInsertFromArena(pos);
 
     return pos;
 }
@@ -135,7 +135,7 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->assumeMutable()->insertRangeFrom(
+        columns[i]->assumeMutableRef().insertRangeFrom(
             *static_cast<const ColumnTuple &>(src).columns[i],
             start, length);
 }

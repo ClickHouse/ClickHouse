@@ -1,4 +1,4 @@
-# CSV -15
+# CSV
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 

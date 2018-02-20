@@ -1,6 +1,4 @@
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/BlockExtraInfoInputStream.h>
-#include <DataStreams/UnionBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 #include <Databases/IDatabase.h>
 
@@ -172,7 +170,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 
 
 BlockInputStreams StorageDistributed::read(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
@@ -197,11 +195,14 @@ BlockInputStreams StorageDistributed::read(
     if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
         external_tables = context.getExternalTables();
 
+    Block header = InterpreterSelectQuery(query_info.query, context, processed_stage, 0,
+        std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader();
+
     ClusterProxy::SelectStreamFactory select_stream_factory(
-        processed_stage, QualifiedTableName{remote_database, remote_table}, external_tables);
+        header, processed_stage, QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::executeQuery(
-            select_stream_factory, cluster, modified_query_ast, context, settings);
+        select_stream_factory, cluster, modified_query_ast, context, settings);
 }
 
 

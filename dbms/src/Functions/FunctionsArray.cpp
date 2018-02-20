@@ -23,6 +23,7 @@
 #include <DataTypes/getMostSubtype.h>
 #include <Core/TypeListNumber.h>
 
+
 namespace DB
 {
 
@@ -61,6 +62,13 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
 {
     size_t num_elements = arguments.size();
 
+    if (num_elements == 0)
+    {
+        /// We should return constant empty array.
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
+        return;
+    }
+
     const DataTypePtr & return_type = block.getByPosition(result).type;
     const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
 
@@ -91,8 +99,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         columns[i] = columns_holder[i].get();
     }
 
-    /** Create and fill the result array.
-        */
+    /// Create and fill the result array.
 
     auto out = ColumnArray::create(elem_type->createColumn());
     IColumn & out_data = out->getData();
@@ -150,7 +157,7 @@ public:
         ++index;
     }
 
-    ColumnPtr getNullMapData() && { return std::move(sink_null_map_holder); }
+    ColumnPtr getNullMapColumnPtr() && { return std::move(sink_null_map_holder); }
 
 private:
     const UInt8 * src_null_map = nullptr;
@@ -770,25 +777,25 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     /// Check nullability.
-    bool is_nullable_array = false;
+    bool is_array_of_nullable = false;
 
     const ColumnArray * col_array = nullptr;
     const ColumnArray * col_const_array = nullptr;
 
     col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (col_array)
-        is_nullable_array = col_array->getData().isColumnNullable();
+        is_array_of_nullable = col_array->getData().isColumnNullable();
     else
     {
         col_const_array = checkAndGetColumnConstData<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_const_array)
-            is_nullable_array = col_const_array->getData().isColumnNullable();
+            is_array_of_nullable = col_const_array->getData().isColumnNullable();
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    if (!is_nullable_array)
+    if (!is_array_of_nullable)
     {
         ArrayImpl::NullMapBuilder builder;
         perform(block, arguments, result, builder);
@@ -854,7 +861,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         /// Store the result.
         const ColumnWithTypeAndName & source_col = source_block.getByPosition(2);
         ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-        dest_col.column = ColumnNullable::create(source_col.column, std::move(builder).getNullMapData());
+        dest_col.column = ColumnNullable::create(source_col.column, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
     }
 }
 

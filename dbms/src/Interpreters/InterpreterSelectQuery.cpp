@@ -148,37 +148,48 @@ bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
 
 void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
 {
-    auto query_table = query.table();
-
-    if (query_table && typeid_cast<ASTSelectQuery *>(query_table.get()))
+    /// Read from prepared input.
+    if (input)
     {
         if (table_column_names.empty())
-        {
-            table_column_names = InterpreterSelectQuery::getSampleBlock(query_table, context).getNamesAndTypesList();
-        }
+            table_column_names = input->getHeader().getNamesAndTypesList();
     }
     else
     {
-        if (query_table && typeid_cast<const ASTFunction *>(query_table.get()))
+        auto table_expression = query.table();
+
+        /// Read from subquery.
+        if (table_expression && typeid_cast<const ASTSelectQuery *>(table_expression.get()))
         {
-            /// Get the table function
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
-            /// Run it and remember the result
-            storage = table_function_ptr->execute(query_table, context);
+            if (table_column_names.empty())
+                table_column_names = InterpreterSelectQuery::getSampleBlock(table_expression, context).getNamesAndTypesList();
         }
         else
         {
-            String database_name;
-            String table_name;
+            /// Read from table function.
+            if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
+            {
+                /// Get the table function
+                TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
+                    typeid_cast<const ASTFunction *>(table_expression.get())->name, context);
+                /// Run it and remember the result
+                storage = table_function_ptr->execute(table_expression, context);
+            }
+            else
+            {
+                /// Read from table.
+                String database_name;
+                String table_name;
 
-            getDatabaseAndTableNames(database_name, table_name);
+                getDatabaseAndTableNames(database_name, table_name);
 
-            storage = context.getTable(database_name, table_name);
+                storage = context.getTable(database_name, table_name);
+            }
+
+            table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+            if (table_column_names.empty())
+                table_column_names = storage->getColumnsListNonMaterialized();
         }
-
-        table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
-        if (table_column_names.empty())
-            table_column_names = storage->getColumnsListNonMaterialized();
     }
 
     if (table_column_names.empty())
@@ -385,14 +396,6 @@ BlockIO InterpreterSelectQuery::execute()
 {
     (void) executeWithoutUnion();
 
-    if (hasNoData())
-    {
-        BlockIO res;
-        res.in = std::make_shared<NullBlockInputStream>();
-        res.in_sample = getSampleBlock();
-        return res;
-    }
-
     executeUnion();
 
     /// Constraints on the result, the quota on the result, and also callback for progress.
@@ -416,8 +419,6 @@ BlockIO InterpreterSelectQuery::execute()
 
     BlockIO res;
     res.in = streams[0];
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 
@@ -460,7 +461,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
     union_within_single_query = false;
 
-    /** Take out the data from Storage. from_stage - to what stage the request was completed in Storage. */
+    /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns();
 
     LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
@@ -552,14 +553,6 @@ void InterpreterSelectQuery::executeSingleQuery()
             chain.finalize();
             chain.clear();
         }
-
-        /** If there is no data.
-         *  This check is specially postponed slightly lower than it could be (immediately after executeFetchColumns),
-         *  for the query to be analyzed, and errors (for example, type mismatches) could be found in it.
-         *  Otherwise, the empty result could be returned for the incorrect query.
-         */
-        if (hasNoData())
-            return;
 
         /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
         if (has_where)
@@ -700,10 +693,6 @@ void InterpreterSelectQuery::executeSingleQuery()
         }
     }
 
-    /** If there is no data. */
-    if (hasNoData())
-        return;
-
     SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     if (!subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(subqueries_for_sets);
@@ -724,9 +713,6 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 {
-    if (!hasNoData())
-        return QueryProcessingStage::FetchColumns;
-
     /// The subquery interpreter, if the subquery
     std::optional<InterpreterSelectQuery> interpreter_subquery;
 
@@ -873,7 +859,12 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                 optimize_prewhere(*merge_tree);
         }
 
-        streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+        /// If there was no already prepared input.
+        if (streams.empty())
+            streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+
+        if (streams.empty())
+            streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
 
         if (alias_actions)
         {
@@ -927,7 +918,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 }
 
 
-void InterpreterSelectQuery::executeWhere(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeWhere(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
@@ -936,7 +927,7 @@ void InterpreterSelectQuery::executeWhere(ExpressionActionsPtr expression)
 }
 
 
-void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression, bool overflow_row, bool final)
+void InterpreterSelectQuery::executeAggregation(const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
     transformStreams([&](auto & stream)
     {
@@ -947,6 +938,15 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
     AggregateDescriptions aggregates;
     query_analyzer->getAggregateInfo(key_names, aggregates);
 
+    Block header = streams[0]->getHeader();
+    ColumnNumbers keys;
+    for (const auto & name : key_names)
+        keys.push_back(header.getPositionByName(name));
+    for (auto & descr : aggregates)
+        if (descr.arguments.empty())
+            for (const auto & name : descr.argument_names)
+                descr.arguments.push_back(header.getPositionByName(name));
+
     const Settings & settings = context.getSettingsRef();
 
     /** Two-level aggregation is useful in two cases:
@@ -955,12 +955,13 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
       */
     bool allow_to_use_two_level_group_by = streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
 
-    Aggregator::Params params(key_names, aggregates,
+    Aggregator::Params params(header, keys, aggregates,
         overflow_row, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
-        settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath());
+        settings.limits.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+        context.getTemporaryPath());
 
     /// If there are several sources, then we perform parallel aggregation
     if (streams.size() > 1)
@@ -999,6 +1000,12 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
     AggregateDescriptions aggregates;
     query_analyzer->getAggregateInfo(key_names, aggregates);
 
+    Block header = streams[0]->getHeader();
+
+    ColumnNumbers keys;
+    for (const auto & name : key_names)
+        keys.push_back(header.getPositionByName(name));
+
     /** There are two modes of distributed aggregation.
       *
       * 1. In different threads read from the remote servers blocks.
@@ -1014,7 +1021,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(key_names, aggregates, overflow_row);
+    Aggregator::Params params(header, keys, aggregates, overflow_row);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -1039,7 +1046,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 }
 
 
-void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeHaving(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
@@ -1048,7 +1055,7 @@ void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
 }
 
 
-void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionActionsPtr expression, bool overflow_row)
+void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, const ExpressionActionsPtr & expression, bool overflow_row)
 {
     executeUnion();
 
@@ -1060,7 +1067,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionA
 }
 
 
-void InterpreterSelectQuery::executeExpression(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeExpression(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
@@ -1161,7 +1168,7 @@ void InterpreterSelectQuery::executeMergeSorted()
 }
 
 
-void InterpreterSelectQuery::executeProjection(ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeProjection(const ExpressionActionsPtr & expression)
 {
     transformStreams([&](auto & stream)
     {
@@ -1336,12 +1343,6 @@ void InterpreterSelectQuery::transformStreams(Transform && transform)
 
     if (stream_with_non_joined_data)
         transform(stream_with_non_joined_data);
-}
-
-
-bool InterpreterSelectQuery::hasNoData() const
-{
-    return streams.empty() && !stream_with_non_joined_data;
 }
 
 
