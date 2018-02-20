@@ -107,9 +107,9 @@ public:
         /// The number of rows were read at LAST iteration in chain. <= num_added_rows + num_filtered_rows.
         size_t numReadRows() const { return num_read_rows; }
         /// The number of rows were added to block as a result of reading chain.
-        size_t getNumAddedRows() const { return num_added_rows; }
+        size_t numAddedRows() const { return num_added_rows; }
         /// The number of filtered rows at all steps in reading chain.
-        size_t getNumFilteredRows() const { return num_filtered_rows; }
+        size_t numFilteredRows() const { return num_filtered_rows; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
         const ColumnPtr & getFilter() const { return filter; }
 
