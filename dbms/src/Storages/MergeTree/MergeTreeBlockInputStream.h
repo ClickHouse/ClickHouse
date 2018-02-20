@@ -38,7 +38,7 @@ public:
 
     String getName() const override { return "MergeTree"; }
 
-    String getID() const override;
+    Block getHeader() const override;
 
     /// Closes readers and unlock part locks
     void finish();

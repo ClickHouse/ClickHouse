@@ -573,7 +573,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, columns.materialized_columns);
 
         BlockIO io;
-        io.in_sample = as_select_sample;
         io.in = std::make_shared<NullAndDoCopyBlockInputStream>(interpreter_select->execute().in, out);
 
         return io;
@@ -587,6 +586,7 @@ BlockIO InterpreterCreateQuery::execute()
 {
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
     checkAccess(create);
+    ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())

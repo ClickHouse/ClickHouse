@@ -35,8 +35,6 @@ public:
 
     String getName() const override { return "SummingSorted"; }
 
-    String getID() const override;
-
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;

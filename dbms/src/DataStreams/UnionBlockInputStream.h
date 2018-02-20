@@ -86,26 +86,6 @@ public:
 
     String getName() const override { return "Union"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Union(";
-
-        Strings children_ids(children.size());
-        for (size_t i = 0; i < children.size(); ++i)
-            children_ids[i] = children[i]->getID();
-
-        /// Order does not matter.
-        std::sort(children_ids.begin(), children_ids.end());
-
-        for (size_t i = 0; i < children_ids.size(); ++i)
-            res << (i == 0 ? "" : ", ") << children_ids[i];
-
-        res << ")";
-        return res.str();
-    }
-
-
     ~UnionBlockInputStream() override
     {
         try
@@ -138,6 +118,8 @@ public:
     {
         return doGetBlockExtraInfo();
     }
+
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     void finalize()

@@ -293,7 +293,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
 
-    if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    if (index_stream)
     {
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
@@ -354,7 +354,7 @@ void MergedBlockOutputStream::init()
 {
     Poco::File(part_path).createDirectories();
 
-    if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    if (storage.hasPrimaryKey())
     {
         index_file_stream = std::make_unique<WriteBufferFromFile>(
             part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
@@ -371,7 +371,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     OffsetColumns offset_columns;
 
-    auto sort_description = storage.getSortDescription();
+    auto sort_description = storage.getPrimarySortDescription();
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_columns(sort_description.size());
@@ -443,7 +443,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (size_t i = index_offset; i < rows; i += storage.index_granularity)
         {
-            if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+            if (storage.hasPrimaryKey())
             {
                 for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
                 {

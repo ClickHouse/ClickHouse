@@ -98,7 +98,6 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-
     StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
         : storage(storage_)
     {
@@ -145,22 +144,12 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "File(" << storage.format_name << ", ";
-        if (!storage.path.empty())
-            res_stream << storage.path;
-        else
-            res_stream << storage.table_fd;
-        res_stream << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
         return reader->read();
     }
+
+    Block getHeader() const override { return reader->getHeader(); };
 
     void readPrefixImpl() override
     {

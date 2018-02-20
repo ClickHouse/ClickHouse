@@ -17,16 +17,10 @@ namespace ErrorCodes
 NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
     const BlockInputStreamPtr & input,
     const Block & in_sample_, const Block & out_sample_)
+    : header(out_sample_)
 {
     buildActions(in_sample_, out_sample_);
     children.push_back(input);
-}
-
-String NullableAdapterBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "NullableAdapterBlockInputStream(" << children.back()->getID() << ")";
-    return res.str();
 }
 
 Block NullableAdapterBlockInputStream::readImpl()

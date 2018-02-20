@@ -883,7 +883,6 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
 
     external_tables[external_table_name] = external_storage;
     subqueries_for_sets[external_table_name].source = interpreter->execute().in;
-    subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
     subqueries_for_sets[external_table_name].table = external_storage;
 
     /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
@@ -1560,7 +1559,11 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
 void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block)
 {
     for (auto & child : node->children)
-        makeSetsForIndexImpl(child, sample_block);
+    {
+        /// Process expression only in current subquery
+        if (!typeid_cast<ASTSubquery *>(child.get()))
+            makeSetsForIndexImpl(child, sample_block);
+    }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
     if (func && func->kind == ASTFunction::FUNCTION && functionIsInOperator(func->name))
@@ -1585,9 +1588,12 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 }
                 catch (const Exception & e)
                 {
-                    /// in `sample_block` there are no columns that add `getActions`
-                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
+                    /// in `sample_block` there are no columns that are added by `getActions`
+                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
                         throw;
+
+                    /// TODO: Delete the catch in the next release
+                    tryLogCurrentException(&Poco::Logger::get("ExpressionAnalyzer"));
                 }
             }
         }
@@ -1654,8 +1660,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
         {
             auto interpreter = interpretSubquery(arg, context, subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                [interpreter]() mutable { return interpreter->execute().in; });
-            subquery_for_set.source_sample = interpreter->getSampleBlock();
+                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
 
             /** Why is LazyBlockInputStream used?
               *
@@ -2479,13 +2484,14 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
                 table = table_to_join.subquery;
 
             auto interpreter = interpretSubquery(table, context, subquery_depth, required_joined_columns);
-            subquery_for_set.source = std::make_shared<LazyBlockInputStream>([interpreter]() mutable { return interpreter->execute().in; });
-            subquery_for_set.source_sample = interpreter->getSampleBlock();
+            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
+                interpreter->getSampleBlock(),
+                [interpreter]() mutable { return interpreter->execute().in; });
         }
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_set.join = join;
-        subquery_for_set.join->setSampleBlock(subquery_for_set.source_sample);
+        subquery_for_set.join->setSampleBlock(subquery_for_set.source->getHeader());
     }
 
     addJoinAction(step.actions, false);

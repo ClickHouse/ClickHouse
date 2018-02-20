@@ -194,8 +194,6 @@ public:
     /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
 
-    std::string getID() const;
-
     std::string dumpActions() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);

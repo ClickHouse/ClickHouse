@@ -53,6 +53,13 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -507,9 +514,6 @@ struct ConvertImplGenericFromString
         if (const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(&col_from))
         {
             auto res = data_type_to.createColumn();
-
-            if (!size)
-                return;
 
             IColumn & column_to = *res;
             column_to.reserve(size);
@@ -1272,9 +1276,7 @@ private:
     static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
         if (!from_type->isStringOrFixedString())
-            throw Exception{
-                "CAST AS FixedString is only implemented for types String and FixedString",
-                ErrorCodes::NOT_IMPLEMENTED};
+            throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
 
         return [N] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
@@ -1309,9 +1311,7 @@ private:
 
         /// both from_type and to_type should be nullptr now is array types had same dimensions
         if ((from_type == nullptr) != (to_type == nullptr))
-            throw Exception{
-                "CAST AS Array can only be performed between same-dimensional array types or from String",
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{"CAST AS Array can only be performed between same-dimensional array types or from String", ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
         const auto nested_function = prepare(from_nested_type, to_nested_type.get());
@@ -1337,9 +1337,7 @@ private:
                 block.getByPosition(result).column = ColumnArray::create(nested_block.getByPosition(1).column, col_array->getOffsetsPtr());
             }
             else
-                throw Exception{
-                    "Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
-                    ErrorCodes::LOGICAL_ERROR};
+                throw Exception{"Illegal column " + array_arg.column->getName() + " for function CAST AS Array", ErrorCodes::LOGICAL_ERROR};
         };
     }
 
@@ -1356,16 +1354,12 @@ private:
 
         const auto from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
         if (!from_type)
-            throw Exception{
-                "CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: " + from_type_untyped->getName() +
-                    ", right type: " + to_type->getName(),
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: " + from_type_untyped->getName() +
+                ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
         if (from_type->getElements().size() != to_type->getElements().size())
-            throw Exception{
-                "CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
-                    "Left type: " + from_type->getName() + ", right type: " + to_type->getName(),
-                 ErrorCodes::TYPE_MISMATCH};
+            throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
+                "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
@@ -1441,10 +1435,8 @@ private:
             };
         }
         else
-            throw Exception{
-                "Conversion from " + from_type->getName() + " to " + to_type->getName() +
-                    " is not supported",
-                ErrorCodes::CANNOT_CONVERT_TYPE};
+            throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() +
+                " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
@@ -1467,10 +1459,8 @@ private:
             const auto & old_value = name_value.second;
             const auto & new_value = to_type->getValue(name_value.first);
             if (old_value != new_value)
-                throw Exception{
-                    "Enum conversion changes value for element '" + name_value.first +
-                        "' from " + toString(old_value) + " to " + toString(new_value),
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception{"Enum conversion changes value for element '" + name_value.first +
+                    "' from " + toString(old_value) + " to " + toString(new_value), ErrorCodes::CANNOT_CONVERT_TYPE};
         }
     };
 
@@ -1499,8 +1489,7 @@ private:
                 col_with_type_and_name.column = std::move(res);
             }
             else
-                throw Exception{
-                    "Unexpected column " + first_col->getName() + " as first argument of function " + function_name,
+                throw Exception{"Unexpected column " + first_col->getName() + " as first argument of function " + function_name,
                     ErrorCodes::LOGICAL_ERROR};
         };
     }
@@ -1540,8 +1529,7 @@ private:
 
         /// Check that the requested conversion is allowed.
         if (nullable_conversion.source_is_nullable && !nullable_conversion.result_is_nullable)
-            throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
-                ErrorCodes::CANNOT_CONVERT_TYPE};
+            throw Exception{"Cannot convert data from a nullable type to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
         if (from_type->onlyNull())
         {
@@ -1671,9 +1659,7 @@ private:
         /// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
         ///  but it is disabled because deserializing aggregate functions state might be unsafe.
 
-        throw Exception{
-            "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
-            ErrorCodes::CANNOT_CONVERT_TYPE};
+        throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 };
 
@@ -1709,8 +1695,7 @@ protected:
     {
         const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument to " + getName() + " must be a constant string describing type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return DataTypeFactory::instance().get(type_col->getValue<String>());
     }

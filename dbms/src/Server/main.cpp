@@ -45,6 +45,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"copier", mainEntryClickHouseClusterCopier},
 #if USE_EMBEDDED_COMPILER
     {"clang", mainEntryClickHouseClang},
+    {"clang++", mainEntryClickHouseClang},
     {"lld", mainEntryClickHouseLLD},
 #endif
 };
