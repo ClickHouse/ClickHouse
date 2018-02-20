@@ -114,7 +114,7 @@ public:
         size_t getNumAddedRows() const { return num_added_rows; }
         /// The number of filtered rows at all steps in reading chain.
         size_t getNumFilteredRows() const { return num_filtered_rows; }
-        /// Filter you need to allply to newly-read columns in order to add them to block.
+        /// Filter you need to apply to newly-read columns in order to add them to block.
         const ColumnPtr & getFilter() const { return filter; }
 
         void addGranule(size_t num_rows);
