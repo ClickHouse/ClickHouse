@@ -179,12 +179,11 @@ public:
         size_t tuple_index;
         size_t pk_index;
         std::vector<FunctionBasePtr> functions;
-        DataTypePtr data_type;
     };
 
     MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && indexes_mapping_);
 
-    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges);
+    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 private:
     using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
     OrderedTuples ordered_set;
