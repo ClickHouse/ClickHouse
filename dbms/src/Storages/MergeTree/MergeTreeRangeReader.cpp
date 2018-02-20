@@ -405,10 +405,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         throw Exception("Expected at least 1 row to read, got 0.", ErrorCodes::LOGICAL_ERROR);
 
     ReadResult read_result;
+    size_t prev_bytes = 0;
 
     if (prev_reader)
     {
         read_result = prev_reader->read(max_rows, ranges);
+        prev_bytes = read_result.block.bytes();
         continueReadingChain(read_result);
     }
     else
@@ -416,6 +418,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     if (!read_result.block)
         return read_result;
+
+    read_result.addNumBytesRead(read_result.block.bytes() - prev_bytes);
 
     executePrewhereActionsAndFilterColumns(read_result);
     return read_result;
