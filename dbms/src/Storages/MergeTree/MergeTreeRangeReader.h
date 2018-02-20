@@ -120,7 +120,7 @@ public:
         void addGranule(size_t num_rows);
         void adjustLastGranule(size_t num_rows_to_subtract);
         void addRows(size_t rows) { num_added_rows += rows; }
-        void addRange(const MarkRange & range) { started_ranges.emplace_back({ rows_per_granule.size(), range }); }
+        void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
         /// Set filter or replace old one. Filter must have more zeroes than previous.
         void setFilter(ColumnPtr filter_);
