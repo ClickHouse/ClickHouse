@@ -519,7 +519,7 @@ void MergeTreeRangeReader::continueReadingChain(ReadResult & result)
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result)
 {
 
-    const auto & columns = stream.reader()->getColumns();
+    const auto & columns = merge_tree_reader->getColumns();
 
     auto filterColumns = [&result, &columns](const IColumn::Filter & filter)
     {
@@ -528,7 +528,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             if (result.block.has(column.name))
             {
                 auto & column_with_type_and_name = result.block.getByName(column.name);
-                column_with_type_and_name.column = std::move(column_with_type_and_name.column)->filter(filter, -1);
+                if (column_with_type_and_name.column)
+                    column_with_type_and_name.column = column_with_type_and_name.column->filter(filter, -1);
             }
         }
     };
@@ -540,7 +541,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             auto & col = result.block.safeGetByPosition(i);
 
             if (col.column && col.column->size() == filter.size())
-                col.column = std::move(col.column)->filter(filter, -1);
+                col.column = col.column->filter(filter, -1);
         }
     };
 
@@ -557,7 +558,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         }
     }
 
-    stream.reader()->fillMissingColumns(result.block, *ordered_names, always_reorder);
+    merge_tree_reader->fillMissingColumns(result.block, *ordered_names, always_reorder);
 
     ColumnPtr filter;
     if (prewhere_actions)
