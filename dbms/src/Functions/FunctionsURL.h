@@ -396,18 +396,39 @@ struct ExtractWWW
         Pos pos = data;
         Pos end = pos + size;
 
-        Pos tmp;
-        size_t protocol_length;
-        ExtractProtocol::execute(data, size, tmp, protocol_length);
-        pos += protocol_length + 3;
-
-        if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
-            return;
-
-        if (pos + 4 < end && !strncmp(pos, "www.", 4))
+        if (nullptr != (pos = strchr(pos, '/')))
         {
-            res_data = pos;
-            res_size = 4;
+            if (pos != data)
+            {
+                Pos tmp;
+                size_t protocol_length;
+                ExtractProtocol::execute(data, size, tmp, protocol_length);
+
+                if (pos != data + protocol_length + 1)
+                    return;
+            }
+
+            if (end - pos < 2 || *(pos++) != '/' || *(pos++) != '/')
+                return;
+
+            const char *st = pos;
+            for (; pos < end; ++pos)
+            {
+                if (*pos == '@')
+                {
+                    st = pos + 1;
+                } else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
+                {
+                    break;
+                }
+            }
+
+
+            if (st + 4 < end && !strncmp(st, "www.", 4))
+            {
+                res_data = st;
+                res_size = 4;
+            }
         }
     }
 };
