@@ -392,7 +392,7 @@ size_t MergeTreeRangeReader::numPendingRows() const
     return prev_reader ? prev_reader->numPendingRows() : stream.numPendingRows();
 }
 
-bool isCurrentRangeFinished() const
+bool MergeTreeRangeReader::isCurrentRangeFinished() const
 {
     return prev_reader ? prev_reader->isCurrentRangeFinished() : stream.isFinished();
 }

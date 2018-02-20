@@ -19,14 +19,13 @@ public:
 
     MergeTreeRangeReader() = default;
 
-    bool isReadingFinished() const { return prev_reader ? prev_reader->isReadingFinished() : stream.isFinished(); }
+    bool isReadingFinished() const;
 
-    size_t numReadRowsInCurrentGranule() const { return prev_reader ? prev_reader->numReadRowsInCurrentGranule() : stream.numReadRowsInCurrentGranule(); }
-    size_t numPendingRowsInCurrentGranule() const { return prev_reader ? prev_reader->numPendingRowsInCurrentGranule() : stream.numPendingRowsInCurrentGranule(); }
-    size_t numPendingRows() const { return prev_reader ? prev_reader->numPendingRows() : stream.numPendingRows(); }
+    size_t numReadRowsInCurrentGranule() const;
+    size_t numPendingRowsInCurrentGranule() const;
+    size_t numPendingRows() const;
 
-    bool isCurrentRangeFinished() const { return prev_reader ? prev_reader->isCurrentRangeFinished() : stream.isFinished(); }
-
+    bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
 
     class DelayedStream
@@ -121,7 +120,7 @@ public:
         void addGranule(size_t num_rows);
         void adjustLastGranule(size_t num_rows_to_subtract);
         void addRows(size_t rows) { num_added_rows += rows; }
-        void addRange(const MarkRange & range) { started_ranges.emplace_back(rows_per_granule.size(), range); }
+        void addRange(const MarkRange & range) { started_ranges.emplace_back({ rows_per_granule.size(), range }); }
 
         /// Set filter or replace old one. Filter must have more zeroes than previous.
         void setFilter(ColumnPtr filter_);
