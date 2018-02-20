@@ -428,7 +428,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
     {
         size_t space_left = max_rows;
-        while (space_left && !stream.isFinished() && !ranges.empty())
+        while (space_left && (!stream.isFinished() || !ranges.empty()))
         {
             if (stream.isFinished())
             {
