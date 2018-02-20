@@ -224,8 +224,6 @@ private:
       * It is done so that sending occurs only in the upper stream.
       */
     void collectAndSendTotalRowsApprox();
-
-    void checkBlockStructure(const Block & block, const Block & header);
 };
 
 }

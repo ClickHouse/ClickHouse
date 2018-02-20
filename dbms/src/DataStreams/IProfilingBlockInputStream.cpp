@@ -21,38 +21,6 @@ namespace ErrorCodes
 }
 
 
-void IProfilingBlockInputStream::checkBlockStructure(const Block & block, const Block & header)
-{
-    size_t columns = header.columns();
-    if (block.columns() != columns)
-        throw Exception("Block structure mismatch in " + getName() + " stream: different number of columns:\n"
-            + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-
-    for (size_t i = 0; i < columns; ++i)
-    {
-        const auto & expected = header.getByPosition(i);
-        const auto & actual = block.getByPosition(i);
-
-        if (actual.name != expected.name)
-            throw Exception("Block structure mismatch in " + getName() + " stream: different names of columns:\n"
-                + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-
-        if (!actual.type->equals(*expected.type))
-            throw Exception("Block structure mismatch in " + getName() + " stream: different types:\n"
-                + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-
-        if (actual.column->getName() != expected.column->getName())
-            throw Exception("Block structure mismatch in " + getName() + " stream: different columns:\n"
-                + block.dumpStructure() + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-
-        if (actual.column->isColumnConst() && expected.column->isColumnConst()
-            && static_cast<const ColumnConst &>(*actual.column).getField() != static_cast<const ColumnConst &>(*expected.column).getField())
-            throw Exception("Block structure mismatch in " + getName() + " stream: different values of constants",
-                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-    }
-}
-
-
 IProfilingBlockInputStream::IProfilingBlockInputStream()
 {
     info.parent = this;
@@ -110,7 +78,7 @@ Block IProfilingBlockInputStream::read()
     {
         Block header = getHeader();
         if (header)
-            checkBlockStructure(res, header);
+            assertBlocksHaveEqualStructure(res, header, getName());
     }
 #endif
 
