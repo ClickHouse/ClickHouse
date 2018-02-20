@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeMutation.h>
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <DataStreams/FilterBlockInputStream.h>
@@ -77,11 +78,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeMutation::executeOnPart(const MergeTr
     {
         if (cmd.type == MutationCommand::DELETE)
         {
-            auto predicate_expr = ExpressionAnalyzer(cmd.predicate, context, nullptr, all_columns)
-                .getActions(false);
-            String col_name = cmd.predicate->getColumnName();
+            /// TODO: maybe there is a better way to negate a predicate for DELETE.
+            auto predicate = std::make_shared<ASTFunction>();
+            predicate->name = "not";
+            predicate->arguments = std::make_shared<ASTExpressionList>();
+            predicate->arguments->children.push_back(cmd.predicate);
+            predicate->children.push_back(predicate->arguments);
 
-            /// TODO: this is the inverse to DELETE (leave only rows that satisfy the predicate).
+            auto predicate_expr = ExpressionAnalyzer(predicate, context, nullptr, all_columns)
+                .getActions(false);
+            String col_name = predicate->getColumnName();
+
             in = std::make_shared<FilterBlockInputStream>(in, predicate_expr, col_name);
         }
         else
