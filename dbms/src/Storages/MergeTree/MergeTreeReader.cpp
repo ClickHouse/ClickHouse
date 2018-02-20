@@ -66,17 +66,6 @@ const MergeTreeReader::ValueSizeMap & MergeTreeReader::getAvgValueSizeHints() co
 }
 
 
-MergeTreePrewhereRangeReader MergeTreeReader::readRange(
-        size_t from_mark, size_t to_mark, MergeTreePrewhereRangeReader * prev_reader,
-        ExpressionActionsPtr prewhere_actions, const String * prewhere_column_name,
-        const Names * ordered_names, bool always_reorder)
-{
-    return MergeTreePrewhereRangeReader(
-            prev_reader, this, from_mark, to_mark, storage.index_granularity,
-            prewhere_actions, prewhere_column_name, ordered_names, always_reorder);
-}
-
-
 size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
 {
     size_t read_rows = 0;

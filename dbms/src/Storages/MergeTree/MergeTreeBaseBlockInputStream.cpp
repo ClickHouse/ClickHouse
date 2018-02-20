@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -84,7 +83,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
     auto estimateNumRows = [preferred_block_size_bytes, max_block_size_rows,
         index_granularity, preferred_max_column_in_block_size_bytes, min_filtration_ratio](
-        MergeTreeReadTask & task, MergeTreePrewhereRangeReader & reader)
+        MergeTreeReadTask & task, MergeTreeRangeReader & reader)
     {
         if (!task.size_predictor)
             return max_block_size_rows;
@@ -102,7 +101,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             size_t rows_to_read_for_max_size_column
                 = task.size_predictor->estimateNumRowsForMaxSizeColumn(preferred_max_column_in_block_size_bytes);
             double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ratio);
-            size_t rows_to_read_for_max_size_column_with_filtration
+            auto rows_to_read_for_max_size_column_with_filtration
                 = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
 
             /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than index_granularity.
@@ -117,127 +116,49 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         return index_granularity * granule_to_read - reader.numReadRowsInCurrentGranule();
     };
 
-    if (prewhere_actions)
+    if (!task->range_reader.isInitialized())
     {
-        do
+        if (prewhere_actions)
         {
-            auto processNextRange = [this]()
-            {
-                const auto & range = task->mark_ranges.back();
-                task->pre_range_reader = pre_reader->readRange(
-                        range.begin, range.end, nullptr, prewhere_actions,
-                        &prewhere_column_name, &task->ordered_names, task->should_reorder);
+            task->pre_range_reader = MergeTreeRangeReader(
+                    pre_reader.get(), index_granularity, nullptr, prewhere_actions,
+                    &prewhere_column_name, &task->ordered_names, task->should_reorder);
 
-                task->range_reader = reader->readRange(
-                        range.begin, range.end, &task->pre_range_reader,
-                        nullptr, nullptr, &task->ordered_names, true);
-
-                task->mark_ranges.pop_back();
-            };
-
-            auto resetRangeReaders = [this]()
-            {
-                task->range_reader.reset();
-                task->pre_range_reader.reset();
-            };
-
-            if (!task->range_reader)
-                processNextRange();
-
-            /// FIXME: size prediction model is updated by filtered rows, but it predicts size of unfiltered rows also
-            size_t recommended_rows = estimateNumRows(*task, task->range_reader);
-
-            if (res && recommended_rows < 1)
-                break;
-
-            size_t space_left = std::max(static_cast<decltype(max_block_size_rows)>(1), std::min(max_block_size_rows, recommended_rows));
-
-            size_t total_filtered_rows = 0;
-
-            while (!task->isFinished() && space_left && !isCancelled())
-            {
-                if (!task->range_reader)
-                    processNextRange();
-
-                size_t rows_to_read = std::min(task->range_reader.numPendingRows(), space_left);
-                size_t filtered_rows = 0;
-
-                auto read_result = task->range_reader.read(res, rows_to_read);
-                if (task->size_predictor)
-                {
-                    task->size_predictor->updateFilteredRowsRation(
-                            read_result.getNumAddedRows() + read_result.getNumFilteredRows(),
-                            read_result.getNumFilteredRows());
-                }
-
-                total_filtered_rows += filtered_rows;
-
-                if (task->range_reader.isReadingFinished())
-                    resetRangeReaders();
-
-                space_left -= rows_to_read;
-            }
-
-            if (res.rows() == 0)
-            {
-                res.clear();
-                return res;
-            }
-
-            progressImpl({ res.rows(), res.bytes() });
-
-            if (task->remove_prewhere_column && res.has(prewhere_column_name))
-                res.erase(prewhere_column_name);
-
-            if (task->size_predictor && res)
-                task->size_predictor->update(res);
-
-
-            res.checkNumberOfRows();
-
+            task->range_reader = MergeTreeRangeReader(
+                    reader.get(), index_granularity, &task->pre_range_reader, nullptr, nullptr, nullptr, true);
         }
-        while (!task->isFinished() && !res && !isCancelled());
-    }
-    else
-    {
-        size_t space_left = std::max(static_cast<decltype(max_block_size_rows)>(1), max_block_size_rows);
-        while (!task->isFinished() && space_left && !isCancelled())
+        else
         {
-            if (!task->range_reader)
-            {
-                auto & range = task->mark_ranges.back();
-                task->range_reader = reader->readRange(range.begin, range.end, nullptr,
-                                                       nullptr, nullptr, &task->ordered_names, task->should_reorder);
-                task->mark_ranges.pop_back();
-            }
-
-            size_t rows_to_read = std::min(task->range_reader.numPendingRows(), space_left);
-            size_t recommended_rows = estimateNumRows(*task, task->range_reader);
-            if (res && recommended_rows < 1)
-                break;
-
-            rows_to_read = std::min(rows_to_read, std::max(static_cast<decltype(recommended_rows)>(1), recommended_rows));
-
-            auto read_result = task->range_reader.read(res, rows_to_read);
-            if (task->size_predictor)
-            {
-                task->size_predictor->updateFilteredRowsRation(
-                        read_result.getNumAddedRows() + read_result.getNumFilteredRows(),
-                        read_result.getNumFilteredRows());
-            }
-
-            if (task->range_reader.isReadingFinished())
-                task->range_reader.reset();
-
-            if (task->size_predictor && res)
-                task->size_predictor->update(res);
-
-            space_left -= rows_to_read;
+            task->range_reader = MergeTreeRangeReader(
+                    reader.get(), index_granularity, nullptr, nullptr,
+                    nullptr, &task->ordered_names, task->should_reorder);
         }
-        progressImpl({ res.rows(), res.bytes() });
     }
 
-    return res;
+    size_t recommended_rows = estimateNumRows(*task, task->range_reader);
+    size_t rows_to_read = std::max(static_cast<decltype(max_block_size_rows)>(1),
+                                   std::min(max_block_size_rows, recommended_rows));
+
+    auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
+
+    progressImpl({ read_result.block.rows(), read_result.block.bytes() });
+
+    if (task->size_predictor)
+    {
+        task->size_predictor->updateFilteredRowsRation(
+                read_result.getNumAddedRows() + read_result.getNumFilteredRows(),
+                read_result.getNumFilteredRows());
+
+        if (read_result.block)
+            task->size_predictor->update(read_result.block);
+    }
+
+    if (task->remove_prewhere_column && res.has(prewhere_column_name))
+        res.erase(prewhere_column_name);
+
+    res.checkNumberOfRows();
+
+    return read_result.block;
 }
 
 

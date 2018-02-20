@@ -46,11 +46,11 @@ struct MergeTreeReadTask
     const bool should_reorder;
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
-    /// used to save current range processing status
-    MergeTreePrewhereRangeReader range_reader;
-    MergeTreePrewhereRangeReader pre_range_reader;
+    /// Used to save current range processing status
+    MergeTreeRangeReader range_reader;
+    MergeTreeRangeReader pre_range_reader;
 
-    bool isFinished() const { return mark_ranges.empty() && !range_reader; }
+    bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
         const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
