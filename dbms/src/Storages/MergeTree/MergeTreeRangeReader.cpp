@@ -187,8 +187,10 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows)
     num_read_rows += num_rows;
 }
 
-void MergeTreeRangeReader::ReadResult::adjustLastGranule(size_t num_rows_to_subtract)
+void MergeTreeRangeReader::ReadResult::adjustLastGranule()
 {
+    size_t num_rows_to_subtract = num_read_rows - num_added_rows;
+
     if (rows_per_granule.empty())
         throw Exception("Can't adjust last granule because no granules were added.", ErrorCodes::LOGICAL_ERROR);
 
@@ -448,17 +450,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
 
     result.addRows(stream.finalize(result.block));
 
-    auto last_granule = result.rowsPerGranule().back();
-    auto added_rows = result.numAddedRows();
-    auto num_read_rows = result.numReadRows();
-
-    if (num_read_rows - last_granule > added_rows)
-        throw Exception("RangeReader expected reading of at least " + toString(num_read_rows - last_granule) +
-                        " rows, but only " + toString(added_rows) + " was read.", ErrorCodes::LOGICAL_ERROR);
-
     /// Last granule may be incomplete.
-    size_t adjustment = max_rows - added_rows;
-    result.adjustLastGranule(adjustment);
+    result.adjustLastGranule();
 
     return result;
 }

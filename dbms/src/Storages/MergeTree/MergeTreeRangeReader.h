@@ -114,7 +114,7 @@ public:
         const ColumnPtr & getFilter() const { return filter; }
 
         void addGranule(size_t num_rows);
-        void adjustLastGranule(size_t num_rows_to_subtract);
+        void adjustLastGranule();
         void addRows(size_t rows) { num_added_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
