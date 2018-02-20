@@ -3,6 +3,7 @@
 #include <sys/utsname.h>
 #include <cerrno>
 #include <cstring>
+#include <algorithm>
 #include <iostream>
 #include <functional>
 #include <Poco/DOM/Text.h>
@@ -356,7 +357,7 @@ void ConfigProcessor::doIncludesRecursive(
 
 ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & config_path)
 {
-    Files res;
+    Files files;
 
     Poco::Path merge_dir_path(config_path);
     merge_dir_path.setExtension("d");
@@ -378,12 +379,14 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             Poco::File & file = *it;
             if (file.isFile() && (endsWith(file.path(), ".xml") || endsWith(file.path(), ".conf")))
             {
-                res.push_back(file.path());
+                files.push_back(file.path());
             }
         }
     }
 
-    return res;
+    std::sort(files.begin(), files.end());
+
+    return files;
 }
 
 XMLDocumentPtr ConfigProcessor::processConfig(
