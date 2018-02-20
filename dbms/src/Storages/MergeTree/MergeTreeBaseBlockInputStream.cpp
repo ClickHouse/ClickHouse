@@ -147,8 +147,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     if (task->size_predictor)
     {
         task->size_predictor->updateFilteredRowsRation(
-                read_result.getNumAddedRows() + read_result.getNumFilteredRows(),
-                read_result.getNumFilteredRows());
+                read_result.numAddedRows() + read_result.numFilteredRows(),
+                read_result.numFilteredRows());
 
         if (read_result.block)
             task->size_predictor->update(read_result.block);

@@ -449,10 +449,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     result.addRows(stream.finalize(result.block));
 
     auto last_granule = result.rowsPerGranule().back();
-    auto added_rows =result.getNumAddedRows();
+    auto added_rows = result.numAddedRows();
+    auto num_read_rows = result.numReadRows();
 
-    if (max_rows - last_granule > added_rows)
-        throw Exception("RangeReader expected reading of at least " + toString(max_rows - last_granule) +
+    if (num_read_rows - last_granule > added_rows)
+        throw Exception("RangeReader expected reading of at least " + toString(num_read_rows - last_granule) +
                         " rows, but only " + toString(added_rows) + " was read.", ErrorCodes::LOGICAL_ERROR);
 
     /// Last granule may be incomplete.
