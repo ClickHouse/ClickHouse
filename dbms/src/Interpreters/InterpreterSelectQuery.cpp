@@ -213,20 +213,6 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
 
     if (input)
         streams.push_back(input);
-
-    if (is_first_select_inside_union_all)
-    {
-        /// We check that the results of all SELECT queries are compatible.
-        Block first = getSampleBlock();
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        {
-            Block current = p->getSampleBlock();
-            if (!blocksHaveEqualStructure(first, current))
-                throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
-                + "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead",
-                ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-        }
-    }
 }
 
 void InterpreterSelectQuery::initQueryAnalyzer()

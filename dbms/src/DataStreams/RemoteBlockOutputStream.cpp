@@ -46,14 +46,7 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const
 
 void RemoteBlockOutputStream::write(const Block & block)
 {
-    if (!blocksHaveEqualStructure(block, header))
-    {
-        std::stringstream message;
-        message << "Block structure is different from table structure.\n"
-            << "\nTable structure:\n(" << header.dumpStructure() << ")\nBlock structure:\n(" << block.dumpStructure() << ")\n";
-        throw Exception(message.str());
-    }
-
+    assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
     connection.sendData(block);
 }
 
