@@ -99,9 +99,8 @@
 
                  NOTE: If the first worker starts insert data and detects that destination partition is not empty then the partition will
                  be dropped and refilled, take it into account if you already have some data in destination tables. You could directly
-                 specify partitions that should be copied in <enabled_partitions/>.
-
-                 NOTE: Currently partition key of source and destination tables should be the same.
+                 specify partitions that should be copied in <enabled_partitions/>, they should be in quoted format like partition column of
+                 system.parts table.
             -->
             <engine>ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/hits2/{shard}/hits2', '{replica}', EventDate, (CounterID, EventDate), 8192)</engine>
 
