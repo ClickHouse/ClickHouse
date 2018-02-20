@@ -433,7 +433,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (stream.isFinished())
             {
                 result.addRows(stream.finalize(result.block));
-                ranges.pop_back();
                 stream = Stream(ranges.back().begin, ranges.back().end, index_granularity, merge_tree_reader);
                 result.addRange(ranges.back());
                 ranges.pop_back();
