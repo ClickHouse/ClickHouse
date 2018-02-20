@@ -110,6 +110,8 @@ public:
         size_t numAddedRows() const { return num_added_rows; }
         /// The number of filtered rows at all steps in reading chain.
         size_t numFilteredRows() const { return num_filtered_rows; }
+        /// The number of bytes read from disk.
+        size_t numBytesRead() const { return num_bytes_read; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
         const ColumnPtr & getFilter() const { return filter; }
 
@@ -125,6 +127,8 @@ public:
         /// Remove all rows from granules.
         void clear();
 
+        void addNumBytesRead(size_t count) { num_bytes_read += count; }
+
         Block block;
 
     private:
@@ -139,6 +143,8 @@ public:
         size_t num_filtered_rows = 0;
         /// Zero if filter is nullptr.
         size_t num_zeros_in_filter = 0;
+        /// Without any filtration.
+        size_t num_bytes_read = 0;
         /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_read.
         ColumnPtr filter;
 

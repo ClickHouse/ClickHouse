@@ -146,13 +146,13 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     if (read_result.block.rows() == 0)
         read_result.block.clear();
 
-    progressImpl({ read_result.block.rows(), read_result.block.bytes() });
+    size_t rows_read = read_result.numAddedRows() + read_result.numFilteredRows();
+
+    progressImpl({ rows_read, read_result.numBytesRead() });
 
     if (task->size_predictor)
     {
-        task->size_predictor->updateFilteredRowsRation(
-                read_result.numAddedRows() + read_result.numFilteredRows(),
-                read_result.numFilteredRows());
+        task->size_predictor->updateFilteredRowsRation(rows_read, read_result.numFilteredRows());
 
         if (read_result.block)
             task->size_predictor->update(read_result.block);
