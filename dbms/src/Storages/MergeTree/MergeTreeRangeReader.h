@@ -42,8 +42,6 @@ public:
 
         bool isFinished() const { return is_finished; }
 
-        MergeTreeReader * reader() const { return merge_tree_reader; }
-
     private:
         size_t current_mark = 0;
         size_t current_offset = 0;
@@ -77,8 +75,6 @@ public:
         size_t numPendingRowsInCurrentGranule() const { return index_granularity - numReadRowsInCurrentGranule(); }
         size_t numRendingGranules() const { return last_mark - current_mark; }
         size_t numPendingRows() const { return numRendingGranules() * index_granularity - offset_after_current_mark; }
-
-        MergeTreeReader * reader() const { return stream.reader(); }
 
     private:
         size_t current_mark = 0;
