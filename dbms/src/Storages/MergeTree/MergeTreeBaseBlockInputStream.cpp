@@ -142,6 +142,10 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
 
+    /// All rows were filtered. Repeat.
+    if (read_result.block.rows() == 0)
+        read_result.block.clear();
+
     progressImpl({ read_result.block.rows(), read_result.block.bytes() });
 
     if (task->size_predictor)
