@@ -1758,7 +1758,7 @@ protected:
                     {
                         /// CREATE TABLE and DROP PARTITION return empty block
                         RemoteBlockInputStream stream(*connection, query, Block(), context, &current_settings);
-                        NullBlockOutputStream output;
+                        NullBlockOutputStream output(Block());
                         copyData(stream, output);
 
                         if (increment_and_check_exit())

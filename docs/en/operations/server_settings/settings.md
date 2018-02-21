@@ -67,7 +67,7 @@ ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes th
 
 The default database.
 
-Use a [ SHOW DATABASES](../query_language/queries.md#query_language_queries_show_databases) query to get a list of databases.
+Use a [ SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases) query to get a list of databases.
 
 **Example**
 

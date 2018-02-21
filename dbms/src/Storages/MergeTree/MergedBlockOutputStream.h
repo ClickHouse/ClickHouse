@@ -105,6 +105,8 @@ public:
 
     std::string getPartPath() const;
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     /// If the data is pre-sorted.
     void write(const Block & block) override;
 
@@ -149,13 +151,15 @@ class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
+        MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
 
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void writeSuffix() override;
     MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums();
 
 private:
+    Block header;
     String part_path;
 
     bool initialized = false;

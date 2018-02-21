@@ -78,8 +78,6 @@ namespace ErrorCodes
 ///   column is set, keep the latest row with the maximal version.
 /// - Summing - sum all numeric columns not contained in the primary key for all rows with the same primary key.
 /// - Aggregating - merge columns containing aggregate function states for all rows with the same primary key.
-/// - Unsorted - during the merge the data is not sorted but merely concatenated; this allows reading the data
-///   in the same batches as they were written.
 /// - Graphite - performs coarsening of historical data for Graphite (a system for quantitative monitoring).
 
 /// The MergeTreeData class contains a list of parts and the data structure parameters.
@@ -239,7 +237,6 @@ public:
             Collapsing          = 1,
             Summing             = 2,
             Aggregating         = 3,
-            Unsorted            = 4,
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
@@ -269,7 +266,7 @@ public:
     /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
-    /// primary_expr_ast - expression used for sorting; empty for UnsortedMergeTree.
+    /// primary_expr_ast - expression used for sorting;
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
     ///     Otherwise, partition_expr_ast is used for partitioning.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
@@ -442,6 +439,7 @@ public:
         broken_part_callback(name);
     }
 
+    bool hasPrimaryKey() const { return !primary_sort_descr.empty(); }
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
     ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; } /// may return nullptr
     SortDescription getPrimarySortDescription() const { return primary_sort_descr; }
@@ -526,8 +524,7 @@ public:
 
     ASTPtr partition_expr_ast;
     ExpressionActionsPtr partition_expr;
-    Names partition_expr_columns;
-    DataTypes partition_expr_column_types;
+    Block partition_key_sample;
 
     ExpressionActionsPtr minmax_idx_expr;
     Names minmax_idx_columns;

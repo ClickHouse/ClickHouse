@@ -133,11 +133,11 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
     return new_query;
 }
 
-bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
 {
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery & >(*query);
     if (!select.where_expression && !select.prewhere_expression)
-        return false;
+        return;
 
     NameSet columns;
     for (const auto & it : block.getNamesAndTypesList())
@@ -151,7 +151,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         extractFunctions(select.prewhere_expression, columns, functions);
     ASTPtr expression_ast = buildWhereExpression(functions);
     if (!expression_ast)
-        return false;
+        return;
 
     /// Let's analyze and calculate the expression.
     ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
@@ -165,16 +165,11 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         filter_column = converted;
     const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
 
-    if (countBytesInFilter(filter) == 0)
-        return false;
-
     for (size_t i = 0; i < block.columns(); ++i)
     {
         ColumnPtr & column = block.safeGetByPosition(i).column;
         column = column->filter(filter, -1);
     }
-
-    return true;
 }
 
 }

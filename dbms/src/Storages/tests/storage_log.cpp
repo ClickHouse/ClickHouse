@@ -93,7 +93,7 @@ try
 
         LimitBlockInputStream in_limit(in, 10, 0);
         RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
-        BlockOutputStreamFromRowOutputStream output(output_);
+        BlockOutputStreamFromRowOutputStream output(output_, sample);
 
         copyData(in_limit, output);
     }
