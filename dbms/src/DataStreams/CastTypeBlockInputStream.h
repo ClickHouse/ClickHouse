@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Implicitly converts string and numeric values to Enum, numeric types to other numeric types.
+/// Implicitly converts types.
 class CastTypeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -17,18 +17,13 @@ public:
 
     String getName() const override;
 
-    Block getHeader() const override { return ref_definition; }
-
-protected:
-    Block readImpl() override;
+    Block getHeader() const override { return header; }
 
 private:
-    const Context & context;
-    Block ref_definition;
+    Block readImpl() override;
 
-    /// Initializes cast_description and prepares tmp_conversion_block
-    void initialize(const Block & src_block);
-    bool initialized = false;
+    const Context & context;
+    Block header;
 
     /// Describes required conversions on source block
     /// Contains column numbers in source block that should be converted

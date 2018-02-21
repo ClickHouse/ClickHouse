@@ -20,14 +20,8 @@ class RemoteBlockOutputStream : public IBlockOutputStream
 public:
     RemoteBlockOutputStream(Connection & connection_, const String & query_, const Settings * settings_ = nullptr);
 
+    Block getHeader() const override { return header; }
 
-    /// You can call this method after 'writePrefix', to get table required structure. (You must send data with that structure).
-    Block getSampleBlock() const
-    {
-        return sample_block;
-    }
-
-    void writePrefix() override;
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -40,8 +34,7 @@ private:
     Connection & connection;
     String query;
     const Settings * settings;
-    Block sample_block;
-    bool query_sent = false;
+    Block header;
     bool finished = false;
 };
 

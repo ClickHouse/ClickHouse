@@ -140,7 +140,7 @@ private:
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
-    void initBlockOutput();
+    void initBlockOutput(const Block & block);
 
     bool isQueryCancelled();
 

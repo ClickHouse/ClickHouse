@@ -75,9 +75,25 @@ ostream & operator<<(ostream & stream, const map<K, V> & what)
 }
 
 template <typename K, typename V>
+ostream & operator<<(ostream & stream, const multimap<K, V> & what)
+{
+    stream << "multimap(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K, typename V>
 ostream & operator<<(ostream & stream, const unordered_map<K, V> & what)
 {
     stream << "unordered_map(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K, typename V>
+ostream & operator<<(ostream & stream, const unordered_multimap<K, V> & what)
+{
+    stream << "unordered_multimap(size = " << what.size() << ")";
     dumpContainer(stream, what);
     return stream;
 }
@@ -91,9 +107,25 @@ ostream & operator<<(ostream & stream, const set<K> & what)
 }
 
 template <typename K>
+ostream & operator<<(ostream & stream, const multiset<K> & what)
+{
+    stream << "multiset(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K>
 ostream & operator<<(ostream & stream, const unordered_set<K> & what)
 {
     stream << "unordered_set(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K>
+ostream & operator<<(ostream & stream, const unordered_multiset<K> & what)
+{
+    stream << "unordered_multiset(size = " << what.size() << ")";
     dumpContainer(stream, what);
     return stream;
 }

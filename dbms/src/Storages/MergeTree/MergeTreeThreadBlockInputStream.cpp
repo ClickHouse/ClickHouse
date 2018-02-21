@@ -40,7 +40,9 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
 
 Block MergeTreeThreadBlockInputStream::getHeader() const
 {
-    return pool->getHeader();
+    auto res = pool->getHeader();
+    injectVirtualColumns(res);
+    return res;
 };
 
 

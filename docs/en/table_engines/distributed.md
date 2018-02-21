@@ -1,6 +1,6 @@
 <a name="table_engines-distributed"></a>
 
-# Distributed (Sharding sheme)
+# Distributed
 
 **The Distributed engine does not store data itself**, but allows distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.

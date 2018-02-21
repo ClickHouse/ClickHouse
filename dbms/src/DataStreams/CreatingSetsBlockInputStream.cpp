@@ -1,5 +1,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
+#include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <Storages/IStorage.h>
@@ -108,6 +109,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_table)
         {
+            block = materializeBlock(block);
             table_out->write(block);
 
             rows_to_transfer += block.rows();

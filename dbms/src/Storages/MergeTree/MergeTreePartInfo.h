@@ -40,6 +40,10 @@ struct MergeTreePartInfo
 
     String getPartName() const;
     String getPartNameV0(DayNum_t left_date, DayNum_t right_date) const;
+    UInt64 getBlocksCount() const
+    {
+        return static_cast<UInt64>(max_block - min_block + 1);
+    }
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
