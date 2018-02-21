@@ -1,6 +1,7 @@
 #include <DataStreams/TotalsHavingBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
@@ -29,26 +30,18 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
 }
 
 
-String TotalsHavingBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TotalsHavingBlockInputStream(" << children.back()->getID()
-        << "," << filter_column_name << ")";
-    return res.str();
-}
-
-
 static void finalize(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
         ColumnWithTypeAndName & current = block.safeGetByPosition(i);
-        const ColumnAggregateFunction * unfinalized_column = typeid_cast<const ColumnAggregateFunction *>(current.column.get());
+        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
 
-        if (unfinalized_column)
+        if (unfinalized_type)
         {
-            current.type = unfinalized_column->getAggregateFunction()->getReturnType();
-            current.column = unfinalized_column->convertToValues();
+            current.type = unfinalized_type->getReturnType();
+            if (current.column)
+                current.column = typeid_cast<const ColumnAggregateFunction &>(*current.column).convertToValues();
         }
     }
 }
@@ -67,10 +60,10 @@ const Block & TotalsHavingBlockInputStream::getTotals()
                 || totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
                 || (totals_mode == TotalsMode::AFTER_HAVING_AUTO
                     && static_cast<double>(passed_keys) / total_keys >= auto_include_threshold))
-                addToTotals(current_totals, overflow_aggregates, nullptr);
+                addToTotals(overflow_aggregates, nullptr);
         }
 
-        totals = header.cloneWithColumns(std::move(current_totals));
+        totals = children.at(0)->getHeader().cloneWithColumns(std::move(current_totals));
         finalize(totals);
     }
 
@@ -78,6 +71,16 @@ const Block & TotalsHavingBlockInputStream::getTotals()
         expression->execute(totals);
 
     return totals;
+}
+
+
+Block TotalsHavingBlockInputStream::getHeader() const
+{
+    Block res = children.at(0)->getHeader();
+    finalize(res);
+    if (expression)
+        expression->execute(res);
+    return res;
 }
 
 
@@ -89,9 +92,6 @@ Block TotalsHavingBlockInputStream::readImpl()
     while (1)
     {
         block = children[0]->read();
-
-        if (!header)
-            header = block.cloneEmpty();
 
         /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
         if (overflow_row && block && block.info.is_overflows)
@@ -110,7 +110,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 
         if (filter_column_name.empty())
         {
-            addToTotals(current_totals, block, nullptr);
+            addToTotals(block, nullptr);
         }
         else
         {
@@ -127,9 +127,9 @@ Block TotalsHavingBlockInputStream::readImpl()
 
             /// Add values to `totals` (if it was not already done).
             if (totals_mode == TotalsMode::BEFORE_HAVING)
-                addToTotals(current_totals, block, nullptr);
+                addToTotals(block, nullptr);
             else
-                addToTotals(current_totals, block, filter_description.data);
+                addToTotals(block, filter_description.data);
 
             /// Filter the block by expression in HAVING.
             size_t columns = finalized.columns();
@@ -155,11 +155,10 @@ Block TotalsHavingBlockInputStream::readImpl()
 }
 
 
-void TotalsHavingBlockInputStream::addToTotals(MutableColumns & totals, const Block & block, const IColumn::Filter * filter)
+void TotalsHavingBlockInputStream::addToTotals(const Block & block, const IColumn::Filter * filter)
 {
-    bool need_init = totals.empty();
+    bool need_init = !arena;
 
-    ArenaPtr arena;
     if (need_init)
         arena = std::make_shared<Arena>();
 
@@ -174,7 +173,7 @@ void TotalsHavingBlockInputStream::addToTotals(MutableColumns & totals, const Bl
             {
                 MutableColumnPtr new_column = current.type->createColumn();
                 current.type->insertDefaultInto(*new_column);
-                totals.emplace_back(std::move(new_column));
+                current_totals.emplace_back(std::move(new_column));
             }
             continue;
         }
@@ -193,11 +192,11 @@ void TotalsHavingBlockInputStream::addToTotals(MutableColumns & totals, const Bl
             function->create(data);
             target->getData().push_back(data);
 
-            totals.emplace_back(std::move(target));
+            current_totals.emplace_back(std::move(target));
         }
         else
         {
-            auto & target = typeid_cast<ColumnAggregateFunction &>(*totals[i]);
+            auto & target = typeid_cast<ColumnAggregateFunction &>(*current_totals[i]);
             function = target.getAggregateFunction().get();
             data = target.getData()[0];
         }

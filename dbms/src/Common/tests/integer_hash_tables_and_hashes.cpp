@@ -286,7 +286,7 @@ namespace Hashes
 
 
 template <template <typename...> class Map, typename Hash>
-void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash>&)> init = {})
+void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash> &)> init = {})
 {
     Stopwatch watch;
 

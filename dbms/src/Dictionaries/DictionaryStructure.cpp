@@ -1,7 +1,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 
 #include <ext/range.h>
@@ -235,7 +235,7 @@ size_t DictionaryStructure::getKeySize() const
 static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
     static const std::unordered_set<std::string> valid_keys =
-        { "name", "type", "expression", "null_value", "hierarchical", "injective" };
+        { "name", "type", "expression", "null_value", "hierarchical", "injective", "is_object_id" };
 
     for (const auto & key : keys)
     {
@@ -296,6 +296,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         const auto hierarchical = config.getBool(prefix + "hierarchical", false);
         const auto injective = config.getBool(prefix + "injective", false);
+        const auto is_object_id = config.getBool(prefix + "is_object_id", false);
         if (name.empty())
             throw Exception{
                 "Properties 'name' and 'type' of an attribute cannot be empty",
@@ -314,7 +315,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         has_hierarchy = has_hierarchy || hierarchical;
 
         attributes.emplace_back(DictionaryAttribute{
-            name, underlying_type, type, expression, null_value, hierarchical, injective
+            name, underlying_type, type, expression, null_value, hierarchical, injective, is_object_id
         });
     }
 

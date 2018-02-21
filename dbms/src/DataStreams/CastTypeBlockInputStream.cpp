@@ -20,11 +20,6 @@ String CastTypeBlockInputStream::getName() const
     return "CastType";
 }
 
-String CastTypeBlockInputStream::getID() const
-{
-    return "CastType(" + children.back()->getID() + ")";
-}
-
 Block CastTypeBlockInputStream::readImpl()
 {
     Block block = children.back()->read();

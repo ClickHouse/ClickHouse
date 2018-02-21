@@ -39,11 +39,6 @@ public:
         return "CatBoostDatasetBlockInputStream";
     }
 
-    String getID() const override
-    {
-        return "CatBoostDataset(" + format_name + ", " + file_name + ")";
-    }
-
     Block readImpl() override
     {
         return reader->read();
@@ -58,6 +53,8 @@ public:
     {
         reader->readSuffix();
     }
+
+    Block getHeader() const override { return sample_block; };
 
 private:
     Block sample_block;
@@ -88,14 +85,6 @@ static void checkCreationIsAllowed(const String & base_path, const String & path
         throw Exception(
             "Using file descriptor or user specified path as source of storage isn't allowed for server daemons",
             ErrorCodes::DATABASE_ACCESS_DENIED);
-}
-
-StoragePtr StorageCatBoostPool::create(const Context & context,
-                                       const String & column_description_file_name,
-                                       const String & data_description_file_name)
-{
-    return ext::shared_ptr_helper<StorageCatBoostPool>::create(
-        context, column_description_file_name, data_description_file_name);
 }
 
 

@@ -1,15 +1,20 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Common/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
@@ -40,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
     extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -49,14 +55,14 @@ StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList 
     const ColumnDefaults & column_defaults_,
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_), context(context_),
+    const String & destination_database_, const String & destination_table_, bool allow_materialized_)
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_), context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    log(&Logger::get("StorageBuffer (" + name + ")"))
+    allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + name + ")"))
 {
 }
 
@@ -65,25 +71,15 @@ StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList 
 class BufferBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_)
-        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
+    BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage_)
+        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_), storage(storage_) {}
 
-    String getName() const { return "Buffer"; }
+    String getName() const override { return "Buffer"; }
 
-    String getID() const
-    {
-        std::stringstream res;
-        res << "Buffer(" << &buffer;
-
-        for (const auto & name : column_names)
-            res << ", " << name;
-
-        res << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); };
 
 protected:
-    Block readImpl()
+    Block readImpl() override
     {
         Block res;
 
@@ -105,6 +101,7 @@ protected:
 private:
     Names column_names;
     StorageBuffer::Buffer & buffer;
+    const StorageBuffer & storage;
     bool has_been_read = false;
 };
 
@@ -134,7 +131,7 @@ BlockInputStreams StorageBuffer::read(
     BlockInputStreams streams_from_buffers;
     streams_from_buffers.reserve(num_shards);
     for (auto & buf : buffers)
-        streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf));
+        streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf, *this));
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
@@ -332,6 +329,12 @@ BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settin
 
 void StorageBuffer::startup()
 {
+    if (context.getSettingsRef().limits.readonly)
+    {
+        LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
+            << " Set apropriate system_profile to fix this.");
+    }
+
     flush_thread = std::thread(&StorageBuffer::flushThread, this);
 }
 
@@ -521,7 +524,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
       * This will support some of the cases (but not all) when the table structure does not match.
       */
-    Block structure_of_destination_table = table->getSampleBlock();
+    Block structure_of_destination_table = allow_materialized ? table->getSampleBlock() : table->getSampleBlockNonMaterialized();
     Names columns_intersection;
     columns_intersection.reserve(block.columns());
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
@@ -558,7 +561,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const String & column : columns_intersection)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column));
 
-    InterpreterInsertQuery interpreter{insert, context};
+    InterpreterInsertQuery interpreter{insert, context, allow_materialized};
 
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();
@@ -601,6 +604,52 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         columns, materialized_columns, alias_columns, column_defaults, {});
+}
+
+
+void registerStorageBuffer(StorageFactory & factory)
+{
+    /** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
+      *
+      * db, table - in which table to put data from buffer.
+      * num_buckets - level of parallelism.
+      * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
+      */
+
+    factory.registerStorage("Buffer", [](const StorageFactory::Arguments & args)
+    {
+        ASTs & engine_args = args.engine_args;
+
+        if (engine_args.size() != 9)
+            throw Exception("Storage Buffer requires 9 parameters: "
+                " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+
+        String destination_database = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String destination_table = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[2]).value);
+
+        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*engine_args[3]).value);
+        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*engine_args[4]).value);
+        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[5]).value);
+        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[6]).value);
+        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[7]).value);
+        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[8]).value);
+
+        return StorageBuffer::create(
+            args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.context,
+            num_buckets,
+            StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
+            destination_database, destination_table,
+            static_cast<bool>(args.local_context.getSettingsRef().insert_allow_materialized_columns));
+    });
 }
 
 }

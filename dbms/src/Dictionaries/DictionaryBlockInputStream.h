@@ -31,7 +31,7 @@ public:
                                const std::vector<StringRef> & keys, const Names & column_names);
 
     using GetColumnsFunction =
-        std::function<ColumnsWithTypeAndName(const Columns &, const std::vector<DictionaryAttribute>& attributes)>;
+        std::function<ColumnsWithTypeAndName(const Columns &, const std::vector<DictionaryAttribute> & attributes)>;
     // Used to separate key columns format for storage and view.
     // Calls get_key_columns_function to get key column for dictionary get fuction call
     // and get_view_columns_function to get key representation.
@@ -41,7 +41,8 @@ public:
                                GetColumnsFunction && get_key_columns_function,
                                GetColumnsFunction && get_view_columns_function);
 
-    String getName() const override {
+    String getName() const override
+    {
         return "DictionaryBlockInputStream";
     }
 
@@ -96,7 +97,7 @@ private:
     ColumnPtr getColumnFromStringAttribute(Getter getter, const PaddedPODArray<Key> & ids,
                                            const Columns & keys, const DataTypes & data_types,
                                            const DictionaryAttribute& attribute, const DictionaryType& dictionary) const;
-    ColumnPtr getColumnFromIds(const PaddedPODArray<Key>& ids) const;
+    ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids) const;
 
     void fillKeyColumns(const std::vector<StringRef> & keys, size_t start, size_t size,
                         const DictionaryStructure & dictionary_structure, ColumnsWithTypeAndName & columns) const;
@@ -107,7 +108,7 @@ private:
     ColumnsWithTypeAndName key_columns;
     Poco::Logger * logger;
     Block (DictionaryBlockInputStream<DictionaryType, Key>::*fillBlockFunction)(
-        const PaddedPODArray<Key>& ids, const Columns& keys,
+        const PaddedPODArray<Key> & ids, const Columns& keys,
         const DataTypes & types, ColumnsWithTypeAndName && view) const;
 
     Columns data_columns;
@@ -240,7 +241,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 template <typename DictionaryType, typename Key>
 template <template <typename> class Getter, typename StringGetter>
 Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
-    const PaddedPODArray<Key>& ids, const Columns& keys, const DataTypes & types, ColumnsWithTypeAndName && view) const
+    const PaddedPODArray<Key> & ids, const Columns & keys, const DataTypes & types, ColumnsWithTypeAndName && view) const
 {
     std::unordered_set<std::string> names(column_names.begin(), column_names.end());
 
@@ -349,7 +350,7 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromStringAt
 }
 
 template <typename DictionaryType, typename Key>
-ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(const PaddedPODArray<Key>& ids) const
+ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(const PaddedPODArray<Key> & ids) const
 {
     auto column_vector = ColumnVector<UInt64>::create();
     column_vector->getData().reserve(ids.size());

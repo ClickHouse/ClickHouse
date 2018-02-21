@@ -20,8 +20,4 @@ if (NOT OPENSSL_FOUND)
     endif ()
 endif ()
 
-if (OPENSSL_FOUND)
-    include_directories (${OPENSSL_INCLUDE_DIR})
-endif ()
-
 message (STATUS "Using openssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")

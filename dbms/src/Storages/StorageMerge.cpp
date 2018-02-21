@@ -3,11 +3,14 @@
 #include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/VirtualColumnFactory.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -26,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_PREWHERE;
     extern const int INCOMPATIBLE_SOURCE_TABLES;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -38,8 +42,8 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_), source_database(source_database_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_), source_database(source_database_),
     table_name_regexp(table_name_regexp_), context(context_)
 {
 }
@@ -133,6 +137,7 @@ BlockInputStreams StorageMerge::read(
     const unsigned num_streams)
 {
     BlockInputStreams res;
+    Block header = getSampleBlockForColumns(column_names);
 
     Names virt_column_names, real_column_names;
     for (const auto & it : column_names)
@@ -219,13 +224,13 @@ BlockInputStreams StorageMerge::read(
             for (auto & stream : source_streams)
             {
                 /// will throw if some columns not convertible
-                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, getSampleBlock());
+                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, header);
             }
         }
         else
         {
             /// If many streams, initialize it lazily, to avoid long delay before start of query processing.
-            source_streams.emplace_back(std::make_shared<LazyBlockInputStream>([=]
+            source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(header, [=]
             {
                 QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
                 BlockInputStreams streams = table->read(
@@ -243,11 +248,11 @@ BlockInputStreams StorageMerge::read(
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
-                auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>() : streams.front();
+                auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>(header) : streams.front();
                 if (!streams.empty())
                 {
                     /// will throw if some columns not convertible
-                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, getSampleBlock());
+                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, header);
                 }
                 return stream;
             }));
@@ -344,6 +349,35 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         columns, materialized_columns, alias_columns, column_defaults, {});
+}
+
+
+void registerStorageMerge(StorageFactory & factory)
+{
+    factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
+    {
+        /** In query, the name of database is specified as table engine argument which contains source tables,
+          *  as well as regex for source-table names.
+          */
+
+        ASTs & engine_args = args.engine_args;
+
+        if (engine_args.size() != 2)
+            throw Exception("Storage Merge requires exactly 2 parameters"
+                " - name of source database and regexp for table names.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
+
+        String source_database = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String table_name_regexp = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+
+        return StorageMerge::create(
+            args.table_name, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            source_database, table_name_regexp, args.context);
+    });
 }
 
 }

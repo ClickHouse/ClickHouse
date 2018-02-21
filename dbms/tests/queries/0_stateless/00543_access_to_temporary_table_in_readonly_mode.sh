@@ -51,7 +51,7 @@ $CLICKHOUSE_CLIENT -n --query="
         ID Int
     ) Engine=Memory;
     INSERT INTO readonly (ID) VALUES (1);
-    DROP TABLE readonly;
+    DROP TEMPORARY TABLE readonly;
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;
@@ -83,7 +83,7 @@ $CLICKHOUSE_CLIENT -n --query="
         ID Int
     ) Engine=Memory;
     INSERT INTO readonly (ID) VALUES (1);
-    DROP TABLE readonly;
+    DROP TEMPORARY TABLE readonly;
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;

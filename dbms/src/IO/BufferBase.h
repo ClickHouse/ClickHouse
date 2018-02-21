@@ -56,7 +56,7 @@ public:
       * offset - the starting point of the cursor. ReadBuffer must set it to the end of the range, and WriteBuffer - to the beginning.
       */
     BufferBase(Position ptr, size_t size, size_t offset)
-        : internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset) {}
+        : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
 
     void set(Position ptr, size_t size, size_t offset)
     {
@@ -90,8 +90,13 @@ public:
     }
 
 protected:
-    /// A reference to a piece of memory for the buffer.
-    Buffer internal_buffer;
+    /// Read/write position.
+    Position pos;
+
+    /** How many bytes have been read/written, not counting those that are now in the buffer.
+      * (counting those that were already used and "removed" from the buffer)
+      */
+    size_t bytes = 0;
 
     /** A piece of memory that you can use.
       * For example, if internal_buffer is 1MB, and from a file for reading it was loaded into the buffer
@@ -100,13 +105,8 @@ protected:
       */
     Buffer working_buffer;
 
-    /// Read/write position.
-    Position pos;
-
-    /** How many bytes have been read/written, not counting those that are now in the buffer.
-      * (counting those that were already used and "removed" from the buffer)
-      */
-    size_t bytes = 0;
+    /// A reference to a piece of memory for the buffer.
+    Buffer internal_buffer;
 };
 
 

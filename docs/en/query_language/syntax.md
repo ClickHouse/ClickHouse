@@ -34,7 +34,8 @@ Keywords (such as `SELECT`) are not case-sensitive. Everything else (column name
 
 Identifiers (column names, functions, and data types) can be quoted or non-quoted.
 Non-quoted identifiers start with a Latin letter or underscore, and continue with a Latin letter, underscore, or number. In other words, they must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$`. Examples: `x, _1, X_y__Z123_.`
-Квотированные идентификаторы расположены в обратных кавычках `` `id ``\` (the same as in MySQL), and can indicate any set of bytes (non-empty). In addition, symbols (for example, the reverse quotation mark) inside this type of identifier can be backslash-escaped. Escaping rules are the same as for string literals (see below).
+
+Quoted identifiers are placed in reversed quotation marks `` `id` `` (the same as in MySQL), and can indicate any set of bytes (non-empty). In addition, symbols (for example, the reverse quotation mark) inside this type of identifier can be backslash-escaped. Escaping rules are the same as for string literals (see below).
 We recommend using identifiers that do not need to be quoted.
 
 ## Literals

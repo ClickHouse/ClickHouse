@@ -3,7 +3,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteHelpers.h>
@@ -317,6 +317,21 @@ ASTPtr parseQuery(
 }
 
 
+ASTPtr parseQuery(
+    IParser & parser,
+    const std::string & query,
+    const std::string & query_description)
+{
+    return parseQuery(parser, query.data(), query.data() + query.size(), query_description);
+}
+
+
+ASTPtr parseQuery(IParser & parser, const std::string & query)
+{
+    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName());
+}
+
+
 std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
 {
     ASTPtr ast;
@@ -356,5 +371,6 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
 
     return std::make_pair(begin, pos == end);
 }
+
 
 }

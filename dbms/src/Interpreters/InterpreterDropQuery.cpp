@@ -46,11 +46,16 @@ BlockIO InterpreterDropQuery::execute()
     }
 
     /// Drop temporary table.
-    if (drop.database.empty())
+    if (drop.database.empty() || drop.temporary)
     {
         StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(drop.table);
         if (table)
         {
+            if (drop.database.empty() && !drop.temporary)
+            {
+                LOG_WARNING((&Logger::get("InterpreterDropQuery")),
+                            "It is recommended to use `DROP TEMPORARY TABLE` to delete temporary tables");
+            }
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
@@ -64,8 +69,8 @@ BlockIO InterpreterDropQuery::execute()
     String database_name = drop.database.empty() ? current_database : drop.database;
     String database_name_escaped = escapeForFileName(database_name);
 
-    String data_path = path + "data/" + database_name_escaped + "/";
     String metadata_path = path + "metadata/" + database_name_escaped + "/";
+    String database_metadata_path = path + "metadata/" + database_name_escaped + ".sql";
 
     auto database = context.tryGetDatabase(database_name);
     if (!database && !drop.if_exists)
@@ -135,10 +140,16 @@ BlockIO InterpreterDropQuery::execute()
 
             table.first->is_dropped = true;
 
-            String current_data_path = data_path + escapeForFileName(current_table_name);
+            String database_data_path = database->getDataPath(context);
 
-            if (Poco::File(current_data_path).exists())
-                Poco::File(current_data_path).remove(true);
+            /// If it is not virtual database like Dictionary then drop remaining data dir
+            if (!database_data_path.empty())
+            {
+                String table_data_path = database_data_path + "/" + escapeForFileName(current_table_name);
+
+                if (Poco::File(table_data_path).exists())
+                    Poco::File(table_data_path).remove(true);
+            }
         }
     }
 
@@ -161,8 +172,17 @@ BlockIO InterpreterDropQuery::execute()
         /// Delete the database.
         database->drop();
 
-        Poco::File(data_path).remove(false);
+        /// Remove data directory if it is not virtual database. TODO: should IDatabase::drop() do that?
+        String database_data_path = database->getDataPath(context);
+        if (!database_data_path.empty())
+            Poco::File(database_data_path).remove(false);
+
         Poco::File(metadata_path).remove(false);
+
+        /// Old ClickHouse versions did not store database.sql files
+        Poco::File database_metadata_file(database_metadata_path);
+        if (database_metadata_file.exists())
+            database_metadata_file.remove(false);
     }
 
     return {};

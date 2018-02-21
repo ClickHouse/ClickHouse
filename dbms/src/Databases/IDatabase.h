@@ -72,7 +72,7 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(
         const Context & context,
-        const String & name) = 0;
+        const String & name) const = 0;
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
@@ -128,6 +128,9 @@ public:
     virtual ASTPtr getCreateQuery(
         const Context & context,
         const String & name) const = 0;
+
+    /// Returns path for persistent data storage if the database supports it, empty string otherwise
+    virtual String getDataPath(const Context & context) const = 0;
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;

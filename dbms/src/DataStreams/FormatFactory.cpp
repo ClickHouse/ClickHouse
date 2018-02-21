@@ -59,7 +59,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
     if (name == "Native")
     {
-        return std::make_shared<NativeBlockInputStream>(buf);
+        return std::make_shared<NativeBlockInputStream>(buf, sample, 0);
     }
     else if (name == "RowBinary")
     {

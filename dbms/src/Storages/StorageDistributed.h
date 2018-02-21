@@ -94,7 +94,6 @@ public:
 
 
     String name;
-    NamesAndTypesList columns;
     String remote_database;
     String remote_table;
 
@@ -123,21 +122,12 @@ public:
         void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
+    std::mutex cluster_nodes_mutex;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
 
 protected:
-    StorageDistributed(
-        const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
     StorageDistributed(
         const std::string & name_,
         const NamesAndTypesList & columns_,
@@ -148,8 +138,8 @@ protected:
         const String & remote_table_,
         const String & cluster_name_,
         const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
+        const ASTPtr & sharding_key_,
+        const String & data_path_);
 };
 
 }

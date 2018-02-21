@@ -63,6 +63,8 @@ void NativeBlockOutputStream::write(const Block & block)
     if (client_revision > 0)
         block.info.write(ostr);
 
+    block.checkNumberOfRows();
+
     /// Dimensions
     size_t columns = block.columns();
     size_t rows = block.rows();
