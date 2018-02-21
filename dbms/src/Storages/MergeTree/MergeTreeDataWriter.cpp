@@ -81,9 +81,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.partition_expr->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
-    partition_columns.reserve(data.partition_expr_columns.size());
-    for (const String & name : data.partition_expr_columns)
-        partition_columns.emplace_back(block_copy.getByName(name).column.get());
+    partition_columns.reserve(data.partition_key_sample.columns());
+    for (const ColumnWithTypeAndName & element : data.partition_key_sample)
+        partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
