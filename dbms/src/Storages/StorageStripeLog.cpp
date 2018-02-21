@@ -55,21 +55,20 @@ public:
         : storage(storage_), max_read_buffer_size(max_read_buffer_size_),
         index(index_), index_begin(index_begin_), index_end(index_end_)
     {
+        if (index_begin != index_end)
+        {
+            for (const auto & column : index_begin->columns)
+            {
+                auto type = DataTypeFactory::instance().get(column.type);
+                header.insert(ColumnWithTypeAndName{ type, column.name });
+            }
+        }
     }
 
     String getName() const override { return "StripeLog"; }
 
     Block getHeader() const override
     {
-        if (index_begin == index_end)
-            return {};
-
-        Block header;
-        for (const auto & column : index_begin->columns)
-        {
-            auto type = DataTypeFactory::instance().get(column.type);
-            header.insert({ type->createColumn(), type, column.name });
-        }
         return header;
     };
 
@@ -102,6 +101,7 @@ private:
     std::shared_ptr<const IndexForNativeFormat> index;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    Block header;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
