@@ -101,3 +101,7 @@ h1, h2, h3, .md-logo {
 .md-logo {
 	padding: 0;
 }
+
+.md-header {
+    border-bottom: 1px solid #efefef;
+}
