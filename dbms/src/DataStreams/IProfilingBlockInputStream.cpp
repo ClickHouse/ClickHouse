@@ -4,7 +4,6 @@
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Columns/ColumnConst.h>
 
 
 namespace DB
