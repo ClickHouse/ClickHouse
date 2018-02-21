@@ -1,4 +1,5 @@
 site_name: Документация ClickHouse
+copyright: ©2016–2018 Yandex LLC
 
 docs_dir: ru
 site_dir: build/docs/ru
