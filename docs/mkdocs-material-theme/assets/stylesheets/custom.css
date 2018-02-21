@@ -64,7 +64,38 @@
 }
 
 body {
-	font-family: 'Yandex Sans Text Web';
+	font: 300 14pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
+}
+
+a:link, a:visited {
+    color: #08f;
+    text-decoration: none;
+}
+
+.md-nav__link {
+	color: #000 !important;
+}
+
+.md-nav__link:hover, .md-nav__link:active {
+	color: #08f  !important;
+    text-decoration: none;
+}
+
+a:hover, a:active {
+    color: #f00;
+    text-decoration: underline;
+}
+
+.md-typeset pre {
+    font: 13px/18px monospace, "Courier New";
+    display: block;
+    padding: 1rem 3rem 1rem 1rem;
+    overflow: scroll;
+}
+
+h1, h2, h3, .md-logo {
+    font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+	color: #000 !important;
 }
 
 .md-logo {
