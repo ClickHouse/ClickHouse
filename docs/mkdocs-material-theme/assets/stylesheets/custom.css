@@ -105,3 +105,8 @@ h1, h2, h3, .md-logo {
 .md-header {
     border-bottom: 1px solid #efefef;
 }
+
+.md-header-nav__title {
+    font-size: 3rem;
+    font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+}
