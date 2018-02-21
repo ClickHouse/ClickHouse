@@ -1038,12 +1038,7 @@ public:
 
     String getName() const override { return "NonJoined"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "NonJoined(" << &parent << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return result_sample_block; };
 
 
 protected:

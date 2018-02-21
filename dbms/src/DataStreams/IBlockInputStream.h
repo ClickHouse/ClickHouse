@@ -48,6 +48,12 @@ class IBlockInputStream : private boost::noncopyable
 public:
     IBlockInputStream() {}
 
+    /** Get data structure of the stream in a form of "header" block (it is also called "sample block").
+      * Header block contains column names, data types, columns of size 0. Constant columns must have corresponding values.
+      * It is guaranteed that method "read" returns blocks of exactly that structure.
+      */
+    virtual Block getHeader() const = 0;
+
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
       * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.
@@ -75,14 +81,6 @@ public:
     /** To output the data stream transformation tree (query execution plan).
       */
     virtual String getName() const = 0;
-
-    /** The unique identifier of the pipeline part of the query execution.
-      * Sources with the same identifier are considered identical
-      *  (producing the same data), and can be replaced by one source
-      *  if several queries are executed simultaneously.
-      * If the source can not be glued together with any other - return the object's address as an identifier.
-      */
-    virtual String getID() const;
 
     /// If this stream generates data in grouped by some keys, return true.
     virtual bool isGroupedOutput() const { return false; }

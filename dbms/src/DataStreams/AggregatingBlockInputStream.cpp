@@ -14,6 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+Block AggregatingBlockInputStream::getHeader() const
+{
+    return aggregator.getHeader(final);
+}
+
 
 Block AggregatingBlockInputStream::readImpl()
 {
@@ -42,7 +47,7 @@ Block AggregatingBlockInputStream::readImpl()
 
             if (!isCancelled())
             {
-                /// Flush data in the RAM to disk also. It's easier.
+                /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
                 if (data_variants->size())
                     aggregator.writeToTemporaryFile(*data_variants);
             }
@@ -63,9 +68,8 @@ Block AggregatingBlockInputStream::readImpl()
         }
     }
 
-    Block res;
     if (isCancelled() || !impl)
-        return res;
+        return {};
 
     return impl->read();
 }

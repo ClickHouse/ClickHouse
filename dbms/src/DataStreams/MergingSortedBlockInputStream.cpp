@@ -24,28 +24,6 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     children.insert(children.end(), inputs_.begin(), inputs_.end());
 }
 
-String MergingSortedBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "MergingSorted(";
-
-    Strings children_ids(children.size());
-    for (size_t i = 0; i < children.size(); ++i)
-        children_ids[i] = children[i]->getID();
-
-    /// The order does not matter.
-    std::sort(children_ids.begin(), children_ids.end());
-
-    for (size_t i = 0; i < children_ids.size(); ++i)
-        res << (i == 0 ? "" : ", ") << children_ids[i];
-
-    for (size_t i = 0; i < description.size(); ++i)
-        res << ", " << description[i].getID();
-
-    res << ")";
-    return res.str();
-}
-
 void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged_columns)
 {
     /// Read the first blocks, initialize the queue.

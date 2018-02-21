@@ -112,7 +112,7 @@ public:
     bool equals(const IDataType & rhs) const override;
 
     bool textCanContainOnlyValidUTF8() const override;
-    size_t getSizeOfValueInMemory() const override { return sizeof(Field); }
+    size_t getSizeOfValueInMemory() const override { return sizeof(FieldType); }
 };
 
 

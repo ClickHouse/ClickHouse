@@ -21,6 +21,8 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 
+#include <DataTypes/DataTypeFactory.h>
+
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
@@ -57,28 +59,25 @@ public:
 
     String getName() const override { return "StripeLog"; }
 
-    String getID() const override
+    Block getHeader() const override
     {
-        std::stringstream s;
-        s << this;
-        return s.str();
-    }
+        if (index_begin == index_end)
+            return {};
+
+        Block header;
+        for (const auto & column : index_begin->columns)
+        {
+            auto type = DataTypeFactory::instance().get(column.type);
+            header.insert({ type->createColumn(), type, column.name });
+        }
+        return header;
+    };
 
 protected:
     Block readImpl() override
     {
         Block res;
-
-        if (!started)
-        {
-            started = true;
-
-            data_in.emplace(
-                storage.full_path() + "data.bin", 0, 0,
-                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
-
-            block_in.emplace(*data_in, 0, true, index_begin, index_end);
-        }
+        start();
 
         if (block_in)
         {
@@ -111,6 +110,20 @@ private:
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
     std::optional<NativeBlockInputStream> block_in;
+
+    void start()
+    {
+        if (!started)
+        {
+            started = true;
+
+            data_in.emplace(
+                storage.full_path() + "data.bin", 0, 0,
+                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
+
+            block_in.emplace(*data_in, 0, index_begin, index_end);
+        }
+    }
 };
 
 
@@ -232,7 +245,7 @@ BlockInputStreams StorageStripeLog::read(
     NameSet column_names_set(column_names.begin(), column_names.end());
 
     if (!Poco::File(full_path() + "index.mrk").exists())
-        return { std::make_shared<NullBlockInputStream>() };
+        return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
 
     CompressedReadBufferFromFile index_in(full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE);
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};

@@ -17,7 +17,7 @@ public:
 
     String getName() const override;
 
-    String getID() const override;
+    Block getHeader() const override { return ref_definition; }
 
 protected:
     Block readImpl() override;
