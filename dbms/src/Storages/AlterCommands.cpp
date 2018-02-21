@@ -265,6 +265,18 @@ void AlterCommands::validate(IStorage * table, const Context & context)
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
+            for (const auto default_column : defaults)
+            {
+                const auto default_expression = default_column.second.expression;
+                const auto actions = ExpressionAnalyzer{default_expression, context, {}, columns}.getActions(true);
+                const auto require_columns = actions->getRequiredColumns();
+
+                if (std::count(require_columns.begin(), require_columns.end(), command.column_name))
+                    throw Exception(
+                        "Cannot drop column " + command.column_name + ", Because column " + default_column.first +
+                        " depends on it", DB::ErrorCodes::LOGICAL_ERROR
+                    );
+            }
             auto found = false;
             for (auto it = std::begin(columns); it != std::end(columns);)
                 if (AlterCommand::namesEqual(command.column_name, *it))
