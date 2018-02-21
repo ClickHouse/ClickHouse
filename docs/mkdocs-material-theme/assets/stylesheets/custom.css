@@ -110,3 +110,8 @@ h1, h2, h3, .md-logo {
     font-size: 3rem;
     font-family: 'Yandex Sans Display Web', Arial, sans-serif;
 }
+
+.md-content__icon:hover {
+    text-decoration: none !important;
+    color: #08f !important;
+}
