@@ -43,6 +43,7 @@ private:
     RowRef selected_row;        /// Last row with maximum version for current primary key.
 
     UInt64 max_version = 0;        /// Max version for current primary key.
+    size_t max_pos;
 
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
