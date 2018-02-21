@@ -135,9 +135,6 @@ public:
       */
     const Tables & getExternalTables() const { return external_tables; }
 
-    /// If ast is a SELECT query, it gets the aliases and column types from the SELECT section.
-    Block getSelectSampleBlock();
-
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
