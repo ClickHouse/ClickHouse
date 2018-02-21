@@ -94,6 +94,8 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
@@ -273,6 +275,8 @@ private:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -534,6 +538,8 @@ private:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -820,6 +826,8 @@ private:
 
         return std::make_shared<DataType>();
     }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -1134,6 +1142,8 @@ private:
         return std::make_shared<DataType>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
@@ -1379,6 +1389,8 @@ private:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
@@ -1548,6 +1560,8 @@ private:
 
         return std::make_shared<DataTypeUInt8>();
     }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
