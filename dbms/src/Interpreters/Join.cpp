@@ -992,7 +992,7 @@ public:
         size_t num_columns_left = left_sample_block.columns() - num_keys;
         size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
 
-        result_sample_block = left_sample_block;
+        result_sample_block = materializeBlock(left_sample_block);
 
         /// Add columns from the right-side table to the block.
         for (size_t i = 0; i < num_columns_right; ++i)
@@ -1156,7 +1156,7 @@ private:
 };
 
 
-BlockInputStreamPtr Join::createStreamWithNonJoinedRows(Block & left_sample_block, size_t max_block_size) const
+BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, size_t max_block_size) const
 {
     return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
 }
