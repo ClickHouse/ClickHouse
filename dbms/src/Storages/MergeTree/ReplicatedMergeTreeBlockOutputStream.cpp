@@ -146,8 +146,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             LOG_DEBUG(log, "Wrote block with " << block.rows() << " rows");
         }
 
-
-
         try
         {
             commitPart(zookeeper, part, block_id);
@@ -416,7 +414,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
                         + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
-
 
     if (quorum)
     {

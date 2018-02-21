@@ -59,6 +59,7 @@ public:
       */
     Block getSampleBlock() const;
     Block getSampleBlockNonMaterialized() const;
+    Block getSampleBlockForColumns(const Names & column_names) const;
 
     /** Verify that all the requested names are in the table and are set correctly.
       * (the list of names is not empty and the names do not repeat)

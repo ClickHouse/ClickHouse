@@ -62,17 +62,15 @@ public:
 
     String getName() const override { return "Log"; }
 
-    String getID() const override
+    Block getHeader() const override
     {
-        std::stringstream res;
-        res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
+        Block res;
 
         for (const auto & name_type : columns)
-            res << ", " << name_type.name;
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        res << ")";
-        return res.str();
-    }
+        return Nested::flatten(res);
+    };
 
 protected:
     Block readImpl() override;

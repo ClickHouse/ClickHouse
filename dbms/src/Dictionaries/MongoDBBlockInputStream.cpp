@@ -38,14 +38,6 @@ MongoDBBlockInputStream::MongoDBBlockInputStream(
 MongoDBBlockInputStream::~MongoDBBlockInputStream() = default;
 
 
-String MongoDBBlockInputStream::getID() const
-{
-    std::ostringstream stream;
-    stream << cursor.get();
-    return "MongoDB(@" + stream.str() + ")";
-}
-
-
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;

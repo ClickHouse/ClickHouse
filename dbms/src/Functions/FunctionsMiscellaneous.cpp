@@ -599,29 +599,16 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const IColumn * col = block.getByPosition(arguments[0]).column.get();
-        double seconds;
-        size_t size = col->size();
 
-        if (auto column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
-            seconds = column->getValue<Float64>();
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
-            seconds = static_cast<double>(column->getValue<Float64>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
-            seconds = static_cast<double>(column->getValue<UInt64>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
-            seconds = static_cast<double>(column->getValue<UInt32>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
-            seconds = static_cast<double>(column->getValue<UInt16>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
-            seconds = static_cast<double>(column->getValue<UInt8>());
-
-        else
+        if (!col->isColumnConst())
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+
+        Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const ColumnConst &>(*col).getField());
+
+        if (seconds < 0)
+            throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+
+        size_t size = col->size();
 
         /// We do not sleep if the block is empty.
         if (size > 0)

@@ -21,14 +21,14 @@ public:
     std::string getTableName() const override { return name; }
 
     BlockInputStreams read(
-        const Names &,
+        const Names & column_names,
         const SelectQueryInfo &,
         const Context &,
         QueryProcessingStage::Enum &,
         size_t,
         unsigned) override
     {
-        return { std::make_shared<NullBlockInputStream>() };
+        return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
     }
 
     BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override

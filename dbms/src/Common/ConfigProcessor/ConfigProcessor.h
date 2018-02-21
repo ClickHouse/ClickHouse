@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>
@@ -87,7 +88,7 @@ public:
     void savePreprocessedConfig(const LoadedConfig & loaded_config);
 
 public:
-    using Files = std::list<std::string>;
+    using Files = std::vector<std::string>;
 
     static Files getConfigMergeFiles(const std::string & config_path);
 

@@ -62,25 +62,12 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     setTotalRowsApprox(total_rows);
 }
 
-String MergeTreeBlockInputStream::getID() const
+
+Block MergeTreeBlockInputStream::getHeader() const
 {
-    std::stringstream res;
-    res << "MergeTree(" << path << ", columns";
-
-    for (const NameAndTypePair & column : columns)
-        res << ", " << column.name;
-
-    if (prewhere_actions)
-        res << ", prewhere, " << prewhere_actions->getID();
-
-    res << ", marks";
-
-    for (size_t i = 0; i < all_mark_ranges.size(); ++i)
-        res << ", " << all_mark_ranges[i].begin << ", " << all_mark_ranges[i].end;
-
-    res << ")";
-    return res.str();
+    return storage.getSampleBlockForColumns(ordered_names);
 }
+
 
 bool MergeTreeBlockInputStream::getNewTask()
 try
