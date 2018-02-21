@@ -9,7 +9,7 @@ repo_url: 'https://github.com/yandex/ClickHouse/'
 edit_uri: 'edit/master/docs/en'
 
 extra_css:
-  - assets/stylesheets/yandex_fonts.css
+  - assets/stylesheets/custom.css
 
 theme:
   name: null
