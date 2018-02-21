@@ -467,10 +467,6 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
                 has_join = true;
                 before_join = chain.getLastActions();
                 chain.addStep();
-
-                const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
-                if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
-                    pipeline.stream_with_non_joined_data = before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(settings.max_block_size);
             }
 
             if (query_analyzer->appendWhere(chain, !first_stage))
@@ -536,8 +532,15 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
         if (first_stage)
         {
             if (has_join)
+            {
+                const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
+                if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
+                    pipeline.stream_with_non_joined_data = before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
+                        pipeline.firstStream()->getHeader(), settings.max_block_size);
+
                 for (auto & stream : pipeline.streams)   /// Applies to all sources except stream_with_non_joined_data.
                     stream = std::make_shared<ExpressionBlockInputStream>(stream, before_join);
+            }
 
             if (has_where)
                 executeWhere(pipeline, before_where);
