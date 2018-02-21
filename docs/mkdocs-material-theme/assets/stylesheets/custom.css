@@ -66,3 +66,7 @@
 body {
 	font-family: 'Yandex Sans Text Web';
 }
+
+.md-logo {
+	padding: 0;
+}
