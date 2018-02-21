@@ -50,7 +50,7 @@ public:
         const Context & context_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        BlockInputStreamPtr input = nullptr);
+        const BlockInputStreamPtr & input = nullptr);
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -58,7 +58,7 @@ public:
         const Names & required_column_names,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        BlockInputStreamPtr input = nullptr);
+        const BlockInputStreamPtr & input = nullptr);
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -67,7 +67,7 @@ public:
         const NamesAndTypesList & table_column_names_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        BlockInputStreamPtr input = nullptr);
+        const BlockInputStreamPtr & input = nullptr);
 
     ~InterpreterSelectQuery();
 
@@ -78,7 +78,7 @@ public:
 
     /** Execute the query without union of threads, if it is possible.
      */
-    const BlockInputStreams & executeWithoutUnion();
+    BlockInputStreams executeWithoutUnion();
 
     /// TODO It's confusing that these methods return result structure for the case of QueryProcessingStage::Complete regardless to the actual 'to_stage'.
     Block getSampleBlock();
@@ -88,23 +88,55 @@ public:
         const Context & context_);
 
 private:
-    /**
-     * - Optimization if an object is created only to call getSampleBlock(): consider only the first SELECT of the UNION ALL chain, because
-     *   the first SELECT is sufficient to determine the required columns.
-     */
+    struct Pipeline
+    {
+        /** Streams of data.
+          * The source data streams are produced in the executeFetchColumns function.
+          * Then they are converted (wrapped in other streams) using the `execute*` functions,
+          *  to get the whole pipeline running the query.
+          */
+        BlockInputStreams streams;
+
+        /** When executing FULL or RIGHT JOIN, there will be a data stream from which you can read "not joined" rows.
+          * It has a special meaning, since reading from it should be done after reading from the main streams.
+          * It is joined to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
+          */
+        BlockInputStreamPtr stream_with_non_joined_data;
+
+        BlockInputStreamPtr & firstStream() { return streams.at(0); }
+
+        template <typename Transform>
+        void transform(Transform && transform)
+        {
+            for (auto & stream : streams)
+                transform(stream);
+
+            if (stream_with_non_joined_data)
+                transform(stream_with_non_joined_data);
+        }
+
+        bool hasMoreThanOneStream() const
+        {
+            return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
+        }
+    };
+
+    /** - Optimization if an object is created only to call getSampleBlock(): consider only the first SELECT of the UNION ALL chain, because
+      *   the first SELECT is sufficient to determine the required columns.
+      */
     struct OnlyAnalyzeTag {};
     InterpreterSelectQuery(
         OnlyAnalyzeTag,
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    void init(const BlockInputStreamPtr & input, const Names & required_column_names = Names{});
-    void basicInit(const BlockInputStreamPtr & input);
+    void init(const Names & required_column_names);
+    void basicInit();
     void initQueryAnalyzer();
     bool hasAggregation(const ASTSelectQuery & query_ptr);
 
     /// Execute one SELECT query from the UNION ALL chain.
-    void executeSingleQuery();
+    void executeSingleQuery(Pipeline & pipeline);
 
     /** Leave only the necessary columns of the SELECT section in each query of the UNION ALL chain.
      *  However, if you use at least one DISTINCT in the chain, then all the columns are considered necessary,
@@ -135,30 +167,24 @@ private:
     /// Different stages of query execution.
 
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns();
+    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
 
-    void executeWhere(const ExpressionActionsPtr & expression);
-    void executeAggregation(const ExpressionActionsPtr & expression, bool overflow_row, bool final);
-    void executeMergeAggregated(bool overflow_row, bool final);
-    void executeTotalsAndHaving(bool has_having, const ExpressionActionsPtr & expression, bool overflow_row);
-    void executeHaving(const ExpressionActionsPtr & expression);
-    void executeExpression(const ExpressionActionsPtr & expression);
-    void executeOrder();
-    void executeMergeSorted();
-    void executePreLimit();
-    void executeUnion();
-    void executeLimitBy();
-    void executeLimit();
-    void executeProjection(const ExpressionActionsPtr & expression);
-    void executeDistinct(bool before_order, Names columns);
-    void executeSubqueriesInSetsAndJoins(std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-
-    template <typename Transform>
-    void transformStreams(Transform && transform);
-
-    bool hasNoData() const;
-
-    bool hasMoreThanOneStream() const;
+    void executeWithoutUnionImpl(Pipeline & pipeline);
+    void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
+    void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row);
+    void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeOrder(Pipeline & pipeline);
+    void executeMergeSorted(Pipeline & pipeline);
+    void executePreLimit(Pipeline & pipeline);
+    void executeUnion(Pipeline & pipeline);
+    void executeLimitBy(Pipeline & pipeline);
+    void executeLimit(Pipeline & pipeline);
+    void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
+    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
     void ignoreWithTotals();
 
@@ -181,19 +207,6 @@ private:
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
 
-    /** Streams of data.
-      * The source data streams are produced in the executeFetchColumns function.
-      * Then they are converted (wrapped in other streams) using the `execute*` functions,
-      *  to get the whole pipeline running the query.
-      */
-    BlockInputStreams streams;
-
-    /** When executing FULL or RIGHT JOIN, there will be a data stream from which you can read "not joined" rows.
-      * It has a special meaning, since reading from it should be done after reading from the main streams.
-      * It is joined to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
-      */
-    BlockInputStreamPtr stream_with_non_joined_data;
-
     /// Is it the first SELECT query of the UNION ALL chain?
     bool is_first_select_inside_union_all;
 
@@ -206,6 +219,9 @@ private:
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
     TableStructureReadLockPtr table_lock;
+
+    /// Used when we read from prepared input, not table or subquery.
+    BlockInputStreamPtr input;
 
     /// Do union of streams within a SELECT query?
     bool union_within_single_query = false;
