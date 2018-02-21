@@ -462,9 +462,10 @@ void PKCondition::getPKTuplePositionMapping(
 {
     MergeTreeSetIndex::PKTuplePositionMapping index_mapping;
     index_mapping.tuple_index = tuple_index;
+    DataTypePtr data_type;
     if (isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
             node, context, index_mapping.pk_index,
-            index_mapping.data_type, index_mapping.functions))
+            data_type, index_mapping.functions))
     {
         indexes_mapping.push_back(index_mapping);
         if (out_primary_key_column_num < index_mapping.pk_index)
@@ -999,7 +1000,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
             PreparedSets::const_iterator it = prepared_sets.find(args[1].get());
             if (in_func && it != prepared_sets.end())
             {
-                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges));
+                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));
                 if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 {
                     rpn_stack.back() = !rpn_stack.back();
