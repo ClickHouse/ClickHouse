@@ -174,9 +174,4 @@ void DatabaseDictionary::drop()
     /// Additional actions to delete database are not required.
 }
 
-String DatabaseDictionary::getDataPath(const Context &) const
-{
-    return {};
-}
-
 }

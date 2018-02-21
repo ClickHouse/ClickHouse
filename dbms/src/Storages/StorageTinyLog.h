@@ -48,7 +48,9 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    std::string full_path() { return path + escapeForFileName(name) + '/';}
+    std::string full_path() const { return path + escapeForFileName(name) + '/';}
+
+    String getDataPath() const override { return full_path(); }
 
 private:
     String path;
