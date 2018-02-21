@@ -6,6 +6,8 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <iterator>
 #include <memory>
 
@@ -18,6 +20,7 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -276,13 +279,7 @@ std::string Block::dumpStructure() const
     {
         if (it != data.begin())
             out << ", ";
-
-        out << it->name << ' ' << it->type->getName();
-
-        if (it->column)
-            out << ' ' << it->column->dumpStructure();
-        else
-            out << " nullptr";
+        it->dumpStructure(out);
     }
     return out.str();
 }
@@ -379,22 +376,58 @@ Names Block::getNames() const
 }
 
 
-bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
+template <typename ReturnType>
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
 {
-    size_t columns = lhs.columns();
-    if (rhs.columns() != columns)
-        return false;
+    auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
+    {
+        if constexpr (std::is_same_v<ReturnType, void>)
+            throw Exception(message, code);
+        else
+            return false;
+    };
+
+    size_t columns = rhs.columns();
+    if (lhs.columns() != columns)
+        return on_error("Block structure mismatch in " + context_description + " stream: different number of columns:\n"
+            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
     for (size_t i = 0; i < columns; ++i)
     {
-        const IDataType & lhs_type = *lhs.safeGetByPosition(i).type;
-        const IDataType & rhs_type = *rhs.safeGetByPosition(i).type;
+        const auto & expected = rhs.getByPosition(i);
+        const auto & actual = lhs.getByPosition(i);
 
-        if (!lhs_type.equals(rhs_type))
-            return false;
+        if (actual.name != expected.name)
+            return on_error("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (!actual.type->equals(*expected.type))
+            return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (actual.column->getName() != expected.column->getName())
+            return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (actual.column->isColumnConst() && expected.column->isColumnConst()
+            && static_cast<const ColumnConst &>(*actual.column).getField() != static_cast<const ColumnConst &>(*expected.column).getField())
+            return on_error("Block structure mismatch in " + context_description + " stream: different values of constants",
+                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
     }
 
-    return true;
+    return ReturnType(true);
+}
+
+
+bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
+{
+    return checkBlockStructure<bool>(lhs, rhs, {});
+}
+
+
+void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
+{
+    checkBlockStructure<void>(lhs, rhs, context_description);
 }
 
 
@@ -453,12 +486,12 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 
     for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
     {
-        lhs_diff_writer << it->prettyPrint();
+        lhs_diff_writer << it->dumpStructure();
         lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
     }
     for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
     {
-        rhs_diff_writer << it->prettyPrint();
+        rhs_diff_writer << it->dumpStructure();
         rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
     }
 }

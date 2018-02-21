@@ -3214,7 +3214,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         "", "", timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
-    NullBlockOutputStream output;
+    NullBlockOutputStream output({});
 
     copyData(stream, output);
     return;

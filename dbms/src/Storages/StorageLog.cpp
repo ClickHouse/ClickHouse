@@ -127,6 +127,7 @@ public:
         }
     }
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 

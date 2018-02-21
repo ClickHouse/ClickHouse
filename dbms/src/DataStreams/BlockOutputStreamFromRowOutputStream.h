@@ -13,7 +13,9 @@ namespace DB
 class BlockOutputStreamFromRowOutputStream : public IBlockOutputStream
 {
 public:
-    BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_);
+    BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_, const Block & header_);
+
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void writePrefix() override { row_output->writePrefix(); }
     void writeSuffix() override { row_output->writeSuffix(); }
@@ -29,7 +31,8 @@ public:
 
 private:
     RowOutputStreamPtr row_output;
-    bool first_row;
+    Block header;
+    bool first_row = true;
 };
 
 }

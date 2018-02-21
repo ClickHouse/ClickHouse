@@ -134,7 +134,7 @@ int main(int, char **)
 
         WriteBufferFromOStream ob(std::cout);
         RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
-        BlockOutputStreamFromRowOutputStream out(out_);
+        BlockOutputStreamFromRowOutputStream out(out_, in->getHeader());
 
         copyData(*in, out);
     }

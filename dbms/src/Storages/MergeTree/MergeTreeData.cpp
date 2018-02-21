@@ -1058,14 +1058,17 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     if (part && !out_rename_map.empty())
     {
         WriteBufferFromOwnString out;
-        out << "Will rename ";
+        out << "Will ";
         bool first = true;
         for (const auto & from_to : out_rename_map)
         {
             if (!first)
                 out << ", ";
             first = false;
-            out << from_to.first << " to " << from_to.second;
+            if (from_to.second.empty())
+                out << "remove " << from_to.first;
+            else
+                out << "rename " << from_to.first << " to " << from_to.second;
         }
         out << " in part " << part->name;
         LOG_DEBUG(log, out.str());
@@ -1218,7 +1221,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */);
+        MergedColumnOnlyOutputStream out(*this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */);
 
         in.readPrefix();
         out.writePrefix();
