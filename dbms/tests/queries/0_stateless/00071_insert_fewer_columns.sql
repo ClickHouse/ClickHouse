@@ -6,6 +6,7 @@ SELECT * FROM test.insert_fewer_columns;
 -- Test position arguments in insert.
 DROP TABLE IF EXISTS test.insert_fewer_columns_2;
 CREATE TABLE test.insert_fewer_columns_2 (b UInt8, a UInt8) ENGINE = Memory;
+INSERT INTO test.insert_fewer_columns_2 SELECT a AS c,b FROM test.insert_fewer_columns;
 INSERT INTO test.insert_fewer_columns_2 SELECT * FROM test.insert_fewer_columns;
 SELECT a, b FROM test.insert_fewer_columns;
 SELECT a, b FROM test.insert_fewer_columns_2;
