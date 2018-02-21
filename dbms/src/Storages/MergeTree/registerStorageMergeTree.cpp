@@ -586,6 +586,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->order_by)
             primary_expr_list = extractKeyExpressionList(*args.storage_def->order_by);
+        else
+            throw Exception("You must provide an ORDER BY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY tuple()",
+                ErrorCodes::BAD_ARGUMENTS);
 
         if (args.storage_def->sample_by)
             sampling_expression = args.storage_def->sample_by->ptr();

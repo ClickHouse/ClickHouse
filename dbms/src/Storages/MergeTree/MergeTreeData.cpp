@@ -113,12 +113,12 @@ MergeTreeData::MergeTreeData(
 {
     merging_params.check(columns);
 
-    if (!primary_expr_ast)  /// TODO Allow tables without primary key.
+    if (!primary_expr_ast)
         throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
     initPrimaryKey();
 
-    if (sampling_expression && (!primary_expr_ast || !primary_key_sample.has(sampling_expression->getColumnName()))
+    if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
         && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
@@ -178,22 +178,37 @@ MergeTreeData::MergeTreeData(
 }
 
 
-static void checkForAllowedKeyColumns(const ColumnWithTypeAndName & element, const std::string & key_name)
+static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name)
 {
-    const ColumnPtr & column = element.column;
-    if (column && (column->isColumnConst() || column->isDummy()))
-        throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+    for (const ExpressionAction & action : expr.getActions())
+    {
+        if (action.type == ExpressionAction::ARRAY_JOIN)
+            throw Exception(key_name + " key cannot contain array joins");
 
-    if (element.type->isNullable())
-        throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
+        if (action.type == ExpressionAction::APPLY_FUNCTION)
+        {
+            IFunctionBase & func = *action.function;
+            if (!func.isDeterministic())
+                throw Exception(key_name + " key cannot contain non-deterministic functions, "
+                    "but contains function " + func.getName(),
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    for (const ColumnWithTypeAndName & element : sample_block)
+    {
+        const ColumnPtr & column = element.column;
+        if (column && (column->isColumnConst() || column->isDummy()))
+            throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+
+        if (element.type->isNullable())
+            throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
+    }
 }
 
 
 void MergeTreeData::initPrimaryKey()
 {
-    if (!primary_expr_ast)
-        return;
-
     auto addSortDescription = [](SortDescription & descr, const ASTPtr & expr_ast)
     {
         descr.reserve(descr.size() + expr_ast->children.size());
@@ -216,14 +231,9 @@ void MergeTreeData::initPrimaryKey()
         primary_key_sample = projected_expr->getSampleBlock();
     }
 
+    checkKeyExpression(*primary_expr, primary_key_sample, "Primary");
+
     size_t primary_key_size = primary_key_sample.columns();
-
-    /// A primary key cannot contain constants. It is meaningless.
-    ///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
-    /// Also a primary key must not contain any nullable column.
-    for (size_t i = 0; i < primary_key_size; ++i)
-        checkForAllowedKeyColumns(primary_key_sample.getByPosition(i), "Primary");
-
     primary_key_data_types.resize(primary_key_size);
     for (size_t i = 0; i < primary_key_size; ++i)
         primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
@@ -238,8 +248,7 @@ void MergeTreeData::initPrimaryKey()
                 ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumnsList()).getActions(true);
         auto secondary_key_sample = projected_expr->getSampleBlock();
 
-        for (size_t i = 0; i < secondary_key_sample.columns(); ++i)
-            checkForAllowedKeyColumns(secondary_key_sample.getByPosition(i), "Secondary");
+        checkKeyExpression(*secondary_sort_expr, secondary_key_sample, "Secondary");
     }
 }
 
@@ -253,13 +262,10 @@ void MergeTreeData::initPartitionKey()
     for (const ASTPtr & ast : partition_expr_ast->children)
     {
         String col_name = ast->getColumnName();
-        partition_expr_columns.emplace_back(col_name);
-
-        const ColumnWithTypeAndName & element = partition_expr->getSampleBlock().getByName(col_name);
-        checkForAllowedKeyColumns(element, "Partition");
-
-        partition_expr_column_types.emplace_back(element.type);
+        partition_key_sample.insert(partition_expr->getSampleBlock().getByName(col_name));
     }
+
+    checkKeyExpression(*partition_expr, partition_key_sample, "Partition");
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
@@ -2031,7 +2037,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
 
     /// Re-parse partition key fields using the information about expected field types.
 
-    size_t fields_count = partition_expr_column_types.size();
+    size_t fields_count = partition_key_sample.columns();
     if (partition_ast.fields_count != fields_count)
         throw Exception(
             "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
@@ -2047,12 +2053,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        Block header;
-        for (size_t i = 0; i < fields_count; ++i)
-            header.insert(ColumnWithTypeAndName(partition_expr_column_types[i], partition_expr_columns[i]));
-
-        ValuesRowInputStream input_stream(buf, header, context, /* interpret_expressions = */true);
-        MutableColumns columns = header.cloneEmptyColumns();
+        ValuesRowInputStream input_stream(buf, partition_key_sample, context, /* interpret_expressions = */true);
+        MutableColumns columns = partition_key_sample.cloneEmptyColumns();
 
         if (!input_stream.read(columns))
             throw Exception(

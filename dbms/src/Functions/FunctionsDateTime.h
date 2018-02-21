@@ -1208,6 +1208,8 @@ public:
         return std::make_shared<DataTypeDateTime>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt32().createColumnConst(
@@ -1235,6 +1237,8 @@ public:
         return std::make_shared<DataTypeDate>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
@@ -1261,6 +1265,8 @@ public:
     {
         return std::make_shared<DataTypeDate>();
     }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
