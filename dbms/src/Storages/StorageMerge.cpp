@@ -137,7 +137,6 @@ BlockInputStreams StorageMerge::read(
     const unsigned num_streams)
 {
     BlockInputStreams res;
-    Block header = getSampleBlockForColumns(column_names);
 
     Names virt_column_names, real_column_names;
     for (const auto & it : column_names)
@@ -179,6 +178,8 @@ BlockInputStreams StorageMerge::read(
       */
     Context modified_context = context;
     modified_context.getSettingsRef().optimize_move_to_prewhere = false;
+
+    Block header = getSampleBlockForColumns(real_column_names);
 
     size_t tables_count = selected_tables.size();
     size_t curr_table_number = 0;
@@ -262,14 +263,10 @@ BlockInputStreams StorageMerge::read(
             stream->addTableLock(table_lock);
 
         for (auto & virtual_column : virt_column_names)
-        {
             if (virtual_column == "_table")
-            {
                 for (auto & stream : source_streams)
                     stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
                         stream, std::make_shared<DataTypeString>(), table->getTableName(), "_table");
-            }
-        }
 
         res.insert(res.end(), source_streams.begin(), source_streams.end());
     }
