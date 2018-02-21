@@ -36,7 +36,8 @@ extra:
   search:
     language: 'en'
 
-
+markdown_extensions:
+  - codehilite
 
 pages:
 - 'ClickHouse': 'index.md'

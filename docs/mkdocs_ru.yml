@@ -12,6 +12,9 @@ edit_uri: 'edit/master/docs/ru'
 extra_css:
   - assets/stylesheets/custom.css
 
+markdown_extensions:
+  - codehilite
+
 theme:
   name: null
   custom_dir: 'mkdocs-material-theme'
