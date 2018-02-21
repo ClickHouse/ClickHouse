@@ -20,9 +20,11 @@ CastTypeBlockInputStream::CastTypeBlockInputStream(
     {
         const auto & elem = input_header.getByPosition(col_num);
 
-        /// Skip, if it is a problem, it will be detected on the next pipeline stage
         if (!reference_definition.has(elem.name))
+        {
+            header.insert(elem);
             continue;
+        }
 
         const auto & ref_column = reference_definition.getByName(elem.name);
 
