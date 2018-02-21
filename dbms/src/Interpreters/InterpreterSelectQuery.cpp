@@ -21,6 +21,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -109,7 +110,7 @@ void InterpreterSelectQuery::init(const Names & required_column_names)
         // because the asterisk is replaced with columns only when query_analyzer objects are created in basicInit().
         renameColumns();
 
-        if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
+        if (!required_column_names.empty() && (source_header.columns() != required_column_names.size()))
         {
             rewriteExpressionList(required_column_names);
             /// Now there is obsolete information to execute the query. We update this information.
@@ -127,7 +128,7 @@ void InterpreterSelectQuery::init(const Names & required_column_names)
             {
                 for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
                     p->query_analyzer = std::make_unique<ExpressionAnalyzer>(
-                        p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth,
+                        p->query_ptr, p->context, p->storage, p->source_header.getNamesAndTypesList(), p->subquery_depth,
                         false, p->query_analyzer->getSubqueriesForSets());
             }
         }
@@ -150,8 +151,7 @@ void InterpreterSelectQuery::basicInit()
     /// Read from prepared input.
     if (input)
     {
-        if (table_column_names.empty())
-            table_column_names = input->getHeader().getNamesAndTypesList();
+        source_header = input->getHeader();
     }
     else
     {
@@ -160,8 +160,7 @@ void InterpreterSelectQuery::basicInit()
         /// Read from subquery.
         if (table_expression && typeid_cast<const ASTSelectQuery *>(table_expression.get()))
         {
-            if (table_column_names.empty())
-                table_column_names = InterpreterSelectQuery::getSampleBlock(table_expression, context).getNamesAndTypesList();
+            source_header = InterpreterSelectQuery::getSampleBlock(table_expression, context);
         }
         else
         {
@@ -186,15 +185,14 @@ void InterpreterSelectQuery::basicInit()
             }
 
             table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
-            if (table_column_names.empty())
-                table_column_names = storage->getColumnsListNonMaterialized();
+            source_header = storage->getSampleBlockNonMaterialized();
         }
     }
 
-    if (table_column_names.empty())
+    if (!source_header)
         throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-    query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
+    query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, source_header.getNamesAndTypesList(), subquery_depth, !only_analyze);
 
     if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
         throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -213,14 +211,29 @@ void InterpreterSelectQuery::basicInit()
 
 void InterpreterSelectQuery::initQueryAnalyzer()
 {
-    query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
+    query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, source_header.getNamesAndTypesList(), subquery_depth, !only_analyze);
 
     for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        p->query_analyzer = std::make_unique<ExpressionAnalyzer>(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze);
+        p->query_analyzer = std::make_unique<ExpressionAnalyzer>(p->query_ptr, p->context, p->storage, p->source_header.getNamesAndTypesList(), p->subquery_depth, !only_analyze);
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_, const BlockInputStreamPtr & input)
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    const Context & context_,
+    QueryProcessingStage::Enum to_stage_,
+    size_t subquery_depth_,
+    const BlockInputStreamPtr & input)
+    : InterpreterSelectQuery(query_ptr_, context_, {}, to_stage_, subquery_depth_, input)
+{
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    const Context & context_,
+    const Names & required_column_names_,
+    QueryProcessingStage::Enum to_stage_,
+    size_t subquery_depth_,
+    const BlockInputStreamPtr & input)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
@@ -230,8 +243,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const 
     , input(input)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init({});
+    init(required_column_names_);
 }
+
 
 InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
     : query_ptr(query_ptr_)
@@ -245,28 +259,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & qu
     init({});
 }
 
-InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
-    const Names & required_column_names_,
-    QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, const BlockInputStreamPtr & input)
-    : InterpreterSelectQuery(query_ptr_, context_, required_column_names_, {}, to_stage_, subquery_depth_, input)
-{
-}
-
-InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
-    const Names & required_column_names_,
-    const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, const BlockInputStreamPtr & input)
-    : query_ptr(query_ptr_)
-    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
-    , context(context_)
-    , to_stage(to_stage_)
-    , subquery_depth(subquery_depth_)
-    , table_column_names(table_column_names_)
-    , is_first_select_inside_union_all(query.isUnionAllHead())
-    , input(input)
-    , log(&Logger::get("InterpreterSelectQuery"))
-{
-    init(required_column_names_);
-}
 
 bool InterpreterSelectQuery::hasAsterisk() const
 {
@@ -335,7 +327,9 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 
 Block InterpreterSelectQuery::getSampleBlock()
 {
-    return query_analyzer->getSelectSampleBlock();
+    Pipeline pipeline;
+    executeWithoutUnionImpl(pipeline, std::make_shared<OneBlockInputStream>(source_header));
+    return pipeline.firstStream()->getHeader();
 }
 
 
@@ -348,11 +342,7 @@ Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-
-    if (input)
-        pipeline.streams.push_back(input);
-
-    executeWithoutUnionImpl(pipeline);
+    executeWithoutUnionImpl(pipeline, input);
     executeUnion(pipeline);
 
     /// Constraints on the result, the quota on the result, and also callback for progress.
@@ -382,17 +372,15 @@ BlockIO InterpreterSelectQuery::execute()
 BlockInputStreams InterpreterSelectQuery::executeWithoutUnion()
 {
     Pipeline pipeline;
-
-    if (input)
-        pipeline.streams.push_back(input);
-
-    executeWithoutUnionImpl(pipeline);
-
+    executeWithoutUnionImpl(pipeline, input);
     return pipeline.streams;
 }
 
-void InterpreterSelectQuery::executeWithoutUnionImpl(Pipeline & pipeline)
+void InterpreterSelectQuery::executeWithoutUnionImpl(Pipeline & pipeline, const BlockInputStreamPtr & input)
 {
+    if (input)
+        pipeline.streams.push_back(input);
+
     if (is_first_select_inside_union_all)
     {
         executeSingleQuery(pipeline);
@@ -716,7 +704,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                     required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(StringRange(), column));
             }
 
-            alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, table_column_names}.getActions(true);
+            alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, source_header.getNamesAndTypesList()}.getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
@@ -849,7 +837,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     }
     else
     {
-        interpreter_subquery->executeWithoutUnionImpl(pipeline);
+        interpreter_subquery->executeWithoutUnionImpl(pipeline, input);
     }
 
     /** Set the limits and quota for reading data, the speed and time of the query.
