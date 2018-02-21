@@ -14,6 +14,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 
@@ -130,7 +131,7 @@ Block Aggregator::getHeader(bool final) const
         }
     }
 
-    return res;
+    return materializeBlock(res);
 }
 
 
