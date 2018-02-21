@@ -60,15 +60,6 @@ public:
         size_t subquery_depth_ = 0,
         const BlockInputStreamPtr & input = nullptr);
 
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        const Context & context_,
-        const Names & required_column_names,
-        const NamesAndTypesList & table_column_names_,
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        size_t subquery_depth_ = 0,
-        const BlockInputStreamPtr & input = nullptr);
-
     ~InterpreterSelectQuery();
 
     /** Execute a query, possibly part of UNION ALL chain.
@@ -169,7 +160,7 @@ private:
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
     QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
 
-    void executeWithoutUnionImpl(Pipeline & pipeline);
+    void executeWithoutUnionImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
@@ -202,7 +193,7 @@ private:
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
-    NamesAndTypesList table_column_names;
+    Block source_header;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
