@@ -1520,7 +1520,7 @@ protected:
                         try
                         {
                             RemoteBlockInputStream stream(*connection, query, {}, context, &current_settings);
-                            NullBlockOutputStream output;
+                            NullBlockOutputStream output({});
                             copyData(stream, output);
 
                             if (increment_and_check_exit())

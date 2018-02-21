@@ -393,7 +393,7 @@ void Connection::sendData(const Block & block, const String & name)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision);
+        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
     writeVarUInt(Protocol::Client::Data, *out);

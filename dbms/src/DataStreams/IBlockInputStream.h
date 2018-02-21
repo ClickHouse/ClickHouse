@@ -118,9 +118,7 @@ private:
 
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 
-    /** Get text that identifies this source and the entire subtree.
-      * Unlike getID - without taking into account the parameters.
-      */
+    /// Get text with names of this source and the entire subtree.
     String getTreeID() const;
 };
 

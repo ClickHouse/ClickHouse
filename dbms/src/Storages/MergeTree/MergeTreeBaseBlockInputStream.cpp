@@ -414,7 +414,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)
-                    res.getByName(prewhere_column_name).column = DataTypeUInt8().createColumnConst(rows, UInt64(1));
+                    res.getByName(prewhere_column_name).column = DataTypeUInt8().createColumnConst(rows, UInt64(1))->convertToFullColumnIfConst();
             }
 
             if (res)
@@ -471,7 +471,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 }
 
 
-void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
+void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 {
     const auto rows = block.rows();
 
@@ -483,17 +483,23 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
         {
             if (virt_column_name == "_part")
             {
-                block.insert(ColumnWithTypeAndName{
-                    DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeString>(),
-                    virt_column_name});
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeString().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeString>(), virt_column_name});
             }
             else if (virt_column_name == "_part_index")
             {
-                block.insert(ColumnWithTypeAndName{
-                    DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeUInt64>(),
-                    virt_column_name});
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUInt64().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
             }
         }
     }

@@ -33,7 +33,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override
     {
-        return std::make_shared<NullBlockOutputStream>();
+        return std::make_shared<NullBlockOutputStream>(getSampleBlock());
     }
 
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override

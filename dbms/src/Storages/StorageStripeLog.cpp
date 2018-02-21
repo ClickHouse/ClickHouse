@@ -55,21 +55,20 @@ public:
         : storage(storage_), max_read_buffer_size(max_read_buffer_size_),
         index(index_), index_begin(index_begin_), index_end(index_end_)
     {
+        if (index_begin != index_end)
+        {
+            for (const auto & column : index_begin->columns)
+            {
+                auto type = DataTypeFactory::instance().get(column.type);
+                header.insert(ColumnWithTypeAndName{ type, column.name });
+            }
+        }
     }
 
     String getName() const override { return "StripeLog"; }
 
     Block getHeader() const override
     {
-        if (index_begin == index_end)
-            return {};
-
-        Block header;
-        for (const auto & column : index_begin->columns)
-        {
-            auto type = DataTypeFactory::instance().get(column.type);
-            header.insert({ type->createColumn(), type, column.name });
-        }
         return header;
     };
 
@@ -102,6 +101,7 @@ private:
     std::shared_ptr<const IndexForNativeFormat> index;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    Block header;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -136,7 +136,7 @@ public:
         data_out(data_out_compressed, CompressionSettings(CompressionMethod::LZ4), storage.max_compress_block_size),
         index_out_compressed(storage.full_path() + "index.mrk", INDEX_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
         index_out(index_out_compressed),
-        block_out(data_out, 0, &index_out, Poco::File(storage.full_path() + "data.bin").getSize())
+        block_out(data_out, 0, storage.getSampleBlock(), &index_out, Poco::File(storage.full_path() + "data.bin").getSize())
     {
     }
 
@@ -151,6 +151,8 @@ public:
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {

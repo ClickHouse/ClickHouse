@@ -106,7 +106,7 @@ try
         BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
         WriteBufferFromFileDescriptor out1(STDOUT_FILENO);
         CompressedWriteBuffer out2(out1);
-        NativeBlockOutputStream out3(out2, ClickHouseRevision::get());
+        NativeBlockOutputStream out3(out2, ClickHouseRevision::get(), in->getHeader());
         copyData(*in, out3);
     }
 

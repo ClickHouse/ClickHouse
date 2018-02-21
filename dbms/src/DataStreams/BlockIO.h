@@ -21,8 +21,6 @@ struct BlockIO
     BlockInputStreamPtr in;
     BlockOutputStreamPtr out;
 
-    Block out_sample;   /// Example of a block to be written to `out`.
-
     /// Callbacks for query logging could be set here.
     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
     std::function<void()>                                             exception_callback;
@@ -50,7 +48,6 @@ struct BlockIO
         process_list_entry      = rhs.process_list_entry;
         in                      = rhs.in;
         out                     = rhs.out;
-        out_sample              = rhs.out_sample;
 
         finish_callback         = rhs.finish_callback;
         exception_callback      = rhs.exception_callback;

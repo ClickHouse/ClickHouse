@@ -465,12 +465,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 /// Implementation of MergedColumnOnlyOutputStream.
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    MergeTreeData & storage_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_)
+    MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
         storage_.context.getSettings().max_compress_block_size, compression_settings,
         storage_.context.getSettings().min_bytes_to_use_direct_io),
-    part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
+    header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
 {
 }
 

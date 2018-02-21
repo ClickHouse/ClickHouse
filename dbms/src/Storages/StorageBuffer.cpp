@@ -44,7 +44,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -150,9 +149,7 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
-    if (!blocksHaveEqualStructure(from, to))
-        throw Exception("Cannot append block to buffer: block has different structure. "
-            "Block: " + from.dumpStructure() + ", Buffer: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+    assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
@@ -207,6 +204,8 @@ class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
