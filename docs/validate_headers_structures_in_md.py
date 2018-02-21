@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Gets all the files in SOURCES_TREE directory, shows all level headers for each file and skip or process files by user's selection.
+# Gets all the files in SOURCES_TREE directory, shows all level headers
+# for each file and skip or process files by user's selection.
 
 import os
 
@@ -18,7 +19,6 @@ for (dirpath, dirnames, filenames) in os.walk(SOURCES_TREE):
         content = f.readlines()
         f.close()
 
-        
         # Showing headers structure in md-file
         count_lines = 0
         for l in content:
@@ -41,12 +41,12 @@ for (dirpath, dirnames, filenames) in os.walk(SOURCES_TREE):
             count_lines = 0
             for l in content:
                 if l.startswith('==='):
-                    print count_lines, content[count_lines -1], content[count_lines]
+                    print count_lines, content[count_lines - 1], content[count_lines]
                     content[count_lines - 1] = '# ' + content[count_lines - 1]
                     content.pop(count_lines)
 
                 if l.startswith('---'):
-                    print count_lines, content[count_lines -1], content[count_lines]
+                    print count_lines, content[count_lines - 1], content[count_lines]
                     content[count_lines - 1] = '## ' + content[count_lines - 1]
                     content.pop(count_lines)
 
