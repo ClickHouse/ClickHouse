@@ -134,7 +134,7 @@
           <div class="md-content">
             <article class="md-content__inner md-typeset">
               {% block content %}
-                {% if config.single_page %}
+                {% if config.extra.single_page %}
                     <a href="{{ config.repo_url }}tree/master/docs" title="{{ lang.t('edit.link.title') }}" class="md-icon md-content__icon">&#xE3C9;</a>
                 {% else %}
                   {% if page.edit_url %}
