@@ -58,6 +58,15 @@ struct MergeTreePartInfo
             || max_block < rhs.min_block;
     }
 
+    bool overrides(const MergeTreePartInfo & rhs) const
+    {
+        if (isDisjoint(rhs))
+            return false;
+        if (version == rhs.version)
+            return contains(rhs);
+        return version > rhs.version;
+    }
+
     String getPartName() const;
     String getPartNameV0(DayNum_t left_date, DayNum_t right_date) const;
     UInt64 getBlocksCount() const

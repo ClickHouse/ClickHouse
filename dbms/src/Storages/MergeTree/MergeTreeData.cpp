@@ -569,30 +569,24 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         while (curr_jt != data_parts_by_state_and_info.end() && (*curr_jt)->state == DataPartState::Committed)
         {
-            /// Don't consider data parts belonging to different partitions.
-            if ((*curr_jt)->info.partition_id != (*prev_jt)->info.partition_id)
+            if ((*curr_jt)->info.isDisjoint((*prev_jt)->info))
             {
                 ++prev_jt;
                 ++curr_jt;
                 continue;
             }
 
-            if ((*curr_jt)->contains(**prev_jt))
+            if ((*curr_jt)->info.overrides((*prev_jt)->info))
             {
                 deactivate_part(prev_jt);
                 prev_jt = curr_jt;
                 ++curr_jt;
             }
-            else if ((*prev_jt)->contains(**curr_jt))
+            else if ((*prev_jt)->info.overrides((*curr_jt)->info))
             {
                 auto next = std::next(curr_jt);
                 deactivate_part(curr_jt);
                 curr_jt = next;
-            }
-            else
-            {
-                ++prev_jt;
-                ++curr_jt;
             }
         }
     }
@@ -1379,19 +1373,17 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     {
         auto prev = std::prev(begin);
 
-        if (!new_part_info.contains((*prev)->info))
-        {
-            if ((*prev)->info.contains(new_part_info))
-            {
-                out_covering_part = *prev;
-                return {};
-            }
-
-            if (!new_part_info.isDisjoint((*prev)->info))
-                throw Exception("Part " + new_part_name + " intersects previous part " + (*prev)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
+        if (new_part_info.isDisjoint((*prev)->info))
             break;
+
+        if (!new_part_info.contains((*prev)->info) && !(*prev)->info.contains(new_part_info))
+            throw Exception("Part " + new_part_name + " intersects previous part " + (*prev)->getNameWithState() +
+                ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+        if ((*prev)->info.overrides(new_part_info))
+        {
+            out_covering_part = *prev;
+            return {};
         }
 
         begin = prev;
@@ -1404,19 +1396,17 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
         if ((*end)->info == new_part_info)
             throw Exception("Unexpected duplicate part " + (*end)->getNameWithState() + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (!new_part_info.contains((*end)->info))
-        {
-            if ((*end)->info.contains(new_part_info))
-            {
-                out_covering_part = *end;
-                return {};
-            }
-
-            if (!new_part_info.isDisjoint((*end)->info))
-                throw Exception("Part " + new_part_name + " intersects next part " + (*end)->getNameWithState() +
-                    ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
+        if (new_part_info.isDisjoint((*end)->info))
             break;
+
+        if (!new_part_info.contains((*end)->info) && !(*end)->info.contains(new_part_info))
+            throw Exception("Part " + new_part_name + " intersects next part " + (*end)->getNameWithState() +
+                ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+        if ((*end)->info.overrides(new_part_info))
+        {
+            out_covering_part = *end;
+            return {};
         }
 
         ++end;
