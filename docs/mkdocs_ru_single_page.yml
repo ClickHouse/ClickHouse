@@ -8,7 +8,7 @@ repo_name: 'yandex/ClickHouse'
 repo_url: 'https://github.com/yandex/ClickHouse/'
 
 extra_css:
-  - assets/stylesheets/yandex_fonts.css
+  - assets/stylesheets/custom.css
 
 theme:
   name: null
