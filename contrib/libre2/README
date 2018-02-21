@@ -1,9 +1,0 @@
-Source: hg clone https://re2.googlecode.com/hg re2
-
-Latest commit:
-
-changeset:   118:1b483548272e
-tag:         tip
-user:        Russ Cox <rsc@swtch.com>
-date:        Mon Oct 06 15:08:47 2014 -0400
-summary:     doc: import clarifications from Go tree

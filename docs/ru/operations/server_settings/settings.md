@@ -555,7 +555,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## query_log
 
-Настройка логгирования запросов, принятых с настройкой [log_queries=1](#settings-log_queries).
+Настройка логгирования запросов, принятых с настройкой [log_queries=1](../settings/settings.md#settings_settings-log_queries).
 
 Запросы логгируются не в отдельный файл, а в таблицу ClickHouse.
 

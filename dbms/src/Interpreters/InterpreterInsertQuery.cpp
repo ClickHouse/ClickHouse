@@ -37,8 +37,9 @@ namespace ErrorCodes
 }
 
 
-InterpreterInsertQuery::InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterInsertQuery::InterpreterInsertQuery(
+    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
+    : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
     ProfileEvents::increment(ProfileEvents::InsertQuery);
 }
@@ -118,7 +119,8 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<AddingDefaultBlockOutputStream>(
         out, required_columns, table->column_defaults, context, static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
 
-    out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, table->materialized_columns);
+    if (!allow_materialized)
+        out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, table->materialized_columns);
 
     out = std::make_shared<SquashingBlockOutputStream>(
         out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
@@ -138,11 +140,10 @@ BlockIO InterpreterInsertQuery::execute()
     else
     {
         InterpreterSelectQuery interpreter_select{query.select, context};
-        res.in_sample = interpreter_select.getSampleBlock();
 
         res.in = interpreter_select.execute().in;
 
-        res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in_sample, res.out_sample);
+        res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in->getHeader(), res.out_sample);
         res.in = std::make_shared<CastTypeBlockInputStream>(context, res.in, res.out_sample);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
     }

@@ -96,7 +96,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_set)
         {
-            if (!subquery.set->insertFromBlock(block))
+            if (!subquery.set->insertFromBlock(block, /*fill_set_elements=*/false))
                 done_with_set = true;
         }
 

@@ -15,14 +15,13 @@ class LazyBlockInputStream : public IProfilingBlockInputStream
 public:
     using Generator = std::function<BlockInputStreamPtr()>;
 
-    LazyBlockInputStream(Generator generator_)
-        : generator(std::move(generator_))
+    LazyBlockInputStream(const Block & header_, Generator generator_)
+        : header(header_), generator(std::move(generator_))
     {
     }
 
-    LazyBlockInputStream(const char * name_, Generator generator_)
-        : name(name_)
-        , generator(std::move(generator_))
+    LazyBlockInputStream(const char * name_, const Block & header_, Generator generator_)
+        : name(name_), header(header_), generator(std::move(generator_))
     {
     }
 
@@ -32,6 +31,11 @@ public:
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
         IProfilingBlockInputStream::cancel();
+    }
+
+    Block getHeader() const override
+    {
+        return header;
     }
 
 protected:
@@ -89,6 +93,7 @@ protected:
 
 private:
     const char * name = "Lazy";
+    Block header;
     Generator generator;
 
     BlockInputStreamPtr input;

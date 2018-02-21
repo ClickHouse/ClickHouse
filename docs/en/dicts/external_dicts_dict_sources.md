@@ -132,8 +132,9 @@ Installing unixODBC and the ODBC driver for PostgreSQL:
 
     sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 
-Configuring `/etc/odbc.ini` (или `~/.odbc.ini`): :
+Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 
+```
     [DEFAULT]
     Driver = myconnection
     
@@ -150,6 +151,7 @@ Configuring `/etc/odbc.ini` (или `~/.odbc.ini`): :
     RowVersioning       = No
     ShowSystemTables    = No
     ConnSettings        =
+```
 
 The dictionary configuration in ClickHouse:
 

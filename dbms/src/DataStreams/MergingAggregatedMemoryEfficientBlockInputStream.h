@@ -67,8 +67,6 @@ public:
 
     String getName() const override { return "MergingAggregatedMemoryEfficient"; }
 
-    String getID() const override;
-
     /// Sends the request (initiates calculations) earlier than `read`.
     void readPrefix() override;
 
@@ -79,6 +77,8 @@ public:
       *  skipping failed by execution.
       */
     void cancel() override;
+
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

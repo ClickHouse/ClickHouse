@@ -45,7 +45,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-#include <Common/ConfigProcessor.h>
+#include <Common/ConfigProcessor/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
@@ -117,6 +117,7 @@ struct ContextShared
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
     mutable std::shared_ptr<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.
+    String system_profile_name;                             /// Profile used by system processes
     std::shared_ptr<ISecurityManager> security_manager;     /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
@@ -1348,15 +1349,21 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 }
 
 
+void Context::reloadClusterConfig()
+{
+    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+    auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+    shared->clusters = std::make_unique<Clusters>(config, settings);
+}
+
+
 Clusters & Context::getClusters() const
 {
+    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+    if (!shared->clusters)
     {
-        std::lock_guard<std::mutex> lock(shared->clusters_mutex);
-        if (!shared->clusters)
-        {
-            auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-            shared->clusters = std::make_unique<Clusters>(config, settings);
-        }
+        auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        shared->clusters = std::make_unique<Clusters>(config, settings);
     }
 
     return *shared->clusters;
@@ -1364,13 +1371,27 @@ Clusters & Context::getClusters() const
 
 
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
-void Context::setClustersConfig(const ConfigurationPtr & config)
+void Context::setClustersConfig(const ConfigurationPtr & config, const String & config_name)
 {
     std::lock_guard<std::mutex> lock(shared->clusters_mutex);
 
     shared->clusters_config = config;
-    if (shared->clusters)
-        shared->clusters->updateClusters(*shared->clusters_config, settings);
+
+    if (!shared->clusters)
+        shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
+    else
+        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name);
+}
+
+
+void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+{
+    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+
+    if (!shared->clusters)
+        throw Exception("Clusters are not set", ErrorCodes::LOGICAL_ERROR);
+
+    shared->clusters->setCluster(cluster_name, cluster);
 }
 
 
@@ -1573,15 +1594,21 @@ void Context::setApplicationType(ApplicationType type)
     shared->application_type = type;
 }
 
+void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
+{
+    shared->default_profile_name = config.getString("default_profile", "default");
+    shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
+    setSetting("profile", shared->system_profile_name);
+}
 
 String Context::getDefaultProfileName() const
 {
     return shared->default_profile_name;
 }
 
-void Context::setDefaultProfileName(const String & name)
+String Context::getSystemProfileName() const
 {
-    shared->default_profile_name = name;
+    return shared->system_profile_name;
 }
 
 String Context::getFormatSchemaPath() const

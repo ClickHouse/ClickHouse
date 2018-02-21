@@ -30,11 +30,10 @@ public:
         const std::string & connection_string,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const NamesAndTypesList & columns);
+        const NamesAndTypesList & columns_);
 
     std::string getName() const override { return "ODBC"; }
     std::string getTableName() const override { return name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -46,11 +45,8 @@ public:
 
 private:
     std::string name;
-
     std::string remote_database_name;
     std::string remote_table_name;
-
-    NamesAndTypesList columns;
 
     std::shared_ptr<Poco::Data::SessionPool> pool;
 };

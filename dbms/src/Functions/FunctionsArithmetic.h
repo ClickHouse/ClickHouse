@@ -778,7 +778,7 @@ private:
         return false;
     }
 
-    FunctionPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
@@ -830,7 +830,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (FunctionPtr function = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
+        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -844,10 +844,8 @@ public:
             /// Change interval argument to its representation
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
-            DataTypePtr res;
-            std::vector<ExpressionAction> unused_prerequisites;
-            function->getReturnTypeAndPrerequisites(new_arguments, res, unused_prerequisites);
-            return res;
+            auto function = function_builder->build(new_arguments);
+            return function->getReturnType();
         }
 
         DataTypePtr type_res;
@@ -873,7 +871,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (FunctionPtr function = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        if (auto function_builder = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
         {
             ColumnNumbers new_arguments = arguments;
 
@@ -885,7 +883,11 @@ public:
             Block new_block = block;
             new_block.getByPosition(new_arguments[1]).type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
-            function->executeImpl(new_block, new_arguments, result);
+            ColumnsWithTypeAndName new_arguments_with_type_and_name =
+                    {new_block.getByPosition(new_arguments[0]), new_block.getByPosition(new_arguments[1])};
+            auto function = function_builder->build(new_arguments_with_type_and_name);
+
+            function->execute(new_block, new_arguments, result);
             block.getByPosition(result).column = new_block.getByPosition(result).column;
 
             return;

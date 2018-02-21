@@ -87,7 +87,7 @@ Configuration example:
 
 ### complex_key_hashed
 
-This type of storage is designed for use with compound [keys](..external_dicts_dict_structure.html/#dicts-external_dicts_dict_structure). It is similar to hashed.
+This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). It is similar to hashed.
 
 Configuration example:
 

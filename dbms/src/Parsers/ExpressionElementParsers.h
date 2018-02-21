@@ -239,13 +239,4 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-/** The path of the shard in ZooKeeper along with the weight.
-  */
-class ParserWeightedZooKeeperPath : public IParserBase
-{
-protected:
-    const char * getName() const { return "weighted ZooKeeper path"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
 }

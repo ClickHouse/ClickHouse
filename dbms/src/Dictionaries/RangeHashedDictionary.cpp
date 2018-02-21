@@ -323,7 +323,8 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
                 auto & values = it->second;
 
                 const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-                    [] (const Value<StringRef> & lhs, const Range & range) {
+                    [] (const Value<StringRef> & lhs, const Range & range)
+                    {
                         return lhs.range < range;
                     });
 

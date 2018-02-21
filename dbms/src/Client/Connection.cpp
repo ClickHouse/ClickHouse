@@ -64,9 +64,9 @@ void Connection::connect()
         {
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
-        socket->connect(resolved_address, connect_timeout);
-        socket->setReceiveTimeout(receive_timeout);
-        socket->setSendTimeout(send_timeout);
+        socket->connect(resolved_address, timeouts.connection_timeout);
+        socket->setReceiveTimeout(timeouts.receive_timeout);
+        socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);

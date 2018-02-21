@@ -36,4 +36,17 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
     }
 }
 
+bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
+{
+    if (auto ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
+    {
+        ast_with_output->format.reset();
+        ast_with_output->out_file.reset();
+        return true;
+    }
+
+    return false;
+}
+
+
 }

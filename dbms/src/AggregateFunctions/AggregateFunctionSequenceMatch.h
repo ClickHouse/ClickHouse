@@ -164,8 +164,7 @@ public:
         {
             const auto cond_arg = arguments[i].get();
             if (!typeid_cast<const DataTypeUInt8 *>(cond_arg))
-                throw Exception{
-                    "Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) +
+                throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) +
                         " of aggregate function " + derived().getName() + ", must be UInt8",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
@@ -338,7 +337,8 @@ protected:
         std::stack<backtrack_info> back_stack;
 
         /// backtrack if possible
-        const auto do_backtrack = [&] {
+        const auto do_backtrack = [&]
+        {
             while (!back_stack.empty())
             {
                 auto & top = back_stack.top();

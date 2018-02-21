@@ -33,6 +33,7 @@ public:
     void drop() override;
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
     void shutdown() override;
+    bool checkTableCanBeDropped() const override;
 
     BlockInputStreams read(
         const Names & column_names,
@@ -51,7 +52,6 @@ private:
     String database_name;
     ASTPtr inner_query;
     Context & global_context;
-    NamesAndTypesList columns;
     bool has_inner_table = false;
 
 protected:

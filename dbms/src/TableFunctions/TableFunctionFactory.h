@@ -30,7 +30,8 @@ public:
     template <typename Function>
     void registerFunction()
     {
-        auto creator = [] () -> TableFunctionPtr {
+        auto creator = [] () -> TableFunctionPtr
+        {
             return std::make_shared<Function>();
         };
         registerFunction(Function::name, std::move(creator));

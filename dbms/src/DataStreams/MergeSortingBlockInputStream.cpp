@@ -155,7 +155,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
 MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
     Blocks & blocks_, SortDescription & description_, size_t max_merged_block_size_, size_t limit_)
-    : blocks(blocks_), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
+    : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Blocks nonempty_blocks;
     for (const auto & block : blocks)
