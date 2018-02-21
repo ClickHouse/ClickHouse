@@ -11,6 +11,9 @@ repo_url: 'https://github.com/yandex/ClickHouse/'
 extra_css:
   - assets/stylesheets/custom.css
 
+markdown_extensions:
+  - codehilite
+
 theme:
   name: null
   custom_dir: 'mkdocs-material-theme'
@@ -34,8 +37,6 @@ extra:
   single_page: true
   search:
     language: 'en'
-
-
 
 pages:
 - 'Documentation': 'index.md'
