@@ -192,7 +192,7 @@ BlockInputStreams StorageMerge::read(
         if (real_column_names.size() == 0)
             real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
-        /// Substitute virtual column for its value. NOTE This looks terribly wrong.
+        /// Substitute virtual column for its value when querying tables.
         ASTPtr modified_query_ast = query->clone();
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
@@ -219,6 +219,12 @@ BlockInputStreams StorageMerge::read(
             else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
                 throw Exception("Source tables for Merge table are processing data up to different stages",
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+            /// The table may return excessive columns if we query only its virtual column.
+            /// We filter excessive columns. This is done only if query was not processed more than FetchColumns.
+            if (processed_stage_in_source_table == QueryProcessingStage::FetchColumns)
+                for (auto & stream : source_streams)
+                    stream = std::make_shared<FilterColumnsBlockInputStream>(stream, real_column_names, true);
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
             /// We must return streams with structure equals to structure of Merge table.
@@ -248,6 +254,10 @@ BlockInputStreams StorageMerge::read(
                 else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+                if (processed_stage_in_source_table == QueryProcessingStage::FetchColumns)
+                    for (auto & stream : streams)
+                        stream = std::make_shared<FilterColumnsBlockInputStream>(stream, real_column_names, true);
 
                 auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>(header) : streams.front();
                 if (!streams.empty())
