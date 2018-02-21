@@ -115,3 +115,7 @@ h1, h2, h3, .md-logo {
     text-decoration: none !important;
     color: #08f !important;
 }
+
+.md-search-result__link {
+    text-decoration: none !important;
+}
