@@ -166,7 +166,6 @@ BlockInputStreams StorageMerge::read(
     if (!virt_column_names.empty())
     {
         VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
-
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
@@ -182,6 +181,7 @@ BlockInputStreams StorageMerge::read(
     Block header = getSampleBlockForColumns(real_column_names);
 
     size_t tables_count = selected_tables.size();
+
     size_t curr_table_number = 0;
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it, ++curr_table_number)
     {
@@ -192,7 +192,7 @@ BlockInputStreams StorageMerge::read(
         if (real_column_names.size() == 0)
             real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
-        /// Substitute virtual column for its value
+        /// Substitute virtual column for its value. NOTE This looks terribly wrong.
         ASTPtr modified_query_ast = query->clone();
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
