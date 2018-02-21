@@ -103,7 +103,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     if (partitions_count == 1)
     {
         /// A typical case is when there is one partition (you do not need to split anything).
-        result.emplace_back(std::move(block_copy), get_partition(0));
+        /// NOTE: returning a copy of the original block so that calculated partition key columns
+        /// do not interfere with possible calculated primary key columns of the same name.
+        result.emplace_back(Block(block), get_partition(0));
         return result;
     }
 
