@@ -28,6 +28,7 @@ void RemoteBlockOutputStream::writePrefix()
       * Sample block is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
 
+    query_sent = true;
     connection.sendQuery(query, "", QueryProcessingStage::Complete, settings, nullptr);
 
     Connection::Packet packet = connection.receivePacket();
@@ -93,6 +94,15 @@ void RemoteBlockOutputStream::writeSuffix()
     else
         throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
         + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+
+    finished = true;
+}
+
+RemoteBlockOutputStream::~RemoteBlockOutputStream()
+{
+    /// If interrupted in the middle of the loop of communication with the server, then interrupt the connection
+    if (query_sent && !finished)
+        connection.disconnect();
 }
 
 }
