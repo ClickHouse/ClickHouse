@@ -1,4 +1,5 @@
-#include "PushingToViewsBlockOutputStream.h"
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
 

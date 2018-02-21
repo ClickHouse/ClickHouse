@@ -4,7 +4,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageMaterializedView.h>
 
 
