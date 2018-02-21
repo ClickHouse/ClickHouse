@@ -1,4 +1,5 @@
-site_name: ClickHouse docs
+site_name: ClickHouse Documentation
+copyright: ©2016–2018 Yandex LLC
 
 docs_dir: en
 site_dir: build/docs/en
