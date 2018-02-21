@@ -43,7 +43,7 @@ public:
 
     String getName() const override
     {
-        return "DictionaryBlockInputStream";
+        return "Dictionary";
     }
 
 protected:
