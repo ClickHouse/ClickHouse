@@ -113,12 +113,12 @@ MergeTreeData::MergeTreeData(
 {
     merging_params.check(columns);
 
-    if (!primary_expr_ast)  /// TODO Allow tables without primary key.
+    if (!primary_expr_ast)
         throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
     initPrimaryKey();
 
-    if (sampling_expression && (!primary_expr_ast || !primary_key_sample.has(sampling_expression->getColumnName()))
+    if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
         && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
@@ -191,9 +191,6 @@ static void checkForAllowedKeyColumns(const ColumnWithTypeAndName & element, con
 
 void MergeTreeData::initPrimaryKey()
 {
-    if (!primary_expr_ast)
-        return;
-
     auto addSortDescription = [](SortDescription & descr, const ASTPtr & expr_ast)
     {
         descr.reserve(descr.size() + expr_ast->children.size());
