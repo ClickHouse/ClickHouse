@@ -15,7 +15,7 @@
 namespace DB
 {
 
-/** This class allowes one to launch queries on remote replicas of one shard and get results
+/** This class allows one to launch queries on remote replicas of one shard and get results
   */
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
