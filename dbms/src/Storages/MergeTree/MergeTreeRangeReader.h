@@ -145,7 +145,7 @@ public:
         size_t num_zeros_in_filter = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;
-        /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_read.
+        /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= num_read_rows.
         ColumnPtr filter;
 
         void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter);
