@@ -17,7 +17,6 @@
 #include <Databases/IDatabase.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
-#include <DataStreams/RemoveColumnsBlockInputStream.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 
@@ -284,6 +283,9 @@ BlockInputStreams StorageMerge::read(
     if (processed_stage_in_source_tables)
         processed_stage = *processed_stage_in_source_tables;
 
+    if (res.empty())
+        return res;
+
     res = narrowBlockInputStreams(res, num_streams);
 
     /// Added to avoid different block structure from different sources
@@ -294,18 +296,33 @@ BlockInputStreams StorageMerge::read(
     }
     else
     {
-        /// Blocks from distributed tables may have extra columns.
+        /// Blocks from distributed tables may have extra columns. TODO Why?
         /// We need to remove them to make blocks compatible.
+
+        /// Remove columns that are in "column_names" but not in first level of SELECT query.
+
+        Names filtered_columns = res.at(0)->getHeader().getNames();
+        std::set<String> filtered_columns_set(filtered_columns.begin(), filtered_columns.end());
+        bool need_remove = false;
+
         auto identifiers = collectIdentifiersInFirstLevelOfSelectQuery(query);
         std::set<String> identifiers_set(identifiers.begin(), identifiers.end());
-        Names columns_to_remove;
-        for (const auto & column : column_names)
-            if (!identifiers_set.count(column))
-                columns_to_remove.push_back(column);
 
-        if (!columns_to_remove.empty())
+        for (const auto & column : column_names)
+        {
+            if (filtered_columns_set.count(column) && !identifiers_set.count(column))
+            {
+                need_remove = true;
+                filtered_columns_set.erase(column);
+            }
+        }
+
+        if (need_remove)
+        {
+            filtered_columns.assign(filtered_columns_set.begin(), filtered_columns_set.end());
             for (auto & stream : res)
-                stream = std::make_shared<RemoveColumnsBlockInputStream>(stream, columns_to_remove);
+                stream = std::make_shared<FilterColumnsBlockInputStream>(stream, filtered_columns, true);
+        }
     }
 
     return res;
