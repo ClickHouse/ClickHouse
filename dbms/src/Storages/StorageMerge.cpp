@@ -2,23 +2,23 @@
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/FilterColumnsBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnFactory.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/VirtualColumnFactory.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
-#include <DataStreams/CastTypeBlockInputStream.h>
-#include <DataStreams/FilterColumnsBlockInputStream.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
@@ -230,7 +230,7 @@ BlockInputStreams StorageMerge::read(
             for (auto & stream : source_streams)
             {
                 /// will throw if some columns not convertible
-                stream = std::make_shared<CastTypeBlockInputStream>(context, stream, header);
+                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header);
             }
         }
         else
@@ -262,7 +262,7 @@ BlockInputStreams StorageMerge::read(
                 if (!streams.empty())
                 {
                     /// will throw if some columns not convertible
-                    stream = std::make_shared<CastTypeBlockInputStream>(context, stream, header);
+                    stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header);
                 }
                 return stream;
             }));
