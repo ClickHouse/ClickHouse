@@ -23,7 +23,6 @@ public:
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;
-    size_t numPendingRows() const;
 
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
@@ -95,14 +94,18 @@ public:
     class ReadResult
     {
     public:
+        using NumRows = std::vector<size_t>;
+
         struct RangeInfo
         {
             size_t num_granules_read_before_start;
             MarkRange range;
         };
 
-        const std::vector<RangeInfo> & startedRanges() const { return started_ranges; }
-        const std::vector<size_t> & rowsPerGranule() const { return rows_per_granule; }
+        using RangesInfo = std::vector<RangeInfo>;
+
+        const RangesInfo & startedRanges() const { return started_ranges; }
+        const NumRows & rowsPerGranule() const { return rows_per_granule; }
 
         /// The number of rows were read at LAST iteration in chain. <= num_added_rows + num_filtered_rows.
         size_t numReadRows() const { return num_read_rows; }
@@ -110,6 +113,7 @@ public:
         size_t numAddedRows() const { return num_added_rows; }
         /// The number of filtered rows at all steps in reading chain.
         size_t numFilteredRows() const { return num_filtered_rows; }
+        size_t numRowsToSkipInLastGranule() const { return num_rows_to_skip_in_last_granule; }
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
@@ -132,9 +136,9 @@ public:
         Block block;
 
     private:
-        std::vector<RangeInfo> started_ranges;
+        RangesInfo started_ranges;
         /// The number of rows read from each granule.
-        std::vector<size_t> rows_per_granule;
+        NumRows rows_per_granule;
         /// Sum(rows_per_granule)
         size_t num_read_rows = 0;
         /// The number of rows was added to block while reading columns. May be zero if no read columns present in part.
@@ -143,12 +147,15 @@ public:
         size_t num_filtered_rows = 0;
         /// Zero if filter is nullptr.
         size_t num_zeros_in_filter = 0;
+        /// The number of rows was removed from last granule after clear or optimize.
+        size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;
         /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= num_read_rows.
         ColumnPtr filter;
 
-        void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter);
+        void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter, const NumRows & zero_tails);
+        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails) const;
         size_t numZerosInFilter() const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
     };
@@ -158,8 +165,9 @@ public:
 private:
 
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
-    void continueReadingChain(ReadResult & result);
+    Block continueReadingChain(ReadResult & result);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
+    void filterBlock(Block & block, const ColumnPtr & filter) const;
 
     size_t index_granularity = 0;
     MergeTreeReader * merge_tree_reader = nullptr;
