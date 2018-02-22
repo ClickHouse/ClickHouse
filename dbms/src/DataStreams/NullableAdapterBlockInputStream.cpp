@@ -63,7 +63,6 @@ void NullableAdapterBlockInputStream::buildActions(
         const auto &out_elem = out_sample.getByPosition(i);
         if (!in_sample.has(out_elem.name))
         {
-            std::cout << "not build action with name \n";
             buildWithName = false;
             break;
         }
