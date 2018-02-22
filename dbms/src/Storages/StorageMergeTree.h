@@ -80,6 +80,8 @@ public:
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
 
+    String getDataPath() const override { return full_path; }
+
 private:
     String path;
     String database_name;

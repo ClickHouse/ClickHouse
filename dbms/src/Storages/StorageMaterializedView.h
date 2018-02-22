@@ -43,6 +43,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    String getDataPath() const override { return getTargetTable()->getDataPath(); }
+
 private:
     String select_database_name;
     String select_table_name;

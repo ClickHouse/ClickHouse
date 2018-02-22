@@ -72,6 +72,8 @@ public:
     void startup() override;
     void shutdown() override;
 
+    String getDataPath() const override { return path; }
+
     /// From each replica, get a description of the corresponding local table.
     BlockInputStreams describe(const Context & context, const Settings & settings);
 
