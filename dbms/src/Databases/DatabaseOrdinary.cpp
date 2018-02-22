@@ -39,10 +39,12 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 
-
-static String getTableMetadataPath(const String & base_path, const String & table_name)
+namespace detail
 {
-    return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+    String getTableMetadataPath(const String & base_path, const String & table_name)
+    {
+        return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+    }
 }
 
 static void loadTable(
@@ -145,7 +147,7 @@ void DatabaseOrdinary::loadTables(
     size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
 
-    String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
+    String data_path = context.getPath() + "data/" + escapeForFileName(name) + "/";
 
     StopwatchWithLock watch;
     std::atomic<size_t> tables_processed {0};
@@ -271,7 +273,7 @@ void DatabaseOrdinary::createTable(
             throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
 
-    String table_metadata_path = getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement;
 
@@ -314,7 +316,7 @@ void DatabaseOrdinary::removeTable(
 {
     StoragePtr res = detachTable(table_name);
 
-    String table_metadata_path = getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
 
     try
     {
@@ -330,7 +332,7 @@ void DatabaseOrdinary::removeTable(
 
 static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 {
-    String table_metadata_path = getTableMetadataPath(path, table_name);
+    String table_metadata_path = detail::getTableMetadataPath(path, table_name);
 
     String query;
     {
@@ -390,7 +392,7 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
     const Context & /*context*/,
     const String & table_name)
 {
-    String table_metadata_path = getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())
@@ -513,9 +515,19 @@ void DatabaseOrdinary::alterTable(
     }
 }
 
-String DatabaseOrdinary::getDataPath(const Context &) const
+String DatabaseOrdinary::getDataPath() const
 {
     return data_path;
+}
+
+String DatabaseOrdinary::getMetadataPath() const
+{
+    return metadata_path;
+}
+
+String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const
+{
+    return detail::getTableMetadataPath(metadata_path, table_name);
 }
 
 }

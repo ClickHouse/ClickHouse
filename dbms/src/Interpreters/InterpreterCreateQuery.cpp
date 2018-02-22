@@ -504,7 +504,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (!create.is_temporary)
         {
             database = context.getDatabase(database_name);
-            data_path = database->getDataPath(context);
+            data_path = database->getDataPath();
 
             /** If the table already exists, and the request specifies IF NOT EXISTS,
               *  then we allow concurrent CREATE queries (which do nothing).
