@@ -2792,7 +2792,7 @@ void ExpressionAnalyzer::collectUsedColumns()
             required.insert(column_name_type.name);
 
     /// You need to read at least one column to find the number of rows.
-    if (required.empty())
+    if (select_query && required.empty())
         required.insert(ExpressionActions::getSmallestColumn(columns));
 
     unknown_required_columns = required;
