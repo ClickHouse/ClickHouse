@@ -147,7 +147,7 @@ void DatabaseOrdinary::loadTables(
     size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
 
-    String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
+    String data_path = context.getPath() + "data/" + escapeForFileName(name) + "/";
 
     StopwatchWithLock watch;
     std::atomic<size_t> tables_processed {0};
@@ -273,7 +273,7 @@ void DatabaseOrdinary::createTable(
             throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
 
-    String table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement;
 
@@ -316,7 +316,7 @@ void DatabaseOrdinary::removeTable(
 {
     StoragePtr res = detachTable(table_name);
 
-    String table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
 
     try
     {
@@ -392,7 +392,7 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
     const Context & /*context*/,
     const String & table_name)
 {
-    String table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())
