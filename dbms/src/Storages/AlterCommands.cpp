@@ -39,7 +39,7 @@ void AlterCommand::apply(
         {
             throw Exception{
                 "Cannot add column " + column_name + ": column with this name already exists",
-                DB::ErrorCodes::ILLEGAL_COLUMN
+                ErrorCodes::ILLEGAL_COLUMN
             };
         }
 
@@ -57,7 +57,7 @@ void AlterCommand::apply(
 
                 if (reverse_insert_it == columns.rend())
                     throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                                    DB::ErrorCodes::ILLEGAL_COLUMN);
+                                    ErrorCodes::ILLEGAL_COLUMN);
                 else
                 {
                     /// base returns an iterator that is already offset by one element to the right
@@ -107,7 +107,7 @@ void AlterCommand::apply(
             !remove_column(alias_columns))
         {
             throw Exception("Wrong column name. Cannot find column " + column_name + " to drop",
-                            DB::ErrorCodes::ILLEGAL_COLUMN);
+                            ErrorCodes::ILLEGAL_COLUMN);
         }
     }
     else if (type == MODIFY_COLUMN)
@@ -128,7 +128,7 @@ void AlterCommand::apply(
                 std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
             if (it == columns.end())
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to modify",
-                                DB::ErrorCodes::ILLEGAL_COLUMN);
+                                ErrorCodes::ILLEGAL_COLUMN);
 
             return it;
         };
@@ -217,7 +217,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 if (std::end(columns) != column_it)
                     throw Exception{
                         "Cannot add column " + column_name + ": column with this name already exists",
-                        DB::ErrorCodes::ILLEGAL_COLUMN
+                        ErrorCodes::ILLEGAL_COLUMN
                     };
             }
             else if (command.type == AlterCommand::MODIFY_COLUMN)
@@ -226,7 +226,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 if (std::end(columns) == column_it)
                     throw Exception{
                         "Wrong column name. Cannot find column " + column_name + " to modify",
-                        DB::ErrorCodes::ILLEGAL_COLUMN
+                        ErrorCodes::ILLEGAL_COLUMN
                     };
 
                 columns.erase(column_it);
@@ -265,16 +265,16 @@ void AlterCommands::validate(IStorage * table, const Context & context)
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            for (const auto default_column : defaults)
+            for (const auto & default_column : defaults)
             {
-                const auto default_expression = default_column.second.expression;
+                const auto & default_expression = default_column.second.expression;
                 const auto actions = ExpressionAnalyzer{default_expression, context, {}, columns}.getActions(true);
                 const auto require_columns = actions->getRequiredColumns();
 
                 if (std::count(require_columns.begin(), require_columns.end(), command.column_name))
                     throw Exception(
-                        "Cannot drop column " + command.column_name + ", Because column " + default_column.first +
-                        " depends on it", DB::ErrorCodes::LOGICAL_ERROR
+                        "Cannot drop column " + command.column_name + ", because column " + default_column.first +
+                        " depends on it", ErrorCodes::ILLEGAL_COLUMN
                     );
             }
             auto found = false;
@@ -295,7 +295,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
 
             if (!found)
                 throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
-                    DB::ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 
