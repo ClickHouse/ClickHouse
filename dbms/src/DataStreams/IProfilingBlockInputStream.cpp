@@ -5,6 +5,7 @@
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 
+
 namespace DB
 {
 
@@ -15,6 +16,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -69,6 +71,15 @@ Block IProfilingBlockInputStream::read()
     }
 
     progress(Progress(res.rows(), res.bytes()));
+
+#ifndef NDEBUG
+    if (res)
+    {
+        Block header = getHeader();
+        if (header)
+            assertBlocksHaveEqualStructure(res, header, getName());
+    }
+#endif
 
     return res;
 }

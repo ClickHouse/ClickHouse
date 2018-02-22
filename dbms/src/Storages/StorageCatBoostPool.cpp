@@ -36,7 +36,7 @@ public:
 
     String getName() const override
     {
-        return "CatBoostDatasetBlockInputStream";
+        return "CatBoostDataset";
     }
 
     Block readImpl() override

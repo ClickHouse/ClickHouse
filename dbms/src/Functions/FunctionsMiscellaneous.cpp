@@ -104,6 +104,8 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), db_name);
@@ -125,6 +127,8 @@ public:
     {
         return name;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -391,6 +395,8 @@ public:
         return name;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -433,6 +439,8 @@ public:
     {
         return 0;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -482,6 +490,8 @@ public:
         return 0;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -523,6 +533,8 @@ public:
     {
         return 0;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -889,6 +901,8 @@ public:
     }
 
     /** It could return many different values for single argument. */
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -1288,6 +1302,8 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt32().createColumnConst(block.rows(), static_cast<UInt64>(uptime));
@@ -1323,6 +1339,8 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), DateLUT::instance().getTimeZone());
@@ -1354,6 +1372,8 @@ public:
     {
         return 1;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -1631,6 +1651,8 @@ public:
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 

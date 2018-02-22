@@ -25,6 +25,7 @@ public:
     ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_,
                                          bool deduplicate_);
 
+    Block getHeader() const override;
     void write(const Block & block) override;
 
     /// For ATTACHing existing data on filesystem.

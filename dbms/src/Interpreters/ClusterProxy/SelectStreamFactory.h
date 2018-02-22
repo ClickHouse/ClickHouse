@@ -29,7 +29,7 @@ private:
     const Block header;
     QueryProcessingStage::Enum processed_stage;
     QualifiedTableName main_table;
-    const Tables & external_tables;
+    Tables external_tables;
 };
 
 }

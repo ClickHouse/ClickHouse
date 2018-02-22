@@ -416,7 +416,6 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
     {
         /// For a missing column of a nested data structure we must create not a column of empty
         /// arrays, but a column of arrays of correct length.
-        /// NOTE: Similar, but slightly different code is present in Block::addDefaults.
 
         /// First, collect offset columns for all arrays in the block.
         OffsetColumns offset_columns;

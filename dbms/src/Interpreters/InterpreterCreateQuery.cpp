@@ -10,17 +10,12 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DataStreams/ProhibitColumnsBlockOutputStream.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
-
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -33,6 +28,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -43,8 +39,10 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
@@ -474,13 +472,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && (create.is_view || create.is_materialized_view))
         create.select->setDatabaseIfNeeded(current_database);
 
-    std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
     if (create.select && (!create.attach || !create.columns))
-    {
-        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->clone(), context);
-        as_select_sample = interpreter_select->getSampleBlock();
-    }
+        as_select_sample = InterpreterSelectQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;
     String as_table_name = create.as_table;
@@ -554,28 +548,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && !create.attach
         && !create.is_view && (!create.is_materialized_view || create.is_populate))
     {
-        auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
+        auto insert = std::make_shared<ASTInsertQuery>();
 
-        /// Also see InterpreterInsertQuery.
-        BlockOutputStreamPtr out;
+        if (!create.is_temporary)
+            insert->database = database_name;
 
-        out = std::make_shared<PushingToViewsBlockOutputStream>(
-            create.database, create.table, res, create.is_temporary ? context.getSessionContext() : context, query_ptr);
+        insert->table = table_name;
+        insert->select = create.select->clone();
 
-        out = std::make_shared<MaterializingBlockOutputStream>(out);
-
-        /// @note shouldn't these two contexts be session contexts in case of temporary table?
-        bool strict_insert_defaults = static_cast<bool>(context.getSettingsRef().strict_insert_defaults);
-        out = std::make_shared<AddingDefaultBlockOutputStream>(
-            out, columns.columns, columns.column_defaults, context, strict_insert_defaults);
-
-        if (!context.getSettingsRef().insert_allow_materialized_columns)
-            out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, columns.materialized_columns);
-
-        BlockIO io;
-        io.in = std::make_shared<NullAndDoCopyBlockInputStream>(interpreter_select->execute().in, out);
-
-        return io;
+        return InterpreterInsertQuery(insert, context.getSessionContext(), context.getSettingsRef().insert_allow_materialized_columns).execute();
     }
 
     return {};

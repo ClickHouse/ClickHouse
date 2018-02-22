@@ -18,16 +18,13 @@ namespace DB
 class NullableAdapterBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & in_sample_, const Block & out_sample_);
+    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & src_header, const Block & res_header);
 
-    String getName() const override { return "NullableAdapterBlockInputStream"; }
+    String getName() const override { return "NullableAdapter"; }
 
     Block getHeader() const override { return header; }
 
-protected:
-    Block readImpl() override;
 
-private:
     /// Given a column of a block we have just read,
     /// how must we process it?
     enum Action
@@ -44,17 +41,17 @@ private:
     using Actions = std::vector<Action>;
 
 private:
+    Block readImpl() override;
+
     /// Determine the actions to be taken using the source sample block,
     /// which describes the columns from which we fetch data inside an INSERT
     /// query, and the target sample block which contains the columns
     /// we insert data into.
-    void buildActions(const Block & in_sample, const Block & out_sample);
+    void buildActions(const Block & src_header, const Block & res_header);
 
-private:
     Block header;
     Actions actions;
     std::vector<std::optional<String>> rename;
-    bool must_transform = false;
 };
 
 }
