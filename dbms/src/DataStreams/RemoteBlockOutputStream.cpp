@@ -75,6 +75,25 @@ void RemoteBlockOutputStream::writeSuffix()
     else
         throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
         + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+
+    finished = true;
+}
+
+RemoteBlockOutputStream::~RemoteBlockOutputStream()
+{
+    /// If interrupted in the middle of the loop of communication with the server, then interrupt the connection,
+    ///  to not leave the connection in unsynchronized state.
+    if (!finished)
+    {
+        try
+        {
+            connection.disconnect();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 }

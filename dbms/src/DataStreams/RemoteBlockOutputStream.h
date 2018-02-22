@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Common/Throttler.h>
 
 
 namespace DB
@@ -27,11 +28,14 @@ public:
     /// Send pre-serialized and possibly pre-compressed block of data, that will be read from 'input'.
     void writePrepared(ReadBuffer & input, size_t size = 0);
 
+    ~RemoteBlockOutputStream() override;
+
 private:
     Connection & connection;
     String query;
     const Settings * settings;
     Block header;
+    bool finished = false;
 };
 
 }
