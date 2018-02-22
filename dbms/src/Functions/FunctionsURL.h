@@ -100,26 +100,26 @@ inline StringView getURLHost(const StringView & url)
         Pos scheme_end = url.data() + scheme.size();
 
         // Colon must follows after scheme.
-        if (*(scheme_end++) != ':' || scheme_end != pos)
+        if (pos - scheme_end != 1 || *scheme_end != ':')
             return StringView();
     }
 
-    if (end - pos < 2 || *(pos++) != '/' || *(pos++) != '/')
+    if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
         return StringView();
 
-    const char *st = pos;
+    const char *start_of_host = (pos += 2);
     for (; pos < end; ++pos)
     {
         if (*pos == '@')
         {
-            st = pos + 1;
+            start_of_host = pos + 1;
         } else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
         {
             break;
         }
     }
 
-    return (pos == st) ? StringView() : StringView(st, pos - st);
+    return (pos == start_of_host) ? StringView() : StringView(start_of_host, pos - start_of_host);
 }
 
 
@@ -408,25 +408,24 @@ struct ExtractWWW
                     return;
             }
 
-            if (end - pos < 2 || *(pos++) != '/' || *(pos++) != '/')
+            if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
                 return;
 
-            const char *st = pos;
+            const char *start_of_host = (pos += 2);
             for (; pos < end; ++pos)
             {
                 if (*pos == '@')
                 {
-                    st = pos + 1;
+                    start_of_host = pos + 1;
                 } else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
                 {
                     break;
                 }
             }
 
-
-            if (st + 4 < end && !strncmp(st, "www.", 4))
+            if (start_of_host + 4 < end && !strncmp(start_of_host, "www.", 4))
             {
-                res_data = st;
+                res_data = start_of_host;
                 res_size = 4;
             }
         }
