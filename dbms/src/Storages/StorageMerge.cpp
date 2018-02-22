@@ -137,7 +137,6 @@ BlockInputStreams StorageMerge::read(
     const unsigned num_streams)
 {
     BlockInputStreams res;
-    Block header = getSampleBlockForColumns(column_names);
 
     Names virt_column_names, real_column_names;
     for (const auto & it : column_names)
@@ -167,7 +166,6 @@ BlockInputStreams StorageMerge::read(
     if (!virt_column_names.empty())
     {
         VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
-
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
@@ -180,7 +178,10 @@ BlockInputStreams StorageMerge::read(
     Context modified_context = context;
     modified_context.getSettingsRef().optimize_move_to_prewhere = false;
 
+    Block header = getSampleBlockForColumns(real_column_names);
+
     size_t tables_count = selected_tables.size();
+
     size_t curr_table_number = 0;
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it, ++curr_table_number)
     {
@@ -191,7 +192,7 @@ BlockInputStreams StorageMerge::read(
         if (real_column_names.size() == 0)
             real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
 
-        /// Substitute virtual column for its value
+        /// Substitute virtual column for its value when querying tables.
         ASTPtr modified_query_ast = query->clone();
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
@@ -218,6 +219,12 @@ BlockInputStreams StorageMerge::read(
             else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
                 throw Exception("Source tables for Merge table are processing data up to different stages",
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+            /// The table may return excessive columns if we query only its virtual column.
+            /// We filter excessive columns. This is done only if query was not processed more than FetchColumns.
+            if (processed_stage_in_source_table == QueryProcessingStage::FetchColumns)
+                for (auto & stream : source_streams)
+                    stream = std::make_shared<FilterColumnsBlockInputStream>(stream, real_column_names, true);
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
             /// We must return streams with structure equals to structure of Merge table.
@@ -248,6 +255,10 @@ BlockInputStreams StorageMerge::read(
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
+                if (processed_stage_in_source_table == QueryProcessingStage::FetchColumns)
+                    for (auto & stream : streams)
+                        stream = std::make_shared<FilterColumnsBlockInputStream>(stream, real_column_names, true);
+
                 auto stream = streams.empty() ? std::make_shared<NullBlockInputStream>(header) : streams.front();
                 if (!streams.empty())
                 {
@@ -262,14 +273,10 @@ BlockInputStreams StorageMerge::read(
             stream->addTableLock(table_lock);
 
         for (auto & virtual_column : virt_column_names)
-        {
             if (virtual_column == "_table")
-            {
                 for (auto & stream : source_streams)
                     stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
                         stream, std::make_shared<DataTypeString>(), table->getTableName(), "_table");
-            }
-        }
 
         res.insert(res.end(), source_streams.begin(), source_streams.end());
     }

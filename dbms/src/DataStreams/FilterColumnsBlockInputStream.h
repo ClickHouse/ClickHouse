@@ -21,7 +21,7 @@ public:
 
     String getName() const override
     {
-        return "FilterColumnsBlockInputStream";
+        return "FilterColumns";
     }
 
     Block getHeader() const override;

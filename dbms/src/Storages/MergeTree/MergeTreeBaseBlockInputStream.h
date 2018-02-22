@@ -42,7 +42,7 @@ protected:
 
     Block readFromPart();
 
-    void injectVirtualColumns(Block & block);
+    void injectVirtualColumns(Block & block) const;
 
 protected:
     MergeTreeData & storage;

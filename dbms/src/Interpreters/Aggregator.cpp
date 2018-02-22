@@ -14,6 +14,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 
@@ -130,7 +131,7 @@ Block Aggregator::getHeader(bool final) const
         }
     }
 
-    return res;
+    return materializeBlock(res);
 }
 
 
@@ -840,7 +841,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
-    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get());
+    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);

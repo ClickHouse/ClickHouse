@@ -802,84 +802,24 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
     external_storage->startup();
 
-    /** There are two ways to perform distributed GLOBAL subqueries.
-      *
-      * "push" method:
-      * Subquery data is sent to all remote servers, where they are then used.
-      * For this method, the data is sent in the form of "external tables" and will be available on each remote server by the name of the type _data1.
-      * Replace in the query a subquery for this name.
-      *
-      * "pull" method:
-      * Remote servers download the subquery data from the request initiating server.
-      * For this method, replace the subquery with another subquery of the form (SELECT * FROM remote ('host: port', _query_QUERY_ID, _data1))
-      * This subquery, in fact, says - "you need to download data from there."
-      *
-      * The "pull" method takes precedence, because in it a remote server can decide that it does not need data and does not download it in such cases.
-      */
+    /** We replace the subquery with the name of the temporary table.
+        * It is in this form, the request will go to the remote server.
+        * This temporary table will go to the remote server, and on its side,
+        *  instead of doing a subquery, you just need to read it.
+        */
 
-    if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
+    auto database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
+
+    if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
     {
-        /** We replace the subquery with the name of the temporary table.
-          * It is in this form, the request will go to the remote server.
-          * This temporary table will go to the remote server, and on its side,
-          *  instead of doing a subquery, you just need to read it.
-          */
+        ast_table_expr->subquery.reset();
+        ast_table_expr->database_and_table_name = database_and_table_name;
 
-        auto database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
-
-        if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
-        {
-            ast_table_expr->subquery.reset();
-            ast_table_expr->database_and_table_name = database_and_table_name;
-
-            ast_table_expr->children.clear();
-            ast_table_expr->children.emplace_back(database_and_table_name);
-        }
-        else
-            subquery_or_table_name_or_table_expression = database_and_table_name;
-    }
-    else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
-    {
-        throw Exception("Support for 'pull' method of execution of global subqueries is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
-
-        /// TODO
-/*        String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
-        String database = "_query_" + context.getCurrentQueryId();
-
-        auto subquery = std::make_shared<ASTSubquery>();
-        subquery_or_table_name = subquery;
-
-        auto select = std::make_shared<ASTSelectQuery>();
-        subquery->children.push_back(select);
-
-        auto exp_list = std::make_shared<ASTExpressionList>();
-        select->select_expression_list = exp_list;
-        select->children.push_back(select->select_expression_list);
-
-        Names column_names = external_storage->getColumnNamesList();
-        for (const auto & name : column_names)
-            exp_list->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), name));
-
-        auto table_func = std::make_shared<ASTFunction>();
-        select->table = table_func;
-        select->children.push_back(select->table);
-
-        table_func->name = "remote";
-        auto args = std::make_shared<ASTExpressionList>();
-        table_func->arguments = args;
-        table_func->children.push_back(table_func->arguments);
-
-        auto address_lit = std::make_shared<ASTLiteral>(StringRange(), host_port);
-        args->children.push_back(address_lit);
-
-        auto database_lit = std::make_shared<ASTLiteral>(StringRange(), database);
-        args->children.push_back(database_lit);
-
-        auto table_lit = std::make_shared<ASTLiteral>(StringRange(), external_table_name);
-        args->children.push_back(table_lit);*/
+        ast_table_expr->children.clear();
+        ast_table_expr->children.emplace_back(database_and_table_name);
     }
     else
-        throw Exception("Unknown global subqueries execution method", ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
+        subquery_or_table_name_or_table_expression = database_and_table_name;
 
     external_tables[external_table_name] = external_storage;
     subqueries_for_sets[external_table_name].source = interpreter->execute().in;
@@ -2636,25 +2576,6 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     step.actions->add(ExpressionAction::project(result_columns));
 }
 
-
-Block ExpressionAnalyzer::getSelectSampleBlock()
-{
-    assertSelect();
-
-    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(aggregated_columns, settings);
-    NamesWithAliases result_columns;
-
-    ASTs asts = select_query->select_expression_list->children;
-    for (size_t i = 0; i < asts.size(); ++i)
-    {
-        result_columns.emplace_back(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName());
-        getRootActions(asts[i], true, false, temp_actions);
-    }
-
-    temp_actions->add(ExpressionAction::project(result_columns));
-
-    return temp_actions->getSampleBlock();
-}
 
 void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries)
 {

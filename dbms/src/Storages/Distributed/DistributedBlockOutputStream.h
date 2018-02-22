@@ -35,8 +35,8 @@ public:
     DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
                                  const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_);
 
+    Block getHeader() const override;
     void write(const Block & block) override;
-
     void writePrefix() override;
 
 private:

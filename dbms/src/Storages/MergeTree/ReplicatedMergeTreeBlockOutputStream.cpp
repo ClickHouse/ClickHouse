@@ -39,6 +39,12 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 }
 
 
+Block ReplicatedMergeTreeBlockOutputStream::getHeader() const
+{
+    return storage.getSampleBlock();
+}
+
+
 /// Allow to verify that the session in ZooKeeper is still alive.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {

@@ -48,6 +48,7 @@ protected:
     bool getNewTask() override;
 
 private:
+    Block header;
 
     /// Used by Task
     Names ordered_names;
