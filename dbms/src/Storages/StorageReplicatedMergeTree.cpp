@@ -2304,13 +2304,13 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             checkPartAndAddToZooKeeper(part, ops, part_name);
 
             MergeTreeData::Transaction transaction;
-            replaced_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
+            data.renameTempPartAndReplace(part, nullptr, &transaction);
 
             /// Do not commit if the part is obsolete
             if (!transaction.isEmpty())
             {
                 getZooKeeper()->multi(ops);
-                transaction.commit();
+                replaced_parts = transaction.commit();
             }
 
             /** If a quorum is tracked for this part, you must update it.

@@ -189,7 +189,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
-            && part->info.min_block < (*prev_part)->info.max_block)
+            && part->info.min_block <= (*prev_part)->info.max_block)
         {
             LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
         }
