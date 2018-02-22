@@ -407,7 +407,7 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder)
+void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults)
 {
     if (!res)
         throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
@@ -435,8 +435,8 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
             }
         }
 
-        bool should_evaluate_defaults = false;
-        bool should_sort = always_reorder;
+        should_evaluate_missing_defaults = false;
+        should_reorder = false;
 
         size_t rows = res.rows();
 
@@ -456,10 +456,10 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
 
             if (!has_column)
             {
-                should_sort = true;
+                should_reorder = true;
                 if (storage.column_defaults.count(requested_column.name) != 0)
                 {
-                    should_evaluate_defaults = true;
+                    should_evaluate_missing_defaults = true;
                     continue;
                 }
 
@@ -489,22 +489,40 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                 res.insert(std::move(column_to_add));
             }
         }
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        e.addMessage("(while reading from part " + path + ")");
+        throw;
+    }
+}
 
-        /// evaluate defaulted columns if necessary
-        if (should_evaluate_defaults)
-            evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
+{
+    try
+    {
+        Block ordered_block;
 
-        /// sort columns to ensure consistent order among all blocks
-        if (should_sort)
-        {
-            Block ordered_block;
+        for (const auto & name : ordered_names)
+            if (res.has(name))
+                ordered_block.insert(res.getByName(name));
 
-            for (const auto & name : ordered_names)
-                if (res.has(name))
-                    ordered_block.insert(res.getByName(name));
+        std::swap(res, ordered_block);
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        e.addMessage("(while reading from part " + path + ")");
+        throw;
+    }
+}
 
-            std::swap(res, ordered_block);
-        }
+void MergeTreeReader::evaluateMissingDefaults(Block & res)
+{
+    try
+    {
+        DB::evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
     }
     catch (Exception & e)
     {

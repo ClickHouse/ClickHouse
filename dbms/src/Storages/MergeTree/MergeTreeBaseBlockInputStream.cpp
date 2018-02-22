@@ -71,8 +71,6 @@ Block MergeTreeBaseBlockInputStream::readImpl()
 
 Block MergeTreeBaseBlockInputStream::readFromPart()
 {
-    Block res;
-
     if (task->size_predictor)
         task->size_predictor->startBlock();
 
@@ -159,18 +157,18 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             task->size_predictor->update(read_result.block);
     }
 
-    if (!prewhere_column_name.empty() && res.has(prewhere_column_name))
+    if (!prewhere_column_name.empty() && read_result.block.has(prewhere_column_name))
     {
         if (task->remove_prewhere_column)
-            res.erase(prewhere_column_name);
+            read_result.block.erase(prewhere_column_name);
         else
         {
-            auto & column =res.getByName(prewhere_column_name);
+            auto & column = read_result.block.getByName(prewhere_column_name);
             column.column = column.column->convertToFullColumnIfConst();
         }
     }
 
-    res.checkNumberOfRows();
+    read_result.block.checkNumberOfRows();
 
     return read_result.block;
 }
