@@ -138,14 +138,6 @@ void InterpreterSelectQuery::init(const Names & required_column_names)
     }
 }
 
-bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
-{
-    for (const ASTSelectQuery * elem = &query_ptr; elem; elem = static_cast<const ASTSelectQuery *>(elem->next_union_all.get()))
-        if (elem->group_expression_list || elem->having_expression)
-            return true;
-
-    return false;
-}
 
 void InterpreterSelectQuery::basicInit()
 {
