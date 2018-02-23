@@ -26,6 +26,8 @@ using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>
   */
 class IProfilingBlockInputStream : public IBlockInputStream
 {
+    friend struct BlockStreamProfileInfo;
+
 public:
     IProfilingBlockInputStream();
 
@@ -56,10 +58,10 @@ public:
       * Call this method only after all the data has been retrieved with `read`,
       *  otherwise there will be problems if any data at the same time is computed in another thread.
       */
-    virtual const Block & getTotals();
+    virtual Block getTotals();
 
     /// The same for minimums and maximums.
-    const Block & getExtremes() const;
+    Block getExtremes();
 
 
     /** Set the execution progress bar callback.
@@ -181,6 +183,13 @@ protected:
     /// Minimums and maximums. The first row of the block - minimums, the second - the maximums.
     Block extremes;
 
+
+    void addChild(BlockInputStreamPtr & child)
+    {
+        std::lock_guard lock(children_mutex);
+        children.push_back(child);
+    }
+
 private:
     bool enabled_extremes = false;
 
@@ -214,6 +223,17 @@ private:
     bool checkDataSizeLimits();
     bool checkTimeLimits();
     void checkQuota(Block & block);
+
+
+    template <typename F>
+    void forEachProfilingChild(F && f)
+    {
+        std::lock_guard lock(children_mutex);
+        for (auto & child : children)
+            if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(child.get()))
+                if (f(*p_child))
+                    return;
+    }
 };
 
 }
