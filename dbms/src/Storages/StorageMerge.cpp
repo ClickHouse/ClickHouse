@@ -172,18 +172,6 @@ BlockInputStreams StorageMerge::read(
     modified_context.getSettingsRef().optimize_move_to_prewhere = false;
 
     /// What will be result structure depending on query processed stage in source tables?
-    std::map<QueryProcessingStage::Enum, Block> headers;
-
-    headers[QueryProcessingStage::FetchColumns] = getSampleBlockForColumns(column_names);
-
-    headers[QueryProcessingStage::WithMergeableState]
-        = materializeBlock(InterpreterSelectQuery(query_info.query, context, QueryProcessingStage::WithMergeableState, 0,
-        std::make_shared<OneBlockInputStream>(headers[QueryProcessingStage::FetchColumns])).execute().in->getHeader());
-
-    headers[QueryProcessingStage::Complete]
-        = materializeBlock(InterpreterSelectQuery(query_info.query, context, QueryProcessingStage::Complete, 0,
-        std::make_shared<OneBlockInputStream>(headers[QueryProcessingStage::FetchColumns])).execute().in->getHeader());
-
     Block header;
 
     size_t tables_count = selected_tables.size();
@@ -227,7 +215,22 @@ BlockInputStreams StorageMerge::read(
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
             if (!header)
-                header = headers[processed_stage_in_source_table];
+            {
+                switch (processed_stage_in_source_table)
+                {
+                    case QueryProcessingStage::FetchColumns:
+                        header = getSampleBlockForColumns(column_names);
+                        break;
+                    case QueryProcessingStage::WithMergeableState:
+                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, QueryProcessingStage::WithMergeableState, 0,
+                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
+                        break;
+                    case QueryProcessingStage::Complete:
+                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, QueryProcessingStage::Complete, 0,
+                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
+                        break;
+                }
+            }
 
             if (has_table_virtual_column)
                 for (auto & stream : source_streams)
