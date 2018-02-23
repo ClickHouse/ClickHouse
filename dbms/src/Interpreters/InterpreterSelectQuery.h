@@ -33,7 +33,8 @@ public:
      *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
      *
      * subquery_depth
-     * - to control the restrictions on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed.
+     * - to control the restrictions on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
+     *   for INSERT SELECT, a value 1 is passed instead of 0.
      *
      * input
      * - if given - read not from the table specified in the query, but from ready source.
