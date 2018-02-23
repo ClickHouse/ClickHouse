@@ -186,6 +186,8 @@ void InterpreterSelectQuery::basicInit()
             }
 
             table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+
+            /// TODO This looks weird.
             source_header = storage->getSampleBlockNonMaterialized();
         }
     }
@@ -402,6 +404,87 @@ void InterpreterSelectQuery::executeWithoutUnionImpl(Pipeline & pipeline, const 
         executeSingleQuery(pipeline);
 }
 
+
+InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage)
+{
+    AnalysisResult res;
+
+    /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+    res.first_stage = from_stage < QueryProcessingStage::WithMergeableState
+        && to_stage >= QueryProcessingStage::WithMergeableState;
+    /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+    res.second_stage = from_stage <= QueryProcessingStage::WithMergeableState
+        && to_stage > QueryProcessingStage::WithMergeableState;
+
+    /** First we compose a chain of actions and remember the necessary steps from it.
+        *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
+        *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
+        */
+
+    {
+        ExpressionActionsChain chain;
+
+        res.need_aggregate = query_analyzer->hasAggregation();
+
+        query_analyzer->appendArrayJoin(chain, !res.first_stage);
+
+        if (query_analyzer->appendJoin(chain, !res.first_stage))
+        {
+            res.has_join = true;
+            res.before_join = chain.getLastActions();
+            chain.addStep();
+        }
+
+        if (query_analyzer->appendWhere(chain, !res.first_stage))
+        {
+            res.has_where = true;
+            res.before_where = chain.getLastActions();
+            chain.addStep();
+        }
+
+        if (res.need_aggregate)
+        {
+            query_analyzer->appendGroupBy(chain, !res.first_stage);
+            query_analyzer->appendAggregateFunctionsArguments(chain, !res.first_stage);
+            res.before_aggregation = chain.getLastActions();
+
+            chain.finalize();
+            chain.clear();
+
+            if (query_analyzer->appendHaving(chain, !res.second_stage))
+            {
+                res.has_having = true;
+                res.before_having = chain.getLastActions();
+                chain.addStep();
+            }
+        }
+
+        /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
+        query_analyzer->appendSelect(chain, res.need_aggregate ? !res.second_stage : !res.first_stage);
+        res.selected_columns = chain.getLastStep().required_output;
+        res.has_order_by = query_analyzer->appendOrderBy(chain, res.need_aggregate ? !res.second_stage : !res.first_stage);
+        res.before_order_and_select = chain.getLastActions();
+        chain.addStep();
+
+        query_analyzer->appendProjectResult(chain);
+        res.final_projection = chain.getLastActions();
+
+        chain.finalize();
+        chain.clear();
+    }
+
+    /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
+    if (res.has_where)
+        res.before_where->prependProjectInput();
+    if (res.has_having)
+        res.before_having->prependProjectInput();
+
+    res.subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+
+    return res;
+}
+
+
 void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
 {
     /** Streams of data. When the query is executed in parallel, we have several data streams.
@@ -423,101 +506,17 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
 
     LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
+    AnalysisResult expressions = analyzeExpressions(from_stage);
+
     const Settings & settings = context.getSettingsRef();
 
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
-        bool has_join       = false;
-        bool has_where      = false;
-        bool need_aggregate = false;
-        bool has_having     = false;
-        bool has_order_by   = false;
-
-        ExpressionActionsPtr before_join;   /// including JOIN
-        ExpressionActionsPtr before_where;
-        ExpressionActionsPtr before_aggregation;
-        ExpressionActionsPtr before_having;
-        ExpressionActionsPtr before_order_and_select;
-        ExpressionActionsPtr final_projection;
-
-        /// Columns from the SELECT list, before renaming them to aliases.
-        Names selected_columns;
-
-        /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
-        bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
-            && to_stage >= QueryProcessingStage::WithMergeableState;
-        /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
-        bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
-            && to_stage > QueryProcessingStage::WithMergeableState;
-
-        /** First we compose a chain of actions and remember the necessary steps from it.
-         *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
-         *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
-         */
-
-        {
-            ExpressionActionsChain chain;
-
-            need_aggregate = query_analyzer->hasAggregation();
-
-            query_analyzer->appendArrayJoin(chain, !first_stage);
-
-            if (query_analyzer->appendJoin(chain, !first_stage))
-            {
-                has_join = true;
-                before_join = chain.getLastActions();
-                chain.addStep();
-            }
-
-            if (query_analyzer->appendWhere(chain, !first_stage))
-            {
-                has_where = true;
-                before_where = chain.getLastActions();
-                chain.addStep();
-            }
-
-            if (need_aggregate)
-            {
-                query_analyzer->appendGroupBy(chain, !first_stage);
-                query_analyzer->appendAggregateFunctionsArguments(chain, !first_stage);
-                before_aggregation = chain.getLastActions();
-
-                chain.finalize();
-                chain.clear();
-
-                if (query_analyzer->appendHaving(chain, !second_stage))
-                {
-                    has_having = true;
-                    before_having = chain.getLastActions();
-                    chain.addStep();
-                }
-            }
-
-            /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
-            query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
-            selected_columns = chain.getLastStep().required_output;
-            has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
-            before_order_and_select = chain.getLastActions();
-            chain.addStep();
-
-            query_analyzer->appendProjectResult(chain);
-            final_projection = chain.getLastActions();
-
-            chain.finalize();
-            chain.clear();
-        }
-
-        /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
-        if (has_where)
-            before_where->prependProjectInput();
-        if (has_having)
-            before_having->prependProjectInput();
-
         /// Now we will compose block streams that perform the necessary actions.
 
         /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
         bool aggregate_overflow_row =
-            need_aggregate &&
+            expressions.need_aggregate &&
             query.group_by_with_totals &&
             settings.limits.max_rows_to_group_by &&
             settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
@@ -525,32 +524,32 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
 
         /// Do I need to immediately finalize the aggregate functions after the aggregation?
         bool aggregate_final =
-            need_aggregate &&
+            expressions.need_aggregate &&
             to_stage > QueryProcessingStage::WithMergeableState &&
             !query.group_by_with_totals;
 
-        if (first_stage)
+        if (expressions.first_stage)
         {
-            if (has_join)
+            if (expressions.has_join)
             {
                 const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
                 if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
-                    pipeline.stream_with_non_joined_data = before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
+                    pipeline.stream_with_non_joined_data = expressions.before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
                         pipeline.firstStream()->getHeader(), settings.max_block_size);
 
                 for (auto & stream : pipeline.streams)   /// Applies to all sources except stream_with_non_joined_data.
-                    stream = std::make_shared<ExpressionBlockInputStream>(stream, before_join);
+                    stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
             }
 
-            if (has_where)
-                executeWhere(pipeline, before_where);
+            if (expressions.has_where)
+                executeWhere(pipeline, expressions.before_where);
 
-            if (need_aggregate)
-                executeAggregation(pipeline, before_aggregation, aggregate_overflow_row, aggregate_final);
+            if (expressions.need_aggregate)
+                executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final);
             else
             {
-                executeExpression(pipeline, before_order_and_select);
-                executeDistinct(pipeline, true, selected_columns);
+                executeExpression(pipeline, expressions.before_order_and_select);
+                executeDistinct(pipeline, true, expressions.selected_columns);
             }
 
             /** For distributed query processing,
@@ -558,36 +557,36 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
               *  but there is an ORDER or LIMIT,
               *  then we will perform the preliminary sorting and LIMIT on the remote server.
               */
-            if (!second_stage && !need_aggregate && !has_having)
+            if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
             {
-                if (has_order_by)
+                if (expressions.has_order_by)
                     executeOrder(pipeline);
 
-                if (has_order_by && query.limit_length)
-                    executeDistinct(pipeline, false, selected_columns);
+                if (expressions.has_order_by && query.limit_length)
+                    executeDistinct(pipeline, false, expressions.selected_columns);
 
                 if (query.limit_length)
                     executePreLimit(pipeline);
             }
         }
 
-        if (second_stage)
+        if (expressions.second_stage)
         {
             bool need_second_distinct_pass;
 
-            if (need_aggregate)
+            if (expressions.need_aggregate)
             {
                 /// If you need to combine aggregated results from multiple servers
-                if (!first_stage)
+                if (!expressions.first_stage)
                     executeMergeAggregated(pipeline, aggregate_overflow_row, aggregate_final);
 
                 if (!aggregate_final)
-                    executeTotalsAndHaving(pipeline, has_having, before_having, aggregate_overflow_row);
-                else if (has_having)
-                    executeHaving(pipeline, before_having);
+                    executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row);
+                else if (expressions.has_having)
+                    executeHaving(pipeline, expressions.before_having);
 
-                executeExpression(pipeline, before_order_and_select);
-                executeDistinct(pipeline, true, selected_columns);
+                executeExpression(pipeline, expressions.before_order_and_select);
+                executeDistinct(pipeline, true, expressions.selected_columns);
 
                 need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
             }
@@ -599,19 +598,19 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
                     executeTotalsAndHaving(pipeline, false, nullptr, aggregate_overflow_row);
             }
 
-            if (has_order_by)
+            if (expressions.has_order_by)
             {
                 /** If there is an ORDER BY for distributed query processing,
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
                   *  - therefore, we merge the sorted streams from remote servers.
                   */
-                if (!first_stage && !need_aggregate && !(query.group_by_with_totals && !aggregate_final))
+                if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
                     executeOrder(pipeline);
             }
 
-            executeProjection(pipeline, final_projection);
+            executeProjection(pipeline, expressions.final_projection);
 
             /// At this stage, we can calculate the minimums and maximums, if necessary.
             if (settings.extremes)
@@ -624,8 +623,8 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
-                * limiting the number of entries in each up to `offset + limit`.
-                */
+              * limiting the number of rows in each up to `offset + limit`.
+              */
             if (query.limit_length && pipeline.hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
                 executePreLimit(pipeline);
 
@@ -653,9 +652,8 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
         }
     }
 
-    SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
-    if (!subqueries_for_sets.empty())
-        executeSubqueriesInSetsAndJoins(pipeline, subqueries_for_sets);
+    if (!expressions.subqueries_for_sets.empty())
+        executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
 }
 
 
