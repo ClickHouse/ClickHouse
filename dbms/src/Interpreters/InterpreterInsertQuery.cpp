@@ -123,7 +123,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         res.in = interpreter_select.execute().in;
 
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, res.out->getHeader());
+        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, res.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
 
         res.out = nullptr;
