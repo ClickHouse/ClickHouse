@@ -4,7 +4,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageMaterializedView.h>
 
 
@@ -19,9 +18,11 @@ class ReplicatedMergeTreeBlockOutputStream;
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(String database, String table, StoragePtr storage,
+    PushingToViewsBlockOutputStream(
+        const String & database, const String & table, const StoragePtr & storage,
         const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
+    Block getHeader() const override { return storage->getSampleBlock(); }
     void write(const Block & block) override;
 
     void flush() override

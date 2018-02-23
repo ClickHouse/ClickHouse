@@ -20,9 +20,9 @@ namespace ErrorCodes
 
 
 NativeBlockOutputStream::NativeBlockOutputStream(
-    WriteBuffer & ostr_, UInt64 client_revision_,
+    WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_,
     WriteBuffer * index_ostr_, size_t initial_size_of_file_)
-    : ostr(ostr_), client_revision(client_revision_),
+    : ostr(ostr_), client_revision(client_revision_), header(header_),
     index_ostr(index_ostr_), initial_size_of_file(initial_size_of_file_)
 {
     if (index_ostr)
@@ -62,6 +62,8 @@ void NativeBlockOutputStream::write(const Block & block)
     /// Additional information about the block.
     if (client_revision > 0)
         block.info.write(ostr);
+
+    block.checkNumberOfRows();
 
     /// Dimensions
     size_t columns = block.columns();

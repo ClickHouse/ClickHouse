@@ -1,3 +1,8 @@
+if (ARCH_ARM)
+    # bundled have some asm broken for arm, use package libzookeeper-mt-dev
+    set(USE_INTERNAL_ZOOKEEPER_LIBRARY 0 CACHE BOOL "")
+endif ()
+
 option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper library instead of bundled" ${NOT_UNBUNDLED})
 
 if (USE_INTERNAL_ZOOKEEPER_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/zookeeper/src/c/CMakeLists.txt")
@@ -12,7 +17,6 @@ if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
 endif ()
 
 if (ZOOKEEPER_LIBRARY AND ZOOKEEPER_INCLUDE_DIR)
-    include_directories (${ZOOKEEPER_INCLUDE_DIR})
 else ()
     set (USE_INTERNAL_ZOOKEEPER_LIBRARY 1)
     set(WANT_CPPUNIT 0 CACHE BOOL "")

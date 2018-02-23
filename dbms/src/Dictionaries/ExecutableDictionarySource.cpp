@@ -101,6 +101,8 @@ public:
         }
     }
 
+    Block getHeader() const override { return stream->getHeader(); };
+
 private:
     Block readImpl() override { return stream->read(); }
 
@@ -118,7 +120,6 @@ private:
     }
 
     String getName() const override { return "WithBackgroundThread"; }
-    String getID() const override { return "WithBackgroundThread(" + stream->getID() + ")"; }
 
     BlockInputStreamPtr stream;
     std::unique_ptr<ShellCommand> command;

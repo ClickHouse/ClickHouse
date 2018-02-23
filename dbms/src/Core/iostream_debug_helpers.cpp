@@ -18,7 +18,7 @@ namespace DB
 
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
-    stream << "IBlockInputStream(id = " << what.getID() << ", name = " << what.getName() << ")";
+    stream << "IBlockInputStream(name = " << what.getName() << ")";
     //what.dumpTree(stream); // todo: set const
     return stream;
 }
@@ -56,17 +56,17 @@ std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const IFunction & what)
+std::ostream & operator<<(std::ostream & stream, const IFunctionBuilder & what)
 {
-    stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = " << what.getNumberOfArguments()
-           << ")";
+    stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = "
+           << what.getNumberOfArguments() << ")";
     return stream;
 }
 
 std::ostream & operator<<(std::ostream & stream, const Block & what)
 {
     stream << "Block("
-           << "size = " << what.columns()
+           << "num_columns = " << what.columns()
            << "){" << what.dumpStructure() << "}";
     return stream;
 }
@@ -115,7 +115,6 @@ std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what
 std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
 {
     stream << "SubqueryForSet(source = " << what.source
-    << ", source_sample = " <<  what.source_sample
     // TODO: << ", set = " <<  what.set << ", join = " <<  what.join
     << ", table = " << what.table
     << ")";

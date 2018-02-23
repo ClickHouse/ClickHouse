@@ -60,27 +60,33 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         << " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 
     setTotalRowsApprox(total_rows);
+
+    header = storage.getSampleBlockForColumns(ordered_names);
+
+    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
+    /// NOTE: We may use similar code to implement non blocking ALTERs.
+    for (const auto & name_type : data_part->columns)
+    {
+        if (header.has(name_type.name))
+        {
+            auto & elem = header.getByName(name_type.name);
+            if (!elem.type->equals(*name_type.type))
+            {
+                elem.type = name_type.type;
+                elem.column = elem.type->createColumn();
+            }
+        }
+    }
+
+    injectVirtualColumns(header);
 }
 
-String MergeTreeBlockInputStream::getID() const
+
+Block MergeTreeBlockInputStream::getHeader() const
 {
-    std::stringstream res;
-    res << "MergeTree(" << path << ", columns";
-
-    for (const NameAndTypePair & column : columns)
-        res << ", " << column.name;
-
-    if (prewhere_actions)
-        res << ", prewhere, " << prewhere_actions->getID();
-
-    res << ", marks";
-
-    for (size_t i = 0; i < all_mark_ranges.size(); ++i)
-        res << ", " << all_mark_ranges[i].begin << ", " << all_mark_ranges[i].end;
-
-    res << ")";
-    return res.str();
+    return header;
 }
+
 
 bool MergeTreeBlockInputStream::getNewTask()
 try

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
+    apt-get install -y --force-yes "$PKG" || true 
+    apt-get remove -y "$PKG" || true 
+done
+
+dpkg -i /tmp/buildd/*.deb || true
+apt install -y -f --allow-downgrades
+
+
+# Some test references uses specific timezone
+ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime
+echo 'Europe/Moscow' > /etc/timezone
+dpkg-reconfigure -f noninteractive tzdata
+
+
+service clickhouse-server start
+sleep 3
+
+# TODO: remove me or make only on error:
+tail -n100 /var/log/clickhouse-server/*
+
+clickhouse-client -q "SELECT * from system.build_options;"
+clickhouse-client -q "SELECT toDateTime(1);"
+
+
+( [ "${TEST_RUN}" ] && clickhouse-test --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ ${TEST_OPT} ) || ${TEST_TRUE:=true}
+
+
+service clickhouse-server stop
+
+# Test debug symbols
+# gdb -ex quit --args /usr/bin/clickhouse-server

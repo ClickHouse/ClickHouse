@@ -32,7 +32,6 @@ public:
     ~MergeTreeBaseBlockInputStream() override;
 
 protected:
-
     Block readImpl() override final;
 
     /// Creates new this->task, and initilizes readers
@@ -43,10 +42,9 @@ protected:
 
     Block readFromPart();
 
-    void injectVirtualColumns(Block & block);
+    void injectVirtualColumns(Block & block) const;
 
 protected:
-
     MergeTreeData & storage;
 
     ExpressionActionsPtr prewhere_actions;

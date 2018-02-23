@@ -1,13 +1,3 @@
-SELECT pointInPolygonFranklin(tuple(2.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonFranklin(tuple(1.0,2.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonFranklin(tuple(4.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonCrossing(tuple(2.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonCrossing(tuple(1.0,2.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonCrossing(tuple(4.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonWinding(tuple(2.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonWinding(tuple(1.0,2.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-SELECT pointInPolygonWinding(tuple(4.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
-
 SELECT 'inner';
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2), (6, 0)]);
 SELECT 'outer';

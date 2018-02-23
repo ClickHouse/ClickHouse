@@ -83,7 +83,7 @@ private:
     }
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-        : arenas(src_.arenas), func(src_.func), src(src_.getPtr())
+        : arenas(src_.arenas), func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
     {
     }
 

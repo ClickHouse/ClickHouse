@@ -3,7 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB

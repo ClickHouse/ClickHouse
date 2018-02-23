@@ -82,29 +82,17 @@ public:
         children = inputs;
         if (additional_input_at_end)
             children.push_back(additional_input_at_end);
+
+        size_t num_children = children.size();
+        if (num_children > 1)
+        {
+            Block header = children.at(0)->getHeader();
+            for (size_t i = 1; i < num_children; ++i)
+                assertBlocksHaveEqualStructure(children[i]->getHeader(), header, "UNION");
+        }
     }
 
     String getName() const override { return "Union"; }
-
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Union(";
-
-        Strings children_ids(children.size());
-        for (size_t i = 0; i < children.size(); ++i)
-            children_ids[i] = children[i]->getID();
-
-        /// Order does not matter.
-        std::sort(children_ids.begin(), children_ids.end());
-
-        for (size_t i = 0; i < children_ids.size(); ++i)
-            res << (i == 0 ? "" : ", ") << children_ids[i];
-
-        res << ")";
-        return res.str();
-    }
-
 
     ~UnionBlockInputStream() override
     {
@@ -138,6 +126,8 @@ public:
     {
         return doGetBlockExtraInfo();
     }
+
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     void finalize()

@@ -14,6 +14,10 @@
     #include <emmintrin.h>
 #endif
 
+#if __SSE4_2__
+    #include <smmintrin.h>
+    #include <nmmintrin.h>
+#endif
 
 
 /// The thing to avoid creating strings to find substrings in the hash table.
@@ -172,8 +176,6 @@ struct StringRefHash64
 
 #if __SSE4_2__
 
-#include <smmintrin.h>
-
 /// Parts are taken from CityHash.
 
 inline UInt64 hashLen16(UInt64 u, UInt64 v)
@@ -266,7 +268,7 @@ struct StringRefHash : CRC32Hash {};
 
 struct CRC32Hash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (StringRef /* x */) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
     };

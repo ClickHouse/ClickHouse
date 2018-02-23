@@ -4,7 +4,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/ShellCommand.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -185,9 +185,12 @@ SharedLibraryPtr Compiler::getOrCount(
 static void addCodeToAssertHeadersMatch(WriteBuffer & out)
 {
     out <<
+        "#define STRING2(x) #x\n"
+        "#define STRING(x) STRING2(x)\n"
         "#include <Common/config_version.h>\n"
         "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
-        "#error \"ClickHouse headers revision doesn't match runtime revision of the server.\"\n"
+        "#pragma message \"ClickHouse headers revision = \" STRING(VERSION_REVISION) \n"
+        "#error \"ClickHouse headers revision doesn't match runtime revision of the server (" << ClickHouseRevision::get() << ").\"\n"
         "#endif\n\n";
 }
 
@@ -203,7 +206,6 @@ void Compiler::compile(
 
     std::string prefix = path + "/" + file_name;
     std::string cpp_file_path = prefix + ".cpp";
-    std::string o_file_path = prefix + ".o";
     std::string so_file_path = prefix + ".so";
     std::string so_tmp_file_path = prefix + ".so.tmp";
 
@@ -219,8 +221,12 @@ void Compiler::compile(
     /// Slightly unconvenient.
     command <<
         "("
-            INTERNAL_COMPILER_EXECUTABLE
+            INTERNAL_COMPILER_ENV
+            " " INTERNAL_COMPILER_EXECUTABLE
             " " INTERNAL_COMPILER_FLAGS
+            /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
+            /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
+            " -fuse-ld=" INTERNAL_LINKER_EXECUTABLE
 
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT
@@ -229,14 +235,14 @@ void Compiler::compile(
             /// echo | g++ -x c++ -E -Wp,-v -
 
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE "/c++/*"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/backward"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/clang/*/include"                  /// if compiler is clang (from package)
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include"                /// if clang installed manually
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include-fixed"
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/x86_64-linux-gnu/*/include"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include-fixed"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include"                            /// if something installed manually
-            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include"
     #endif
             " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
@@ -247,13 +253,7 @@ void Compiler::compile(
             " -I " INTERNAL_Boost_INCLUDE_DIRS
             " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
             " " << additional_compiler_flags <<
-            " -c -o " << o_file_path << " " << cpp_file_path
-            << " 2>&1"
-        ") && ("
-            INTERNAL_LINKER_EXECUTABLE
-            " -shared"
-            " -o " << so_tmp_file_path
-            << " " << o_file_path
+            " -shared -o " << so_tmp_file_path << " " << cpp_file_path
             << " 2>&1"
         ") || echo Return code: $?";
 
@@ -270,7 +270,6 @@ void Compiler::compile(
 
     /// If there was an error before, the file with the code remains for viewing.
     Poco::File(cpp_file_path).remove();
-    Poco::File(o_file_path).remove();
 
     Poco::File(so_tmp_file_path).renameTo(so_file_path);
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));

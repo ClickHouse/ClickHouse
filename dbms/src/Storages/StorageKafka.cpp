@@ -6,6 +6,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
+#include <Common/typeid_cast.h>
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
@@ -13,10 +14,13 @@
 #include <DataStreams/copyData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/StorageKafka.h>
+#include <Storages/StorageFactory.h>
 #include <common/logger_useful.h>
 
 #if __has_include(<rdkafka.h>) // maybe bundled
@@ -33,9 +37,10 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 using namespace Poco::Util;
@@ -103,7 +108,8 @@ public:
     ~ReadBufferFromKafkaConsumer() { reset(); }
 
     /// Commit messages read with this consumer
-    void commit() {
+    void commit()
+    {
         LOG_TRACE(log, "Committing " << read_messages << " messages");
         if (read_messages == 0)
             return;
@@ -155,13 +161,6 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "Kafka(" << storage.topics.size() << ", " << storage.format_name << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
         if (isCancelled())
@@ -169,6 +168,8 @@ public:
 
         return reader->read();
     }
+
+    Block getHeader() const override { return reader->getHeader(); };
 
     void readPrefixImpl() override
     {
@@ -223,9 +224,9 @@ StorageKafka::StorageKafka(
     const ColumnDefaults & column_defaults_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, const String & schema_name_, size_t num_consumers_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
     table_name(table_name_), database_name(database_name_), context(context_),
-    columns(columns_), topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
+    topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
     semaphore(0, num_consumers_), mutex(), consumers(), event_update()
 {
@@ -390,7 +391,7 @@ void StorageKafka::pushConsumer(StorageKafka::ConsumerPtr c)
 
 void StorageKafka::streamThread()
 {
-    setThreadName("KafkaStreamThread");
+    setThreadName("KafkaStreamThr");
 
     while (!stream_cancelled)
     {
@@ -517,6 +518,82 @@ void StorageKafka::Consumer::unsubscribe()
 {
     if (stream != nullptr)
         rd_kafka_unsubscribe(stream);
+}
+
+
+void registerStorageKafka(StorageFactory & factory)
+{
+    factory.registerStorage("Kafka", [](const StorageFactory::Arguments & args)
+    {
+        ASTs & engine_args = args.engine_args;
+
+        /** Arguments of engine is following:
+          * - Kafka broker list
+          * - List of topics
+          * - Group ID (may be a constaint expression with a string result)
+          * - Message format (string)
+          * - Schema (optional, if the format supports it)
+          */
+
+        if (engine_args.size() < 3 || engine_args.size() > 6)
+            throw Exception(
+                "Storage Kafka requires 3-6 parameters"
+                " - Kafka broker list, list of topics to consume, consumer group ID, message format, schema, number of consumers",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        String brokers;
+        auto ast = typeid_cast<const ASTLiteral *>(engine_args[0].get());
+        if (ast && ast->value.getType() == Field::Types::String)
+            brokers = safeGet<String>(ast->value);
+        else
+            throw Exception(String("Kafka broker list must be a string"), ErrorCodes::BAD_ARGUMENTS);
+
+        engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
+        engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+        engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
+
+        // Parse format schema if supported (optional)
+        String schema;
+        if (engine_args.size() >= 5)
+        {
+            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
+
+            auto ast = typeid_cast<const ASTLiteral *>(engine_args[4].get());
+            if (ast && ast->value.getType() == Field::Types::String)
+                schema = safeGet<String>(ast->value);
+            else
+                throw Exception("Format schema must be a string", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        // Parse number of consumers (optional)
+        UInt64 num_consumers = 1;
+        if (engine_args.size() >= 6)
+        {
+            auto ast = typeid_cast<const ASTLiteral *>(engine_args[5].get());
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+                num_consumers = safeGet<UInt64>(ast->value);
+            else
+                throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        // Parse topic list and consumer group
+        Names topics;
+        topics.push_back(static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>());
+        String group = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
+
+        // Parse format from string
+        String format;
+        ast = typeid_cast<const ASTLiteral *>(engine_args[3].get());
+        if (ast && ast->value.getType() == Field::Types::String)
+            format = safeGet<String>(ast->value);
+        else
+            throw Exception("Format must be a string", ErrorCodes::BAD_ARGUMENTS);
+
+        return StorageKafka::create(
+            args.table_name, args.database_name, args.context, args.columns,
+            args.materialized_columns, args.alias_columns, args.column_defaults,
+            brokers, group, topics, format, schema, num_consumers);
+    });
 }
 
 

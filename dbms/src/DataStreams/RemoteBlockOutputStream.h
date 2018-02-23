@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Common/Throttler.h>
 
 
 namespace DB
@@ -19,25 +20,22 @@ class RemoteBlockOutputStream : public IBlockOutputStream
 public:
     RemoteBlockOutputStream(Connection & connection_, const String & query_, const Settings * settings_ = nullptr);
 
+    Block getHeader() const override { return header; }
 
-    /// You can call this method after 'writePrefix', to get table required structure. (You must send data with that structure).
-    Block getSampleBlock() const
-    {
-        return sample_block;
-    }
-
-    void writePrefix() override;
     void write(const Block & block) override;
     void writeSuffix() override;
 
     /// Send pre-serialized and possibly pre-compressed block of data, that will be read from 'input'.
     void writePrepared(ReadBuffer & input, size_t size = 0);
 
+    ~RemoteBlockOutputStream() override;
+
 private:
     Connection & connection;
     String query;
     const Settings * settings;
-    Block sample_block;
+    Block header;
+    bool finished = false;
 };
 
 }

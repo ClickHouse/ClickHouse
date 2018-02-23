@@ -3,7 +3,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <common/LocalDateTime.h>
-
+#include <IO/ConnectionTimeouts.h>
 
 namespace Poco { class Logger; }
 
@@ -48,6 +48,7 @@ private:
     const std::string format;
     Block sample_block;
     const Context & context;
+    ConnectionTimeouts timeouts;
 };
 
 }

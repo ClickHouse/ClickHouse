@@ -123,6 +123,7 @@ public:
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
     bool checkTableCanBeDropped() const override;
 
@@ -168,6 +169,8 @@ public:
     {
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
+
+    String getDataPath() const override { return full_path; }
 
 private:
     /// Delete old parts from disk and from ZooKeeper.
@@ -256,7 +259,11 @@ private:
     /// A thread that selects parts to merge.
     std::thread merge_selecting_thread;
     Poco::Event merge_selecting_event;
-    std::mutex merge_selecting_mutex; /// It is taken for each iteration of the selection of parts to merge.
+    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
+    std::mutex merge_selecting_mutex;
+    /// If true then new entries might added to the queue, so we must pull logs before selecting parts for merge.
+    /// Is used only to avoid superfluous pullLogsToQueue() calls
+    bool merge_selecting_logs_pulling_is_required = true;
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
@@ -337,6 +344,11 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
+    /// Do the merge or recommend to make the fetch instead of the merge
+    void tryExecuteMerge(const LogEntry & entry, bool & do_fetch);
+
+    bool executeFetch(const LogEntry & entry);
+
     void executeClearColumnInPartition(const LogEntry & entry);
 
     /** Updates the queue.
@@ -392,7 +404,9 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper);
+    /// Creates new block number and additionally perform precheck_ops while creates 'abandoned node'
+    AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+                                                   zkutil::Ops * precheck_ops = nullptr);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
@@ -437,6 +451,7 @@ protected:
         const ColumnDefaults & column_defaults_,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
+        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,

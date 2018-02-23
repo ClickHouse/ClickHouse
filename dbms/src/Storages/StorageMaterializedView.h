@@ -33,6 +33,7 @@ public:
     void drop() override;
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
     void shutdown() override;
+    bool checkTableCanBeDropped() const override;
 
     BlockInputStreams read(
         const Names & column_names,
@@ -41,6 +42,8 @@ public:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    String getDataPath() const override { return getTargetTable()->getDataPath(); }
 
 private:
     String select_database_name;
@@ -51,7 +54,6 @@ private:
     String database_name;
     ASTPtr inner_query;
     Context & global_context;
-    NamesAndTypesList columns;
     bool has_inner_table = false;
 
 protected:

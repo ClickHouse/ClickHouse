@@ -305,11 +305,11 @@ public:
         update(bucket, rank);
     }
 
-    UInt32 size() const
+    UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
-            bucket_count == 2     ? 0.351 :
+            bucket_count == 2  ? 0.351 :
             bucket_count == 4  ? 0.532 :
             bucket_count == 8  ? 0.626 :
             bucket_count == 16 ? 0.673 :
@@ -323,7 +323,7 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
-        return static_cast<UInt32>(final_estimate + 0.5);
+        return static_cast<UInt64>(final_estimate + 0.5);
     }
 
     void merge(const HyperLogLogCounter & rhs)
@@ -443,13 +443,12 @@ private:
             return applyBiasCorrection(raw_estimate);
         else if (mode == HyperLogLogMode::FullFeatured)
         {
-            static constexpr bool fix_big_cardinalities = std::is_same_v<HashValueType, UInt32>;
             static constexpr double pow2_32 = 4294967296.0;
 
             double fixed_estimate;
 
-            if (fix_big_cardinalities && (raw_estimate > (pow2_32 / 30.0)))
-                fixed_estimate = -pow2_32 * log(1.0 - raw_estimate / pow2_32);
+            if (raw_estimate > (pow2_32 / 30.0))
+                fixed_estimate = raw_estimate;
             else
                 fixed_estimate = applyCorrection(raw_estimate);
 
@@ -516,10 +515,8 @@ private:
     }
 
 private:
-    /// Maximum rank.
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
-    /// Rank storage.
     RankStore rank_store;
 
     /// Expression's denominator for HyperLogLog algorithm.

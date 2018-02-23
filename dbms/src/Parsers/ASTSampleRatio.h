@@ -14,7 +14,8 @@ public:
 #ifdef __SIZEOF_INT128__
     using BigNum = __uint128_t;    /// Must contain the result of multiplying two UInt64.
 #else
-    #error "No uint128_t type. Sampling ratios cannot work correctly."
+    #warning "No uint128_t type. Sampling ratios cannot work correctly."
+    using BigNum = uint64_t;
 #endif
 
     struct Rational

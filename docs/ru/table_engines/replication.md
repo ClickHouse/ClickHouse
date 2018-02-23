@@ -2,11 +2,15 @@
 
 # Репликация данных
 
-## ReplicatedMergeTree
+## ReplicatedAggregatingMergeTree
 
 ## ReplicatedCollapsingMergeTree
 
-## ReplicatedAggregatingMergeTree
+## ReplicatedGraphiteMergeTree
+
+## ReplicatedMergeTree
+
+## ReplicatedReplacingMergeTree
 
 ## ReplicatedSummingMergeTree
 

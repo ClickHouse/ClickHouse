@@ -1,4 +1,4 @@
-#Запросы
+# Запросы
 
 ## CREATE DATABASE
 Создание базы данных db_name
@@ -9,6 +9,9 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 
 `База данных` - это просто директория для таблиц.
 Если написано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если база данных уже существует.
+
+
+<a name="query_language-queries-create_table"></a>
 
 ## CREATE TABLE
 Запрос `CREATE TABLE` может иметь несколько форм.
@@ -449,7 +452,8 @@ SHOW TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 -   из текущей БД или из БД db, если указано FROM db;
 -   всех, или имя которых соответствует шаблону pattern, если указано LIKE 'pattern';
 
-Запрос полностью аналогичен запросу: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`
+Запрос полностью аналогичен запросу: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`.
+
 Смотрите также раздел "Оператор LIKE".
 
 ## SHOW PROCESSLIST
@@ -1095,7 +1099,7 @@ FROM hits
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
-    any(Title) AS title -- для каждого домена достаём первый попавшийся заголовок страницы
+    any(Title) AS title -- getting the first occurred page header for each domain.
 FROM hits
 GROUP BY domain
 ```

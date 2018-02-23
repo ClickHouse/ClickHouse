@@ -73,11 +73,14 @@ public:
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
     bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
     bool checkTableCanBeDropped() const override;
 
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
+
+    String getDataPath() const override { return full_path; }
 
 private:
     String path;
@@ -114,7 +117,8 @@ private:
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate,
+               String * out_disable_reason = nullptr);
 
     bool mergeTask();
 
@@ -138,6 +142,7 @@ protected:
         bool attach,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
+        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.

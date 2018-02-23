@@ -82,10 +82,11 @@ public:
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
-private:
     struct Range : std::pair<UInt16, UInt16>
     {
         using std::pair<UInt16, UInt16>::pair;
+
+        static bool isCorrectDate(const UInt16 date) { return 0 < date && date <= DATE_LUT_MAX_DAY_NUM; }
 
         bool contains(const UInt16 date) const
         {
@@ -95,8 +96,8 @@ private:
             if (left <= date && date <= right)
                 return true;
 
-            const auto has_left_bound = 0 < left && left <= DATE_LUT_MAX_DAY_NUM;
-            const auto has_right_bound = 0 < right && right <= DATE_LUT_MAX_DAY_NUM;
+            const auto has_left_bound = isCorrectDate(left);
+            const auto has_right_bound = isCorrectDate(right);
 
             if ((!has_left_bound || left <= date) && (!has_right_bound || date <= right))
                 return true;
@@ -105,6 +106,7 @@ private:
         }
     };
 
+private:
     template <typename T>
     struct Value final
     {
