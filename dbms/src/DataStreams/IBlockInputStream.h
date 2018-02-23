@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <memory>
+#include <mutex>
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
