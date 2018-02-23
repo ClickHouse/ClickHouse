@@ -4,7 +4,6 @@
 #include <DataStreams/BlockExtraInfoInputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 
-
 namespace DB
 {
 
@@ -33,24 +32,29 @@ void DescribeStreamFactory::createForShard(
         const Context & context, const ThrottlerPtr & throttler,
         BlockInputStreams & res)
 {
-    for (const Cluster::Address & local_address : shard_info.local_addresses)
+    if (shard_info.isLocal())
     {
-        InterpreterDescribeQuery interpreter{query_ast, context};
-        BlockInputStreamPtr stream = interpreter.execute().in;
+       for (const Cluster::Address & local_address : shard_info.local_addresses)
+       {
+           InterpreterDescribeQuery interpreter{query_ast, context};
+           BlockInputStreamPtr stream = interpreter.execute().in;
 
-        /** Materialization is needed, since from remote servers the constants come materialized.
-         * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
-         * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
-         */
-        BlockInputStreamPtr materialized_stream = std::make_shared<MaterializingBlockInputStream>(stream);
-        res.emplace_back(std::make_shared<BlockExtraInfoInputStream>(materialized_stream, toBlockExtraInfo(local_address)));
+           /** Materialization is needed, since from remote servers the constants come materialized.
+            * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
+            * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
+            */
+           BlockInputStreamPtr materialized_stream = std::make_shared<MaterializingBlockInputStream>(stream);
+           res.emplace_back(std::make_shared<BlockExtraInfoInputStream>(materialized_stream, toBlockExtraInfo(local_address)));
+       }
     }
-
-    auto remote_stream = std::make_shared<RemoteBlockInputStream>(
-        shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context, nullptr, throttler);
-    remote_stream->setPoolMode(PoolMode::GET_ALL);
-    remote_stream->appendExtraInfo();
-    res.emplace_back(std::move(remote_stream));
+    else
+    {
+        auto remote_stream = std::make_shared<RemoteBlockInputStream>(
+                shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context, nullptr, throttler);
+        remote_stream->setPoolMode(PoolMode::GET_ALL);
+        remote_stream->appendExtraInfo();
+        res.emplace_back(std::move(remote_stream));
+    }
 }
 
 }
