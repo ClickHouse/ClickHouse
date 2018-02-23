@@ -47,7 +47,7 @@ static void finalize(Block & block)
 }
 
 
-const Block & TotalsHavingBlockInputStream::getTotals()
+Block TotalsHavingBlockInputStream::getTotals()
 {
     if (!totals)
     {
