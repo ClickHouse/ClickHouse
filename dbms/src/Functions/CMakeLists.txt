@@ -100,3 +100,5 @@ endif ()
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()
+
+target_link_libraries (clickhouse_functions PRIVATE yandex-consistent-hashing)
