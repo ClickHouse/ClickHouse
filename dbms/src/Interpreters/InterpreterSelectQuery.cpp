@@ -353,7 +353,7 @@ BlockIO InterpreterSelectQuery::execute()
     if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(pipeline.firstStream().get()))
     {
         /// Constraints apply only to the final result.
-        if (to_stage == QueryProcessingStage::Complete)
+        if (to_stage == QueryProcessingStage::Complete && subquery_depth == 0)
         {
             const Settings & settings = context.getSettingsRef();
 
