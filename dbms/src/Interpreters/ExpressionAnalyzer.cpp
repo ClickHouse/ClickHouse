@@ -880,7 +880,7 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
 
         aliases[alias] = ast;
     }
-    else if (typeid_cast<ASTSubquery *>(ast.get()))
+    else if (auto subquery = typeid_cast<ASTSubquery *>(ast.get()))
     {
         /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
         ///  and auto-generated column names could become incorrect.
@@ -894,7 +894,8 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
             ++subquery_index;
         }
 
-        ast->setAlias(alias);
+        subquery->setAlias(alias);
+        subquery->prefer_alias_to_column_name = true;
         aliases[alias] = ast;
     }
 }
@@ -2361,9 +2362,9 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         getRootActions(join_params.using_expression_list, only_types, false, step.actions);
 
     /// Two JOINs are not supported with the same subquery, but different USINGs.
-    String join_id = join_element.getTreeID();
+    auto join_hash = join_element.getTreeHash();
 
-    SubqueryForSet & subquery_for_set = subqueries_for_sets[join_id];
+    SubqueryForSet & subquery_for_set = subqueries_for_sets[toString(join_hash.first) + "_" + toString(join_hash.second)];
 
     /// Special case - if table name is specified on the right of JOIN, then the table has the type Join (the previously prepared mapping).
     /// TODO This syntax does not support specifying a database name.
