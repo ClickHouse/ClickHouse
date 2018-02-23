@@ -72,12 +72,6 @@ public:
     /** Get a deep copy of the tree. */
     virtual ASTPtr clone() const = 0;
 
-    /** Get text, describing and identifying this element and its subtree.
-      * Usually it consist of element's id and getTreeID of all children.
-      */
-    String getTreeID() const;
-    void getTreeIDImpl(WriteBuffer & out) const;
-
     /** Get hash code, identifying this element and its subtree.
       */
     using Hash = std::pair<UInt64, UInt64>;

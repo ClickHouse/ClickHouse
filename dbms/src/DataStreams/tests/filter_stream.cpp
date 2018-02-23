@@ -37,7 +37,6 @@ try
 
     formatAST(*ast, std::cerr);
     std::cerr << std::endl;
-    std::cerr << ast->getTreeID() << std::endl;
 
     Context context = Context::createGlobal();
 
