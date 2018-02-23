@@ -66,7 +66,7 @@ public:
       */
     void addTableLock(const TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
-protected:
+private:
     TableStructureReadLocks table_locks;
 };
 
