@@ -125,7 +125,6 @@ private:
     void init(const Names & required_column_names);
     void basicInit();
     void initQueryAnalyzer();
-    bool hasAggregation(const ASTSelectQuery & query_ptr);
 
     /// Execute one SELECT query from the UNION ALL chain.
     void executeSingleQuery(Pipeline & pipeline);
