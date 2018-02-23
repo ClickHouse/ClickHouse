@@ -27,7 +27,11 @@ IProfilingBlockInputStream::IProfilingBlockInputStream()
 
 Block IProfilingBlockInputStream::read()
 {
-    collectAndSendTotalRowsApprox();
+    if (total_rows_approx)
+    {
+        progressImpl(Progress(0, 0, total_rows_approx));
+        total_rows_approx = 0;
+    }
 
     if (!info.started)
     {
@@ -64,7 +68,7 @@ Block IProfilingBlockInputStream::read()
         /** If the thread is over, then we will ask all children to abort the execution.
           * This makes sense when running a query with LIMIT
           * - there is a situation when all the necessary data has already been read,
-          *   but `children sources are still working,
+          *   but children sources are still working,
           *   herewith they can work in separate threads or even remotely.
           */
         cancel();
@@ -406,31 +410,6 @@ const Block & IProfilingBlockInputStream::getExtremes() const
     }
 
     return extremes;
-}
-
-void IProfilingBlockInputStream::collectTotalRowsApprox()
-{
-    bool old_val = false;
-    if (!collected_total_rows_approx.compare_exchange_strong(old_val, true))
-        return;
-
-    for (auto & child : children)
-    {
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-        {
-            p_child->collectTotalRowsApprox();
-            total_rows_approx += p_child->total_rows_approx;
-        }
-    }
-}
-
-void IProfilingBlockInputStream::collectAndSendTotalRowsApprox()
-{
-    if (collected_total_rows_approx)
-        return;
-
-    collectTotalRowsApprox();
-    progressImpl(Progress(0, 0, total_rows_approx));
 }
 
 }

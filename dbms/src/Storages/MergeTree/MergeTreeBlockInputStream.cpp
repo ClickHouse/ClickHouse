@@ -59,7 +59,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         : "")
         << " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 
-    setTotalRowsApprox(total_rows);
+    addTotalRowsApprox(total_rows);
 
     header = storage.getSampleBlockForColumns(ordered_names);
 

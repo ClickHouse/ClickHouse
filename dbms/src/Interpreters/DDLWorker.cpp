@@ -954,7 +954,7 @@ public:
         for (const HostID & host: entry.hosts)
             waiting_hosts.emplace(host.toString());
 
-        setTotalRowsApprox(entry.hosts.size());
+        addTotalRowsApprox(entry.hosts.size());
 
         timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
     }

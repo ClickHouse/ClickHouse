@@ -98,7 +98,7 @@ public:
 
     /** Set the approximate total number of rows to read.
       */
-    void setTotalRowsApprox(size_t value) { total_rows_approx = value; }
+    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.
@@ -180,14 +180,9 @@ protected:
     Block totals;
     /// Minimums and maximums. The first row of the block - minimums, the second - the maximums.
     Block extremes;
-    /// The approximate total number of rows to read. For progress bar.
-    size_t total_rows_approx = 0;
 
 private:
     bool enabled_extremes = false;
-
-    /// Information about the approximate total number of rows is collected in the parent source.
-    std::atomic_bool collected_total_rows_approx {false};
 
     /// The limit on the number of rows/bytes has been exceeded, and you need to stop execution on the next `read` call, as if the thread has run out.
     bool limit_exceeded_need_break = false;
@@ -198,6 +193,9 @@ private:
 
     QuotaForIntervals * quota = nullptr;    /// If nullptr - the quota is not used.
     double prev_elapsed = 0;
+
+    /// The approximate total number of rows to read. For progress bar.
+    size_t total_rows_approx = 0;
 
     /// The successors must implement this function.
     virtual Block readImpl() = 0;
@@ -216,14 +214,6 @@ private:
     bool checkDataSizeLimits();
     bool checkTimeLimits();
     void checkQuota(Block & block);
-
-    /// Gather information about the approximate total number of rows from all children.
-    void collectTotalRowsApprox();
-
-    /** Send information about the approximate total number of rows to the progress bar.
-      * It is done so that sending occurs only in the upper stream.
-      */
-    void collectAndSendTotalRowsApprox();
 };
 
 }
