@@ -3,6 +3,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataStreams/IBlockInputStream.h>
 
@@ -127,6 +128,36 @@ private:
 
     /// Execute one SELECT query from the UNION ALL chain.
     void executeSingleQuery(Pipeline & pipeline);
+
+
+    struct AnalysisResult
+    {
+        bool has_join       = false;
+        bool has_where      = false;
+        bool need_aggregate = false;
+        bool has_having     = false;
+        bool has_order_by   = false;
+
+        ExpressionActionsPtr before_join;   /// including JOIN
+        ExpressionActionsPtr before_where;
+        ExpressionActionsPtr before_aggregation;
+        ExpressionActionsPtr before_having;
+        ExpressionActionsPtr before_order_and_select;
+        ExpressionActionsPtr final_projection;
+
+        /// Columns from the SELECT list, before renaming them to aliases.
+        Names selected_columns;
+
+        /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
+        bool first_stage = false;
+        /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
+        bool second_stage = false;
+
+        SubqueriesForSets subqueries_for_sets;
+    };
+
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
+
 
     /** Leave only the necessary columns of the SELECT section in each query of the UNION ALL chain.
      *  However, if you use at least one DISTINCT in the chain, then all the columns are considered necessary,
