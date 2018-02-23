@@ -961,18 +961,6 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 
     if ((func_node = typeid_cast<ASTFunction *>(ast.get())))
     {
-        /** Is there a column in the table whose name fully matches the function entry?
-          * For example, in the table there is a column "domain(URL)", and we requested domain(URL).
-          */
-        String function_string = func_node->getColumnName();
-        auto it = findColumn(function_string);
-        if (columns.end() != it)
-        {
-            ast = std::make_shared<ASTIdentifier>(func_node->range, function_string);
-            current_asts.insert(ast.get());
-            replaced = true;
-        }
-
         /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
         if (functionIsInOrGlobalInOperator(func_node->name))
             if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
