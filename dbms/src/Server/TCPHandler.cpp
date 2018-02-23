@@ -400,7 +400,7 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::sendProfileInfo()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(state.io.in.get()))
     {
         writeVarUInt(Protocol::Server::ProfileInfo, *out);
         input->getProfileInfo().write(*out);
@@ -411,7 +411,7 @@ void TCPHandler::sendProfileInfo()
 
 void TCPHandler::sendTotals()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
+    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
     {
         const Block & totals = input->getTotals();
 
@@ -432,9 +432,9 @@ void TCPHandler::sendTotals()
 
 void TCPHandler::sendExtremes()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
     {
-        const Block & extremes = input->getExtremes();
+        Block extremes = input->getExtremes();
 
         if (extremes)
         {
