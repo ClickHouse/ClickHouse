@@ -150,10 +150,6 @@ private:
      */
     void getDatabaseAndTableNames(String & database_name, String & table_name);
 
-    /** Select from the list of columns any, better - with minimum size.
-     */
-    String getAnyColumn();
-
     /// Different stages of query execution.
 
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
