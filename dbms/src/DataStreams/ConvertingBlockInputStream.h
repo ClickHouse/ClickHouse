@@ -23,9 +23,19 @@ namespace DB
 class ConvertingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    ConvertingBlockInputStream(const Context & context,
-                             const BlockInputStreamPtr & input,
-                             const Block & result_header);
+    enum class MatchColumnsMode
+    {
+        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
+        Position,
+        /// Find columns in source by their names. Allow excessive columns in source.
+        Name
+    };
+
+    ConvertingBlockInputStream(
+        const Context & context,
+        const BlockInputStreamPtr & input,
+        const Block & result_header,
+        MatchColumnsMode mode);
 
     String getName() const override { return "Converting"; }
     Block getHeader() const override { return header; }

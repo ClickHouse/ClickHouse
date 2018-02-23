@@ -11,31 +11,45 @@ namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
     extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
 ConvertingBlockInputStream::ConvertingBlockInputStream(
     const Context & context_,
     const BlockInputStreamPtr & input,
-    const Block & result_header)
+    const Block & result_header,
+    MatchColumnsMode mode)
     : context(context_), header(result_header), conversion(header.columns())
 {
     children.emplace_back(input);
 
     Block input_header = input->getHeader();
-    size_t num_input_columns = input_header.columns();
 
-    for (size_t result_col_num = 0, num_result_columns = result_header.columns(); result_col_num < num_result_columns; ++result_col_num)
+    size_t num_input_columns = input_header.columns();
+    size_t num_result_columns = result_header.columns();
+
+    if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
+        throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+
+    for (size_t result_col_num = 0; result_col_num < num_result_columns; ++result_col_num)
     {
         const auto & res_elem = result_header.getByPosition(result_col_num);
 
-        if (input_header.has(res_elem.name))
-            conversion[result_col_num] = input_header.getPositionByName(res_elem.name);
-        else if (result_col_num < num_input_columns)
-            conversion[result_col_num] = result_col_num;
-        else
-            throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
-                ErrorCodes::THERE_IS_NO_COLUMN);
+        switch (mode)
+        {
+            case MatchColumnsMode::Position:
+                conversion[result_col_num] = result_col_num;
+                break;
+
+            case MatchColumnsMode::Name:
+                if (input_header.has(res_elem.name))
+                    conversion[result_col_num] = input_header.getPositionByName(res_elem.name);
+                else
+                    throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
+                        ErrorCodes::THERE_IS_NO_COLUMN);
+                break;
+        }
 
         const auto & src_elem = input_header.getByPosition(conversion[result_col_num]);
 
