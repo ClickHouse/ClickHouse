@@ -739,7 +739,7 @@ Tables Context::getExternalTables() const
     auto lock = getLock();
 
     Tables res;
-    for (auto table : external_tables)
+    for (auto & table : external_tables)
         res[table.first] = table.second.first;
 
     if (session_context && session_context != this)
@@ -818,7 +818,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 }
 
 
-void Context::addExternalTable(const String &table_name, const StoragePtr &storage, const ASTPtr &ast)
+void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
     if (external_tables.end() != external_tables.find(table_name))
         throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
