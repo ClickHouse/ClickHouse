@@ -34,6 +34,13 @@ do
     elif [[ $1 == '--head' ]]; then
         REVISION=`git rev-parse HEAD`
         shift
+    elif [[ $1 == '--pbuilder' ]]; then
+        USE_PBUILDER=1
+        shift
+    elif [[ $1 == '--fast' ]]; then
+        # Wrong but fast pbuilder mode: create base package with all depends
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo"
+        shift
     else
         echo "Unknown option $1"
         exit 2
@@ -49,6 +56,9 @@ then
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
+    export DEB_CC=clang-5.0
+    export DEB_CXX=clang++-5.0
+    EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 "
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
@@ -59,17 +69,40 @@ elif [[ $BUILD_TYPE == 'debug' ]]; then
 fi
 
 if [ -z "$THREAD_COUNT" ] ; then
-    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
+    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4`
 fi
 
-CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1"
+CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+export CMAKE_FLAGS
+export EXTRAPACKAGES
 
 REVISION+=$VERSION_POSTFIX
 echo -e "\nCurrent revision is $REVISION"
 
 gen_changelog "$REVISION" "" "$AUTHOR" ""
 
-# Build (only binary packages).
-debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
+if [ -z "$USE_PBUILDER" ] ; then
+    # Build (only binary packages).
+    debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+else
+    export DIST=${DIST:=artful}
+    export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
+    . $CURDIR/debian/.pbuilderrc
+
+
+    if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
+        echo Creating base system $BASETGZ
+        [ ! -e "/usr/share/debootstrap/scripts/${DIST}" ] && sudo ln -s gutsy /usr/share/debootstrap/scripts/${DIST}
+        sudo --preserve-env bash -x pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+    fi
+
+    # Update every 3 days (60*24*3 minutes)
+    if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +4320` ; then
+        echo Updating base system $BASETGZ
+        sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+    fi
+
+    pdebuild --configfile $CURDIR/debian/.pbuilderrc -- $PBUILDER_OPT
+fi

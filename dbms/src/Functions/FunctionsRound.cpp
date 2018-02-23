@@ -10,14 +10,14 @@ void registerFunctionsRound(FunctionFactory & factory)
     factory.registerFunction<FunctionRoundDuration>();
     factory.registerFunction<FunctionRoundAge>();
 
-    factory.registerFunction("round", FunctionRound::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("floor", FunctionFloor::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("ceil", FunctionCeil::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("trunc", FunctionTrunc::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRound>("round", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionFloor>("floor", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCeil>("ceil", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTrunc>("trunc", FunctionFactory::CaseInsensitive);
 
     /// Compatibility aliases.
-    factory.registerFunction("ceiling", FunctionCeil::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("truncate", FunctionTrunc::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCeil>("ceiling", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTrunc>("truncate", FunctionFactory::CaseInsensitive);
 }
 
 }

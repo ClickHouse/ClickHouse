@@ -210,7 +210,8 @@ private:
         if (sorted)
             return;
         sorted = true;
-        std::sort(samples.begin(), samples.end(), [] (const std::pair<T, UInt32> & lhs, const std::pair<T, UInt32> & rhs) {
+        std::sort(samples.begin(), samples.end(), [] (const std::pair<T, UInt32> & lhs, const std::pair<T, UInt32> & rhs)
+        {
             return lhs.first < rhs.first;
         });
     }

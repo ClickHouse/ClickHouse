@@ -43,6 +43,9 @@ def generate_structure():
         # Complex key dictionaries with (String, UInt8) key
         ['clickhouse_complex_mixed_key_hashed', 2, False],
         ['clickhouse_complex_mixed_key_cache', 2, False],
+
+        # Range hashed dictionary
+        ['clickhouse_range_hashed', 3, False],
     ]
 
 
@@ -102,6 +105,7 @@ def generate_dictionaries(path, structure):
     layout_cache = '<cache><size_in_cells>128</size_in_cells></cache>'
     layout_complex_key_hashed = '<complex_key_hashed />'
     layout_complex_key_cache = '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>'
+    layout_range_hashed = '<range_hashed />'
 
     key_simple = '''
     <id>
@@ -135,7 +139,19 @@ def generate_dictionaries(path, structure):
     </key>
     '''
 
-    keys = [key_simple, key_complex_integers, key_complex_mixed]
+    key_range_hashed = '''
+    <id>
+        <name>id</name>
+    </id>
+    <range_min>
+        <name>StartDate</name>
+    </range_min>
+    <range_max>
+        <name>EndDate</name>
+    </range_max>
+    '''
+
+    keys = [key_simple, key_complex_integers, key_complex_mixed, key_range_hashed]
 
     parent_attribute = '''
     <attribute>
@@ -158,6 +174,9 @@ def generate_dictionaries(path, structure):
         # Complex key dictionaries with (String, UInt8) key
         [source_clickhouse, layout_complex_key_hashed],
         [source_clickhouse, layout_complex_key_cache],
+
+        # Range hashed dictionary
+        [source_clickhouse, layout_range_hashed],
     ]
 
     file_names = []
@@ -176,6 +195,7 @@ def generate_dictionaries(path, structure):
 class DictionaryTestTable:
     def __init__(self, source_file_name):
         self.structure = '''id UInt64, key0 UInt8, key0_str String, key1 UInt8,
+                    StartDate Date, EndDate Date,
                     UInt8_ UInt8, UInt16_ UInt16, UInt32_ UInt32, UInt64_ UInt64,
                     Int8_ Int8, Int16_ Int16, Int32_ Int32, Int64_ Int64,
                     Float32_ Float32, Float64_ Float64,
@@ -183,8 +203,8 @@ class DictionaryTestTable:
                     Date_ Date, DateTime_ DateTime, Parent UInt64'''
 
         self.names_and_types = map(str.split, self.structure.split(','))
-        self.keys_names_and_types = self.names_and_types[:4]
-        self.values_names_and_types = self.names_and_types[4:]
+        self.keys_names_and_types = self.names_and_types[:6]
+        self.values_names_and_types = self.names_and_types[6:]
         self.source_file_name = source_file_name
         self.rows = None
 
@@ -213,6 +233,7 @@ class DictionaryTestTable:
             return '(' + ','.join(map(wrap_value, zip(row, types))) + ')'
 
         values = ','.join(map(make_tuple, lines))
+        print query % (self.structure, values)
         instance.query(query % (self.structure, values))
 
     def get_structure_for_keys(self, keys, enable_parent=True):

@@ -85,7 +85,13 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
         else if (elem.type == Substream::ArrayElements)
             ++array_level;
         else if (elem.type == Substream::TupleElement)
-            stream_name += "." + escapeForFileName(elem.tuple_element_name);
+        {
+            /// For compatibility reasons, we use %2E instead of dot.
+            /// Because nested data may be represented not by Array of Tuple,
+            ///  but by separate Array columns with names in a form of a.b,
+            ///  and name is encoded as a whole.
+            stream_name += "%2E" + escapeForFileName(elem.tuple_element_name);
+        }
     }
     return stream_name;
 }

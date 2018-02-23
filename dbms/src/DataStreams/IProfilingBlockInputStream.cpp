@@ -5,6 +5,7 @@
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 
+
 namespace DB
 {
 
@@ -15,6 +16,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -38,7 +40,7 @@ Block IProfilingBlockInputStream::read()
     if (is_cancelled.load(std::memory_order_seq_cst))
         return res;
 
-    if (!checkLimits())
+    if (!checkTimeLimits())
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
@@ -50,6 +52,9 @@ Block IProfilingBlockInputStream::read()
 
         if (enabled_extremes)
             updateExtremes(res);
+
+        if (!checkDataSizeLimits())
+            limit_exceeded_need_break = true;
 
         if (quota != nullptr)
             checkQuota(res);
@@ -66,6 +71,15 @@ Block IProfilingBlockInputStream::read()
     }
 
     progress(Progress(res.rows(), res.bytes()));
+
+#ifndef NDEBUG
+    if (res)
+    {
+        Block header = getHeader();
+        if (header)
+            assertBlocksHaveEqualStructure(res, header, getName());
+    }
+#endif
 
     return res;
 }
@@ -155,43 +169,49 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 }
 
 
-bool IProfilingBlockInputStream::checkLimits()
+static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
 {
-    auto handle_overflow_mode = [] (OverflowMode mode, const String & message, int code)
+    switch (mode)
     {
-        switch (mode)
-        {
-            case OverflowMode::THROW:
-                throw Exception(message, code);
-            case OverflowMode::BREAK:
-                return false;
-            default:
-                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-        }
-    };
+        case OverflowMode::THROW:
+            throw Exception(message, code);
+        case OverflowMode::BREAK:
+            return false;
+        default:
+            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+    }
+};
 
+bool IProfilingBlockInputStream::checkDataSizeLimits()
+{
     if (limits.mode == LIMITS_CURRENT)
     {
         /// Check current stream limitations (i.e. max_result_{rows,bytes})
 
         if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
-            return handle_overflow_mode(limits.read_overflow_mode,
+            return handleOverflowMode(limits.read_overflow_mode,
                 std::string("Limit for result rows")
                     + " exceeded: read " + toString(info.rows)
                     + " rows, maximum: " + toString(limits.max_rows_to_read),
                 ErrorCodes::TOO_MUCH_ROWS);
 
         if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
-            return handle_overflow_mode(limits.read_overflow_mode,
+            return handleOverflowMode(limits.read_overflow_mode,
                 std::string("Limit for result bytes (uncompressed)")
                     + " exceeded: read " + toString(info.bytes)
                     + " bytes, maximum: " + toString(limits.max_bytes_to_read),
                 ErrorCodes::TOO_MUCH_BYTES);
     }
 
+    return true;
+}
+
+
+bool IProfilingBlockInputStream::checkTimeLimits()
+{
     if (limits.max_execution_time != 0
         && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
-        return handle_overflow_mode(limits.timeout_overflow_mode,
+        return handleOverflowMode(limits.timeout_overflow_mode,
             "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
                 + " seconds, maximum: " + toString(limits.max_execution_time.totalMicroseconds() / 1000000.0),
             ErrorCodes::TIMEOUT_EXCEEDED);
@@ -412,6 +432,5 @@ void IProfilingBlockInputStream::collectAndSendTotalRowsApprox()
     collectTotalRowsApprox();
     progressImpl(Progress(0, 0, total_rows_approx));
 }
-
 
 }

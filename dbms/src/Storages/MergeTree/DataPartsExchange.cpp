@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>
@@ -129,12 +128,12 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     catch (const Exception & e)
     {
         if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
-            dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+            data.reportBrokenPart(part_name);
         throw;
     }
     catch (...)
     {
-        dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+        data.reportBrokenPart(part_name);
         throw;
     }
 }
@@ -156,6 +155,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & replica_path,
     const String & host,
     int port,
+    const ConnectionTimeouts & timeouts,
     bool to_detached)
 {
     Poco::URI uri;
@@ -169,7 +169,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress", "false"}
     });
 
-    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts};
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String relative_part_path = String(to_detached ? "detached/" : "") + TMP_PREFIX + part_name;

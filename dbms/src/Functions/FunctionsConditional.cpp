@@ -21,9 +21,9 @@ void registerFunctionsConditional(FunctionFactory & factory)
     factory.registerFunction<FunctionCaseWithExpression>();
 
     /// These are obsolete function names.
-    factory.registerFunction("caseWithExpr", FunctionCaseWithExpression::create);
-    factory.registerFunction("caseWithoutExpr", FunctionMultiIf::create);
-    factory.registerFunction("caseWithoutExpression", FunctionMultiIf::create);
+    factory.registerFunction<FunctionCaseWithExpression>("caseWithExpr");
+    factory.registerFunction<FunctionMultiIf>("caseWithoutExpr");
+    factory.registerFunction<FunctionMultiIf>("caseWithoutExpression");
 }
 
 
@@ -218,7 +218,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         types_of_branches.emplace_back(arg);
     });
 
-    DataTypePtr common_type_of_branches = getLeastCommonType(types_of_branches);
+    DataTypePtr common_type_of_branches = getLeastSupertype(types_of_branches);
 
     return have_nullable_condition
         ? makeNullable(common_type_of_branches)
@@ -251,15 +251,15 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
     /// get the return type of a transform function.
 
     /// Get the return types of the arrays that we pass to the transform function.
-    DataTypes src_array_types;
-    DataTypes dst_array_types;
+    ColumnsWithTypeAndName src_array_types;
+    ColumnsWithTypeAndName dst_array_types;
 
     for (size_t i = 1; i < (args.size() - 1); ++i)
     {
         if ((i % 2) != 0)
-            src_array_types.push_back(args[i]);
+            src_array_types.push_back({nullptr, args[i], {}});
         else
-            dst_array_types.push_back(args[i]);
+            dst_array_types.push_back({nullptr, args[i], {}});
     }
 
     FunctionArray fun_array{context};
@@ -269,7 +269,9 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
 
     /// Finally get the return type of the transform function.
     FunctionTransform fun_transform;
-    return fun_transform.getReturnType({args.front(), src_array_type, dst_array_type, args.back()});
+    ColumnsWithTypeAndName transform_args = {{nullptr, args.front(), {}}, {nullptr, src_array_type, {}},
+                                             {nullptr, dst_array_type, {}}, {nullptr, args.back(), {}}};
+    return fun_transform.getReturnType(transform_args);
 }
 
 void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
@@ -288,22 +290,22 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
 
     /// Create the arrays required by the transform function.
     ColumnNumbers src_array_args;
-    DataTypes src_array_types;
+    ColumnsWithTypeAndName src_array_types;
 
     ColumnNumbers dst_array_args;
-    DataTypes dst_array_types;
+    ColumnsWithTypeAndName dst_array_types;
 
     for (size_t i = 1; i < (args.size() - 1); ++i)
     {
         if ((i % 2) != 0)
         {
             src_array_args.push_back(args[i]);
-            src_array_types.push_back(block.getByPosition(args[i]).type);
+            src_array_types.push_back(block.getByPosition(args[i]));
         }
         else
         {
             dst_array_args.push_back(args[i]);
-            dst_array_types.push_back(block.getByPosition(args[i]).type);
+            dst_array_types.push_back(block.getByPosition(args[i]));
         }
     }
 

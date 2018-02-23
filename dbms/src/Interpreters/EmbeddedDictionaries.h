@@ -1,11 +1,12 @@
 #pragma once
 
 #include <thread>
+#include <functional>
 #include <common/MultiVersion.h>
 #include <Poco/Event.h>
 
 
-namespace Poco { class Logger; }
+namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
 
 class RegionsHierarchies;
 class TechDataHierarchy;

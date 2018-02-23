@@ -2,7 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/StringView.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>

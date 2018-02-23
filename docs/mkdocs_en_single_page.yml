@@ -1,0 +1,42 @@
+site_name: ClickHouse Documentation
+copyright: ©2016–2018 Yandex LLC
+
+docs_dir: en_single_page
+site_dir: build/docs/en/single
+use_directory_urls: false
+
+repo_name: 'yandex/ClickHouse'
+repo_url: 'https://github.com/yandex/ClickHouse/'
+
+extra_css:
+  - assets/stylesheets/custom.css
+
+markdown_extensions:
+  - codehilite
+
+theme:
+  name: null
+  custom_dir: 'mkdocs-material-theme'
+  language: 'en'
+  feature:
+    tabs: false
+  palette:
+    primary: 'white'
+    accent: 'white'
+  font: false
+#    text: Roboto
+#    code: Roboto Mono
+  logo: 'images/logo.svg'
+  favicon: 'assets/images/favicon.ico'
+  include_search_page: false
+  search_index_only: true
+  static_templates:
+    - 404.html
+
+extra:
+  single_page: true
+  search:
+    language: 'en'
+
+pages:
+- 'Documentation': 'index.md'

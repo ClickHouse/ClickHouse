@@ -19,23 +19,40 @@ namespace ErrorCodes
     extern const int INCORRECT_INDEX;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
-NativeBlockInputStream::NativeBlockInputStream(
-    ReadBuffer & istr_, UInt64 server_revision_,
-    bool use_index_,
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_)
+    : istr(istr_), server_revision(server_revision_)
+{
+}
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
+    : istr(istr_), header(header_), server_revision(server_revision_)
+{
+}
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,
     IndexForNativeFormat::Blocks::const_iterator index_block_it_,
     IndexForNativeFormat::Blocks::const_iterator index_block_end_)
     : istr(istr_), server_revision(server_revision_),
-    use_index(use_index_), index_block_it(index_block_it_), index_block_end(index_block_end_)
+    use_index(true), index_block_it(index_block_it_), index_block_end(index_block_end_)
 {
-    if (use_index)
-    {
-        istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
-        if (!istr_concrete)
-            throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
+    istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
+    if (!istr_concrete)
+        throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
 
-        index_column_it = index_block_it->columns.begin();
+    if (index_block_it == index_block_end)
+        return;
+
+    index_column_it = index_block_it->columns.begin();
+
+    /// Initialize header from the index.
+    for (const auto & column : index_block_it->columns)
+    {
+        auto type = DataTypeFactory::instance().get(column.type);
+        header.insert(ColumnWithTypeAndName{ type, column.name });
     }
 }
 
@@ -47,6 +64,12 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 
     if (column.size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
+}
+
+
+Block NativeBlockInputStream::getHeader() const
+{
+    return header;
 }
 
 

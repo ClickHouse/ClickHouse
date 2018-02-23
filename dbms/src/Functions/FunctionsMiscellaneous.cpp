@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int FUNCTION_IS_SPECIAL;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_SLOW;
 }
 
 /** Helper functions
@@ -103,6 +104,8 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), db_name);
@@ -124,6 +127,8 @@ public:
     {
         return name;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -390,6 +395,8 @@ public:
         return name;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -432,6 +439,8 @@ public:
     {
         return 0;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -481,6 +490,8 @@ public:
         return 0;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -523,6 +534,8 @@ public:
         return 0;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -549,13 +562,20 @@ public:
 };
 
 
+enum class FunctionSleepVariant
+{
+    PerBlock,
+    PerRow
+};
+
+template <FunctionSleepVariant variant>
 class FunctionSleep : public IFunction
 {
 public:
-    static constexpr auto name = "sleep";
+    static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionSleep>();
+        return std::make_shared<FunctionSleep<variant>>();
     }
 
     /// Get the name of the function.
@@ -591,33 +611,28 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const IColumn * col = block.getByPosition(arguments[0]).column.get();
-        double seconds;
-        size_t size = col->size();
 
-        if (auto column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
-            seconds = column->getValue<Float64>();
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
-            seconds = static_cast<double>(column->getValue<Float64>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
-            seconds = static_cast<double>(column->getValue<UInt64>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
-            seconds = static_cast<double>(column->getValue<UInt32>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
-            seconds = static_cast<double>(column->getValue<UInt16>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
-            seconds = static_cast<double>(column->getValue<UInt8>());
-
-        else
+        if (!col->isColumnConst())
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+
+        Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const ColumnConst &>(*col).getField());
+
+        if (seconds < 0)
+            throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+
+        size_t size = col->size();
 
         /// We do not sleep if the block is empty.
         if (size > 0)
-            usleep(static_cast<unsigned>(seconds * 1e6));
+        {
+            unsigned useconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
+
+            /// When sleeping, the query cannot be cancelled. For abitily to cancel query, we limit sleep time.
+            if (useconds > 3000000)   /// The choice is arbitary
+                throw Exception("The maximum sleep time is 3000000 microseconds. Requested: " + toString(useconds), ErrorCodes::TOO_SLOW);
+
+            usleep(useconds);
+        }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
         block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, UInt64(0))->convertToFullColumnIfConst();
@@ -886,6 +901,8 @@ public:
     }
 
     /** It could return many different values for single argument. */
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -1285,6 +1302,8 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt32().createColumnConst(block.rows(), static_cast<UInt64>(uptime));
@@ -1320,6 +1339,8 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), DateLUT::instance().getTimeZone());
@@ -1352,6 +1373,8 @@ public:
         return 1;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -1380,7 +1403,8 @@ public:
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
-        auto deleter = [&agg_func](char * ptr) {
+        auto deleter = [&agg_func](char * ptr)
+        {
             agg_func.destroy(ptr);
             free(ptr);
         };
@@ -1513,7 +1537,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr res;
-        dispatchForSourceType(*arguments[0], [&](auto field_type_tag) {
+        dispatchForSourceType(*arguments[0], [&](auto field_type_tag)
+        {
             res = std::make_shared<DataTypeNumber<DstFieldType<decltype(field_type_tag)>>>();
         });
 
@@ -1625,8 +1650,9 @@ public:
         return name;
     }
 
-    void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
@@ -1660,8 +1686,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 }
 
 
-void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
-    const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/)
+DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.size() < 3 || arguments.size() > 6)
         throw Exception{"Invalid number of arguments for function " + getName(),
@@ -1679,7 +1704,7 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
         }
     }
 
-    out_return_type = std::make_shared<DataTypeUInt8>();
+    return std::make_shared<DataTypeUInt8>();
 }
 
 
@@ -1751,7 +1776,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionBlockNumber>();
     factory.registerFunction<FunctionRowNumberInBlock>();
     factory.registerFunction<FunctionRowNumberInAllBlocks>();
-    factory.registerFunction<FunctionSleep>();
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>();
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
     factory.registerFunction<FunctionMaterialize>();
     factory.registerFunction<FunctionIgnore>();
     factory.registerFunction<FunctionIndexHint>();

@@ -1,5 +1,11 @@
 #pragma once
 
+#include <Common/PODArray.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBuffer.h>
+#include <Core/Types.h>
+#include <IO/VarInt.h>
+
 
 namespace DB
 {

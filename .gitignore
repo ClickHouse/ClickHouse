@@ -10,6 +10,9 @@
 *.logrt
 
 build
+/docs/en_single_page/
+/docs/ru_single_page/
+/docs/venv/
 
 # callgrind files
 callgrind.out.*
@@ -232,3 +235,4 @@ config-preprocessed.xml
 node_modules
 public
 website/docs
+website/presentations

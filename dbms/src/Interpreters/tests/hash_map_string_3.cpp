@@ -113,7 +113,8 @@ struct FastHash64
         uint64_t h = len * m;
         uint64_t v;
 
-        while (pos != end) {
+        while (pos != end)
+        {
             v = *pos++;
             h ^= mix(v);
             h *= m;
@@ -122,16 +123,17 @@ struct FastHash64
         pos2 = reinterpret_cast<const unsigned char*>(pos);
         v = 0;
 
-        switch (len & 7) {
-        case 7: v ^= static_cast<uint64_t>(pos2[6]) << 48; [[fallthrough]];
-        case 6: v ^= static_cast<uint64_t>(pos2[5]) << 40; [[fallthrough]];
-        case 5: v ^= static_cast<uint64_t>(pos2[4]) << 32; [[fallthrough]];
-        case 4: v ^= static_cast<uint64_t>(pos2[3]) << 24; [[fallthrough]];
-        case 3: v ^= static_cast<uint64_t>(pos2[2]) << 16; [[fallthrough]];
-        case 2: v ^= static_cast<uint64_t>(pos2[1]) << 8; [[fallthrough]];
-        case 1: v ^= static_cast<uint64_t>(pos2[0]);
-            h ^= mix(v);
-            h *= m;
+        switch (len & 7)
+        {
+            case 7: v ^= static_cast<uint64_t>(pos2[6]) << 48; [[fallthrough]];
+            case 6: v ^= static_cast<uint64_t>(pos2[5]) << 40; [[fallthrough]];
+            case 5: v ^= static_cast<uint64_t>(pos2[4]) << 32; [[fallthrough]];
+            case 4: v ^= static_cast<uint64_t>(pos2[3]) << 24; [[fallthrough]];
+            case 3: v ^= static_cast<uint64_t>(pos2[2]) << 16; [[fallthrough]];
+            case 2: v ^= static_cast<uint64_t>(pos2[1]) << 8; [[fallthrough]];
+            case 1: v ^= static_cast<uint64_t>(pos2[0]);
+                h ^= mix(v);
+                h *= m;
         }
 
         return mix(h);
@@ -324,7 +326,8 @@ struct MetroHash64
 {
     size_t operator() (StringRef x) const
     {
-        union {
+        union
+        {
             uint64_t u64;
             std::uint8_t u8[sizeof(u64)];
         };

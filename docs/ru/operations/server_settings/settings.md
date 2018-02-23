@@ -67,7 +67,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 База данных по умолчанию.
 
-Перечень баз данных можно получить запросом [SHOW DATABASES](../query_language/queries.md#query_language_queries_show_databases).
+Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases).
 
 **Пример**
 
@@ -520,6 +520,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
 
 
@@ -529,6 +530,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <part_log>
     <database>system</database>
     <table>part_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </part_log>
 ```
@@ -555,7 +557,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## query_log
 
-Настройка логгирования запросов, принятых с настройкой [log_queries=1](#settings-log_queries).
+Настройка логгирования запросов, принятых с настройкой [log_queries=1](../settings/settings.md#settings_settings-log_queries).
 
 Запросы логгируются не в отдельный файл, а в таблицу ClickHouse.
 
@@ -563,6 +565,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
@@ -573,6 +576,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <query_log>
     <database>system</database>
     <table>query_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
 ```
@@ -593,21 +597,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../configuration_files.md#configuration_files)".
 
-<a name="server_settings-resharding"></a>
-
-## resharding
-
-Путь в ZooKeeper к очереди задач.
-
-Подробнее читайте в разделе "[Перешардирование](../../table_engines/resharding.md#table_engines-resharding)".
-
-**Пример**
-
-```xml
-<resharding>
-    <task_queue_path>/clickhouse/task_queue</task_queue_path>
-</resharding>
-```
 
 <a name="server_settings-timezone"></a>
 

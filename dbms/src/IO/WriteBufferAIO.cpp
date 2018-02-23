@@ -1,3 +1,5 @@
+#if !(defined(__FreeBSD__) || defined(__APPLE__))
+
 #include <IO/WriteBufferAIO.h>
 #include <Common/ProfileEvents.h>
 
@@ -413,3 +415,5 @@ void WriteBufferAIO::finalize()
 }
 
 }
+
+#endif

@@ -32,6 +32,7 @@
 
 #include <Common/NetException.h>
 
+
 namespace DB
 {
 
@@ -287,7 +288,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     state.io.out->writePrefix();
 
     /// Send block to the client - table structure.
-    Block block = state.io.out_sample;
+    Block block = state.io.out->getHeader();
     sendData(block);
 
     readData(global_settings);
@@ -302,8 +303,11 @@ void TCPHandler::processOrdinaryQuery()
     if (state.io.in)
     {
         /// Send header-block, to allow client to prepare output format for data to send.
-        if (state.io.in_sample)
-            sendData(state.io.in_sample);
+        {
+            Block header = state.io.in->getHeader();
+            if (header)
+                sendData(header);
+        }
 
         AsynchronousBlockInputStream async_in(state.io.in);
         async_in.readPrefix();
@@ -338,12 +342,12 @@ void TCPHandler::processOrdinaryQuery()
                 }
             }
 
-        /** If data has run out, we will send the profiling data and total values to
-          * the last zero block to be able to use
-          * this information in the suffix output of stream.
-          * If the request was interrupted, then `sendTotals` and other methods could not be called,
-          *  because we have not read all the data yet,
-          *  and there could be ongoing calculations in other threads at the same time.
+            /** If data has run out, we will send the profiling data and total values to
+              * the last zero block to be able to use
+              * this information in the suffix output of stream.
+              * If the request was interrupted, then `sendTotals` and other methods could not be called,
+              *  because we have not read all the data yet,
+              *  and there could be ongoing calculations in other threads at the same time.
               */
             if (!block && !isQueryCancelled())
             {
@@ -413,7 +417,7 @@ void TCPHandler::sendTotals()
 
         if (totals)
         {
-            initBlockOutput();
+            initBlockOutput(totals);
 
             writeVarUInt(Protocol::Server::Totals, *out);
             writeStringBinary("", *out);
@@ -434,7 +438,7 @@ void TCPHandler::sendExtremes()
 
         if (extremes)
         {
-            initBlockOutput();
+            initBlockOutput(extremes);
 
             writeVarUInt(Protocol::Server::Extremes, *out);
             writeStringBinary("", *out);
@@ -658,7 +662,7 @@ void TCPHandler::initBlockInput()
 }
 
 
-void TCPHandler::initBlockOutput()
+void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
@@ -670,7 +674,8 @@ void TCPHandler::initBlockOutput()
 
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
-            client_revision);
+            client_revision,
+            block.cloneEmpty());
     }
 }
 
@@ -709,9 +714,9 @@ bool TCPHandler::isQueryCancelled()
 }
 
 
-void TCPHandler::sendData(Block & block)
+void TCPHandler::sendData(const Block & block)
 {
-    initBlockOutput();
+    initBlockOutput(block);
 
     writeVarUInt(Protocol::Server::Data, *out);
     writeStringBinary("", *out);

@@ -398,7 +398,7 @@ public:
              */
             const auto n = tp - colonp;
 
-            for (int i = 1; i <= n; i++)
+            for (int i = 1; i <= n; ++i)
             {
                 endp[- i] = colonp[n - i];
                 colonp[n - i] = 0;
@@ -1110,6 +1110,8 @@ public:
     {
         return std::make_shared<DataTypeUUID>();
     }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {

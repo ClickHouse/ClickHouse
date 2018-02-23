@@ -47,7 +47,8 @@ private:
     struct language_alias { const char * const name; const Language lang; };
     static const language_alias * getLanguageAliases()
     {
-        static constexpr const language_alias language_aliases[] {
+        static constexpr const language_alias language_aliases[]
+        {
             { "ru", Language::RU },
             { "en", Language::EN },
             { "ua", Language::UA },

@@ -27,7 +27,8 @@ void AlterCommand::apply(
 {
     if (type == ADD_COLUMN)
     {
-        const auto exists_in = [this] (const NamesAndTypesList & columns) {
+        const auto exists_in = [this] (const NamesAndTypesList & columns)
+        {
             return columns.end() != std::find_if(columns.begin(), columns.end(),
                 std::bind(namesEqual, std::cref(column_name), std::placeholders::_1));
         };
@@ -85,7 +86,8 @@ void AlterCommand::apply(
     else if (type == DROP_COLUMN)
     {
         /// look for a column in list and remove it if present, also removing corresponding entry from column_defaults
-        const auto remove_column = [&column_defaults, this] (NamesAndTypesList & columns) {
+        const auto remove_column = [&column_defaults, this] (NamesAndTypesList & columns)
+        {
             auto removed = false;
             NamesAndTypesList::iterator column_it;
 
@@ -120,7 +122,8 @@ void AlterCommand::apply(
             materialized_columns : alias_columns;
 
         /// find column or throw exception
-        const auto find_column = [this] (NamesAndTypesList & columns) {
+        const auto find_column = [this] (NamesAndTypesList & columns)
+        {
             const auto it = std::find_if(columns.begin(), columns.end(),
                 std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
             if (it == columns.end())

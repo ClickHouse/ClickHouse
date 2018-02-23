@@ -5,8 +5,8 @@
 #include <unordered_set>
 
 
-namespace DB {
-
+namespace DB
+{
 
 NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns)
 {
