@@ -8,7 +8,7 @@
         <count>10</count>
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
     </logger>
-
+    <group_name>staging</group_name>
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
 
