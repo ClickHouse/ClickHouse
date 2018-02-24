@@ -153,6 +153,7 @@ private:
     /// If the last query resulted in exception.
     bool got_exception = false;
     String server_version;
+    String server_group_name;
 
     Stopwatch watch;
 
@@ -425,6 +426,7 @@ private:
         connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
+        server_group_name = connection->getServerGroupname();
         if (is_interactive)
         {
             std::cout << "Connected to " << server_name
@@ -450,7 +452,8 @@ private:
     {
         String query;
         String prev_query;
-        while (char * line_ = readline(query.empty() ? ":) " : ":-] "))
+        String prompt = server_group_name.length() ? "[" + server_group_name + "] :) " : ":) ";
+        while (char * line_ = readline(query.empty() ? prompt.c_str() : ":-] "))
         {
             String line = line_;
             free(line_);
