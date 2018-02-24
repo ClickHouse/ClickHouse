@@ -28,7 +28,7 @@ ASTSelectQuery::ASTSelectQuery(const StringRange range_) : ASTQueryWithOutput(ra
 bool ASTSelectQuery::hasArrayJoin(const ASTPtr & ast)
 {
     if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
-        if (function->kind == ASTFunction::ARRAY_JOIN)
+        if (function->name == "arrayJoin")
             return true;
 
     for (const auto & child : ast->children)
