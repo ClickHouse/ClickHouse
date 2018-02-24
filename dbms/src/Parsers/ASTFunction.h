@@ -12,23 +12,10 @@ namespace DB
 class ASTFunction : public ASTWithAlias
 {
 public:
-    /// TODO This is semantic, not syntax. Remove it.
-    enum FunctionKind
-    {
-        UNKNOWN,
-        TABLE_FUNCTION,
-        FUNCTION,
-        AGGREGATE_FUNCTION,
-        LAMBDA_EXPRESSION,
-        ARRAY_JOIN,
-    };
-
     String name;
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
-
-    FunctionKind kind{UNKNOWN};
 
 public:
     ASTFunction() = default;
