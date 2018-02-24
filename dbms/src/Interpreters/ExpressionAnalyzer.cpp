@@ -368,7 +368,7 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String 
         {
             /// Do not go to FROM, JOIN, UNION.
             if (!typeid_cast<const ASTTableExpression *>(child.get())
-                && child.get() != select_query->next_union_all.get())
+                && !typeid_cast<const ASTSelectQuery *>(child.get()))
             {
                 translateQualifiedNamesImpl(child, database_name, table_name, alias);
             }
@@ -1136,7 +1136,7 @@ void ExpressionAnalyzer::executeScalarSubqueries()
         {
             /// Do not go to FROM, JOIN, UNION.
             if (!typeid_cast<const ASTTableExpression *>(child.get())
-                && child.get() != select_query->next_union_all.get())
+                && !typeid_cast<const ASTSelectQuery *>(child.get()))
             {
                 executeScalarSubqueriesImpl(child);
             }
@@ -2169,7 +2169,12 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
     else
     {
         for (auto & child : ast->children)
-            getActionsImpl(child, no_subqueries, only_consts, actions_stack);
+        {
+            /// Do not go to FROM, JOIN, UNION.
+            if (!typeid_cast<const ASTTableExpression *>(child.get())
+                && !typeid_cast<const ASTSelectQuery *>(child.get()))
+                getActionsImpl(child, no_subqueries, only_consts, actions_stack);
+        }
     }
 }
 
