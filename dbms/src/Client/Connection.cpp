@@ -207,7 +207,7 @@ const String & Connection::getServerTimezone()
     return server_timezone;
 }
 
-const String & Connection::getServerGroupname()
+const String & Connection::getServerGroupName()
 {
     if (!connected)
         connect();

@@ -426,7 +426,7 @@ private:
         connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
-        server_group_name = connection->getServerGroupname();
+        server_group_name = connection->getServerGroupName();
         if (is_interactive)
         {
             std::cout << "Connected to " << server_name
