@@ -58,7 +58,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!table_function_p.parse(pos, table_function, expected))
             return false;
-        static_cast<ASTFunction &>(*table_function).kind = ASTFunction::TABLE_FUNCTION;
     }
     else
     {
