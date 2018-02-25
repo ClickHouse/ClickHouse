@@ -58,7 +58,7 @@ public:
     UInt64 elapsedMilliseconds() const  { return elapsed() / 1000000UL; }
     double elapsedSeconds() const       { return static_cast<double>(elapsed()) / 1000000000ULL; }
 
-    /** If specified amount of time has passed and timer is not locked right now, then restarts timer and returns true.
+    /** If specified amount of time has passed, then restarts timer and returns true.
       * Otherwise returns false.
       * This is done atomically.
       */
