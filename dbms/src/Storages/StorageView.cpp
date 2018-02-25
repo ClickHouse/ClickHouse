@@ -44,7 +44,7 @@ BlockInputStreams StorageView::read(
     const unsigned /*num_streams*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-    return InterpreterSelectQuery(inner_query->clone(), context, column_names).executeWithoutUnion();
+    return InterpreterSelectQuery(inner_query->clone(), context, column_names).executeWithMultipleStreams();
 }
 
 
