@@ -323,7 +323,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 Block InterpreterSelectQuery::getSampleBlock()
 {
     Pipeline pipeline;
-    executeWithoutUnionImpl(pipeline, std::make_shared<OneBlockInputStream>(source_header));
+    executeWithMultipleStreamsImpl(pipeline, std::make_shared<OneBlockInputStream>(source_header));
     auto res = pipeline.firstStream()->getHeader();
     return res;
 }
@@ -338,7 +338,7 @@ Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-    executeWithoutUnionImpl(pipeline, input);
+    executeWithMultipleStreamsImpl(pipeline, input);
     executeUnion(pipeline);
 
     /// Constraints on the result, the quota on the result, and also callback for progress.
@@ -365,14 +365,14 @@ BlockIO InterpreterSelectQuery::execute()
     return res;
 }
 
-BlockInputStreams InterpreterSelectQuery::executeWithoutUnion()
+BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
-    executeWithoutUnionImpl(pipeline, input);
+    executeWithMultipleStreamsImpl(pipeline, input);
     return pipeline.streams;
 }
 
-void InterpreterSelectQuery::executeWithoutUnionImpl(Pipeline & pipeline, const BlockInputStreamPtr & input)
+void InterpreterSelectQuery::executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input)
 {
     if (input)
         pipeline.streams.push_back(input);
@@ -788,7 +788,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else if (interpreter_subquery)
     {
         /// Subquery.
-        interpreter_subquery->executeWithoutUnionImpl(pipeline, {});
+        interpreter_subquery->executeWithMultipleStreamsImpl(pipeline, {});
     }
     else if (storage)
     {

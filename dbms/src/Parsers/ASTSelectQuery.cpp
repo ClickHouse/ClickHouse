@@ -14,14 +14,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH;
-    extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int LOGICAL_ERROR;
     extern const int THERE_IS_NO_COLUMN;
 }
 
 
-ASTSelectQuery::ASTSelectQuery(const StringRange range_) : ASTQueryWithOutput(range_)
+ASTSelectQuery::ASTSelectQuery(const StringRange range_) : IAST(range_)
 {
 }
 
@@ -45,30 +43,6 @@ bool ASTSelectQuery::hasAsterisk() const
             return true;
 
     return false;
-}
-
-void ASTSelectQuery::renameColumns(const ASTSelectQuery & source)
-{
-    const ASTs & from = source.select_expression_list->children;
-    ASTs & to = select_expression_list->children;
-
-    if (from.size() != to.size())
-        throw Exception("Size mismatch in UNION ALL chain",
-                        DB::ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-
-    for (size_t i = 0; i < from.size(); ++i)
-    {
-        /// If the column has an alias, it must match the name of the original column.
-        /// Otherwise, we assign it an alias, if required.
-        if (!to[i]->tryGetAlias().empty())
-        {
-            if (to[i]->tryGetAlias() != from[i]->getAliasOrColumnName())
-                throw Exception("Column alias mismatch in UNION ALL chain",
-                                DB::ErrorCodes::UNION_ALL_COLUMN_ALIAS_MISMATCH);
-        }
-        else if (to[i]->getColumnName() != from[i]->getAliasOrColumnName())
-            to[i]->setAlias(from[i]->getAliasOrColumnName());
-    }
 }
 
 void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_names)
@@ -160,34 +134,6 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
 
 ASTPtr ASTSelectQuery::clone() const
 {
-    auto ptr = cloneImpl(true);
-
-    /// Set pointers to previous SELECT queries.
-    ASTPtr current = ptr;
-    static_cast<ASTSelectQuery *>(current.get())->prev_union_all = nullptr;
-    ASTPtr next = static_cast<ASTSelectQuery *>(current.get())->next_union_all;
-    while (next != nullptr)
-    {
-        ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(next.get());
-        next_select_query->prev_union_all = current.get();
-        current = next;
-        next = next_select_query->next_union_all;
-    }
-
-    cloneOutputOptions(*ptr);
-
-    return ptr;
-}
-
-std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneFirstSelect() const
-{
-    auto res = cloneImpl(false);
-    res->prev_union_all = nullptr;
-    return res;
-}
-
-std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_all) const
-{
     auto res = std::make_shared<ASTSelectQuery>(*this);
     res->children.clear();
 
@@ -219,19 +165,9 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
 
 #undef CLONE
 
-    if (traverse_union_all)
-    {
-        if (next_union_all)
-        {
-            res->next_union_all = static_cast<const ASTSelectQuery *>(&*next_union_all)->cloneImpl(true);
-            res->children.push_back(res->next_union_all);
-        }
-    }
-    else
-        res->next_union_all = nullptr;
-
     return res;
 }
+
 
 void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
@@ -322,17 +258,6 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings->formatImpl(s, state, frame);
-    }
-
-    if (next_union_all)
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "UNION ALL " << s.nl_or_ws << (s.hilite ? hilite_none : "");
-
-        // NOTE We can safely apply `static_cast` instead of `typeid_cast` because we know that in the `UNION ALL` chain
-        // there are only trees of type SELECT.
-        const ASTSelectQuery & next_ast = static_cast<const ASTSelectQuery &>(*next_union_all);
-
-        next_ast.formatImpl(s, state, frame);
     }
 }
 

@@ -12,12 +12,11 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserCase.h>
 
 #include <Parsers/ExpressionElementParsers.h>
@@ -108,7 +107,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
     ASTPtr select_node;
-    ParserSelectQuery select;
+    ParserSelectWithUnionQuery select;
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;

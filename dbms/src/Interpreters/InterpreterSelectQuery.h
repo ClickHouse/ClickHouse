@@ -64,14 +64,11 @@ public:
 
     ~InterpreterSelectQuery();
 
-    /** Execute a query, possibly part of UNION ALL chain.
-     *  Get the stream of blocks to read
-     */
+    /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
-    /** Execute the query without union of threads, if it is possible.
-     */
-    BlockInputStreams executeWithoutUnion();
+    /// Execute the query and return multuple streams for parallel processing.
+    BlockInputStreams executeWithMultipleStreams();
 
     Block getSampleBlock();
 
@@ -113,9 +110,6 @@ private:
         }
     };
 
-    /** - Optimization if an object is created only to call getSampleBlock(): consider only the first SELECT of the UNION ALL chain, because
-      *   the first SELECT is sufficient to determine the required columns.
-      */
     struct OnlyAnalyzeTag {};
     InterpreterSelectQuery(
         OnlyAnalyzeTag,
@@ -126,7 +120,6 @@ private:
     void basicInit();
     void initQueryAnalyzer();
 
-    /// Execute one SELECT query from the UNION ALL chain.
     void executeSingleQuery(Pipeline & pipeline);
 
 
@@ -186,7 +179,7 @@ private:
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
     QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
 
-    void executeWithoutUnionImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
+    void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
@@ -224,14 +217,8 @@ private:
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
 
-    /// Is it the first SELECT query of the UNION ALL chain?
-    bool is_first_select_inside_union_all;
-
     /// The object was created only for query analysis.
     bool only_analyze = false;
-
-    /// The next SELECT query in the UNION ALL chain, if any.
-    std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
@@ -239,9 +226,6 @@ private:
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;
-
-    /// Do union of streams within a SELECT query?
-    bool union_within_single_query = false;
 
     Poco::Logger * log;
 };
