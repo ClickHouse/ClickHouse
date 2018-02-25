@@ -1,7 +1,7 @@
 #pragma once
 
 #include <time.h>
-#include <mutex>
+#include <atomic>
 #include <common/Types.h>
 
 #ifdef __APPLE__
