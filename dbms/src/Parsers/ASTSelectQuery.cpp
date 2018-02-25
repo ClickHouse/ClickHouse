@@ -169,7 +169,7 @@ ASTPtr ASTSelectQuery::clone() const
 }
 
 
-void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
     frame.need_parens = false;

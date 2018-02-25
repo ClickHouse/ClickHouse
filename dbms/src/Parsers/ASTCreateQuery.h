@@ -3,7 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
@@ -93,7 +93,7 @@ public:
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
-    ASTSelectQuery * select = nullptr;
+    ASTSelectWithUnionQuery * select = nullptr;
 
     ASTCreateQuery() = default;
     ASTCreateQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}

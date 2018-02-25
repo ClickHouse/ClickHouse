@@ -97,44 +97,30 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
 
     if (nested_streams.empty())
     {
-        result_stream = std::make_shared<NullBlockInputStream>();
+        result_stream = std::make_shared<NullBlockInputStream>(getSampleBlock());
     }
     else if (nested_streams.size() == 1)
     {
         result_stream = nested_streams.front();
+        nested_streams.clear();
     }
     else
     {
         const Settings & settings = context.getSettingsRef();
-
-        result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr /* TODO stream_with_non_joined_data */, settings.max_threads);
+        result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, settings.max_threads);
         nested_streams.clear();
-    }
-
-    /// Constraints on the result, the quota on the result, and also callback for progress.
-    if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(result_stream.get()))
-    {
-        /// Constraints apply only to the final result.
-        if (to_stage == QueryProcessingStage::Complete)
-        {
-            const Settings & settings = context.getSettingsRef();
-
-            IProfilingBlockInputStream::LocalLimits limits;
-            limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
-            limits.max_rows_to_read = settings.limits.max_result_rows;
-            limits.max_bytes_to_read = settings.limits.max_result_bytes;
-            limits.read_overflow_mode = settings.limits.result_overflow_mode;
-
-            stream->setLimits(limits);
-            stream->setQuota(context.getQuota());
-        }
     }
 
     BlockIO res;
     res.in = result_stream;
-    res.in_sample = getSampleBlock();
-
     return res;
+}
+
+
+void InterpreterSelectWithUnionQuery::ignoreWithTotals()
+{
+    for (auto & interpreter : nested_interpreters)
+        interpreter->ignoreWithTotals();
 }
 
 }
