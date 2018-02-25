@@ -63,7 +63,7 @@ namespace
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 {
     auto modified_query_ast = query->clone();
-    typeid_cast<const ASTSelectQuery &>(*modified_query_ast)->replaceDatabaseAndTable(database, table);
+    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 

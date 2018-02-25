@@ -1,7 +1,6 @@
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Common/typeid_cast.h>
 
 #include <Storages/StorageView.h>
@@ -44,7 +43,7 @@ BlockInputStreams StorageView::read(
     const unsigned /*num_streams*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-    return InterpreterSelectQuery(inner_query->clone(), context, column_names).executeWithMultipleStreams();
+    return InterpreterSelectWithUnionQuery(inner_query->clone(), context, column_names).executeWithMultipleStreams();
 }
 
 

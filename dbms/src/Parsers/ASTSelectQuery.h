@@ -61,7 +61,7 @@ public:
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

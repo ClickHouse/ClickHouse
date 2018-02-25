@@ -41,7 +41,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -716,7 +716,7 @@ private:
     /// Convert external tables to ExternalTableData and send them using the connection.
     void sendExternalTables()
     {
-        const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(&*parsed_query);
+        auto * select = typeid_cast<const ASTSelectWithUnionQuery *>(&*parsed_query);
         if (!select && !external_tables.empty())
             throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 

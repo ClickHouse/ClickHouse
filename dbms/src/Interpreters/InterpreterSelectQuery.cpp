@@ -31,6 +31,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -59,7 +60,6 @@ namespace ErrorCodes
 {
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
@@ -71,7 +71,7 @@ namespace ErrorCodes
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
-void InterpreterSelectQuery::init(const Names & required_column_names)
+void InterpreterSelectQuery::init()
 {
     ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -84,63 +84,6 @@ void InterpreterSelectQuery::init(const Names & required_column_names)
 
     max_streams = settings.max_threads;
 
-    if (is_first_select_inside_union_all)
-    {
-        /// Create a SELECT query chain.
-        InterpreterSelectQuery * interpreter = this;
-        ASTPtr tail = query.next_union_all;
-
-        while (tail)
-        {
-            ASTPtr head = tail;
-
-            ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
-            tail = head_query.next_union_all;
-
-            interpreter->next_select_in_union_all = std::make_unique<InterpreterSelectQuery>(head, context, to_stage, subquery_depth);
-            interpreter = interpreter->next_select_in_union_all.get();
-        }
-    }
-
-    if (is_first_select_inside_union_all && hasAsterisk())
-    {
-        basicInit();
-
-        // We execute this code here, because otherwise the following kind of query would not work
-        // SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
-        // because the asterisk is replaced with columns only when query_analyzer objects are created in basicInit().
-        renameColumns();
-
-        if (!required_column_names.empty() && (source_header.columns() != required_column_names.size()))
-        {
-            rewriteExpressionList(required_column_names);
-            /// Now there is obsolete information to execute the query. We update this information.
-            initQueryAnalyzer();
-        }
-    }
-    else
-    {
-        renameColumns();
-        if (!required_column_names.empty())
-        {
-            rewriteExpressionList(required_column_names);
-
-            if (is_first_select_inside_union_all)
-            {
-                for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-                    p->query_analyzer = std::make_unique<ExpressionAnalyzer>(
-                        p->query_ptr, p->context, p->storage, p->source_header.getNamesAndTypesList(), p->subquery_depth,
-                        false, p->query_analyzer->getSubqueriesForSets());
-            }
-        }
-
-        basicInit();
-    }
-}
-
-
-void InterpreterSelectQuery::basicInit()
-{
     /// Read from prepared input.
     if (input)
     {
@@ -204,13 +147,6 @@ void InterpreterSelectQuery::basicInit()
             context.addExternalTable(it.first, it.second);
 }
 
-void InterpreterSelectQuery::initQueryAnalyzer()
-{
-    query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, source_header.getNamesAndTypesList(), subquery_depth, !only_analyze);
-
-    for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        p->query_analyzer = std::make_unique<ExpressionAnalyzer>(p->query_ptr, p->context, p->storage, p->source_header.getNamesAndTypesList(), p->subquery_depth, !only_analyze);
-}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
@@ -225,7 +161,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const Names & required_column_names_,
+    const Names & /*required_column_names_*/,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
     const BlockInputStreamPtr & input)
@@ -234,11 +170,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , context(context_)
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
-    , is_first_select_inside_union_all(query.isUnionAllHead())
     , input(input)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init(required_column_names_);
+    init();
 }
 
 
@@ -248,49 +183,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & qu
     , context(context_)
     , to_stage(QueryProcessingStage::Complete)
     , subquery_depth(0)
-    , is_first_select_inside_union_all(false), only_analyze(true)
+    , only_analyze(true)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init({});
+    init();
 }
 
-
-bool InterpreterSelectQuery::hasAsterisk() const
-{
-    if (query.hasAsterisk())
-        return true;
-
-    if (is_first_select_inside_union_all)
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-            if (p->query.hasAsterisk())
-                return true;
-
-    return false;
-}
-
-void InterpreterSelectQuery::renameColumns()
-{
-    if (is_first_select_inside_union_all)
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-            p->query.renameColumns(query);
-}
-
-void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column_names)
-{
-    if (query.distinct)
-        return;
-
-    if (is_first_select_inside_union_all)
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-            if (p->query.distinct)
-                return;
-
-    query.rewriteSelectExpressionList(required_column_names);
-
-    if (is_first_select_inside_union_all)
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-            p->query.rewriteSelectExpressionList(required_column_names);
-}
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
@@ -323,7 +221,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 Block InterpreterSelectQuery::getSampleBlock()
 {
     Pipeline pipeline;
-    executeWithMultipleStreamsImpl(pipeline, std::make_shared<OneBlockInputStream>(source_header));
+    executeImpl(pipeline, std::make_shared<OneBlockInputStream>(source_header));
     auto res = pipeline.firstStream()->getHeader();
     return res;
 }
@@ -338,27 +236,8 @@ Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-    executeWithMultipleStreamsImpl(pipeline, input);
+    executeImpl(pipeline, input);
     executeUnion(pipeline);
-
-    /// Constraints on the result, the quota on the result, and also callback for progress.
-    if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(pipeline.firstStream().get()))
-    {
-        /// Constraints apply only to the final result.
-        if (to_stage == QueryProcessingStage::Complete && subquery_depth == 0)
-        {
-            const Settings & settings = context.getSettingsRef();
-
-            IProfilingBlockInputStream::LocalLimits limits;
-            limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
-            limits.max_rows_to_read = settings.limits.max_result_rows;
-            limits.max_bytes_to_read = settings.limits.max_result_bytes;
-            limits.read_overflow_mode = settings.limits.result_overflow_mode;
-
-            stream->setLimits(limits);
-            stream->setQuota(context.getQuota());
-        }
-    }
 
     BlockIO res;
     res.in = pipeline.firstStream();
@@ -368,32 +247,8 @@ BlockIO InterpreterSelectQuery::execute()
 BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
-    executeWithMultipleStreamsImpl(pipeline, input);
+    executeImpl(pipeline, input);
     return pipeline.streams;
-}
-
-void InterpreterSelectQuery::executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input)
-{
-    if (input)
-        pipeline.streams.push_back(input);
-
-    if (is_first_select_inside_union_all)
-    {
-        executeSingleQuery(pipeline);
-        for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        {
-            Pipeline other_pipeline;
-            p->executeSingleQuery(other_pipeline);
-            pipeline.streams.insert(pipeline.streams.end(), other_pipeline.streams.begin(), other_pipeline.streams.end());
-        }
-
-        pipeline.transform([&](auto & stream)
-        {
-            stream = std::make_shared<MaterializingBlockInputStream>(stream);
-        });
-    }
-    else
-        executeSingleQuery(pipeline);
 }
 
 
@@ -477,8 +332,11 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 }
 
 
-void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
+void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input)
 {
+    if (input)
+        pipeline.streams.push_back(input);
+
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
      *  if there is an ORDER BY, then glue the streams using UnionBlockInputStream, and then MergeSortingBlockInputStream,
@@ -487,11 +345,7 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
      *  If there is GROUP BY, then we will perform all operations up to GROUP BY, inclusive, in parallel;
      *  a parallel GROUP BY will glue streams into one,
      *  then perform the remaining operations with one resulting stream.
-     *  If the query is a member of the UNION ALL chain and does not contain GROUP BY, ORDER BY, DISTINCT, or LIMIT,
-     *  then the data sources are merged not at this level, but at the upper level.
      */
-
-    union_within_single_query = false;
 
     /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline);
@@ -564,7 +418,8 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
 
         if (expressions.second_stage)
         {
-            bool need_second_distinct_pass;
+            bool need_second_distinct_pass = false;
+            bool need_merge_streams = false;
 
             if (expressions.need_aggregate)
             {
@@ -618,20 +473,22 @@ void InterpreterSelectQuery::executeSingleQuery(Pipeline & pipeline)
               * limiting the number of rows in each up to `offset + limit`.
               */
             if (query.limit_length && pipeline.hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
+            {
                 executePreLimit(pipeline);
+            }
 
-            if (pipeline.stream_with_non_joined_data || need_second_distinct_pass)
-                union_within_single_query = true;
+            if (need_second_distinct_pass
+                || query.limit_length
+                || query.limit_by_expression_list
+                || pipeline.stream_with_non_joined_data)
+            {
+                need_merge_streams = true;
+            }
 
-            /// To execute LIMIT BY we should merge all streams together.
-            if (query.limit_by_expression_list && pipeline.hasMoreThanOneStream())
-                union_within_single_query = true;
-
-            if (union_within_single_query)
+            if (need_merge_streams)
+            {
                 executeUnion(pipeline);
 
-            if (pipeline.streams.size() == 1)
-            {
                 /** If there was more than one stream,
                   * then DISTINCT needs to be performed once again after merging all streams.
                   */
@@ -664,7 +521,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline)
 {
     /// The subquery interpreter, if the subquery
-    std::optional<InterpreterSelectQuery> interpreter_subquery;
+    std::optional<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredColumns();
@@ -741,8 +598,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     size_t limit_offset = 0;
     getLimitLengthAndOffset(query, limit_length, limit_offset);
 
-    size_t max_block_size = settings.max_block_size;
-
     /** With distributed query processing, almost no computations are done in the threads,
      *  but wait and receive data from remote servers.
      *  If we have 20 remote servers, and max_threads = 8, then it would not be very good
@@ -757,6 +612,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         max_streams = settings.max_distributed_connections;
     }
 
+    size_t max_block_size = settings.max_block_size;
+
     /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
@@ -770,7 +627,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         && !query.limit_by_expression_list
         && query.limit_length
         && !query_analyzer->hasAggregation()
-        && limit_length + limit_offset < settings.max_block_size)
+        && limit_length + limit_offset < max_block_size)
     {
         max_block_size = limit_length + limit_offset;
         max_streams = 1;
@@ -788,7 +645,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else if (interpreter_subquery)
     {
         /// Subquery.
-        interpreter_subquery->executeWithMultipleStreamsImpl(pipeline, {});
+        pipeline.streams = interpreter_subquery->executeWithMultipleStreams();
     }
     else if (storage)
     {
@@ -1158,9 +1015,6 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
             else
                 stream = std::make_shared<DistinctBlockInputStream>(stream, settings.limits, limit_for_distinct, columns);
         });
-
-        if (pipeline.hasMoreThanOneStream())
-            union_within_single_query = true;
     }
 }
 
@@ -1173,13 +1027,11 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
         pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
-        union_within_single_query = false;
     }
     else if (pipeline.stream_with_non_joined_data)
     {
         pipeline.streams.push_back(pipeline.stream_with_non_joined_data);
         pipeline.stream_with_non_joined_data = nullptr;
-        union_within_single_query = false;
     }
 }
 
@@ -1198,9 +1050,6 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
         {
             stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, 0, false);
         });
-
-        if (pipeline.hasMoreThanOneStream())
-            union_within_single_query = true;
     }
 }
 
@@ -1211,18 +1060,14 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
         return;
 
     Names columns;
-    size_t value = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_by_value).value);
-
     for (const auto & elem : query.limit_by_expression_list->children)
-    {
         columns.emplace_back(elem->getAliasOrColumnName());
-    }
+
+    size_t value = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_by_value).value);
 
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<LimitByBlockInputStream>(
-            stream, value, columns
-        );
+        stream = std::make_shared<LimitByBlockInputStream>(stream, value, columns);
     });
 }
 
@@ -1294,7 +1139,6 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
 }
 
 
-/// TODO This is trash.
 void InterpreterSelectQuery::ignoreWithTotals()
 {
     query.group_by_with_totals = false;

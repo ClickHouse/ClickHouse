@@ -76,6 +76,8 @@ public:
         const ASTPtr & query_ptr_,
         const Context & context_);
 
+    void ignoreWithTotals();
+
 private:
     struct Pipeline
     {
@@ -116,11 +118,9 @@ private:
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    void init(const Names & required_column_names);
-    void basicInit();
-    void initQueryAnalyzer();
+    void init();
 
-    void executeSingleQuery(Pipeline & pipeline);
+    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
 
 
     struct AnalysisResult
@@ -152,24 +152,6 @@ private:
     AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
 
 
-    /** Leave only the necessary columns of the SELECT section in each query of the UNION ALL chain.
-     *  However, if you use at least one DISTINCT in the chain, then all the columns are considered necessary,
-     *   since otherwise DISTINCT would work differently.
-     *
-     *  Always leave arrayJoin, because it changes number of rows.
-     *
-     *  TODO If query doesn't have GROUP BY, but have aggregate functions,
-     *   then leave at least one aggregate function,
-     *   In order that fact of aggregation has not been lost.
-     */
-    void rewriteExpressionList(const Names & required_column_names);
-
-    /// Does the request contain at least one asterisk?
-    bool hasAsterisk() const;
-
-    // Rename the columns of each query for the UNION ALL chain into the same names as in the first query.
-    void renameColumns();
-
     /** From which table to read. With JOIN, the "left" table is returned.
      */
     void getDatabaseAndTableNames(String & database_name, String & table_name);
@@ -195,8 +177,6 @@ private:
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-
-    void ignoreWithTotals();
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *
