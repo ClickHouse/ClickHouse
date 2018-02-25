@@ -3,6 +3,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -24,13 +25,15 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     to_stage(to_stage_),
     subquery_depth(subquery_depth_)
 {
-    size_t num_selects = query_ptr->children.size();
+    const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
+
+    size_t num_selects = ast.list_of_selects->children.size();
     nested_interpreters.reserve(num_selects);
 
     if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
-    for (const auto & select : query_ptr->children)
+    for (const auto & select : ast.list_of_selects->children)
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(select, context, to_stage, subquery_depth));
 }
 
@@ -46,13 +49,15 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     to_stage(to_stage_),
     subquery_depth(subquery_depth_)
 {
-    size_t num_selects = query_ptr->children.size();
+    const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
+
+    size_t num_selects = ast.list_of_selects->children.size();
     nested_interpreters.reserve(num_selects);
 
     if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
-    for (const auto & select : query_ptr->children)
+    for (const auto & select : ast.list_of_selects->children)
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(select, context, required_column_names, to_stage, subquery_depth));
 }
 
@@ -69,10 +74,13 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
     const ASTPtr & query_ptr,
     const Context & context)
 {
-    if (query_ptr->children.empty())
+    const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
+
+    size_t num_selects = ast.list_of_selects->children.size();
+    if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
-    return InterpreterSelectQuery::getSampleBlock(query_ptr->children.front(), context);
+    return InterpreterSelectQuery::getSampleBlock(ast.list_of_selects->children.front(), context);
 }
 
 

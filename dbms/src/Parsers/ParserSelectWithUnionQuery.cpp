@@ -15,8 +15,12 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!parser.parse(pos, list_node, expected))
         return false;
 
-    node = std::make_shared<ASTSelectWithUnionQuery>(list_node->range);
-    node->children = list_node->children;
+    auto res = std::make_shared<ASTSelectWithUnionQuery>(list_node->range);
+
+    res->list_of_selects = std::move(list_node);
+    res->children.push_back(res->list_of_selects);
+
+    node = res;
     return true;
 }
 
