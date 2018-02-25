@@ -293,7 +293,7 @@ bool StorageMergeTree::merge(
     String * out_disable_reason)
 {
     /// Clear old parts. It does not matter to do it more frequently than each second.
-    if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
+    if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
         data.clearOldPartsFromFilesystem();
         data.clearOldTemporaryDirectories();

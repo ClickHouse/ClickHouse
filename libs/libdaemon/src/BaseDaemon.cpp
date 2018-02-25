@@ -49,7 +49,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Poco/ScopedLock.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
 #include <Poco/NumberFormatter.h>

@@ -229,7 +229,7 @@ struct ContextShared
         Databases current_databases;
 
         {
-            Poco::ScopedLock<Poco::Mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             current_databases = databases;
         }
 
@@ -237,7 +237,7 @@ struct ContextShared
             database.second->shutdown();
 
         {
-            Poco::ScopedLock<Poco::Mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             databases.clear();
         }
     }
@@ -1428,7 +1428,7 @@ QueryLog & Context::getQueryLog()
         String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
         size_t flush_interval_milliseconds = config.getUInt64(
                 "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-        
+
         String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
 
         system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
