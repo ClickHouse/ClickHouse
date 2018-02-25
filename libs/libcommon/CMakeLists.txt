@@ -113,7 +113,6 @@ target_link_libraries (
     ${CMAKE_THREAD_LIBS_INIT}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
-)
 
 if (RT_LIBRARY)
     target_link_libraries (common ${RT_LIBRARY})
