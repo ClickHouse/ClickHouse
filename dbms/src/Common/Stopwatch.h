@@ -8,6 +8,18 @@
 #include <common/apple_rt.h>
 #endif
 
+
+namespace StopWatchDetail
+{
+    inline UInt64 nanoseconds(clockid_t clock_type)
+    {
+        struct timespec ts;
+        clock_gettime(clock_type, &ts);
+        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+    }
+}
+
+
 /** Differs from Poco::Stopwatch only by using 'clock_gettime' instead of 'gettimeofday',
   *  returns nanoseconds instead of microseconds, and also by other minor differencies.
   */
@@ -32,50 +44,49 @@ private:
     clockid_t clock_type;
     bool is_running;
 
-    UInt64 nanoseconds() const
-    {
-        struct timespec ts;
-        clock_gettime(clock_type, &ts);
-        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-    }
+    UInt64 nanoseconds() const { return StopWatchDetail::nanoseconds(clock_type); }
 };
 
 
-class StopwatchWithLock : public Stopwatch
+class AtomicStopwatch
 {
 public:
+    AtomicStopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { restart(); }
+
+    void restart()                      { start_ns = nanoseconds(); }
+    UInt64 elapsed() const              { return nanoseconds() - start_ns; }
+    UInt64 elapsedMilliseconds() const  { return elapsed() / 1000000UL; }
+    double elapsedSeconds() const       { return static_cast<double>(elapsed()) / 1000000000ULL; }
+
     /** If specified amount of time has passed and timer is not locked right now, then restarts timer and returns true.
       * Otherwise returns false.
       * This is done atomically.
       */
-    bool lockTestAndRestart(double seconds)
+    bool compareAndRestart(double seconds)
     {
-        std::unique_lock<std::mutex> lock(mutex, std::defer_lock);
-        if (!lock.try_lock())
-            return false;
+        UInt64 threshold = seconds * 1000000000ULL;
+        UInt64 current_ns = nanoseconds();
+        UInt64 current_start_ns = start_ns;
 
-        if (elapsedSeconds() >= seconds)
+        while (true)
         {
-            restart();
-            return true;
+            if (current_ns < current_start_ns + threshold)
+                return false;
+
+            if (start_ns.compare_exchange_weak(current_start_ns, current_ns))
+                return true;
         }
-        else
-            return false;
     }
 
     struct Lock
     {
-        StopwatchWithLock * parent = nullptr;
-        std::unique_lock<std::mutex> lock;
+        AtomicStopwatch * parent = nullptr;
 
         Lock() {}
 
         operator bool() const { return parent != nullptr; }
 
-        Lock(StopwatchWithLock * parent, std::unique_lock<std::mutex> && lock)
-            : parent(parent), lock(std::move(lock))
-        {
-        }
+        Lock(AtomicStopwatch * parent) : parent(parent) {}
 
         Lock(Lock &&) = default;
 
@@ -92,21 +103,33 @@ public:
       * This is done atomically.
       *
       * Usage:
-      * if (auto lock = timer.lockTestAndRestartAfter(1))
+      * if (auto lock = timer.compareAndRestartDeferred(1))
       *        /// do some work, that must be done in one thread and not more frequently than each second.
       */
-    Lock lockTestAndRestartAfter(double seconds)
+    Lock compareAndRestartDeferred(double seconds)
     {
-        std::unique_lock<std::mutex> lock(mutex, std::defer_lock);
-        if (!lock.try_lock())
-            return {};
+        UInt64 threshold = seconds * 1000000000ULL;
+        UInt64 current_ns = nanoseconds();
+        UInt64 current_start_ns = start_ns;
 
-        if (elapsedSeconds() >= seconds)
-            return Lock(this, std::move(lock));
+        while (true)
+        {
+            if ((current_start_ns & 0x8000000000000000ULL))
+                return {};
 
-        return {};
+            if (current_ns < current_start_ns + threshold)
+                return {};
+
+            if (start_ns.compare_exchange_weak(current_start_ns, current_ns | 0x8000000000000000ULL))
+                return Lock(this);
+        }
     }
 
 private:
-    std::mutex mutex;
+    std::atomic<UInt64> start_ns;
+    std::atomic<bool> lock {false};
+    clockid_t clock_type;
+
+    /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
+    UInt64 nanoseconds() const { return StopWatchDetail::nanoseconds(clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
 };

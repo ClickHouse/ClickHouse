@@ -149,7 +149,7 @@ void DatabaseOrdinary::loadTables(
 
     String data_path = context.getPath() + "data/" + escapeForFileName(name) + "/";
 
-    StopwatchWithLock watch;
+    AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
 
     auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
@@ -160,7 +160,7 @@ void DatabaseOrdinary::loadTables(
 
             /// Messages, so that it's not boring to wait for the server to load for a long time.
             if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
-                || watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+                || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
             {
                 LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
                 watch.restart();
@@ -200,7 +200,7 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
 
-    StopwatchWithLock watch;
+    AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
     size_t total_tables = tables.size();
 
@@ -209,7 +209,7 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
         for (auto it = begin; it != end; ++it)
         {
             if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
-                || watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+                || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
             {
                 LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
                 watch.restart();
