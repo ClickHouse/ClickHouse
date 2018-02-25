@@ -111,9 +111,13 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARY}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
+)
+
+if (RT_LIBRARY)
+    target_link_libraries (common ${RT_LIBRARY})
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)
