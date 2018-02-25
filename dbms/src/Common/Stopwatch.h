@@ -2,7 +2,6 @@
 
 #include <time.h>
 #include <mutex>
-#include <Poco/ScopedLock.h>
 #include <common/Types.h>
 
 #ifdef __APPLE__
@@ -18,38 +17,26 @@ public:
     /** CLOCK_MONOTONIC works relatively efficient (~15 million calls/sec) and doesn't lead to syscall.
       * Pass CLOCK_MONOTONIC_COARSE, if you need better performance with acceptable cost of several milliseconds of inaccuracy.
       */
-    Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { restart(); }
+    Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { start(); }
 
-    void start()                        { setStart(); is_running = true; }
-    void stop()                         { updateElapsed(); is_running = false; }
-    void restart()                      { elapsed_ns = 0; start(); }
-    UInt64 elapsed() const              { updateElapsed(); return elapsed_ns; }
-    UInt64 elapsedMilliseconds() const  { updateElapsed(); return elapsed_ns / 1000000UL; }
-    double elapsedSeconds() const       { updateElapsed(); return static_cast<double>(elapsed_ns) / 1000000000ULL; }
+    void start()                        { start_ns = nanoseconds(); is_running = true; }
+    void stop()                         { stop_ns = nanoseconds(); is_running = false; }
+    void restart()                      { start(); }
+    UInt64 elapsed() const              { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
+    UInt64 elapsedMilliseconds() const  { return elapsed() / 1000000UL; }
+    double elapsedSeconds() const       { return static_cast<double>(elapsed()) / 1000000000ULL; }
 
 private:
-    mutable UInt64 start_ns;
-    mutable UInt64 elapsed_ns;
+    UInt64 start_ns;
+    UInt64 stop_ns;
     clockid_t clock_type;
     bool is_running;
 
-    void setStart()
+    UInt64 nanoseconds() const
     {
         struct timespec ts;
         clock_gettime(clock_type, &ts);
-        start_ns = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-    }
-
-    void updateElapsed() const
-    {
-        if (is_running)
-        {
-            struct timespec ts;
-            clock_gettime(clock_type, &ts);
-            UInt64 current_ns = ts.tv_sec * 1000000000ULL + ts.tv_nsec;
-            elapsed_ns += current_ns - start_ns;
-            start_ns = current_ns;
-        }
+        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
     }
 };
 
