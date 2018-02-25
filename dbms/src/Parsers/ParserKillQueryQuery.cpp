@@ -1,16 +1,9 @@
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
-#include <Common/typeid_cast.h>
 
 namespace DB
 {

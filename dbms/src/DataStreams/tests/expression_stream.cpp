@@ -56,7 +56,7 @@ try
 
     WriteBufferFromOStream out1(std::cout);
     RowOutputStreamPtr out2 = std::make_shared<TabSeparatedRowOutputStream>(out1, expression->getSampleBlock());
-    BlockOutputStreamFromRowOutputStream out(out2);
+    BlockOutputStreamFromRowOutputStream out(out2, expression->getSampleBlock());
 
     {
         Stopwatch stopwatch;

@@ -28,6 +28,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
@@ -53,6 +54,14 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 }
 
 
@@ -507,9 +516,6 @@ struct ConvertImplGenericFromString
         if (const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(&col_from))
         {
             auto res = data_type_to.createColumn();
-
-            if (!size)
-                return;
 
             IColumn & column_to = *res;
             column_to.reserve(size);
@@ -1227,7 +1233,7 @@ public:
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
     {
-        return std::make_shared<PreparedFunctionCast>(prepare(getArgumentTypes()[0], getReturnType().get()), name);
+        return std::make_shared<PreparedFunctionCast>(prepare(getArgumentTypes()[0], getReturnType()), name);
     }
 
     String getName() const override { return name; }
@@ -1272,9 +1278,7 @@ private:
     static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
         if (!from_type->isStringOrFixedString())
-            throw Exception{
-                "CAST AS FixedString is only implemented for types String and FixedString",
-                ErrorCodes::NOT_IMPLEMENTED};
+            throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
 
         return [N] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
@@ -1309,12 +1313,10 @@ private:
 
         /// both from_type and to_type should be nullptr now is array types had same dimensions
         if ((from_type == nullptr) != (to_type == nullptr))
-            throw Exception{
-                "CAST AS Array can only be performed between same-dimensional array types or from String",
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{"CAST AS Array can only be performed between same-dimensional array types or from String", ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
-        const auto nested_function = prepare(from_nested_type, to_nested_type.get());
+        const auto nested_function = prepare(from_nested_type, to_nested_type);
 
         return [nested_function, from_nested_type, to_nested_type](
             Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1337,9 +1339,7 @@ private:
                 block.getByPosition(result).column = ColumnArray::create(nested_block.getByPosition(1).column, col_array->getOffsetsPtr());
             }
             else
-                throw Exception{
-                    "Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
-                    ErrorCodes::LOGICAL_ERROR};
+                throw Exception{"Illegal column " + array_arg.column->getName() + " for function CAST AS Array", ErrorCodes::LOGICAL_ERROR};
         };
     }
 
@@ -1356,16 +1356,12 @@ private:
 
         const auto from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
         if (!from_type)
-            throw Exception{
-                "CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: " + from_type_untyped->getName() +
-                    ", right type: " + to_type->getName(),
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: " + from_type_untyped->getName() +
+                ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
         if (from_type->getElements().size() != to_type->getElements().size())
-            throw Exception{
-                "CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
-                    "Left type: " + from_type->getName() + ", right type: " + to_type->getName(),
-                 ErrorCodes::TYPE_MISMATCH};
+            throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
+                "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
@@ -1374,7 +1370,7 @@ private:
 
         /// Create conversion wrapper for each element in tuple
         for (const auto & idx_type : ext::enumerate(from_type->getElements()))
-            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
+            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1441,10 +1437,8 @@ private:
             };
         }
         else
-            throw Exception{
-                "Conversion from " + from_type->getName() + " to " + to_type->getName() +
-                    " is not supported",
-                ErrorCodes::CANNOT_CONVERT_TYPE};
+            throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() +
+                " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
@@ -1467,10 +1461,8 @@ private:
             const auto & old_value = name_value.second;
             const auto & new_value = to_type->getValue(name_value.first);
             if (old_value != new_value)
-                throw Exception{
-                    "Enum conversion changes value for element '" + name_value.first +
-                        "' from " + toString(old_value) + " to " + toString(new_value),
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
+                throw Exception{"Enum conversion changes value for element '" + name_value.first +
+                    "' from " + toString(old_value) + " to " + toString(new_value), ErrorCodes::CANNOT_CONVERT_TYPE};
         }
     };
 
@@ -1499,8 +1491,7 @@ private:
                 col_with_type_and_name.column = std::move(res);
             }
             else
-                throw Exception{
-                    "Unexpected column " + first_col->getName() + " as first argument of function " + function_name,
+                throw Exception{"Unexpected column " + first_col->getName() + " as first argument of function " + function_name,
                     ErrorCodes::LOGICAL_ERROR};
         };
     }
@@ -1530,7 +1521,7 @@ private:
         bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type) const
+    WrapperType prepare(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
         /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -1538,13 +1529,11 @@ private:
         nullable_conversion.source_is_nullable = from_type->isNullable();
         nullable_conversion.result_is_nullable = to_type->isNullable();
 
-        /// Check that the requested conversion is allowed.
-        if (nullable_conversion.source_is_nullable && !nullable_conversion.result_is_nullable)
-            throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
-                ErrorCodes::CANNOT_CONVERT_TYPE};
-
         if (from_type->onlyNull())
         {
+            if (!nullable_conversion.result_is_nullable)
+                throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
+
             return [](Block & block, const ColumnNumbers &, const size_t result)
             {
                 auto & res = block.getByPosition(result);
@@ -1552,28 +1541,8 @@ private:
             };
         }
 
-        DataTypePtr from_inner_type;
-        const IDataType * to_inner_type;
-
-        /// Create the requested conversion.
-        if (nullable_conversion.result_is_nullable)
-        {
-            if (nullable_conversion.source_is_nullable)
-            {
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
-                from_inner_type = nullable_type.getNestedType();
-            }
-            else
-                from_inner_type = from_type;
-
-            const auto & nullable_type = static_cast<const DataTypeNullable &>(*to_type);
-            to_inner_type = nullable_type.getNestedType().get();
-        }
-        else
-        {
-            from_inner_type = from_type;
-            to_inner_type = to_type;
-        }
+        DataTypePtr from_inner_type = removeNullable(from_type);
+        DataTypePtr to_inner_type = removeNullable(to_type);
 
         auto wrapper = prepareImpl(from_inner_type, to_inner_type);
 
@@ -1621,59 +1590,79 @@ private:
                 res.column = ColumnNullable::create(tmp_res.column, null_map);
             };
         }
+        else if (nullable_conversion.source_is_nullable)
+        {
+            /// Conversion from Nullable to non-Nullable.
+
+            return [wrapper] (Block & block, const ColumnNumbers & arguments, const size_t result)
+            {
+                Block tmp_block = createBlockWithNestedColumns(block, arguments, result);
+
+                /// Check that all values are not-NULL.
+
+                const auto & col = block.getByPosition(arguments[0]).column;
+                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+                const auto & null_map = nullable_col.getNullMapData();
+
+                if (!memoryIsZero(null_map.data(), null_map.size()))
+                    throw Exception{"Cannot convert NULL value to non-Nullable type",
+                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+
+                wrapper(tmp_block, arguments, result);
+                block.getByPosition(result).column = tmp_block.getByPosition(result).column;
+            };
+        }
         else
             return wrapper;
     }
 
-    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * to_type) const
+    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
         else if (checkDataType<DataTypeNothing>(from_type.get()))
-            return createNothingWrapper(to_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type))
+            return createNothingWrapper(to_type.get());
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDate>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDate>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeString>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeString>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type))
+        else if (const auto type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type.get()))
             return createFixedStringWrapper(from_type, type_fixed_string->getN());
-        else if (const auto type_array = checkAndGetDataType<DataTypeArray>(to_type))
+        else if (const auto type_array = checkAndGetDataType<DataTypeArray>(to_type.get()))
             return createArrayWrapper(from_type, type_array);
-        else if (const auto type_tuple = checkAndGetDataType<DataTypeTuple>(to_type))
+        else if (const auto type_tuple = checkAndGetDataType<DataTypeTuple>(to_type.get()))
             return createTupleWrapper(from_type, type_tuple);
-        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum8>(to_type))
+        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum8>(to_type.get()))
             return createEnumWrapper(from_type, type_enum);
-        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum16>(to_type))
+        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum16>(to_type.get()))
             return createEnumWrapper(from_type, type_enum);
 
         /// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
         ///  but it is disabled because deserializing aggregate functions state might be unsafe.
 
-        throw Exception{
-            "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
-            ErrorCodes::CANNOT_CONVERT_TYPE};
+        throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 };
 
@@ -1709,8 +1698,7 @@ protected:
     {
         const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument to " + getName() + " must be a constant string describing type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return DataTypeFactory::instance().get(type_col->getValue<String>());
     }

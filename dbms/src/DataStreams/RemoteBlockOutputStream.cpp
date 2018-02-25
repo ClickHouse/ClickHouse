@@ -19,24 +19,18 @@ namespace ErrorCodes
 RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const String & query_, const Settings * settings_)
     : connection(connection_), query(query_), settings(settings_)
 {
-}
-
-
-void RemoteBlockOutputStream::writePrefix()
-{
-    /** Send query and receive "sample block", that describe table structure.
-      * Sample block is needed to know, what structure is required for blocks to be passed to 'write' method.
+    /** Send query and receive "header", that describe table structure.
+      * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-
     connection.sendQuery(query, "", QueryProcessingStage::Complete, settings, nullptr);
 
     Connection::Packet packet = connection.receivePacket();
 
     if (Protocol::Server::Data == packet.type)
     {
-        sample_block = packet.block;
+        header = packet.block;
 
-        if (!sample_block)
+        if (!header)
             throw Exception("Logical error: empty block received as table structure", ErrorCodes::LOGICAL_ERROR);
     }
     else if (Protocol::Server::Exception == packet.type)
@@ -46,32 +40,20 @@ void RemoteBlockOutputStream::writePrefix()
     }
     else
         throw NetException("Unexpected packet from server (expected Data or Exception, got "
-        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 
 
 void RemoteBlockOutputStream::write(const Block & block)
 {
-    if (!sample_block)
-        throw Exception("You must call IBlockOutputStream::writePrefix before IBlockOutputStream::write", ErrorCodes::LOGICAL_ERROR);
-
-    if (!blocksHaveEqualStructure(block, sample_block))
-    {
-        std::stringstream message;
-        message << "Block structure is different from table structure.\n"
-        << "\nTable structure:\n(" << sample_block.dumpStructure() << ")\nBlock structure:\n(" << block.dumpStructure() << ")\n";
-
-        LOG_ERROR(&Logger::get("RemoteBlockOutputStream"), message.str());
-        throw DB::Exception(message.str());
-    }
-
+    assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
     connection.sendData(block);
 }
 
 
 void RemoteBlockOutputStream::writePrepared(ReadBuffer & input, size_t size)
 {
-    /// We cannot use 'sample_block'. Input must contain block with proper structure.
+    /// We cannot use 'header'. Input must contain block with proper structure.
     connection.sendPreparedData(input, size);
 }
 
@@ -93,6 +75,25 @@ void RemoteBlockOutputStream::writeSuffix()
     else
         throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
         + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+
+    finished = true;
+}
+
+RemoteBlockOutputStream::~RemoteBlockOutputStream()
+{
+    /// If interrupted in the middle of the loop of communication with the server, then interrupt the connection,
+    ///  to not leave the connection in unsynchronized state.
+    if (!finished)
+    {
+        try
+        {
+            connection.disconnect();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 }

@@ -1,15 +1,19 @@
 site_name: Документация ClickHouse
+copyright: ©2016–2018 Yandex LLC
 
 docs_dir: ru
 site_dir: build/docs/ru
-use_directory_urls: false
+use_directory_urls: true
 
 repo_name: 'yandex/ClickHouse'
 repo_url: 'https://github.com/yandex/ClickHouse/'
 edit_uri: 'edit/master/docs/ru'
 
 extra_css:
-  - assets/stylesheets/yandex_fonts.css
+  - assets/stylesheets/custom.css
+
+markdown_extensions:
+  - codehilite
 
 theme:
   name: null
@@ -31,6 +35,7 @@ theme:
     - 404.html
 
 extra:
+  single_page: false
   search:
     language: 'en, ru'
 

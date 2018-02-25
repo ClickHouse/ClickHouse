@@ -48,8 +48,8 @@ ASTPtr ASTFunction::clone() const
     auto res = std::make_shared<ASTFunction>(*this);
     res->children.clear();
 
-    if (arguments)     { res->arguments = arguments->clone();        res->children.push_back(res->arguments); }
-    if (parameters) { res->parameters = parameters->clone();     res->children.push_back(res->parameters); }
+    if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
+    if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
     return res;
 }

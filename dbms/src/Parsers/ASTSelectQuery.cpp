@@ -28,7 +28,7 @@ ASTSelectQuery::ASTSelectQuery(const StringRange range_) : ASTQueryWithOutput(ra
 bool ASTSelectQuery::hasArrayJoin(const ASTPtr & ast)
 {
     if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
-        if (function->kind == ASTFunction::ARRAY_JOIN)
+        if (function->name == "arrayJoin")
             return true;
 
     for (const auto & child : ast->children)
@@ -195,7 +195,7 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
 
     /** NOTE Members must clone exactly in the same order,
         *  in which they were inserted into `children` in ParserSelectQuery.
-        * This is important because of the children's names the identifier (getTreeID) is compiled,
+        * This is important because of the children's names the identifier (getTreeHash) is compiled,
         *  which can be used for column identifiers in the case of subqueries in the IN statement.
         * For distributed query processing, in case one of the servers is localhost and the other one is not,
         *  localhost query is executed within the process and is cloned,

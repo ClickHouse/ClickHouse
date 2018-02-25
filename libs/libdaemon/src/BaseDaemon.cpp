@@ -49,7 +49,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Poco/ScopedLock.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
 #include <Poco/NumberFormatter.h>
@@ -591,7 +590,7 @@ void BaseDaemon::buildLoggers()
     if (config().hasProperty("logger.log"))
     {
         createDirectory(config().getString("logger.log"));
-        std::cerr << "Should logs to " << config().getString("logger.log") << std::endl;
+        std::cerr << "Logging to " << config().getString("logger.log") << std::endl;
 
         // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
@@ -613,7 +612,7 @@ void BaseDaemon::buildLoggers()
     if (config().hasProperty("logger.errorlog"))
     {
         createDirectory(config().getString("logger.errorlog"));
-        std::cerr << "Should error logs to " << config().getString("logger.errorlog") << std::endl;
+        std::cerr << "Logging errors to " << config().getString("logger.errorlog") << std::endl;
         Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
         level->setLevel(Message::PRIO_NOTICE);
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);

@@ -540,7 +540,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vect
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges)
+BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
 {
     std::vector<FieldWithInfinity> left_point;
     std::vector<FieldWithInfinity> right_point;
@@ -555,7 +555,7 @@ BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_rang
         std::optional<Range> new_range = PKCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].pk_index],
             indexes_mapping[i].functions,
-            indexes_mapping[i].data_type);
+            data_types[indexes_mapping[i].pk_index]);
 
         if (!new_range)
             return {true, true};

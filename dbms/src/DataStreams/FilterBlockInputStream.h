@@ -25,18 +25,16 @@ public:
     FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name_);
 
     String getName() const override;
-    String getID() const override;
-    const Block & getTotals() override;
+    Block getTotals() override;
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;
 
 private:
     ExpressionActionsPtr expression;
+    Block header;
     ssize_t filter_column;
-    String filter_column_name;
-
-    bool is_first = true;
 
     ConstantFilterDescription constant_filter_description;
 };

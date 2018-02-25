@@ -940,7 +940,7 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 public:
 
     DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
-    : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
+        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
@@ -954,7 +954,7 @@ public:
         for (const HostID & host: entry.hosts)
             waiting_hosts.emplace(host.toString());
 
-        setTotalRowsApprox(entry.hosts.size());
+        addTotalRowsApprox(entry.hosts.size());
 
         timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
     }
@@ -964,10 +964,7 @@ public:
         return "DDLQueryStatusInputSream";
     }
 
-    String getID() const override
-    {
-        return "DDLQueryStatusInputSream(" + node_path + ")";
-    }
+    Block getHeader() const override { return sample; };
 
     Block readImpl() override
     {
@@ -1138,7 +1135,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         return io;
 
     auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, entry, context);
-    io.in_sample = stream->getSampleBlock();
     io.in = std::move(stream);
     return io;
 }

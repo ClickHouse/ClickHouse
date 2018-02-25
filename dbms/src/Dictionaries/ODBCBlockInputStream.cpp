@@ -38,12 +38,6 @@ ODBCBlockInputStream::ODBCBlockInputStream(
 }
 
 
-String ODBCBlockInputStream::getID() const
-{
-    return "ODBC(" + statement.toString() + ")";
-}
-
-
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
