@@ -199,8 +199,8 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
                 const auto data_type_ptr = columns.back().type.get();
 
                 default_expr_list->children.emplace_back(setAlias(
-                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
-                        std::make_shared<ASTLiteral>(StringRange(), Field(data_type_ptr->getName()))), final_column_name));
+                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
+                        std::make_shared<ASTLiteral>(Field(data_type_ptr->getName()))), final_column_name));
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
             }
             else
@@ -233,7 +233,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
                 if (!explicit_type->equals(*deduced_type))
                 {
                     col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
-                        std::make_shared<ASTLiteral>(StringRange(), explicit_type->getName()));
+                        std::make_shared<ASTLiteral>(explicit_type->getName()));
 
                     col_decl_ptr->children.clear();
                     col_decl_ptr->children.push_back(col_decl_ptr->type);
@@ -293,7 +293,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, pos, end, "data type");
-        column_declaration->type->query_string = type_name;
+        column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -321,7 +321,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, pos, end, "data type");
-        column_declaration->type->query_string = type_name;
+        column_declaration->type->owned_string = type_name;
 
         const auto it = column_defaults.find(column.name);
         if (it != std::end(column_defaults))

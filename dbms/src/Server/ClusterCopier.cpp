@@ -373,9 +373,9 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
     const String & cluster_name, const String & database, const String & table, const ASTPtr & sharding_key_ast = nullptr)
 {
     auto args = std::make_shared<ASTExpressionList>();
-    args->children.emplace_back(std::make_shared<ASTLiteral>(StringRange(nullptr, nullptr), cluster_name));
-    args->children.emplace_back(std::make_shared<ASTIdentifier>(StringRange(nullptr, nullptr), database));
-    args->children.emplace_back(std::make_shared<ASTIdentifier>(StringRange(nullptr, nullptr), table));
+    args->children.emplace_back(std::make_shared<ASTLiteral>(cluster_name));
+    args->children.emplace_back(std::make_shared<ASTIdentifier>(database));
+    args->children.emplace_back(std::make_shared<ASTIdentifier>(table));
     if (sharding_key_ast)
         args->children.emplace_back(sharding_key_ast);
 
@@ -487,7 +487,7 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
             return storage.partition_by->clone();
 
         static const char * all = "all";
-        return std::make_shared<ASTLiteral>(StringRange(all, all + strlen(all)), Field(all, strlen(all)));
+        return std::make_shared<ASTLiteral>(Field(all, strlen(all)));
     }
     else
     {

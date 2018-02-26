@@ -40,13 +40,9 @@ public:
     ASTs children;
     StringRange range;
 
-    /** A string with a full query.
-      * This pointer does not allow it to be deleted while the range refers to it.
-      */
-    StringPtr query_string;
+    /// This pointer does not allow it to be deleted while the range refers to it.
+    StringPtr owned_string;
 
-    IAST() = default;
-    IAST(const StringRange range_) : range(range_) {}
     virtual ~IAST() = default;
 
     /** Get the canonical name of the column if the element is a column */

@@ -81,7 +81,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 
     ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
-    auto literal = std::make_shared<ASTLiteral>(StringRange(), value);
+    auto literal = std::make_shared<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
     with.children.push_back(literal);
