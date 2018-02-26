@@ -26,9 +26,6 @@ public:
     const char * data = nullptr;
     const char * end = nullptr;
 
-    ASTInsertQuery() = default;
-    explicit ASTInsertQuery(const StringRange range_) : IAST(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return "InsertQuery_" + database + "_" + table; };
 

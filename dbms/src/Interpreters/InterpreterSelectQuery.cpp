@@ -553,7 +553,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
                     required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
                 else
-                    required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(StringRange(), column));
+                    required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));
             }
 
             alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, source_header.getNamesAndTypesList()}.getActions(true);

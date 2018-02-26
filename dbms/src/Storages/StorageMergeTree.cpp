@@ -201,9 +201,10 @@ void StorageMergeTree::alter(
 
     IDatabase::ASTModifier storage_modifier;
     if (primary_key_is_modified)
+    {
         storage_modifier = [&new_primary_key_ast] (IAST & ast)
         {
-            auto tuple = std::make_shared<ASTFunction>(new_primary_key_ast->range);
+            auto tuple = std::make_shared<ASTFunction>();
             tuple->name = "tuple";
             tuple->arguments = new_primary_key_ast;
             tuple->children.push_back(tuple->arguments);
@@ -213,6 +214,7 @@ void StorageMergeTree::alter(
             auto & storage_ast = typeid_cast<ASTStorage &>(ast);
             typeid_cast<ASTExpressionList &>(*storage_ast.engine->arguments).children.at(1) = tuple;
         };
+    }
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,

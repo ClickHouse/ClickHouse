@@ -15,9 +15,6 @@ struct ASTTablesInSelectQueryElement;
 class ASTSelectQuery : public IAST
 {
 public:
-    ASTSelectQuery() = default;
-    ASTSelectQuery(const StringRange range_);
-
     /** Get the text that identifies this element. */
     String getID() const override { return "SelectQuery"; };
 

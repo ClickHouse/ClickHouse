@@ -112,7 +112,7 @@ Block Aggregator::getHeader(bool final) const
             else
                 type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 
-            res.insert({ type->createColumn(), type, params.aggregates[i].column_name });
+            res.insert({ type, params.aggregates[i].column_name });
         }
     }
     else if (params.intermediate_header)
