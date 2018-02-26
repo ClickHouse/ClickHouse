@@ -89,8 +89,10 @@ endif ()
 
 set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
-find_program (LLD_PATH NAMES lld)
-find_program (GOLD_PATH NAMES gold)
+string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
+
+find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
+find_program (GOLD_PATH NAMES "gold${COMPILER_POSTFIX}" "gold")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
@@ -99,8 +101,8 @@ elseif (GOLD_PATH)
 endif ()
 
 if (LINKER_NAME)
-    message(STATUS "Using linker: ${LINKER_NAME}")
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+    message(STATUS "Using linker: ${LINKER_NAME} (selected from: LLD_PATH=${LLD_PATH}; GOLD_PATH=${GOLD_PATH}; COMPILER_POSTFIX=${COMPILER_POSTFIX})")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
 option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
