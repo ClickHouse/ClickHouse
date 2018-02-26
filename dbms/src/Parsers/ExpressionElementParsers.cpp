@@ -318,6 +318,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     {
         /// CAST(expression AS type)
         const auto type = first_argument->tryGetAlias();
+
         if (type.empty())
         {
             /// there is only one argument and it has no alias
@@ -609,7 +610,7 @@ bool ParserAliasImpl<ParserIdentifier>::parseImpl(Pos & pos, ASTPtr & node, Expe
     ParserKeyword s_as("AS");
     ParserIdentifier id_p;
 
-    bool has_as_word = s_as.parse(pos, node, expected);
+    bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
@@ -746,7 +747,7 @@ bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, ASTPtr & nod
     ASTPtr alias_node;
     if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, alias_node, expected))
     {
-        String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
+        String alias_name = typeid_cast<const ASTIdentifier &>(*alias_node).name;
 
         if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {

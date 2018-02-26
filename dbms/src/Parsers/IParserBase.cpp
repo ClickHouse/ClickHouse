@@ -22,7 +22,7 @@ bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
         node = nullptr;
         pos = begin;
     }
-    else
+    else if (node)
         node->range = StringRange(begin, pos);
 
     return res;
