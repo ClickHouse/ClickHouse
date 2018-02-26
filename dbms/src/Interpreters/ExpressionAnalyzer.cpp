@@ -359,7 +359,7 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const String 
                     || (!alias.empty() && ident->name == alias))))
         {
             /// Replace to plain asterisk.
-            ast = std::make_shared<ASTAsterisk>(ast->range);
+            ast = std::make_shared<ASTAsterisk>();
         }
     }
     else
@@ -688,8 +688,7 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 
         /// manually substitute column names in place of asterisk
         for (const auto & column : columns)
-            select_expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(
-                StringRange{}, column.name));
+            select_expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
         select_query->replaceDatabaseAndTable(database_table.first, database_table.second);
     }
@@ -808,7 +807,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
         *  instead of doing a subquery, you just need to read it.
         */
 
-    auto database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), external_table_name, ASTIdentifier::Table);
+    auto database_and_table_name = std::make_shared<ASTIdentifier>(external_table_name, ASTIdentifier::Table);
 
     if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
     {
@@ -1032,7 +1031,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
             {
                 ASTs all_columns;
                 for (const auto & column_name_type : columns)
-                    all_columns.emplace_back(std::make_shared<ASTIdentifier>(asterisk->range, column_name_type.name));
+                    all_columns.emplace_back(std::make_shared<ASTIdentifier>(column_name_type.name));
 
                 asts.erase(asts.begin() + i);
                 asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
@@ -1147,17 +1146,17 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 
 static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String & type_name)
 {
-    auto func = std::make_shared<ASTFunction>(ast->range);
+    auto func = std::make_shared<ASTFunction>();
     ASTPtr res = func;
     func->alias = ast->alias;
     func->prefer_alias_to_column_name = ast->prefer_alias_to_column_name;
     ast->alias.clear();
     func->name = "CAST";
-    auto exp_list = std::make_shared<ASTExpressionList>(ast->range);
+    auto exp_list = std::make_shared<ASTExpressionList>();
     func->arguments = exp_list;
     func->children.push_back(func->arguments);
     exp_list->children.emplace_back(ast.release());
-    exp_list->children.emplace_back(std::make_shared<ASTLiteral>(StringRange(), type_name));
+    exp_list->children.emplace_back(std::make_shared<ASTLiteral>(type_name));
     return res;
 }
 
@@ -1200,7 +1199,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
             if (!block)
             {
                 /// Interpret subquery with empty result as Null literal
-                auto ast_new = std::make_unique<ASTLiteral>(ast->range, Null());
+                auto ast_new = std::make_unique<ASTLiteral>(Null());
                 ast_new->setAlias(ast->tryGetAlias());
                 ast = std::move(ast_new);
                 return;
@@ -1220,18 +1219,18 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
         size_t columns = block.columns();
         if (columns == 1)
         {
-            auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(0).column)[0]);
+            auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
             lit->alias = subquery->alias;
             lit->prefer_alias_to_column_name = subquery->prefer_alias_to_column_name;
             ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
         }
         else
         {
-            auto tuple = std::make_shared<ASTFunction>(ast->range);
+            auto tuple = std::make_shared<ASTFunction>();
             tuple->alias = subquery->alias;
             ast = tuple;
             tuple->name = "tuple";
-            auto exp_list = std::make_shared<ASTExpressionList>(ast->range);
+            auto exp_list = std::make_shared<ASTExpressionList>();
             tuple->arguments = exp_list;
             tuple->children.push_back(tuple->arguments);
 
@@ -1239,7 +1238,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
             for (size_t i = 0; i < columns; ++i)
             {
                 exp_list->children[i] = addTypeConversion(
-                    std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(i).column)[0]),
+                    std::make_unique<ASTLiteral>((*block.safeGetByPosition(i).column)[0]),
                     block.safeGetByPosition(i).type->getName());
             }
         }
@@ -1375,7 +1374,7 @@ void ExpressionAnalyzer::optimizeGroupBy()
         }
 
         select_query->group_expression_list = std::make_shared<ASTExpressionList>();
-        select_query->group_expression_list->children.emplace_back(std::make_shared<ASTLiteral>(StringRange(), UInt64(unused_column)));
+        select_query->group_expression_list->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
     }
 }
 

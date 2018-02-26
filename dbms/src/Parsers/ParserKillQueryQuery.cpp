@@ -11,7 +11,6 @@ namespace DB
 
 bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     auto query = std::make_shared<ASTKillQueryQuery>();
 
     if (!ParserKeyword{"KILL QUERY"}.ignore(pos, expected))
@@ -30,8 +29,6 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         query->sync = false;
     else if (ParserKeyword{"TEST"}.ignore(pos))
         query->test = true;
-
-    query->range = StringRange(begin, pos);
 
     node = std::move(query);
 
