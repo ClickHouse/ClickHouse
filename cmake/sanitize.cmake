@@ -1,4 +1,3 @@
-
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer")
 if (SAN_DEBUG)
     set (SAN_FLAGS "${SAN_FLAGS} -O0")

@@ -1,4 +1,3 @@
-
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
     set (ARCH_AARCH64 1)
 endif ()
