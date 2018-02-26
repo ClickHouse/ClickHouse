@@ -92,7 +92,7 @@ set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
 find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
-find_program (GOLD_PATH NAMES "gold${COMPILER_POSTFIX}" "gold")
+find_program (GOLD_PATH NAMES "gold")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
