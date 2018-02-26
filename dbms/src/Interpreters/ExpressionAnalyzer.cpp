@@ -913,7 +913,7 @@ StoragePtr ExpressionAnalyzer::getTable()
         auto select_table = select->table();
 
         if (select_table
-            && !typeid_cast<const ASTSelectQuery *>(select_table.get())
+            && !typeid_cast<const ASTSelectWithUnionQuery *>(select_table.get())
             && !typeid_cast<const ASTFunction *>(select_table.get()))
         {
             String database = select_database

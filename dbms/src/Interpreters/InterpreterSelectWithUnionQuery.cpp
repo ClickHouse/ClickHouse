@@ -135,6 +135,11 @@ BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams()
         nested_streams.insert(nested_streams.end(), streams.begin(), streams.end());
     }
 
+    /// Unify data structure.
+    if (nested_interpreters.size() > 1)
+        for (auto & stream : nested_streams)
+            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, result_header, ConvertingBlockInputStream::MatchColumnsMode::Position);
+
     return nested_streams;
 }
 
@@ -155,11 +160,6 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     }
     else
     {
-        /// Unify data structure.
-        if (nested_interpreters.size() > 1)
-            for (auto & stream : nested_streams)
-                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, result_header, ConvertingBlockInputStream::MatchColumnsMode::Position);
-
         result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, context.getSettingsRef().max_threads);
         nested_streams.clear();
     }
