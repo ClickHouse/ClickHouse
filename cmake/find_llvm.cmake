@@ -15,10 +15,14 @@ if (ENABLE_EMBEDDED_COMPILER)
     #  llvm_map_components_to_libraries - Maps LLVM used components to required libraries.
     #  Usage: llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES core jit interpreter native ...)
 
-    if (ARCH_FREEBSD)
-       set(LLVM_VERSION_POSTFIX "50" CACHE INTERNAL "")
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set(LLVM_VERSION_POSTFIX "${COMPILER_POSTFIX}" CACHE STRING "")
     else()
-       set(LLVM_VERSION_POSTFIX "-5.0" CACHE INTERNAL "")
+        if (ARCH_FREEBSD)
+           set(LLVM_VERSION_POSTFIX "50" CACHE STRING "")
+        else()
+           set(LLVM_VERSION_POSTFIX "-5.0" CACHE STRING "")
+        endif()
     endif()
 
     find_program(LLVM_CONFIG_EXECUTABLE
