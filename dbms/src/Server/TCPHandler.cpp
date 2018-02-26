@@ -31,6 +31,7 @@
 #include "TCPHandler.h"
 
 #include <Common/NetException.h>
+#include <Common/getFQDNOrHostName.h>
 
 
 namespace DB
@@ -508,9 +509,9 @@ void TCPHandler::sendHello()
     {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     }
-    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_GROUP_NAME)
+    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
     {
-        writeStringBinary(server.config().getString("group_name"), *out);
+        writeStringBinary(server.config().getString("display_name", getFQDNOrHostName()), *out);
     }
     out->next();
 }
