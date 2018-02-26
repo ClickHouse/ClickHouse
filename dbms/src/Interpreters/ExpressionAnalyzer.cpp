@@ -1027,7 +1027,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         ASTs & asts = node->children;
         for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
         {
-            if (ASTAsterisk * asterisk = typeid_cast<ASTAsterisk *>(asts[i].get()))
+            if (typeid_cast<ASTAsterisk *>(asts[i].get()))
             {
                 ASTs all_columns;
                 for (const auto & column_name_type : columns)

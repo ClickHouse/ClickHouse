@@ -48,7 +48,7 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << ASTIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
+            << ASTIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
     }
 };
 

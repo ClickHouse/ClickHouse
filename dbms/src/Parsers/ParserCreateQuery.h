@@ -48,7 +48,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-class ParserTypeInCastExpression : public ParserIdentifierWithOptionalParameters
+class ParserTypeInCastExpression : public IParserBase
 {
 protected:
     const char * getName() const { return "type in cast expression"; }
