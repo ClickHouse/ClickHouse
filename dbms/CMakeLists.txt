@@ -162,6 +162,7 @@ endif ()
 
 if (Poco_DataODBC_FOUND)
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES})
 endif()
 
 if (Poco_MongoDB_FOUND)
