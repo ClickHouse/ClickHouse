@@ -41,16 +41,16 @@ void * ClickHouseDictionary_v2_loadKeys(
 
 void * ClickHouseDictionary_v2_libNew()
 {
-    auto lib_ptr = new LibHolder;
+    int size = 101;
+    void * lib_ptr = malloc(size);
     printf("libNew c lib call lib_ptr=%p \n", lib_ptr);
     return lib_ptr;
 }
 
 void ClickHouseDictionary_v2_libDelete(void * lib_ptr)
 {
-    auto ptr = static_cast<LibHolder *>(lib_ptr);
     printf("libDelete c lib call lib_ptr=%p \n", lib_ptr);
-    delete ptr;
+    free(lib_ptr);
     return;
 }
 
