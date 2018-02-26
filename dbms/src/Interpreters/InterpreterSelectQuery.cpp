@@ -46,6 +46,9 @@
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/iostream_debug_helpers.h>
+#include <Parsers/queryToString.h>
+
 
 namespace ProfileEvents
 {
@@ -66,6 +69,36 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    const Context & context_,
+    const Names & required_column_names_,
+    QueryProcessingStage::Enum to_stage_,
+    size_t subquery_depth_,
+    const BlockInputStreamPtr & input)
+    : query_ptr(query_ptr_)
+    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+    , context(context_)
+    , to_stage(to_stage_)
+    , subquery_depth(subquery_depth_)
+    , input(input)
+    , log(&Logger::get("InterpreterSelectQuery"))
+{
+    init(required_column_names_);
+}
+
+
+InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
+    : query_ptr(query_ptr_)
+    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+    , context(context_)
+    , to_stage(QueryProcessingStage::Complete)
+    , subquery_depth(0)
+    , only_analyze(true)
+    , log(&Logger::get("InterpreterSelectQuery"))
+{
+    init({});
+}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
@@ -121,7 +154,8 @@ void InterpreterSelectQuery::init(const Names & required_column_names)
 
             table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
 
-            /// TODO This looks weird.
+            /// Source header should contain only columns that can be substituted for asterisk.
+            /// Materialied and alias columns will be processed by ExpressionAnalyzer.
             source_header = storage->getSampleBlockNonMaterialized();
         }
     }
@@ -145,38 +179,6 @@ void InterpreterSelectQuery::init(const Names & required_column_names)
     for (const auto & it : query_analyzer->getExternalTables())
         if (!context.tryGetExternalTable(it.first))
             context.addExternalTable(it.first, it.second);
-}
-
-
-InterpreterSelectQuery::InterpreterSelectQuery(
-    const ASTPtr & query_ptr_,
-    const Context & context_,
-    const Names & required_column_names_,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_,
-    const BlockInputStreamPtr & input)
-    : query_ptr(query_ptr_)
-    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
-    , context(context_)
-    , to_stage(to_stage_)
-    , subquery_depth(subquery_depth_)
-    , input(input)
-    , log(&Logger::get("InterpreterSelectQuery"))
-{
-    init(required_column_names_);
-}
-
-
-InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_)
-    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
-    , context(context_)
-    , to_stage(QueryProcessingStage::Complete)
-    , subquery_depth(0)
-    , only_analyze(true)
-    , log(&Logger::get("InterpreterSelectQuery"))
-{
-    init({});
 }
 
 
@@ -536,6 +538,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             }
         }
 
+        DUMP(alias_columns_required);
+
         if (alias_columns_required)
         {
             /// We will create an expression to return all the requested columns, with the calculation of the required ALIAS columns.
@@ -550,11 +554,17 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                     required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));
             }
 
+            DUMP(queryToString(required_columns_expr_list));
+
             alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, source_header.getNamesAndTypesList()}.getActions(true);
+
+            DUMP(alias_actions->dumpActions());
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
         }
+
+        DUMP(required_columns);
     }
 
     auto query_table = query.table();
@@ -678,15 +688,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         if (pipeline.streams.empty())
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
 
-        if (alias_actions)
-        {
-            /// Wrap each stream returned from the table to calculate and add ALIAS columns
-            pipeline.transform([&] (auto & stream)
-            {
-                stream = std::make_shared<ExpressionBlockInputStream>(stream, alias_actions);
-            });
-        }
-
         pipeline.transform([&](auto & stream)
         {
             stream->addTableLock(table_lock);
@@ -722,6 +723,15 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
+
+    /// Aliases in table declaration.
+    if (alias_actions)
+    {
+        pipeline.transform([&](auto & stream)
+        {
+            stream = std::make_shared<ExpressionBlockInputStream>(stream, alias_actions);
+        });
+    }
 
     return from_stage;
 }
