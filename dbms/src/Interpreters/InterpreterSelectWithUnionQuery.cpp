@@ -22,31 +22,6 @@ namespace ErrorCodes
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_)
-    : query_ptr(query_ptr_),
-    context(context_),
-    to_stage(to_stage_),
-    subquery_depth(subquery_depth_)
-{
-    const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
-
-    size_t num_selects = ast.list_of_selects->children.size();
-    nested_interpreters.reserve(num_selects);
-
-    if (!num_selects)
-        throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
-
-    for (const auto & select : ast.list_of_selects->children)
-        nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(select, context, to_stage, subquery_depth));
-
-    init();
-}
-
-
-InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_,
-    const Context & context_,
     const Names & required_column_names,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_)

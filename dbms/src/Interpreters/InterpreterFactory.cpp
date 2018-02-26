@@ -58,11 +58,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
 {
     if (typeid_cast<ASTSelectQuery *>(query.get()))
     {
-        return std::make_unique<InterpreterSelectQuery>(query, context, stage);
+        return std::make_unique<InterpreterSelectQuery>(query, context, Names{}, stage);
     }
     else if (typeid_cast<ASTSelectWithUnionQuery *>(query.get()))
     {
-        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, stage);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, Names{}, stage);
     }
     else if (typeid_cast<ASTInsertQuery *>(query.get()))
     {

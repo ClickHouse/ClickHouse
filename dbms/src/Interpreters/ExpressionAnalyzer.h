@@ -69,7 +69,8 @@ public:
         const ASTPtr & ast_,
         const Context & context_,
         const StoragePtr & storage_,
-        const NamesAndTypesList & columns_,
+        const NamesAndTypesList & source_columns_,
+        const Names & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
         bool do_global_ = false,
         const SubqueriesForSets & subqueries_for_set_ = {});
@@ -83,7 +84,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredColumns() const;
+    Names getRequiredSourceColumns() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -146,12 +147,16 @@ private:
     size_t subquery_depth;
 
     /// Columns that are mentioned in the expression, but were not specified in the constructor.
-    NameSet unknown_required_columns;
+    NameSet unknown_required_source_columns;
 
     /** Original columns.
-      * First, all available columns of the table are placed here. Then (when parsing the query), unused columns are deleted.
+      * First, all available columns of the table are placed here. Then (when analyzing the query), unused columns are deleted.
       */
-    NamesAndTypesList columns;
+    NamesAndTypesList source_columns;
+
+    /** If non-empty, ignore all expressions in  not from this list.
+      */
+    NameSet required_result_columns;
 
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
@@ -209,10 +214,10 @@ private:
     void init();
 
     static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
-    NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
+    NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, source_columns); }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
-      * At the same time, form a set of unknown columns (`unknown_required_columns`),
+      * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
       * as well as the columns added by JOIN (`columns_added_by_join`).
       */
     void collectUsedColumns();
@@ -292,8 +297,14 @@ private:
       * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
       * Put in required_joined_columns the set of columns available from JOIN and needed.
       */
-    void getRequiredColumnsImpl(const ASTPtr & ast,
-        const NameSet & available_columns, NameSet & required_columns, NameSet & ignored_names,
+    void getRequiredSourceColumnsImpl(const ASTPtr & ast,
+        const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
+        const NameSet & available_joined_columns, NameSet & required_joined_columns);
+
+    /** Same as above but skip unnecessary elements in SELECT according to 'required_result_columns'.
+      */
+    void getRequiredSourceColumnsInSelectImpl(
+        const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
         const NameSet & available_joined_columns, NameSet & required_joined_columns);
 
     /// Get the table from which the query is made

@@ -72,7 +72,7 @@ namespace ErrorCodes
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
-void InterpreterSelectQuery::init()
+void InterpreterSelectQuery::init(const Names & required_column_names)
 {
     ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -97,7 +97,7 @@ void InterpreterSelectQuery::init()
         /// Read from subquery.
         if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
         {
-            source_header = InterpreterSelectQuery::getSampleBlock(table_expression, context);
+            source_header = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context);
         }
         else
         {
@@ -131,7 +131,8 @@ void InterpreterSelectQuery::init()
     if (!source_header)
         throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-    query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, source_header.getNamesAndTypesList(), subquery_depth, !only_analyze);
+    query_analyzer = std::make_unique<ExpressionAnalyzer>(
+        query_ptr, context, storage, source_header.getNamesAndTypesList(), required_column_names, subquery_depth, !only_analyze);
 
     if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
         throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -152,17 +153,7 @@ void InterpreterSelectQuery::init()
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_,
-    const BlockInputStreamPtr & input)
-    : InterpreterSelectQuery(query_ptr_, context_, {}, to_stage_, subquery_depth_, input)
-{
-}
-
-InterpreterSelectQuery::InterpreterSelectQuery(
-    const ASTPtr & query_ptr_,
-    const Context & context_,
-    const Names & /*required_column_names_*/,
+    const Names & required_column_names_,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
     const BlockInputStreamPtr & input)
@@ -174,7 +165,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input(input)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init();
+    init(required_column_names_);
 }
 
 
@@ -187,7 +178,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & qu
     , only_analyze(true)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init();
+    init({});
 }
 
 
@@ -525,7 +516,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     std::optional<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// List of columns to read to execute the query.
-    Names required_columns = query_analyzer->getRequiredColumns();
+    Names required_columns = query_analyzer->getRequiredSourceColumns();
+
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
     /// Are ALIAS columns required for query execution?

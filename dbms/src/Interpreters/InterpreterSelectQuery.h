@@ -50,14 +50,7 @@ public:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        size_t subquery_depth_ = 0,
-        const BlockInputStreamPtr & input = nullptr);
-
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        const Context & context_,
-        const Names & required_column_names,
+        const Names & required_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
         const BlockInputStreamPtr & input = nullptr);
@@ -118,7 +111,7 @@ private:
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    void init();
+    void init(const Names & required_column_names);
 
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
 

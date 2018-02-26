@@ -18,15 +18,6 @@ public:
     /** Get the text that identifies this element. */
     String getID() const override { return "SelectQuery"; };
 
-    /// Check for the presence of the `arrayJoin` function. (Not capital `ARRAY JOIN`.)
-    static bool hasArrayJoin(const ASTPtr & ast);
-
-    /// Does the query contain an asterisk?
-    bool hasAsterisk() const;
-
-    /// Rewrites select_expression_list to return only the required columns in the correct order. TODO Wrong comment.
-    void rewriteSelectExpressionList(const Names & required_column_names);
-
     ASTPtr clone() const override;
 
     bool distinct = false;
