@@ -24,6 +24,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -94,7 +95,7 @@ void InterpreterSelectQuery::init()
         auto table_expression = query.table();
 
         /// Read from subquery.
-        if (table_expression && typeid_cast<const ASTSelectQuery *>(table_expression.get()))
+        if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
         {
             source_header = InterpreterSelectQuery::getSampleBlock(table_expression, context);
         }
@@ -564,7 +565,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     }
 
     auto query_table = query.table();
-    if (query_table && typeid_cast<ASTSelectQuery *>(query_table.get()))
+    if (query_table && typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
     {
         /** There are no limits on the maximum size of the result for the subquery.
          *  Since the result of the query is not the result of the entire query.
@@ -1072,6 +1073,31 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 }
 
 
+bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
+{
+    if (query.group_by_with_totals)
+        return true;
+
+    /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
+      * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
+      */
+
+    auto query_table = query.table();
+    if (query_table)
+    {
+        auto ast_union = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get());
+        if (ast_union)
+        {
+            for (const auto & elem : ast_union->list_of_selects->children)
+                if (hasWithTotalsInAnySubqueryInFromClause(typeid_cast<const ASTSelectQuery &>(*elem)))
+                    return true;
+        }
+    }
+
+    return false;
+}
+
+
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {
     size_t limit_length = 0;
@@ -1093,34 +1119,10 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         bool always_read_till_end = false;
 
         if (query.group_by_with_totals && !query.order_expression_list)
-        {
             always_read_till_end = true;
-        }
 
-        auto query_table = query.table();
-        if (!query.group_by_with_totals && query_table && typeid_cast<const ASTSelectQuery *>(query_table.get()))
-        {
-            const ASTSelectQuery * subquery = static_cast<const ASTSelectQuery *>(query_table.get());
-
-            while (subquery->table())
-            {
-                if (subquery->group_by_with_totals)
-                {
-                    /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
-                      * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
-                      */
-
-                    always_read_till_end = true;
-                    break;
-                }
-
-                auto subquery_table = subquery->table();
-                if (typeid_cast<const ASTSelectQuery *>(subquery_table.get()))
-                    subquery = static_cast<const ASTSelectQuery *>(subquery_table.get());
-                else
-                    break;
-            }
-        }
+        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
+            always_read_till_end = true;
 
         pipeline.transform([&](auto & stream)
         {

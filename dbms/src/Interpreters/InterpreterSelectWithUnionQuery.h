@@ -51,6 +51,10 @@ private:
     size_t subquery_depth;
 
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
+
+    Block result_header;
+
+    void init();
 };
 
 }
