@@ -1024,7 +1024,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
+            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         data_columns[i] = &array->getData();
@@ -1331,7 +1331,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
+            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         data_columns[i] = &array->getData();
@@ -2442,7 +2442,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
+            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
