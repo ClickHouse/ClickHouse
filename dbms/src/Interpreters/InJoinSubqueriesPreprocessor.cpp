@@ -102,20 +102,18 @@ StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & contex
 
 void replaceDatabaseAndTable(ASTPtr & database_and_table, const String & database_name, const String & table_name)
 {
-    ASTPtr table = std::make_shared<ASTIdentifier>(StringRange(), table_name, ASTIdentifier::Table);
+    ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
 
     if (!database_name.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
 
-        database_and_table = std::make_shared<ASTIdentifier>(
-            StringRange(), database_name + "." + table_name, ASTIdentifier::Table);
+        database_and_table = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
         database_and_table->children = {database, table};
     }
     else
     {
-        database_and_table = std::make_shared<ASTIdentifier>(
-            StringRange(), table_name, ASTIdentifier::Table);
+        database_and_table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
     }
 }
 

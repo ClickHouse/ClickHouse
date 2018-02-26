@@ -83,8 +83,6 @@ static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rat
   */
 bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
-    auto begin = pos;
-
     ASTSampleRatio::Rational numerator;
     ASTSampleRatio::Rational denominator;
     ASTSampleRatio::Rational res;
@@ -111,7 +109,7 @@ bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected &)
         res = numerator;
     }
 
-    node = std::make_shared<ASTSampleRatio>(StringRange(begin, pos), res);
+    node = std::make_shared<ASTSampleRatio>(res);
     return true;
 }
 

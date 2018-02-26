@@ -19,10 +19,6 @@ namespace ErrorCodes
 }
 
 
-ASTSelectQuery::ASTSelectQuery(const StringRange range_) : IAST(range_)
-{
-}
-
 bool ASTSelectQuery::hasArrayJoin(const ASTPtr & ast)
 {
     if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
@@ -101,7 +97,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
         if (!other_required_columns_in_select.count(name) && !columns_with_array_join.count(name))
         {
             if (asterisk.first)
-                new_children.push_back({ std::make_shared<ASTIdentifier>(asterisk.first->range, name), asterisk.second });
+                new_children.push_back({ std::make_shared<ASTIdentifier>(name), asterisk.second });
             else
                 throw Exception("SELECT query doesn't have required column: " + backQuoteIfNeed(name), ErrorCodes::THERE_IS_NO_COLUMN);
         }
@@ -455,11 +451,11 @@ void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
 
     if (table_expression->database_and_table_name->children.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
         ASTPtr table = table_expression->database_and_table_name;
 
         const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), database_name + "." + old_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + old_name, ASTIdentifier::Table);
         table_expression->database_and_table_name->children = {database, table};
     }
     else if (table_expression->database_and_table_name->children.size() != 2)
@@ -486,20 +482,18 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    ASTPtr table = std::make_shared<ASTIdentifier>(StringRange(), table_name, ASTIdentifier::Table);
+    ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
 
     if (!database_name.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
 
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
-            StringRange(), database_name + "." + table_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
         table_expression->database_and_table_name->children = {database, table};
     }
     else
     {
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
-            StringRange(), table_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
     }
 }
 

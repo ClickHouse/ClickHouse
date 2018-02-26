@@ -14,9 +14,6 @@ public:
     ASTPtr out_file;
     ASTPtr format;
 
-    ASTQueryWithOutput() = default;
-    explicit ASTQueryWithOutput(const StringRange range_) : IAST(range_) {}
-
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
@@ -37,8 +34,6 @@ template <typename ASTIDAndQueryNames>
 class ASTQueryWithOutputImpl : public ASTQueryWithOutput
 {
 public:
-    explicit ASTQueryWithOutputImpl() = default;
-    explicit ASTQueryWithOutputImpl(StringRange range_) : ASTQueryWithOutput(range_) {}
     String getID() const override { return ASTIDAndQueryNames::ID; };
 
     ASTPtr clone() const override

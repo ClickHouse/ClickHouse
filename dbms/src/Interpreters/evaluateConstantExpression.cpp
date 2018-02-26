@@ -55,15 +55,14 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return node;
 
-    return std::make_shared<ASTLiteral>(node->range,
-        evaluateConstantExpression(node, context).first);
+    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (auto id = typeid_cast<const ASTIdentifier *>(node.get()))
-        return std::make_shared<ASTLiteral>(node->range, Field(id->name));
+        return std::make_shared<ASTLiteral>(Field(id->name));
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }

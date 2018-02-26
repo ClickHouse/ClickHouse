@@ -20,8 +20,6 @@ public:
     IAST * sample_by = nullptr;
     ASTSetQuery * settings = nullptr;
 
-    ASTStorage() = default;
-    ASTStorage(StringRange range_) : IAST(range_) {}
     String getID() const override { return "Storage definition"; }
 
     ASTPtr clone() const override
@@ -94,9 +92,6 @@ public:
     String as_database;
     String as_table;
     ASTSelectWithUnionQuery * select = nullptr;
-
-    ASTCreateQuery() = default;
-    ASTCreateQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
     /** Get the text that identifies this element. */
     String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };

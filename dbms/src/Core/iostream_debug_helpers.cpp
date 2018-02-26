@@ -123,9 +123,7 @@ std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
 
 std::ostream & operator<<(std::ostream & stream, const IAST & what)
 {
-    stream << "IAST("
-           << "query_string = " << what.query_string
-           <<"){";
+    stream << "IAST{";
     what.dumpTree(stream);
     stream << "}";
     return stream;
