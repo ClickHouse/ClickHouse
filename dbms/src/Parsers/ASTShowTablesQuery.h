@@ -20,9 +20,6 @@ public:
     String like;
     bool not_like{false};
 
-    ASTShowTablesQuery() = default;
-    ASTShowTablesQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return "ShowTables"; };
 

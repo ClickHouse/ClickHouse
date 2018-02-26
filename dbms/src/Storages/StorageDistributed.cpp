@@ -267,13 +267,10 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     std::string name = remote_database + '.' + remote_table;
 
-    auto id = std::make_shared<ASTIdentifier>();
-    id->name = name;
+    auto id = std::make_shared<ASTIdentifier>(name);
 
-    auto desc_database = std::make_shared<ASTIdentifier>();
-    auto desc_table = std::make_shared<ASTIdentifier>();
-    desc_database->name = remote_database;
-    desc_table->name = remote_table;
+    auto desc_database = std::make_shared<ASTIdentifier>(remote_database);
+    auto desc_table = std::make_shared<ASTIdentifier>(remote_table);
 
     id->children.push_back(desc_database);
     id->children.push_back(desc_table);

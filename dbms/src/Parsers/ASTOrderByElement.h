@@ -19,11 +19,12 @@ public:
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
     ASTPtr collation;
 
-    ASTOrderByElement() = default;
-    ASTOrderByElement(const StringRange range_,
-        const int direction_, const int nulls_direction_, const bool nulls_direction_was_explicitly_specified_,
+    ASTOrderByElement(
+        const int direction_,
+        const int nulls_direction_,
+        const bool nulls_direction_was_explicitly_specified_,
         ASTPtr & collation_)
-        : IAST(range_),
+        :
         direction(direction_), nulls_direction(nulls_direction_),
         nulls_direction_was_explicitly_specified(nulls_direction_was_explicitly_specified_),
         collation(collation_) {}

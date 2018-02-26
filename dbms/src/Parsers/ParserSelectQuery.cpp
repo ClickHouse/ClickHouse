@@ -22,8 +22,6 @@ namespace ErrorCodes
 
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
@@ -182,8 +180,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
         next_select_query->prev_union_all = node.get();
     }
-
-    select_query->range = StringRange(begin, pos);
 
     if (select_query->with_expression_list)
         select_query->children.push_back(select_query->with_expression_list);

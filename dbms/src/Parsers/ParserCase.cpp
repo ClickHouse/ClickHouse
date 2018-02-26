@@ -10,8 +10,6 @@ namespace DB
 
 bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_case{"CASE"};
     ParserKeyword s_when{"WHEN"};
     ParserKeyword s_then{"THEN"};
@@ -22,7 +20,6 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_case.parse(pos, node, expected))
     {
         /// Parse as a simple ASTFunction.
-        pos = begin;
         return ParserFunction{}.parse(pos, node, expected);
     }
 
@@ -80,10 +77,10 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parse_branches())
             return false;
 
-        auto function_args = std::make_shared<ASTExpressionList>(StringRange{begin, pos});
+        auto function_args = std::make_shared<ASTExpressionList>();
         function_args->children = std::move(args);
 
-        auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
+        auto function = std::make_shared<ASTFunction>();
         function->name = "caseWithExpression";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
@@ -95,10 +92,10 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parse_branches())
             return false;
 
-        auto function_args = std::make_shared<ASTExpressionList>(StringRange{begin, pos});
+        auto function_args = std::make_shared<ASTExpressionList>();
         function_args->children = std::move(args);
 
-        auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
+        auto function = std::make_shared<ASTFunction>();
         function->name = "multiIf";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
