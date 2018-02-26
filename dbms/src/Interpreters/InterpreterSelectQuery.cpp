@@ -449,8 +449,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeOrder(pipeline);
             }
 
-            executeProjection(pipeline, expressions.final_projection);
-
             /// At this stage, we can calculate the minimums and maximums, if necessary.
             if (settings.extremes)
             {
@@ -487,8 +485,13 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (need_second_distinct_pass)
                     executeDistinct(pipeline, false, Names());
 
+                executeProjection(pipeline, expressions.final_projection);
                 executeLimitBy(pipeline);
                 executeLimit(pipeline);
+            }
+            else
+            {
+                executeProjection(pipeline, expressions.final_projection);
             }
         }
     }
