@@ -13,4 +13,8 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
+    <prompt_by_server_display_name>
+        <test>%display_name% [green]:)[/green]</test>
+        <production>%display_name% [red]:)[/red]</production> 
+    </prompt_by_server_display_name>
 </config>
