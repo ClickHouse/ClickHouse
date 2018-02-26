@@ -6,9 +6,8 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-
+#include <common/likely.h>
 #include <yandex/consistent_hashing.h>
-#include <iostream>
 
 
 namespace DB
@@ -23,10 +22,12 @@ namespace ErrorCodes
 }
 
 
+/// An O(1) time and space consistent hash algorithm by Konstantin Oblakov
 struct YandexConsistentHashImpl
 {
-    static constexpr auto name = "YandexConsistentHash";
+    static constexpr auto name = "yandexConsistentHash";
 
+    using HashType = UInt64;
     /// Actually it supports UInt64, but it is effective only if n < 65536
     using ResultType = UInt32;
     using BucketsCountType = ResultType;
@@ -51,8 +52,9 @@ static inline int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets) {
 
 struct JumpConsistentHashImpl
 {
-    static constexpr auto name = "JumpConsistentHash";
+    static constexpr auto name = "jumpConsistentHash";
 
+    using HashType = UInt64;
     using ResultType = Int32;
     using BucketsCountType = ResultType;
 
@@ -63,14 +65,57 @@ struct JumpConsistentHashImpl
 };
 
 
+/// Sumbur algorithm https://github.com/mailru/sumbur-ruby/blob/master/lib/sumbur/pure_ruby.rb
+static inline UInt32 sumburConsistentHash(UInt32 hashed_integer, UInt32 cluster_capacity)
+{
+    UInt32 l = 0xFFFFFFFF;
+    UInt32 part = l / cluster_capacity;
+
+    if (l - hashed_integer < part)
+        return 0;
+
+    UInt32 h = hashed_integer;
+    UInt32 n = 1;
+    UInt32 i = 2;
+    while (i <= cluster_capacity)
+    {
+        auto c = l / (i * (i - 1));
+        if (c <= h)
+            h -= c;
+        else
+        {
+            h += c * (i - n - 1);
+            n = i;
+            if (l / n - h < part)
+                break;
+        }
+        i += 1;
+    }
+
+    return n - 1;
+}
+
+struct SumburConsistentHashImpl
+{
+    static constexpr auto name = "sumburConsistentHash";
+
+    using HashType = UInt32;
+    using ResultType = UInt32;
+    using BucketsCountType = ResultType;
+
+    static inline ResultType apply(UInt32 hash, BucketsCountType n)
+    {
+        return sumburConsistentHash(hash, n);
+    }
+};
+
+
 template <typename Impl>
 class FunctionConsistentHashImpl : public IFunction
 {
 public:
 
     static constexpr auto name = Impl::name;
-    using ResultType = typename Impl::ResultType;
-    using BucketsType = typename Impl::BucketsCountType;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConsistentHashImpl<Impl>>(); };
 
@@ -84,6 +129,10 @@ public:
             throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+        if (arguments[0]->getSizeOfValueInMemory() > sizeof(HashType))
+            throw Exception("Function " + getName() + " accepts " + std::to_string(sizeof(HashType) * 8) + "-bit integers at most"
+                            + ", got " + arguments[0]->getName(), ErrorCodes::BAD_ARGUMENTS);
+
         if (!arguments[1]->isInteger())
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -91,83 +140,91 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        auto buckets_col = block.getByPosition(arguments[1]).column.get();
-        if (!buckets_col->isColumnConst())
+        if (block.getByPosition(arguments[1]).column->isColumnConst())
+            executeConstBuckets(block, arguments, result);
+        else
             throw Exception("The second argument of function " + getName() + " (number of buckets) must be constant", ErrorCodes::BAD_ARGUMENTS);
-
-        constexpr UInt64 max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
-        UInt64 num_buckets;
-
-        auto check_range = [&] (auto buckets)
-        {
-            if (buckets <= 0)
-                throw Exception("The second argument of function " + getName() + " (number of buckets) must be positive number",
-                                ErrorCodes::BAD_ARGUMENTS);
-
-            if (static_cast<UInt64>(buckets) > max_buckets)
-                throw Exception("The value of the second argument of function " + getName() + " (number of buckets) is not fit to " +
-                            DataTypeNumber<BucketsType>().getName(), ErrorCodes::BAD_ARGUMENTS);
-
-            num_buckets = static_cast<UInt64>(buckets);
-        };
-
-        Field buckets_field = (*buckets_col)[0];
-        if (buckets_field.getType() == Field::Types::Int64)
-            check_range(buckets_field.safeGet<Int64>());
-        else if (buckets_field.getType() == Field::Types::UInt64)
-            check_range(buckets_field.safeGet<UInt64>());
-        else
-            throw Exception("Illegal type " + String(buckets_field.getTypeName()) + " of the second argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-
-        const auto & hash_col_source = block.getByPosition(arguments[0]).column;
-        ColumnPtr hash_col = (hash_col_source->isColumnConst()) ? hash_col_source->convertToFullColumnIfConst() : hash_col_source;
-        ColumnPtr & res_col = block.getByPosition(result).column;
-
-
-        const IDataType * hash_type = block.getByPosition(arguments[0]).type.get();
-
-        if      (checkDataType<DataTypeUInt8>(hash_type)) executeType<UInt8>(hash_col, res_col, num_buckets);
-        else if (checkDataType<DataTypeUInt16>(hash_type)) executeType<UInt16>(hash_col, res_col, num_buckets);
-        else if (checkDataType<DataTypeUInt32>(hash_type)) executeType<UInt32>(hash_col, res_col, num_buckets);
-        else if (checkDataType<DataTypeUInt64>(hash_type)) executeType<UInt64>(hash_col, res_col, num_buckets);
-        else if (checkDataType<DataTypeInt8>(hash_type)) executeType<Int8>(hash_col, res_col, num_buckets);
-        else if (checkDataType<DataTypeInt16>(hash_type)) executeType<Int16>(hash_col, res_col, num_buckets);
-        else if (checkDataType<DataTypeInt32>(hash_type)) executeType<Int32>(hash_col, res_col, num_buckets);
-        else if (checkDataType<DataTypeInt64>(hash_type)) executeType<Int64>(hash_col, res_col, num_buckets);
-        else
-            throw Exception("Illegal type " + hash_type->getName() + " of the first argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 private:
 
-    template <typename HashType>
-    void executeType(const ColumnPtr & col_hash_ptr, ColumnPtr & out_col_result, const UInt64 num_buckets)
+    using HashType = typename Impl::HashType;
+    using ResultType = typename Impl::ResultType;
+    using BucketsType = typename Impl::BucketsCountType;
+    static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
+
+    template <typename T>
+    inline BucketsType checkBucketsRange(T buckets)
     {
-        auto col_hash = checkAndGetColumn<ColumnVector<HashType>>(col_hash_ptr.get());
+        if (unlikely(buckets <= 0))
+            throw Exception("The second argument of function " + getName() + " (number of buckets) must be positive number",
+                            ErrorCodes::BAD_ARGUMENTS);
+
+        if (unlikely(static_cast<UInt64>(buckets) > max_buckets))
+            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) is not fit to " +
+                        DataTypeNumber<BucketsType>().getName(), ErrorCodes::BAD_ARGUMENTS);
+
+        return static_cast<BucketsType>(buckets);
+    }
+
+    void executeConstBuckets(Block & block, const ColumnNumbers & arguments, size_t result)
+    {
+        Field buckets_field = (*block.getByPosition(arguments[1]).column)[0];
+        BucketsType num_buckets;
+
+        if (buckets_field.getType() == Field::Types::Int64)
+            num_buckets = checkBucketsRange(buckets_field.get<Int64>());
+        else if (buckets_field.getType() == Field::Types::UInt64)
+            num_buckets = checkBucketsRange(buckets_field.get<UInt64>());
+        else
+            throw Exception("Illegal type " + String(buckets_field.getTypeName()) + " of the second argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const auto & hash_col = block.getByPosition(arguments[0]).column;
+        const IDataType * hash_type = block.getByPosition(arguments[0]).type.get();
+        auto res_col = ColumnVector<ResultType>::create();
+
+        if      (checkDataType<DataTypeUInt8>(hash_type)) executeType<UInt8>(hash_col, num_buckets, res_col.get());
+        else if (checkDataType<DataTypeUInt16>(hash_type)) executeType<UInt16>(hash_col, num_buckets, res_col.get());
+        else if (checkDataType<DataTypeUInt32>(hash_type)) executeType<UInt32>(hash_col, num_buckets, res_col.get());
+        else if (checkDataType<DataTypeUInt64>(hash_type)) executeType<UInt64>(hash_col, num_buckets, res_col.get());
+        else if (checkDataType<DataTypeInt8>(hash_type)) executeType<Int8>(hash_col, num_buckets, res_col.get());
+        else if (checkDataType<DataTypeInt16>(hash_type)) executeType<Int16>(hash_col, num_buckets, res_col.get());
+        else if (checkDataType<DataTypeInt32>(hash_type)) executeType<Int32>(hash_col, num_buckets, res_col.get());
+        else if (checkDataType<DataTypeInt64>(hash_type)) executeType<Int64>(hash_col, num_buckets, res_col.get());
+        else
+            throw Exception("Illegal type " + hash_type->getName() + " of the first argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        block.getByPosition(result).column = std::move(res_col);
+    }
+
+    template <typename CurrentHashType>
+    void executeType(const ColumnPtr & col_hash_ptr, BucketsType num_buckets, ColumnVector<ResultType> * col_result)
+    {
+        auto col_hash = checkAndGetColumn<ColumnVector<CurrentHashType>>(col_hash_ptr.get());
         if (!col_hash)
             throw Exception("Illegal type of the first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        auto col_result = ColumnVector<ResultType>::create();
-        typename ColumnVector<ResultType>::Container & vec_result = col_result->getData();
+        
+        auto & vec_result = col_result->getData();
         const auto & vec_hash = col_hash->getData();
 
         size_t size = vec_hash.size();
         vec_result.resize(size);
         for (size_t i = 0; i < size; ++i)
-            vec_result[i] = Impl::apply(static_cast<UInt64>(vec_hash[i]), static_cast<BucketsType>(num_buckets));
-
-        out_col_result = std::move(col_result);
+            vec_result[i] = Impl::apply(static_cast<HashType>(vec_hash[i]), num_buckets);
     }
 };
 
 
 using FunctionYandexConsistentHash = FunctionConsistentHashImpl<YandexConsistentHashImpl>;
-using FunctionJumpConsistentHas = FunctionConsistentHashImpl<JumpConsistentHashImpl>;
+using FunctionJumpConsistentHash = FunctionConsistentHashImpl<JumpConsistentHashImpl>;
+using FunctionSumburConsistentHash = FunctionConsistentHashImpl<SumburConsistentHashImpl>;
 
 
 }

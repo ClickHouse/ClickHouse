@@ -4,6 +4,8 @@
 #include <cstddef>
 
 /*
+ * Author: Konstantin Oblakov
+ *
  * Maps random ui64 x (in fact hash of some string) to n baskets/shards.
  * Output value is id of a basket. 0 <= ConsistentHashing(x, n) < n.
  * Probability of all baskets must be equal. Also, it should be consistent
