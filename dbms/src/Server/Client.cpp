@@ -140,7 +140,7 @@ private:
 
     String current_profile;
 
-    String prompt_by_server_display_name = "%display_name% :)";
+    String prompt_by_server_display_name;
 
     /// Path to a file containing command history.
     String history_file;
@@ -341,6 +341,8 @@ private:
 
         Strings keys;
         config().keys("prompt_by_server_display_name", keys);
+
+        prompt_by_server_display_name = config().getString("prompt_by_server_display_name.default", "%display_name% :)");
 
         for (const String & key : keys)
         {
