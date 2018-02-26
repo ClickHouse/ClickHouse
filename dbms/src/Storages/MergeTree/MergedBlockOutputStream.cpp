@@ -309,12 +309,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     column_streams.clear();
 
-    if (rows_count == 0)
-    {
-        /// A part is empty - all records are deleted.
-        Poco::File(part_path).remove(true);
-        return;
-    }
+    // if (rows_count == 0)
+    // {
+    //     /// A part is empty - all records are deleted.
+    //     Poco::File(part_path).remove(true);
+    //     return;
+    // }
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {

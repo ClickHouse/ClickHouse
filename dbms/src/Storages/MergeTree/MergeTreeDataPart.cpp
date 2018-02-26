@@ -232,7 +232,7 @@ String MergeTreeDataPart::getNameWithPrefix() const
 
 DayNum_t MergeTreeDataPart::getMinDate() const
 {
-    if (storage.minmax_idx_date_column_pos != -1)
+    if (storage.minmax_idx_date_column_pos != -1 && marks_count)
         return DayNum_t(minmax_idx.min_values[storage.minmax_idx_date_column_pos].get<UInt64>());
     else
         return DayNum_t();
@@ -241,7 +241,7 @@ DayNum_t MergeTreeDataPart::getMinDate() const
 
 DayNum_t MergeTreeDataPart::getMaxDate() const
 {
-    if (storage.minmax_idx_date_column_pos != -1)
+    if (storage.minmax_idx_date_column_pos != -1 && marks_count)
         return DayNum_t(minmax_idx.max_values[storage.minmax_idx_date_column_pos].get<UInt64>());
     else
         return DayNum_t();

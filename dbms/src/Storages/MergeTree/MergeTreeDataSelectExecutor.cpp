@@ -95,6 +95,9 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     for (size_t i = 0; i < parts.size(); ++i)
     {
         const MergeTreeData::DataPartPtr & part = parts[i];
+        if (!part->rows_count)
+            continue;
+
         MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
@@ -523,7 +526,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
         if (data.hasPrimaryKey())
             ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
-        else
+        else if (part->marks_count)
             ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
 
         if (!ranges.ranges.empty())
@@ -870,6 +873,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
 
     MarkRanges res;
+
+    if (index.empty())
+        return res;
 
     size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
     size_t marks_count = index.at(0)->size();
