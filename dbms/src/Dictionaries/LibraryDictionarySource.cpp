@@ -123,7 +123,7 @@ LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dic
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path);
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
-    auto fptr = library->tryGet<void * (*)()>("ClickHouseDictionary_v2_libAllocate");
+    auto fptr = library->tryGet<void * (*)()>("ClickHouseDictionary_v2_libNew");
     if (fptr)
         lib_data = fptr();
 }
@@ -164,10 +164,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     }
     void * data_ptr = nullptr;
 
-    /// Get function pointer before dataAllocate call because library->get may throw.
+    /// Get function pointer before dataNew call because library->get may throw.
     auto fptr
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v2_loadAll");
-    data_ptr = library->get<void * (*)(void *)>("ClickHouseDictionary_v2_dataAllocate")(lib_data);
+    data_ptr = library->get<void * (*)(void *)>("ClickHouseDictionary_v2_dataNew")(lib_data);
     auto data = fptr(data_ptr, &settings->strings, &columns);
     auto block = dataToBlock(description.sample_block, data);
     library->get<void (*)(void *, void *)>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr);
@@ -190,10 +190,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
     }
     void * data_ptr = nullptr;
 
-    /// Get function pointer before dataAllocate call because library->get may throw.
+    /// Get function pointer before dataNew call because library->get may throw.
     auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
         "ClickHouseDictionary_v2_loadIds");
-    data_ptr = library->get<void * (*)(void *)>("ClickHouseDictionary_v2_dataAllocate")(lib_data);
+    data_ptr = library->get<void * (*)(void *)>("ClickHouseDictionary_v2_dataNew")(lib_data);
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = dataToBlock(description.sample_block, data);
     library->get<void (*)(void *, void *)>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr);
@@ -217,11 +217,11 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
         ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
     void * data_ptr = nullptr;
 
-    /// Get function pointer before dataAllocate call because library->get may throw.
+    /// Get function pointer before dataNew call because library->get may throw.
     auto fptr
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&requested_rows_c))>(
             "ClickHouseDictionary_v2_loadKeys");
-    data_ptr = library->get<void * (*)(void *)>("ClickHouseDictionary_v2_dataAllocate")(lib_data);
+    data_ptr = library->get<void * (*)(void *)>("ClickHouseDictionary_v2_dataNew")(lib_data);
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
     auto block = dataToBlock(description.sample_block, data);
     library->get<void (*)(void *, void *)>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr);
