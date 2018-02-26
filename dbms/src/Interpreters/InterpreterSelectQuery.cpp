@@ -1,5 +1,3 @@
-#include <optional>
-
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
@@ -516,7 +514,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline)
 {
     /// The subquery interpreter, if the subquery
-    std::optional<InterpreterSelectWithUnionQuery> interpreter_subquery;
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
@@ -573,7 +571,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         subquery_settings.extremes = 0;
         subquery_context.setSettings(subquery_settings);
 
-        interpreter_subquery.emplace(
+        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
             query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 
         /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
