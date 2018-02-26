@@ -215,6 +215,9 @@ void ExpressionAnalyzer::init()
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns();
 
+    /// All selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
+    calculateRequiredColumnsBeforeProjection();
+
     /// Delete the unnecessary from `columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
 
@@ -2491,11 +2494,9 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_
 
     getRootActions(select_query->select_expression_list, only_types, false, step.actions);
 
-    ASTs asts = select_query->select_expression_list->children;
-    for (size_t i = 0; i < asts.size(); ++i)
-    {
-        step.required_output.push_back(asts[i]->getColumnName());
-    }
+    for (const auto & child : select_query->select_expression_list->children)
+        if (required_columns_before_projection.count(child->getColumnName()))
+            step.required_output.push_back(child->getColumnName());
 }
 
 bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
@@ -2797,9 +2798,8 @@ void ExpressionAnalyzer::getRequiredSourceColumnsInSelectImpl(
         return;
     }
 
-    /// TODO: DISTINCT, arrayJoin
     for (const auto & child : select_query->select_expression_list->children)
-        if (required_result_columns.empty() || required_result_columns.count(child->getAliasOrColumnName()))
+        if (required_columns_before_projection.count(child->getColumnName()))
             getRequiredSourceColumnsImpl(child, available_columns, required_source_columns,
                 ignored_names, available_joined_columns, required_joined_columns);
 
@@ -2894,6 +2894,34 @@ void ExpressionAnalyzer::getRequiredSourceColumnsImpl(const ASTPtr & ast,
             getRequiredSourceColumnsImpl(child, available_columns, required_source_columns,
                 ignored_names, available_joined_columns, required_joined_columns);
     }
+}
+
+
+static bool hasArrayJoin(const ASTPtr & ast)
+{
+    if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
+        if (function->name == "arrayJoin")
+            return true;
+
+    for (const auto & child : ast->children)
+        if (!typeid_cast<ASTSelectQuery *>(child.get()) && hasArrayJoin(child))
+            return true;
+
+    return false;
+}
+
+
+void ExpressionAnalyzer::calculateRequiredColumnsBeforeProjection()
+{
+    if (!select_query)
+        return;
+
+    for (const auto & child : select_query->select_expression_list->children)
+        if (required_result_columns.empty()
+            || select_query->distinct
+            || hasArrayJoin(child)
+            || required_result_columns.count(child->getAliasOrColumnName()))
+            required_columns_before_projection.insert(child->getColumnName());
 }
 
 }

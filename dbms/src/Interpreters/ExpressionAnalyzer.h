@@ -335,6 +335,12 @@ private:
       */
     void translateQualifiedNames();
     void translateQualifiedNamesImpl(ASTPtr & node, const String & database_name, const String & table_name, const String & alias);
+
+    /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
+      * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
+      */
+    NameSet required_columns_before_projection;
+    void calculateRequiredColumnsBeforeProjection();
 };
 
 }
