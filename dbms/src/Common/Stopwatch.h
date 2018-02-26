@@ -39,10 +39,10 @@ public:
     double elapsedSeconds() const       { return static_cast<double>(elapsed()) / 1000000000ULL; }
 
 private:
-    UInt64 start_ns;
-    UInt64 stop_ns;
+    UInt64 start_ns = 0;
+    UInt64 stop_ns = 0;
     clockid_t clock_type;
-    bool is_running;
+    bool is_running = false;
 
     UInt64 nanoseconds() const { return StopWatchDetail::nanoseconds(clock_type); }
 };
