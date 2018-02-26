@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <signal.h>
 
+#include <map>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <optional>
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
@@ -137,6 +139,8 @@ private:
     String home_path;
 
     String current_profile;
+
+    String prompt_by_server_display_name = "%display_name% :)";
 
     /// Path to a file containing command history.
     String history_file;
@@ -335,6 +339,18 @@ private:
             }
         }
 
+        Strings keys;
+        config().keys("prompt_by_server_display_name", keys);
+
+        for (const String & key : keys)
+        {
+            if (server_display_name.find(key) != std::string::npos) 
+            {
+                prompt_by_server_display_name = config().getString("prompt_by_server_display_name." + key);
+                break;
+            }
+        }
+
         if (is_interactive)
         {
             if (print_time_to_stderr)
@@ -447,13 +463,52 @@ private:
         return select(1, &fds, 0, 0, &timeout) == 1;
     }
 
+    const String prompt() const
+    {
+        std::map<String, String> colors = {
+            { "red",     "31" },
+            { "green",   "32" },
+            { "yellow",  "33" },
+            { "blue",    "34" },
+            { "magenta", "35" },
+            { "cyan",    "36" },
+        };
+
+        String pattern = prompt_by_server_display_name;
+
+        for (const auto & pair: colors)
+        {
+            String name = static_cast<String>(pair.first);
+            String code = static_cast<String>(pair.second);
+
+            boost::replace_all(pattern, "[" + name + "]",  "\33[1;" + code + "m");
+            boost::replace_all(pattern, "[/" + name + "]", "\033[0m");
+        }
+
+        std::map<String, String> environment = {
+            {"host",         config().getString("host", "localhost")},
+            {"display_name", server_display_name},
+            {"user",         config().getString("user",     "default")},
+            {"database",     config().getString("database", "default")},
+        };
+
+        for (const auto & pair: environment)
+        {
+            String key   = static_cast<String>(pair.first);
+            String value = static_cast<String>(pair.second);
+
+            boost::replace_all(pattern, "%" + key + "%",  value);
+        }
+
+        return pattern;
+    }
 
     void loop()
     {
         String query;
         String prev_query;
-        String prompt = server_display_name.length() ? "[" + server_display_name + "] :) " : ":) ";
-        while (char * line_ = readline(query.empty() ? prompt.c_str() : ":-] "))
+
+        while (char * line_ = readline(query.empty() ? prompt().c_str() : ":-] "))
         {
             String line = line_;
             free(line_);
