@@ -25,7 +25,6 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -718,27 +717,30 @@ static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         std::set<std::string> all_column_names;
         std::set<std::string> assigned_column_names;
 
-        if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(query.get()))
+        if (ASTSelectWithUnionQuery * select_with_union = typeid_cast<ASTSelectWithUnionQuery *>(query.get()))
         {
-            for (auto & expr : select->select_expression_list->children)
-                all_column_names.insert(expr->getAliasOrColumnName());
-
-            for (auto & expr : select->select_expression_list->children)
+            if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(select_with_union->list_of_selects->children.at(0).get()))
             {
-                auto name = expr->getAliasOrColumnName();
+                for (auto & expr : select->select_expression_list->children)
+                    all_column_names.insert(expr->getAliasOrColumnName());
 
-                if (!assigned_column_names.insert(name).second)
+                for (auto & expr : select->select_expression_list->children)
                 {
-                    size_t i = 1;
-                    while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
-                        ++i;
+                    auto name = expr->getAliasOrColumnName();
 
-                    name = name + "_" + toString(i);
-                    expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
-                    expr->setAlias(name);
+                    if (!assigned_column_names.insert(name).second)
+                    {
+                        size_t i = 1;
+                        while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+                            ++i;
 
-                    all_column_names.insert(name);
-                    assigned_column_names.insert(name);
+                        name = name + "_" + toString(i);
+                        expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
+                        expr->setAlias(name);
+
+                        all_column_names.insert(name);
+                        assigned_column_names.insert(name);
+                    }
                 }
             }
         }
@@ -1197,7 +1199,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
         subquery_context.setSettings(subquery_settings);
 
         ASTPtr query = subquery->children.at(0);
-        BlockIO res = InterpreterSelectQuery(query, subquery_context, {}, QueryProcessingStage::Complete, subquery_depth + 1).execute();
+        BlockIO res = InterpreterSelectWithUnionQuery(query, subquery_context, {}, QueryProcessingStage::Complete, subquery_depth + 1).execute();
 
         Block block;
         try
@@ -2739,7 +2741,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
     else if (table_expression.subquery)
     {
         const auto & subquery = table_expression.subquery->children.at(0);
-        nested_result_sample = InterpreterSelectQuery::getSampleBlock(subquery, context);
+        nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context);
     }
 
     if (table_join.using_expression_list)
