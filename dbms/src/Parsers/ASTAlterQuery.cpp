@@ -33,10 +33,6 @@ void ASTAlterQuery::addParameters(const Parameters & params)
         children.push_back(params.primary_key);
 }
 
-ASTAlterQuery::ASTAlterQuery(StringRange range_) : ASTQueryWithOutput(range_)
-{
-}
-
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID() const
 {

@@ -13,7 +13,6 @@ namespace DB
     {
         std::ostringstream out;
         formatAST(query, out, false, true);
-
         return out.str();
     }
 }
