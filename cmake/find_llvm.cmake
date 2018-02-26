@@ -1,6 +1,6 @@
-option (USE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" FALSE)
+option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" FALSE)
 
-if (USE_EMBEDDED_COMPILER)
+if (ENABLE_EMBEDDED_COMPILER)
     # Based on source code of YT.
     # Authors: Ivan Puzyrevskiy, Alexey Lukyanchikov, Ruslan Savchenko.
 
@@ -28,9 +28,8 @@ if (USE_EMBEDDED_COMPILER)
     mark_as_advanced(LLVM_CONFIG_EXECUTABLE)
 
     if(NOT LLVM_CONFIG_EXECUTABLE)
-        message(FATAL_ERROR "Cannot find LLVM (looking for `llvm-config`). Please, provide LLVM_ROOT environment variable.")
+        message(FATAL_ERROR "Cannot find LLVM (looking for `llvm-config${LLVM_VERSION_POSTFIX}`, `llvm-config`, `llvm-config-devel`). Please, provide LLVM_ROOT environment variable.")
     else()
-
         set(LLVM_FOUND TRUE)
 
         execute_process(
@@ -96,5 +95,9 @@ if (USE_EMBEDDED_COMPILER)
         message(STATUS "LLVM Include Directory: ${LLVM_INCLUDE_DIRS}")
         message(STATUS "LLVM Library Directory: ${LLVM_LIBRARY_DIRS}")
         message(STATUS "LLVM C++ Compiler: ${LLVM_CXXFLAGS}")
+    endif()
+
+    if (LLVM_FOUND AND LLVM_INCLUDE_DIRS AND LLVM_LIBRARY_DIRS)
+        set(USE_EMBEDDED_COMPILER TRUE)
     endif()
 endif()
