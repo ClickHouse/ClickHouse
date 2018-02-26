@@ -155,6 +155,7 @@ private:
     QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
 
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
+
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);

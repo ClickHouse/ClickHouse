@@ -60,6 +60,8 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -193,8 +195,10 @@ void ExpressionAnalyzer::init()
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
 
-    /// ALIAS columns should not be substituted for ASTAsterisk, we will add them now, after normalizeTree.
-    addAliasColumns();
+    /// ALIAS and MATERIALIZED columns should not be substituted for ASTAsterisk, we will add them now, after normalizeTree.
+    addAliasAndMaterializedColumns();
+
+    DUMP(source_columns);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries();
@@ -217,8 +221,10 @@ void ExpressionAnalyzer::init()
     /// All selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     calculateRequiredColumnsBeforeProjection();
 
-    /// Delete the unnecessary from `columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
+    /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
+
+    DUMP(source_columns);
 
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
@@ -1123,7 +1129,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 }
 
 
-void ExpressionAnalyzer::addAliasColumns()
+void ExpressionAnalyzer::addAliasAndMaterializedColumns()
 {
     if (!select_query)
         return;
@@ -1132,6 +1138,7 @@ void ExpressionAnalyzer::addAliasColumns()
         return;
 
     source_columns.insert(std::end(source_columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
+    source_columns.insert(std::end(source_columns), std::begin(storage->materialized_columns), std::end(storage->materialized_columns));
 }
 
 
@@ -2701,8 +2708,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             ++it;
     }
 
-    /// Perhaps, there are virtual columns among the unknown columns. Remove them from the list of unknown and add
-    /// in columns list, so that when further processing the request they are perceived as real.
+    /// If there are virtual columns among the unknown columns. Remove them from the list of unknown and add
+    /// in columns list, so that when further processing they are also considered.
     if (storage)
     {
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
