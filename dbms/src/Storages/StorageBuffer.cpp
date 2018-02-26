@@ -558,7 +558,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(columns_intersection.size());
     for (const String & column : columns_intersection)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column));
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column, ASTIdentifier::Column));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
 

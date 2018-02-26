@@ -24,8 +24,6 @@ namespace ErrorCodes
 
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_insert_into("INSERT INTO");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_function("FUNCTION");
@@ -130,7 +128,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTInsertQuery>();
     node = query;
 
     if (table_function)
