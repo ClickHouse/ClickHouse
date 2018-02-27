@@ -161,8 +161,8 @@ private:
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
 
-    /// The table from which the query is made.
-    const StoragePtr storage;
+    /// The main table in FROM clause, if exists.
+    StoragePtr storage;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
@@ -210,8 +210,6 @@ private:
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
     size_t external_table_id = 1;
-
-    void init();
 
     static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
     NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, source_columns); }
@@ -306,9 +304,6 @@ private:
     void getRequiredSourceColumnsInSelectImpl(
         const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
         const NameSet & available_joined_columns, NameSet & required_joined_columns);
-
-    /// Get the table from which the query is made
-    StoragePtr getTable();
 
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
