@@ -196,7 +196,7 @@ def test_copy_month_to_week_partition(started_cluster):
     execute_task(Task2(started_cluster), [])
 
 def test_copy_month_to_week_partition_with_recovering(started_cluster):
-    execute_task(Task2(started_cluster), ['--copy-fault-probability', str(0.1)])
+    execute_task(Task2(started_cluster), ['--copy-fault-probability', str(0.3)])
 
 
 if __name__ == '__main__':
