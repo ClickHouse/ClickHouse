@@ -165,16 +165,27 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     : ast(ast_), context(context_), settings(context.getSettings()),
     subquery_depth(subquery_depth_),
     source_columns(source_columns_), required_result_columns(required_result_columns_.begin(), required_result_columns_.end()),
-    storage(storage_ ? storage_ : getTable()),
+    storage(storage_),
     do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
 {
-    init();
-}
-
-
-void ExpressionAnalyzer::init()
-{
     select_query = typeid_cast<ASTSelectQuery *>(ast.get());
+
+    if (!storage && select_query)
+    {
+        auto select_database = select_query->database();
+        auto select_table = select_query->table();
+
+        if (select_table
+            && !typeid_cast<const ASTSelectWithUnionQuery *>(select_table.get())
+            && !typeid_cast<const ASTFunction *>(select_table.get()))
+        {
+            String database = select_database
+                ? typeid_cast<const ASTIdentifier &>(*select_database).name
+                : "";
+            const String & table = typeid_cast<const ASTIdentifier &>(*select_table).name;
+            storage = context.tryGetTable(database, table);
+        }
+    }
 
     removeDuplicateColumns(source_columns);
 
@@ -906,29 +917,6 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
         subquery->prefer_alias_to_column_name = true;
         aliases[alias] = ast;
     }
-}
-
-
-StoragePtr ExpressionAnalyzer::getTable()
-{
-    if (const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get()))
-    {
-        auto select_database = select->database();
-        auto select_table = select->table();
-
-        if (select_table
-            && !typeid_cast<const ASTSelectWithUnionQuery *>(select_table.get())
-            && !typeid_cast<const ASTFunction *>(select_table.get()))
-        {
-            String database = select_database
-                ? typeid_cast<const ASTIdentifier &>(*select_database).name
-                : "";
-            const String & table = typeid_cast<const ASTIdentifier &>(*select_table).name;
-            return context.tryGetTable(database, table);
-        }
-    }
-
-    return StoragePtr();
 }
 
 
