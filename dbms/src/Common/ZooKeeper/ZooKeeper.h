@@ -499,13 +499,13 @@ struct MultiTransactionInfo
 {
     MultiTransactionInfo() = default;
 
-    const Ops * ops = nullptr;
+    Ops ops;
     int32_t code = ZOK;
     OpResultsPtr op_results;
 
     bool empty() const
     {
-        return ops == nullptr;
+        return ops.empty();
     }
 
     bool hasFailedOp() const
@@ -515,7 +515,7 @@ struct MultiTransactionInfo
 
     const Op & getFailedOp() const
     {
-        return *ops->at(getFailedOpIndex(op_results, code));
+        return *ops.at(getFailedOpIndex(op_results, code));
     }
 
     KeeperException getException() const
@@ -523,7 +523,7 @@ struct MultiTransactionInfo
         if (hasFailedOp())
         {
             size_t i = getFailedOpIndex(op_results, code);
-            return KeeperException("Transaction failed at op #" + std::to_string(i) + ": " + ops->at(i)->describe(), code);
+            return KeeperException("Transaction failed at op #" + std::to_string(i) + ": " + ops.at(i)->describe(), code);
         }
         else
             return KeeperException(code);
