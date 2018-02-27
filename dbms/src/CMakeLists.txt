@@ -1,7 +1,3 @@
-if (ARCH_FREEBSD)
-    set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
-endif ()
-
 add_subdirectory (Columns)
 add_subdirectory (Common)
 add_subdirectory (Core)
