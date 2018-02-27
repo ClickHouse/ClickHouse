@@ -26,10 +26,14 @@
             -->
 
             <!-- Engine of destination tables -->
-            <engine>ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/b', '{replica}') PARTITION BY toMonday(date) ORDER BY d</engine>
+            <engine>ENGINE=
+                ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/b', '{replica}')
+                PARTITION BY toMonday(date)
+                ORDER BY d
+            </engine>
 
             <!-- Which sarding key to use while copying -->
-            <sharding_key>d + 1</sharding_key>
+            <sharding_key>jumpConsistentHash(intHash64(d), 2)</sharding_key>
 
             <!-- Optional expression that filter copying data -->
             <!-- <where_condition></where_condition> -->
