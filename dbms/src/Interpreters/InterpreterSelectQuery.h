@@ -37,20 +37,16 @@ public:
      *   for INSERT SELECT, a value 1 is passed instead of 0.
      *
      * input
-     * - if given - read not from the table specified in the query, but from ready source.
+     * - if given - read not from the table specified in the query, but from prepared source.
      *
-     * required_column_names
-     * - delete all columns except the specified ones from the query - it is used to delete unnecessary columns from subqueries.
-     *
-     * table_column_names
-     * - the list of available columns of the table.
-     *   Used, for example, with reference to `input`.
+     * required_result_column_names
+     * - don't calculate all columns except the specified ones from the query - it is used to remove calculation of unnecessary columns from subqueries.
      */
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
-        const Names & required_column_names = Names{},
+        const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
         const BlockInputStreamPtr & input = nullptr);
@@ -111,7 +107,7 @@ private:
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    void init(const Names & required_column_names);
+    void init(const Names & required_result_column_names);
 
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
 
