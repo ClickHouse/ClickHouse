@@ -27,8 +27,9 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -474,7 +475,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     Block as_select_sample;
     if (create.select && (!create.attach || !create.columns))
-        as_select_sample = InterpreterSelectQuery::getSampleBlock(create.select->clone(), context);
+        as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;
     String as_table_name = create.as_table;
