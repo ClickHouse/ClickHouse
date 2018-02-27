@@ -19,7 +19,7 @@ public:
     InterpreterSelectWithUnionQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
-        const Names & required_column_names = Names{},
+        const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0);
 
@@ -47,8 +47,6 @@ private:
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
 
     Block result_header;
-
-    void init();
 };
 
 }

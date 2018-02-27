@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -22,7 +23,7 @@ namespace ErrorCodes
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const Names & required_column_names,
+    const Names & required_result_column_names,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_)
     : query_ptr(query_ptr_),
@@ -33,27 +34,70 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
 
     size_t num_selects = ast.list_of_selects->children.size();
+
+    if (!num_selects)
+        throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
+
+    /// Check number of columns.
+
+    size_t num_columns = 0;
+    for (const auto & select : ast.list_of_selects->children)
+    {
+        size_t current_num_columns = typeid_cast<const ASTSelectQuery &>(*select).select_expression_list->children.size();
+
+        if (!current_num_columns)
+            throw Exception("Logical error: SELECT query has zero columns in SELECT clause", ErrorCodes::LOGICAL_ERROR);
+
+        if (!num_columns)
+            num_columns = current_num_columns;
+        else if (num_columns != current_num_columns)
+            throw Exception("Different number of columns in UNION ALL elements.", ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+    }
+
+    /// Initialize interpreters for each SELECT query.
+    /// Note that we pass 'required_result_column_names' to first SELECT.
+    /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' of the first SELECT,
+    ///  because names could be different.
+
     nested_interpreters.reserve(num_selects);
 
-    if (!num_selects)
-        throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
+    std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
 
-    for (const auto & select : ast.list_of_selects->children)
-        nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(select, context, required_column_names, to_stage, subquery_depth));
+    {
+        const auto & first_select = static_cast<const ASTSelectQuery &>(*ast.list_of_selects->children.at(0));
 
-    init();
-}
+        for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
+        {
+            bool found = false;
+            for (size_t position_in_select = 0; position_in_select < num_columns; ++position_in_select)
+            {
+                if (first_select.select_expression_list->children.at(position_in_select)->getAliasOrColumnName()
+                    == required_result_column_names[required_result_num])
+                {
+                    found = true;
+                    positions_of_required_result_columns[required_result_num] = position_in_select;
+                    break;
+                }
+            }
+            if (!found)
+                throw Exception("Logical error: cannot find result column " + backQuoteIfNeed(required_result_column_names[required_result_num])
+                    + " in first SELECT query in UNION ALL", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
 
+    for (size_t query_num = 0; query_num < num_selects; ++query_num)
+    {
+        const auto & select = ast.list_of_selects->children.at(query_num);
+        Names current_required_result_column_names(required_result_column_names.size());
+        for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
+            current_required_result_column_names[required_result_num]
+                = static_cast<const ASTSelectQuery &>(*select).select_expression_list
+                    ->children.at(positions_of_required_result_columns[required_result_num])->getAliasOrColumnName();
 
-InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
+        nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(select, context, current_required_result_column_names, to_stage, subquery_depth));
+    }
 
-
-void InterpreterSelectWithUnionQuery::init()
-{
-    size_t num_selects = nested_interpreters.size();
-
-    if (!num_selects)
-        throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
+    /// Determine structure of result.
 
     if (num_selects == 1)
     {
@@ -110,6 +154,9 @@ void InterpreterSelectWithUnionQuery::init()
         }
     }
 }
+
+
+InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
 
 Block InterpreterSelectWithUnionQuery::getSampleBlock()
