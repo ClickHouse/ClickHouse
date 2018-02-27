@@ -251,8 +251,8 @@ private:
 
     void makeSet(const ASTFunction * node, const Block & sample_block);
 
-    /// Adds a list of ALIAS and MATERIALIZED columns from the table.
-    void addAliasAndMaterializedColumns();
+    /// Adds a list of ALIAS columns from the table.
+    void addAliasColumns();
 
     /// Replacing scalar subqueries with constant values.
     void executeScalarSubqueries();

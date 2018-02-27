@@ -176,9 +176,11 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
 void ExpressionAnalyzer::init()
 {
+    select_query = typeid_cast<ASTSelectQuery *>(ast.get());
+
     removeDuplicateColumns(source_columns);
 
-    select_query = typeid_cast<ASTSelectQuery *>(ast.get());
+    addAliasColumns();
 
     translateQualifiedNames();
 
@@ -194,9 +196,6 @@ void ExpressionAnalyzer::init()
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
-
-    /// ALIAS and MATERIALIZED columns should not be substituted for ASTAsterisk, we will add them now, after normalizeTree.
-    addAliasAndMaterializedColumns();
 
     DUMP(source_columns);
 
@@ -1046,8 +1045,18 @@ void ExpressionAnalyzer::normalizeTreeImpl(
             if (typeid_cast<ASTAsterisk *>(asts[i].get()))
             {
                 ASTs all_columns;
-                for (const auto & column_name_type : source_columns)
-                    all_columns.emplace_back(std::make_shared<ASTIdentifier>(column_name_type.name));
+
+                if (storage)
+                {
+                    /// If we select from a table, get only not MATERIALIZED, not ALIAS columns.
+                    for (const auto & name_type : storage->getColumnsListNonMaterialized())
+                        all_columns.emplace_back(std::make_shared<ASTIdentifier>(name_type.name));
+                }
+                else
+                {
+                    for (const auto & name_type : source_columns)
+                        all_columns.emplace_back(std::make_shared<ASTIdentifier>(name_type.name));
+                }
 
                 asts.erase(asts.begin() + i);
                 asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
@@ -1129,7 +1138,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 }
 
 
-void ExpressionAnalyzer::addAliasAndMaterializedColumns()
+void ExpressionAnalyzer::addAliasColumns()
 {
     if (!select_query)
         return;
@@ -1138,7 +1147,6 @@ void ExpressionAnalyzer::addAliasAndMaterializedColumns()
         return;
 
     source_columns.insert(std::end(source_columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
-    source_columns.insert(std::end(source_columns), std::begin(storage->materialized_columns), std::end(storage->materialized_columns));
 }
 
 
