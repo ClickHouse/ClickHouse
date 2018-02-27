@@ -38,63 +38,48 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     if (!num_selects)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
-    /// Check number of columns.
-
-    size_t num_columns = 0;
-    for (const auto & select : ast.list_of_selects->children)
-    {
-        size_t current_num_columns = typeid_cast<const ASTSelectQuery &>(*select).select_expression_list->children.size();
-
-        if (!current_num_columns)
-            throw Exception("Logical error: SELECT query has zero columns in SELECT clause", ErrorCodes::LOGICAL_ERROR);
-
-        if (!num_columns)
-            num_columns = current_num_columns;
-        else if (num_columns != current_num_columns)
-            throw Exception("Different number of columns in UNION ALL elements.", ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-    }
-
     /// Initialize interpreters for each SELECT query.
     /// Note that we pass 'required_result_column_names' to first SELECT.
-    /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' of the first SELECT,
+    /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,
     ///  because names could be different.
 
     nested_interpreters.reserve(num_selects);
 
-    std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
-
+    std::vector<Names> required_result_column_names_for_other_selects(num_selects);
+    if (!required_result_column_names.empty())
     {
-        const auto & first_select = static_cast<const ASTSelectQuery &>(*ast.list_of_selects->children.at(0));
+        /// Result header if there are no filtering by 'required_result_column_names'.
+        /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
+        Block full_result_header = InterpreterSelectQuery(
+            ast.list_of_selects->children.at(0), context, Names(), to_stage, subquery_depth).getSampleBlock();
+
+        std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
         for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
+            positions_of_required_result_columns[required_result_num] = full_result_header.getPositionByName(required_result_column_names[required_result_num]);
+
+        for (size_t query_num = 1; query_num < num_selects; ++query_num)
         {
-            bool found = false;
-            for (size_t position_in_select = 0; position_in_select < num_columns; ++position_in_select)
-            {
-                if (first_select.select_expression_list->children.at(position_in_select)->getAliasOrColumnName()
-                    == required_result_column_names[required_result_num])
-                {
-                    found = true;
-                    positions_of_required_result_columns[required_result_num] = position_in_select;
-                    break;
-                }
-            }
-            if (!found)
-                throw Exception("Logical error: cannot find result column " + backQuoteIfNeed(required_result_column_names[required_result_num])
-                    + " in first SELECT query in UNION ALL", ErrorCodes::LOGICAL_ERROR);
+            Block full_result_header_for_current_select = InterpreterSelectQuery(
+                ast.list_of_selects->children.at(query_num), context, Names(), to_stage, subquery_depth).getSampleBlock();
+
+            if (full_result_header_for_current_select.columns() != full_result_header.columns())
+                throw Exception("Different number of columns in UNION ALL elements", ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+
+            required_result_column_names_for_other_selects[query_num].reserve(required_result_column_names.size());
+            for (const auto & pos : positions_of_required_result_columns)
+                required_result_column_names_for_other_selects[query_num].push_back(full_result_header_for_current_select.getByPosition(pos).name);
         }
     }
 
     for (size_t query_num = 0; query_num < num_selects; ++query_num)
     {
-        const auto & select = ast.list_of_selects->children.at(query_num);
-        Names current_required_result_column_names(required_result_column_names.size());
-        for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
-            current_required_result_column_names[required_result_num]
-                = static_cast<const ASTSelectQuery &>(*select).select_expression_list
-                    ->children.at(positions_of_required_result_columns[required_result_num])->getAliasOrColumnName();
+        const Names & current_required_result_column_names = query_num == 0
+            ? required_result_column_names
+            : required_result_column_names_for_other_selects[query_num];
 
-        nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(select, context, current_required_result_column_names, to_stage, subquery_depth));
+        nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(
+            ast.list_of_selects->children.at(query_num), context, current_required_result_column_names, to_stage, subquery_depth));
     }
 
     /// Determine structure of result.
