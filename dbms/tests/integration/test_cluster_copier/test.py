@@ -129,8 +129,8 @@ class Task2:
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM cluster(cluster0, default, a)")) == TSV("85\n")
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count(), uniqExact(date) FROM cluster(cluster1, default, b)")) == TSV("85\t85\n")
 
-        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM b")) == TSV("1\n")
-        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM b")) == TSV("0\n")
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT jumpConsistentHash(intHash64(d), 2) FROM b")) == TSV("0\n")
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT jumpConsistentHash(intHash64(d), 2) FROM b")) == TSV("1\n")
 
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT uniqExact(partition) IN (12, 13) FROM system.parts WHERE active AND database='default' AND table='b'")) == TSV("1\n")
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT uniqExact(partition) IN (12, 13) FROM system.parts WHERE active AND database='default' AND table='b'")) == TSV("1\n")
@@ -184,19 +184,20 @@ def execute_task(task, cmd_options):
         zk.delete(zk_task_path, recursive=True)
 
 
+# Tests
+
 def test_copy1_simple(started_cluster):
     execute_task(Task1(started_cluster), [])
-
 
 def test_copy1_with_recovering(started_cluster):
     execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
-
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(Task2(started_cluster), [])
 
-def test_copy_month_to_week_partition(started_cluster):
+def test_copy_month_to_week_partition_with_recovering(started_cluster):
     execute_task(Task2(started_cluster), ['--copy-fault-probability', str(0.1)])
+
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
