@@ -103,7 +103,45 @@ private:
         "учшеж", "йгшеж", "дщпщгеж",
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
+    std::map<String, String> colors = {
+        /* Foreground */
+        { "black",   "30" },
+        { "red",     "31" },
+        { "green",   "32" },
+        { "yellow",  "33" },
+        { "blue",    "34" },
+        { "magenta", "35" },
+        { "cyan",    "36" },
+        { "white",   "97" },
 
+        { "light gray",    "37" },
+        { "dark gray",     "90" },
+        { "light red",     "91" },
+        { "light green",   "92" },
+        { "light yellow",  "93" },
+        { "light blue",    "94" },
+        { "light magenta", "95" },
+        { "light cyan",    "96" },
+
+        /* Background*/
+        { "background black",   "40" },
+        { "background red",     "41" },
+        { "background green",   "42" },
+        { "background yellow",  "43" },
+        { "background blue",    "44" },
+        { "background magenta", "45" },
+        { "background cyan",    "46" },
+        { "background white",   "107" },
+
+        { "background light gray",    "47" },
+        { "background dark gray",     "100" },
+        { "background light red",     "101" },
+        { "background light green",   "102" },
+        { "background light yellow",  "103" },
+        { "background light blue",    "104" },
+        { "background light magenta", "105" },
+        { "background light cyan",    "106" },
+    };
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
@@ -467,46 +505,6 @@ private:
 
     const String prompt() const
     {
-        std::map<String, String> colors = {
-            /* Foreground */
-            { "black",   "30" },
-            { "red",     "31" },
-            { "green",   "32" },
-            { "yellow",  "33" },
-            { "blue",    "34" },
-            { "magenta", "35" },
-            { "cyan",    "36" },
-            { "white",   "97" },
-
-            { "light gray",    "37" },
-            { "dark gray",     "90" },
-            { "light red",     "91" },
-            { "light green",   "92" },
-            { "light yellow",  "93" },
-            { "light blue",    "94" },
-            { "light magenta", "95" },
-            { "light cyan",    "96" },
-    
-            /* Background*/
-            { "background black",   "40" },
-            { "background red",     "41" },
-            { "background green",   "42" },
-            { "background yellow",  "43" },
-            { "background blue",    "44" },
-            { "background magenta", "45" },
-            { "background cyan",    "46" },
-            { "background white",   "107" },
-
-            { "background light gray",    "47" },
-            { "background dark gray",     "100" },
-            { "background light red",     "101" },
-            { "background light green",   "102" },
-            { "background light yellow",  "103" },
-            { "background light blue",    "104" },
-            { "background light magenta", "105" },
-            { "background light cyan",    "106" },
-        };
-
         String pattern = prompt_by_server_display_name;
 
         for (const auto & pair: colors)
