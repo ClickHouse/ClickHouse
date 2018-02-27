@@ -60,8 +60,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -197,8 +195,6 @@ void ExpressionAnalyzer::init()
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
 
-    DUMP(source_columns);
-
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries();
 
@@ -222,8 +218,6 @@ void ExpressionAnalyzer::init()
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
-
-    DUMP(source_columns);
 
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
