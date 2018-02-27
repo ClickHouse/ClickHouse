@@ -7,7 +7,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <common/likely.h>
+
 #include <yandex/consistent_hashing.h>
+#include <mailru/sumbur.h>
 
 
 namespace DB
@@ -65,47 +67,17 @@ struct JumpConsistentHashImpl
 };
 
 
-/// Sumbur algorithm https://github.com/mailru/sumbur-ruby/blob/master/lib/sumbur/pure_ruby.rb
-static inline UInt32 sumburConsistentHash(UInt32 hashed_integer, UInt32 cluster_capacity)
-{
-    UInt32 l = 0xFFFFFFFF;
-    UInt32 part = l / cluster_capacity;
-
-    if (l - hashed_integer < part)
-        return 0;
-
-    UInt32 h = hashed_integer;
-    UInt32 n = 1;
-    UInt32 i = 2;
-    while (i <= cluster_capacity)
-    {
-        auto c = l / (i * (i - 1));
-        if (c <= h)
-            h -= c;
-        else
-        {
-            h += c * (i - n - 1);
-            n = i;
-            if (l / n - h < part)
-                break;
-        }
-        i += 1;
-    }
-
-    return n - 1;
-}
-
 struct SumburConsistentHashImpl
 {
     static constexpr auto name = "sumburConsistentHash";
 
     using HashType = UInt32;
-    using ResultType = UInt32;
+    using ResultType = UInt16;
     using BucketsCountType = ResultType;
 
-    static inline ResultType apply(UInt32 hash, BucketsCountType n)
+    static inline ResultType apply(HashType hash, BucketsCountType n)
     {
-        return sumburConsistentHash(hash, n);
+        return static_cast<ResultType>(sumburConsistentHash(hash, n));
     }
 };
 
