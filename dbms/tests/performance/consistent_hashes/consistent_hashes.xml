@@ -27,10 +27,11 @@
            <values>
                <value>2</value>
                <value>500</value>
-               <value>2000000000</value>
+               <value>65535</value>
            </values>
        </substitution>
     </substitutions>
 
     <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers LIMIT 1000000000</query>
+    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers LIMIT 10000</query>
 </test>

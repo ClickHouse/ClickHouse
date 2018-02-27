@@ -19,4 +19,4 @@ if (USE_MYSQL)
     add_subdirectory (libmysqlxx)
 endif ()
 
-add_subdirectory (yandex-consistent-hashing)
+add_subdirectory (libconsistent-hashing)
