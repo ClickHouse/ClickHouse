@@ -64,7 +64,13 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
     DataTypePtr res = getLeastSupertype(element_types);
 
     for (Field & elem : x)
-        elem = convertFieldToType(elem, *res);
+    {
+        Field converted = convertFieldToType(elem, *res);
+
+        /// Otherwise elem must be NaN (convertFieldToType cannot convert NaN and returns NULL instead).
+        if (!converted.isNull())
+            elem = converted;
+    }
 
     return std::make_shared<DataTypeArray>(res);
 }
