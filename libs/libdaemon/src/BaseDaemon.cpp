@@ -567,11 +567,10 @@ void BaseDaemon::wakeup()
 
 void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
 {
-    auto current_log_hash = std::hash<std::string> ()(config.getString("logger"));
-    if (config_log_hash == current_log_hash)
+    auto current_logger = config.getString("logger");
+    if (config_logger == current_logger)
         return;
-
-    config_log_hash = current_log_hash;
+    config_logger = current_logger;
 
     bool is_daemon = config.getBool("application.runAsDaemon", false);
 

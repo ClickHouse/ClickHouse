@@ -230,7 +230,7 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
 private:
-    size_t config_log_hash = 0;
+    std::string config_logger;
 };
 
 
