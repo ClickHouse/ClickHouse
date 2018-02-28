@@ -338,9 +338,11 @@ public:
     {
         const auto & elem = block.getByPosition(arguments[0]);
 
+        /// Note that the result is not a constant, because it contains block size.
+
         block.getByPosition(result).column
             = DataTypeString().createColumnConst(block.rows(),
-                elem.type->getName() + ", " + elem.column->dumpStructure());
+                elem.type->getName() + ", " + elem.column->dumpStructure())->convertToFullColumnIfConst();
     }
 };
 
