@@ -377,7 +377,9 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         for (Poco::DirectoryIterator it(merge_dir_name); it != Poco::DirectoryIterator(); ++it)
         {
             Poco::File & file = *it;
-            if (file.isFile() && (endsWith(file.path(), ".xml") || endsWith(file.path(), ".conf")))
+            if (file.isFile()
+                && (endsWith(file.path(), ".xml") || endsWith(file.path(), ".conf"))
+                && !startsWith(file.path(), ".")) // skip temporary files
             {
                 files.push_back(file.path());
             }
