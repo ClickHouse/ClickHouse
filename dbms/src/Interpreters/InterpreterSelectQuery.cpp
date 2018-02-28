@@ -434,20 +434,10 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeOrder(pipeline);
             }
 
-            /// At this stage, we can calculate the minimums and maximums, if necessary.
-            if (settings.extremes)
-            {
-                pipeline.transform([&](auto & stream)
-                {
-                    if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-                        p_stream->enableExtremes();
-                });
-            }
-
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
-            if (query.limit_length && pipeline.hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list)
+            if (query.limit_length && pipeline.hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list && !settings.extremes)
             {
                 executePreLimit(pipeline);
             }
@@ -470,13 +460,17 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (need_second_distinct_pass)
                     executeDistinct(pipeline, false, Names());
 
+                /** We must do projection after DISTINCT because projection may remove some columns.
+                  */
                 executeProjection(pipeline, expressions.final_projection);
+                executeExtremes(pipeline);
                 executeLimitBy(pipeline);
                 executeLimit(pipeline);
             }
             else
             {
                 executeProjection(pipeline, expressions.final_projection);
+                executeExtremes(pipeline);
             }
         }
     }
@@ -1108,6 +1102,19 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
             stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end);
         });
     }
+}
+
+
+void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
+{
+    if (!context.getSettingsRef().extremes)
+        return;
+
+    pipeline.transform([&](auto & stream)
+    {
+        if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
+            p_stream->enableExtremes();
+    });
 }
 
 
