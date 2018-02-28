@@ -6,6 +6,8 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 
+#include <DataStreams/MaterializingBlockInputStream.h>
+
 
 namespace DB
 {
@@ -43,7 +45,14 @@ BlockInputStreams StorageView::read(
     const unsigned /*num_streams*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-    return InterpreterSelectWithUnionQuery(inner_query->clone(), context, column_names).executeWithMultipleStreams();
+    BlockInputStreams res = InterpreterSelectWithUnionQuery(inner_query->clone(), context, column_names).executeWithMultipleStreams();
+
+    /// It's expected that the columns read from storage are not constant.
+    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+    for (auto & stream : res)
+        stream = std::make_shared<MaterializingBlockInputStream>(stream);
+
+    return res;
 }
 
 

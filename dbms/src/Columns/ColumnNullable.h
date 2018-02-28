@@ -78,6 +78,7 @@ public:
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
+    bool onlyNull() const override { return nested_column->isDummy(); }
 
 
     /// Return the column that represents values.
