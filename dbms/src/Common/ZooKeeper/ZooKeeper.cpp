@@ -641,7 +641,8 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 int32_t ZooKeeper::tryMultiUnsafe(const Ops & ops, MultiTransactionInfo & info)
 {
     info.code = multiImpl(ops, &info.op_results);
-    info.ops = &ops;
+    for (const OpPtr & op : ops)
+        info.ops.emplace_back(op->clone());
     return info.code;
 }
 

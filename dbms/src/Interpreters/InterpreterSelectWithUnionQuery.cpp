@@ -195,11 +195,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     }
     else
     {
-        if (settings.union_all_sequential)
-            result_stream = std::make_shared<ConcatBlockInputStream>(nested_streams);
-        else
-            result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, settings.max_threads);
-
+        result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, settings.max_threads);
         nested_streams.clear();
     }
 
