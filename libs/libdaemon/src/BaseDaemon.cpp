@@ -565,14 +565,19 @@ void BaseDaemon::wakeup()
 }
 
 
-void BaseDaemon::buildLoggers()
+void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
 {
-    bool is_daemon = config().getBool("application.runAsDaemon", false);
+    auto current_log_hash = std::hash<std::string> ()(config.getString("logger"));
+    if (config_log_hash == current_log_hash)
+        return;
+    config_log_hash = current_log_hash;
+
+    bool is_daemon = config.getBool("application.runAsDaemon", false);
 
     /// Change path for logging.
-    if (config().hasProperty("logger.log"))
+    if (config.hasProperty("logger.log"))
     {
-        std::string path = createDirectory(config().getString("logger.log"));
+        std::string path = createDirectory(config.getString("logger.log"));
         if (is_daemon
             && chdir(path.c_str()) != 0)
             throw Poco::Exception("Cannot change directory to " + path);
@@ -587,45 +592,45 @@ void BaseDaemon::buildLoggers()
     // Split log and error log.
     Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
-    if (config().hasProperty("logger.log"))
+    if (config.hasProperty("logger.log"))
     {
-        createDirectory(config().getString("logger.log"));
-        std::cerr << "Logging to " << config().getString("logger.log") << std::endl;
+        createDirectory(config.getString("logger.log"));
+        std::cerr << "Logging to " << config.getString("logger.log") << std::endl;
 
         // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log_file = new FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.log")).absolute().toString());
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.log")).absolute().toString());
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
-        log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
-        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
+        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
+        log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
+        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
         log->setChannel(log_file);
         split->addChannel(log);
         log_file->open();
     }
 
-    if (config().hasProperty("logger.errorlog"))
+    if (config.hasProperty("logger.errorlog"))
     {
-        createDirectory(config().getString("logger.errorlog"));
-        std::cerr << "Logging errors to " << config().getString("logger.errorlog") << std::endl;
+        createDirectory(config.getString("logger.errorlog"));
+        std::cerr << "Logging errors to " << config.getString("logger.errorlog") << std::endl;
         Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
         level->setLevel(Message::PRIO_NOTICE);
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
         error_log_file = new FileChannel;
-        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.errorlog")).absolute().toString());
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.errorlog")).absolute().toString());
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-        error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
         errorlog->setChannel(error_log_file);
         level->setChannel(errorlog);
         split->addChannel(level);
@@ -635,7 +640,7 @@ void BaseDaemon::buildLoggers()
     /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
     /// We don't need this configuration parameter.
 
-    if (config().getBool("logger.use_syslog", false) || config().getBool("dynamic_layer_selection", false))
+    if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
     {
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
         pf->setProperty("times", "local");
@@ -646,7 +651,7 @@ void BaseDaemon::buildLoggers()
         syslog_channel->open();
     }
 
-    if (config().getBool("logger.console", false) || (!config().hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
+    if (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
     {
         Poco::AutoPtr<ConsoleChannel> file = new ConsoleChannel;
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
@@ -662,7 +667,7 @@ void BaseDaemon::buildLoggers()
     logger().setChannel(split);
 
     // Global logging level (it can be overridden for specific loggers).
-    logger().setLevel(config().getString("logger.level", "trace"));
+    logger().setLevel(config.getString("logger.level", "trace"));
 
     // Attach to the root logger.
     Logger::root().setLevel(logger().getLevel());
@@ -670,11 +675,11 @@ void BaseDaemon::buildLoggers()
 
     // Explicitly specified log levels for specific loggers.
     AbstractConfiguration::Keys levels;
-    config().keys("logger.levels", levels);
+    config.keys("logger.levels", levels);
 
     if(!levels.empty())
         for(AbstractConfiguration::Keys::iterator it = levels.begin(); it != levels.end(); ++it)
-            Logger::get(*it).setLevel(config().getString("logger.levels." + *it, "trace"));
+            Logger::get(*it).setLevel(config.getString("logger.levels." + *it, "trace"));
 }
 
 
@@ -839,7 +844,7 @@ void BaseDaemon::initialize(Application & self)
             pid.seed(config().getString("pid"));
     }
 
-    buildLoggers();
+    buildLoggers(config());
 
     if (is_daemon)
     {

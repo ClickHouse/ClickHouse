@@ -67,7 +67,7 @@ public:
     void reloadConfiguration();
 
     /// Строит необходимые логгеры
-    void buildLoggers();
+    void buildLoggers(Poco::Util::AbstractConfiguration & config);
 
     /// Определяет параметр командной строки
     void defineOptions(Poco::Util::OptionSet & _options) override;
@@ -228,6 +228,9 @@ protected:
     std::string config_path;
     ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
+
+private:
+    size_t config_log_hash = 0;
 };
 
 

@@ -5,7 +5,6 @@
 
 #include <common/logger_useful.h>
 
-#include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
 #include <Common/ConfigProcessor/ConfigProcessor.h>
 

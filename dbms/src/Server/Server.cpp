@@ -228,7 +228,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         std::move(main_config_zk_node_cache),
-        [&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+        [&](ConfigurationPtr config)
+        {
+            buildLoggers(*config);
+            global_context->setClustersConfig(config);
+        },
         /* already_loaded = */ true);
 
     /// Initialize users config reloader.
