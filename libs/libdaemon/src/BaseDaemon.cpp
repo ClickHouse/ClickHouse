@@ -1,6 +1,6 @@
 #include <daemon/BaseDaemon.h>
 
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
