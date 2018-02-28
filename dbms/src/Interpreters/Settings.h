@@ -180,7 +180,9 @@ struct Settings
     M(SettingBool, optimize_throw_if_noop, false, "If setting is enabled and OPTIMIZE query didn't actually assign a merge then an explanatory exception is thrown") \
     M(SettingBool, use_index_for_in_with_subqueries, true, "Try using an index if there is a subquery or a table expression on the right side of the IN operator.") \
     \
-    M(SettingBool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.")
+    M(SettingBool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.") \
+    \
+    M(SettingBool, union_all_sequential, false, "Execute SELECTs in UNION ALL sequentially, one after the other. Each SELECT can still be processed in multiple threads.") \
 
 
     /// Possible limits for query execution.
