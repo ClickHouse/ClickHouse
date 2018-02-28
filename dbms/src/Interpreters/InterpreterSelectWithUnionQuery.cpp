@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
@@ -178,6 +179,8 @@ BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams()
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
+    const Settings & settings = context.getSettingsRef();
+
     BlockInputStreams nested_streams = executeWithMultipleStreams();
     BlockInputStreamPtr result_stream;
 
@@ -192,7 +195,11 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     }
     else
     {
-        result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, context.getSettingsRef().max_threads);
+        if (settings.union_all_sequential)
+            result_stream = std::make_shared<ConcatBlockInputStream>(nested_streams);
+        else
+            result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, settings.max_threads);
+
         nested_streams.clear();
     }
 
