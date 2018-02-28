@@ -5,6 +5,7 @@
 #include <Poco/Timespan.h>
 
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/FieldVisitors.h>
 
 #include <IO/CompressedStream.h>
 #include <IO/ReadHelpers.h>
@@ -57,7 +58,7 @@ struct SettingInt
 
     void set(const Field & x)
     {
-        set(safeGet<IntType>(x));
+        set(applyVisitor(FieldVisitorConvertToNumber<IntType>(), x));
     }
 
     void set(const String & x)
