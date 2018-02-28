@@ -35,29 +35,7 @@ message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 # TSan is not supported due to false positive errors in libstdc++ and necessity to rebuild libstdc++ with TSan
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
-    set (ARCH_AARCH64 1)
-endif ()
-if (ARCH_AARCH64 OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-    set (ARCH_ARM 1)
-endif ()
-if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "i386")
-    set (ARCH_I386 1)
-endif ()
-if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
-    set (ARCH_32 1)
-    message (WARNING "Support for 32bit platforms is highly experimental")
-endif ()
-if (CMAKE_SYSTEM MATCHES "Linux")
-    set (ARCH_LINUX 1)
-endif ()
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
-    set (ARCH_FREEBSD 1)
-endif ()
-
-if (ARCH_FREEBSD)
-    set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
-endif ()
+include (cmake/arch.cmake)
 
 set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
@@ -111,8 +89,10 @@ endif ()
 
 set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
-find_program (LLD_PATH NAMES lld)
-find_program (GOLD_PATH NAMES gold)
+string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
+
+find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
+find_program (GOLD_PATH NAMES "gold")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
@@ -121,8 +101,8 @@ elseif (GOLD_PATH)
 endif ()
 
 if (LINKER_NAME)
-    message(STATUS "Using linker: ${LINKER_NAME}")
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+    message(STATUS "Using linker: ${LINKER_NAME} (selected from: LLD_PATH=${LLD_PATH}; GOLD_PATH=${GOLD_PATH}; COMPILER_POSTFIX=${COMPILER_POSTFIX})")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
 option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
@@ -196,29 +176,7 @@ if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
-set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer")
-if (SAN_DEBUG)
-    set (SAN_FLAGS "${SAN_FLAGS} -O0")
-else ()
-    set (SAN_FLAGS "${SAN_FLAGS} -O3")
-endif ()
-
-set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
-set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
-set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
-set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN}   ${SAN_FLAGS} -fsanitize=undefined")
-set (CMAKE_CXX_FLAGS_MSAN                "${CMAKE_CXX_FLAGS_MSAN}  ${SAN_FLAGS} -fsanitize=memory")
-set (CMAKE_C_FLAGS_MSAN                  "${CMAKE_C_FLAGS_MSAN}    ${SAN_FLAGS} -fsanitize=memory")
-set (CMAKE_CXX_FLAGS_TSAN                "${CMAKE_CXX_FLAGS_TSAN}  ${SAN_FLAGS} -fsanitize=thread")
-set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} -fsanitize=thread")
-
-# clang use static linking by default
-if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_EXE_LINKER_FLAGS_ASAN     "${CMAKE_EXE_LINKER_FLAGS_ASAN} -static-libasan")
-    set (CMAKE_EXE_LINKER_FLAGS_UBSAN    "${CMAKE_EXE_LINKER_FLAGS_UBSAN} -static-libubsan")
-    set (CMAKE_EXE_LINKER_FLAGS_MSAN     "${CMAKE_EXE_LINKER_FLAGS_MSAN} -static-libmsan")
-    set (CMAKE_EXE_LINKER_FLAGS_TSAN     "${CMAKE_EXE_LINKER_FLAGS_TSAN} -static-libtsan")
-endif ()
+include (cmake/sanitize.cmake)
 
 # Using "include-what-you-use" tool.
 option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
@@ -307,13 +265,7 @@ include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
 
-
-set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
-set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
-set (FULL_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_EXE_LINKER_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
-message (STATUS "C_FLAGS      = ${FULL_C_FLAGS}")
-message (STATUS "CXX_FLAGS    = ${FULL_CXX_FLAGS}")
-message (STATUS "LINKER_FLAGS = ${FULL_EXE_LINKER_FLAGS}")
+include (cmake/print_flags.cmake)
 
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)

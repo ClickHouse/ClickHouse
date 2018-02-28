@@ -170,7 +170,7 @@ struct Settings
     \
     M(SettingBool, insert_distributed_sync, false, "If setting is enabled, insert query into distributed waits until data will be sent to all nodes in cluster.") \
     M(SettingUInt64, insert_distributed_timeout, 0, "Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. Zero value means no timeout.") \
-    M(SettingInt64, distributed_ddl_task_timeout, 120, "Timeout for DDL query responses from all hosts in cluster. Negative value means infinite.") \
+    M(SettingInt64, distributed_ddl_task_timeout, 180, "Timeout for DDL query responses from all hosts in cluster. Negative value means infinite.") \
     M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS, "Timeout for flushing data from streaming storages.") \
     M(SettingString, format_schema, "", "Schema identifier (used by schema-based formats)") \
     M(SettingBool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.") \
@@ -181,8 +181,7 @@ struct Settings
     M(SettingBool, use_index_for_in_with_subqueries, true, "Try using an index if there is a subquery or a table expression on the right side of the IN operator.") \
     \
     M(SettingBool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.") \
-    \
-    M(SettingBool, union_all_sequential, false, "Execute SELECTs in UNION ALL sequentially, one after the other. Each SELECT can still be processed in multiple threads.") \
+    M(SettingBool, allow_distributed_ddl, true, "If it is set to true, then a user is allowed to executed distributed DDL queries.")
 
 
     /// Possible limits for query execution.

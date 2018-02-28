@@ -90,7 +90,9 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
-    if (NOT APPLE) # tests never end
+    if (APPLE) # tests never end
+        set (BUILD_TESTING 0 CACHE INTERNAL "")
+    else ()
         set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
     endif ()
     set (_save ${CMAKE_CXX_EXTENSIONS})
