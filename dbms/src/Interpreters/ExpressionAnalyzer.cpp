@@ -31,6 +31,7 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
 
@@ -2173,7 +2174,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         DataTypePtr type = applyVisitor(FieldToDataType(), node->value);
 
         ColumnWithTypeAndName column;
-        column.column = type->createColumnConst(1, node->value);
+        column.column = type->createColumnConst(1, convertFieldToType(node->value, *type));
         column.type = type;
         column.name = node->getColumnName();
 
