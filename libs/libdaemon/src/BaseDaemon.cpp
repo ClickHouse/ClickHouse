@@ -570,32 +570,19 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
     auto current_log_hash = std::hash<std::string> ()(config.getString("logger"));
     if (config_log_hash == current_log_hash)
         return;
+
     config_log_hash = current_log_hash;
 
     bool is_daemon = config.getBool("application.runAsDaemon", false);
 
-    /// Change path for logging.
-    if (config.hasProperty("logger.log"))
-    {
-        std::string path = createDirectory(config.getString("logger.log"));
-        if (is_daemon
-            && chdir(path.c_str()) != 0)
-            throw Poco::Exception("Cannot change directory to " + path);
-    }
-    else
-    {
-        if (is_daemon
-            && chdir("/tmp") != 0)
-            throw Poco::Exception("Cannot change directory to /tmp");
-    }
-
     // Split log and error log.
     Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
+    auto log_level = config.getString("logger.level", "trace");
     if (config.hasProperty("logger.log"))
     {
         createDirectory(config.getString("logger.log"));
-        std::cerr << "Logging to " << config.getString("logger.log") << std::endl;
+        std::cerr << "Logging " << log_level << " to " << config.getString("logger.log") << std::endl;
 
         // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
@@ -658,7 +645,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log->setChannel(file);
-        logger().warning("Logging to console");
+        logger().warning("Logging " + log_level + " to console");
         split->addChannel(log);
     }
 
@@ -667,10 +654,16 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
     logger().setChannel(split);
 
     // Global logging level (it can be overridden for specific loggers).
-    logger().setLevel(config.getString("logger.level", "trace"));
+    logger().setLevel(log_level);
+
+    // Set level to all already created loggers
+    std::vector <std::string> names;
+    Logger::root().names(names);
+    for (const auto & name : names)
+        Logger::root().get(name).setLevel(log_level);
 
     // Attach to the root logger.
-    Logger::root().setLevel(logger().getLevel());
+    Logger::root().setLevel(log_level);
     Logger::root().setChannel(logger().getChannel());
 
     // Explicitly specified log levels for specific loggers.
@@ -842,6 +835,21 @@ void BaseDaemon::initialize(Application & self)
         /// Create pid file.
         if (is_daemon && config().has("pid"))
             pid.seed(config().getString("pid"));
+    }
+
+    /// Change path for logging.
+    if (config().hasProperty("logger.log"))
+    {
+        std::string path = createDirectory(config().getString("logger.log"));
+        if (is_daemon
+            && chdir(path.c_str()) != 0)
+            throw Poco::Exception("Cannot change directory to " + path);
+    }
+    else
+    {
+        if (is_daemon
+            && chdir("/tmp") != 0)
+            throw Poco::Exception("Cannot change directory to /tmp");
     }
 
     buildLoggers(config());
