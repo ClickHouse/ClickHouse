@@ -61,8 +61,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -194,8 +192,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
         source_columns = storage->getSampleBlock().getNamesAndTypesList();
     else
         removeDuplicateColumns(source_columns);
-
-    DUMP(source_columns);
 
     addAliasColumns();
 
