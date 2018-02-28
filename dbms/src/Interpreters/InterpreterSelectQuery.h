@@ -33,7 +33,7 @@ public:
      *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
      *
      * subquery_depth
-     * - to control the restrictions on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
+     * - to control the limit on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
      *   for INSERT SELECT, a value 1 is passed instead of 0.
      *
      * input
@@ -109,7 +109,7 @@ private:
 
     void init(const Names & required_result_column_names);
 
-    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
+    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
 
     struct AnalysisResult
@@ -147,10 +147,10 @@ private:
 
     /// Different stages of query execution.
 
-    /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
+    void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
+    /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
+    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -182,7 +182,6 @@ private:
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
-    Block source_header;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;

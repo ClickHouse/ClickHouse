@@ -60,6 +60,8 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -187,7 +189,12 @@ ExpressionAnalyzer::ExpressionAnalyzer(
         }
     }
 
-    removeDuplicateColumns(source_columns);
+    if (storage && source_columns.empty())
+        source_columns = storage->getSampleBlock().getNamesAndTypesList();
+    else
+        removeDuplicateColumns(source_columns);
+
+    DUMP(source_columns);
 
     addAliasColumns();
 
@@ -2686,7 +2693,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     if (required.empty())
         required.insert(ExpressionActions::getSmallestColumn(source_columns));
 
-    unknown_required_source_columns = required;
+    NameSet unknown_required_source_columns = required;
 
     for (NamesAndTypesList::iterator it = source_columns.begin(); it != source_columns.end();)
     {
@@ -2713,6 +2720,9 @@ void ExpressionAnalyzer::collectUsedColumns()
                 ++it;
         }
     }
+
+    if (!unknown_required_source_columns.empty())
+        throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type)
@@ -2775,14 +2785,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 
 Names ExpressionAnalyzer::getRequiredSourceColumns() const
 {
-    if (!unknown_required_source_columns.empty())
-        throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
-
-    Names res;
-    for (const auto & column_name_type : source_columns)
-        res.push_back(column_name_type.name);
-
-    return res;
+    return source_columns.getNames();
 }
 
 

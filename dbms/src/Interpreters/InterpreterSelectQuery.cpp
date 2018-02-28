@@ -19,7 +19,6 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -113,53 +112,44 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
 
     max_streams = settings.max_threads;
 
-    /// Read from prepared input.
+    const auto & table_expression = query.table();
+    NamesAndTypesList source_columns;
+
     if (input)
     {
-        source_header = input->getHeader();
+        /// Read from prepared input.
+        source_columns = input->getHeader().getNamesAndTypesList();
+    }
+    else if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
+    {
+        /// Read from subquery.
+        source_columns = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context).getNamesAndTypesList();
+    }
+    else if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
+    {
+        /// Read from table function.
+
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
+            typeid_cast<const ASTFunction *>(table_expression.get())->name, context);
+        /// Run it and remember the result
+        storage = table_function_ptr->execute(table_expression, context);
     }
     else
     {
-        auto table_expression = query.table();
+        /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
+        String database_name;
+        String table_name;
 
-        /// Read from subquery.
-        if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
-        {
-            source_header = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context);
-        }
-        else
-        {
-            /// Read from table function.
-            if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
-            {
-                /// Get the table function
-                TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
-                    typeid_cast<const ASTFunction *>(table_expression.get())->name, context);
-                /// Run it and remember the result
-                storage = table_function_ptr->execute(table_expression, context);
-            }
-            else
-            {
-                /// Read from table.
-                String database_name;
-                String table_name;
+        getDatabaseAndTableNames(database_name, table_name);
 
-                getDatabaseAndTableNames(database_name, table_name);
-
-                storage = context.getTable(database_name, table_name);
-            }
-
-            table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
-
-            source_header = storage->getSampleBlock();
-        }
+        storage = context.getTable(database_name, table_name);
     }
 
-    if (!source_header)
-        throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
+    if (storage)
+        table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
 
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, context, storage, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, context, storage, source_columns, required_result_column_names, subquery_depth, !only_analyze);
 
     if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
         throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -208,7 +198,7 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 Block InterpreterSelectQuery::getSampleBlock()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, std::make_shared<OneBlockInputStream>(source_header));
+    executeImpl(pipeline, input, true);
     auto res = pipeline.firstStream()->getHeader();
     return res;
 }
@@ -223,7 +213,7 @@ Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input);
+    executeImpl(pipeline, input, false);
     executeUnion(pipeline);
 
     BlockIO res;
@@ -234,7 +224,7 @@ BlockIO InterpreterSelectQuery::execute()
 BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input);
+    executeImpl(pipeline, input, false);
     return pipeline.streams;
 }
 
@@ -319,7 +309,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 }
 
 
-void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input)
+void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run)
 {
     if (input)
         pipeline.streams.push_back(input);
@@ -335,7 +325,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
      */
 
     /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-    QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline);
+    QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
 
     LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
@@ -508,7 +498,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
     }
 }
 
-QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline)
+QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline, bool dry_run)
 {
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
@@ -544,7 +534,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                     required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));
             }
 
-            alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, source_header.getNamesAndTypesList()}.getActions(true);
+            alias_actions = ExpressionAnalyzer(required_columns_expr_list, context, storage).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
@@ -668,8 +658,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 optimize_prewhere(*merge_tree);
         }
 
-        /// If there was no already prepared input.
-        if (pipeline.streams.empty())
+        if (!dry_run)
             pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         if (pipeline.streams.empty())
