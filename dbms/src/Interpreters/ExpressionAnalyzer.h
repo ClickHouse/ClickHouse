@@ -69,7 +69,7 @@ public:
         const ASTPtr & ast_,
         const Context & context_,
         const StoragePtr & storage_,
-        const NamesAndTypesList & source_columns_,
+        const NamesAndTypesList & source_columns_ = {},
         const Names & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
         bool do_global_ = false,
@@ -145,9 +145,6 @@ private:
     const Context & context;
     Settings settings;
     size_t subquery_depth;
-
-    /// Columns that are mentioned in the expression, but were not specified in the constructor.
-    NameSet unknown_required_source_columns;
 
     /** Original columns.
       * First, all available columns of the table are placed here. Then (when analyzing the query), unused columns are deleted.
