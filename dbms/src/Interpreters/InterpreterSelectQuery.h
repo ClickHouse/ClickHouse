@@ -118,6 +118,7 @@ private:
         bool need_aggregate = false;
         bool has_having     = false;
         bool has_order_by   = false;
+        bool has_limit_by   = false;
 
         ExpressionActionsPtr before_join;   /// including JOIN
         ExpressionActionsPtr before_where;

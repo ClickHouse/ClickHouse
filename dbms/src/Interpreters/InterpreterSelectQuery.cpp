@@ -286,9 +286,12 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         res.before_order_and_select = chain.getLastActions();
         chain.addStep();
 
-        query_analyzer->appendLimitBy(chain, !res.second_stage);
-        res.before_limit_by = chain.getLastActions();
-        chain.addStep();
+        if (query_analyzer->appendLimitBy(chain, !res.second_stage))
+        {
+            res.has_limit_by = true;
+            res.before_limit_by = chain.getLastActions();
+            chain.addStep();
+        }
 
         query_analyzer->appendProjectResult(chain);
         res.final_projection = chain.getLastActions();
@@ -438,7 +441,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
-            if (query.limit_length && pipeline.hasMoreThanOneStream() && !query.distinct && !query.limit_by_expression_list && !settings.extremes)
+            if (query.limit_length && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
             {
                 executePreLimit(pipeline);
             }
@@ -460,7 +463,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             if (need_second_distinct_pass)
                 executeDistinct(pipeline, false, expressions.selected_columns);
 
-            if (query.limit_by_expression_list)
+            if (expressions.has_limit_by)
             {
                 executeExpression(pipeline, expressions.before_limit_by);
                 executeLimitBy(pipeline);
