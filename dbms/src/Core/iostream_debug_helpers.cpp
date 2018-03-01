@@ -133,10 +133,8 @@ std::ostream & operator<<(std::ostream & stream, const ExpressionAnalyzer & what
 {
     stream << "ExpressionAnalyzer{"
            << "hasAggregation=" << what.hasAggregation()
-           << ", RequiredColumns=" << what.getRequiredColumns()
            << ", SubqueriesForSet=" << what.getSubqueriesForSets()
            << ", ExternalTables=" << what.getExternalTables()
-           // TODO
            << "}";
     return stream;
 }

@@ -1,12 +1,12 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 
@@ -120,7 +120,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
         pos = before_select;
-        ParserSelectQuery select_p;
+        ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
     }
     else

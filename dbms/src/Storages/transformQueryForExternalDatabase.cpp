@@ -62,7 +62,7 @@ String transformQueryForExternalDatabase(
     const Context & context)
 {
     ExpressionAnalyzer analyzer(query.clone(), context, {}, available_columns);
-    const Names & used_columns = analyzer.getRequiredColumns();
+    const Names & used_columns = analyzer.getRequiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
 

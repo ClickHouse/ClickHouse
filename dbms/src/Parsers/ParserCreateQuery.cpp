@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 
 
@@ -195,7 +195,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserStorage storage_p;
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
-    ParserSelectQuery select_p;
+    ParserSelectWithUnionQuery select_p;
 
     ASTPtr database;
     ASTPtr table;
@@ -390,7 +390,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!s_as.ignore(pos, expected))
             return false;
 
-        ParserSelectQuery select_p;
         if (!select_p.parse(pos, select, expected))
             return false;
     }

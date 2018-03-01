@@ -91,9 +91,9 @@ public:
         const ColumnDefaults & column_defaults);
 
     NamesAndTypesList columns;
-    NamesAndTypesList materialized_columns{};
-    NamesAndTypesList alias_columns{};
-    ColumnDefaults column_defaults{};
+    NamesAndTypesList materialized_columns;
+    NamesAndTypesList alias_columns;
+    ColumnDefaults column_defaults;
 
 private:
     virtual const NamesAndTypesList & getColumnsListImpl() const

@@ -384,7 +384,7 @@ void AnalyzeColumns::process(ASTPtr & ast, const CollectAliases & aliases, const
 
     for (auto & child : ast->children)
     {
-        if (select && (child.get() == select->format.get() || child.get() == select->settings.get()))
+        if (select && child.get() == select->settings.get())
             continue;
 
         processImpl(child, columns, aliases, tables);
