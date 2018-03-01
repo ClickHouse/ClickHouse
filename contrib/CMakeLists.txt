@@ -1,4 +1,4 @@
-if (NOT ARCH_MSVC)
+if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
 endif ()
 
@@ -107,8 +107,9 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
     add_subdirectory (librdkafka)
 
     if (USE_INTERNAL_SSL_LIBRARY)
-        target_include_directories(rdkafka PRIVATE ${OPENSSL_INCLUDE_DIR})
+        target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
     endif ()
+    target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)

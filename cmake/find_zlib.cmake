@@ -5,8 +5,7 @@ if (NOT USE_INTERNAL_ZLIB_LIBRARY)
 endif ()
 
 if (NOT ZLIB_FOUND)
-
-    if (NOT_ARCH_MSVC)
+    if (NOT MSVC)
         set (INTERNAL_ZLIB_NAME "zlib-ng")
     else ()
         set (INTERNAL_ZLIB_NAME "zlib")
