@@ -128,11 +128,7 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     else if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
     {
         /// Read from table function.
-
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
-            typeid_cast<const ASTFunction *>(table_expression.get())->name, context);
-        /// Run it and remember the result
-        storage = table_function_ptr->execute(table_expression, context);
+        storage = context.executeTableFunction(table_expression);
     }
     else
     {
