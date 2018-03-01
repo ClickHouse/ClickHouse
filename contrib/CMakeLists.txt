@@ -138,7 +138,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (ENABLE_TESTS ${_save})
     set (CMAKE_CXX_FLAGS ${save_CMAKE_CXX_FLAGS})
     set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    if (OPENSSL_FOUND)
+    if (OPENSSL_FOUND AND TARGET Crypto)
         # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
         target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
