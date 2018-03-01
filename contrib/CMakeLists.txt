@@ -135,6 +135,8 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
     if (USE_INTERNAL_SSL_LIBRARY)
         set (DISABLE_INTERNAL_OPENSSL 1)
+        set (ENABLE_NETSSL 0) # TODO!
+        set (ENABLE_CRYPTO 0) # TODO!
     endif ()
     add_subdirectory (poco)
     unset (CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
