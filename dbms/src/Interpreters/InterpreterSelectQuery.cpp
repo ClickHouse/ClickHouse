@@ -569,7 +569,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     const Settings & settings = context.getSettingsRef();
 
     /// Limitation on the number of columns to read.
-    if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
+    /// It's not applied in 'dry_run' mode, because the query could be analyzed without removal of unnecessary columns.
+    if (!dry_run && settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
         throw Exception("Limit for number of columns to read exceeded. "
             "Requested: " + toString(required_columns.size())
             + ", maximum: " + settings.limits.max_columns_to_read.toString(),
@@ -626,7 +627,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else if (interpreter_subquery)
     {
         /// Subquery.
-        pipeline.streams = interpreter_subquery->executeWithMultipleStreams();
+
+        if (!dry_run)
+            pipeline.streams = interpreter_subquery->executeWithMultipleStreams();
+        else
+            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(interpreter_subquery->getSampleBlock()));
     }
     else if (storage)
     {
