@@ -1,10 +1,13 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Interpreters/Context.h>
+#include <Storages/System/VirtualColumnsProcessor.h>
 
 
 namespace DB
@@ -50,6 +53,18 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
         { "memory_usage",         std::make_shared<DataTypeInt64>() },
         { "query",                std::make_shared<DataTypeString>() }
     };
+
+    virtual_columns = ColumnsWithTypeAndName{
+        {
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()),
+            "thread_numbers"
+        },
+        {
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64 >()})),
+            "profile_counters"
+        }
+    };
 }
 
 
@@ -61,12 +76,18 @@ BlockInputStreams StorageSystemProcesses::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ProcessList::Info info = context.getProcessList().getInfo();
+    auto virtual_columns_processor = getVirtualColumnsProcessor();
+    bool has_thread_numbers, has_profile_counters;
+    Names real_columns = virtual_columns_processor.process(column_names, {&has_thread_numbers, &has_profile_counters});
+    check(real_columns);
 
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+    Block res_block = getSampleBlock().cloneEmpty();
+    virtual_columns_processor.appendVirtualColumns(res_block);
+    MutableColumns res_columns = res_block.cloneEmptyColumns();
+
+    ProcessList::Info info = context.getProcessList().getInfo(has_thread_numbers, has_profile_counters);
 
     for (const auto & process : info)
     {
@@ -98,10 +119,38 @@ BlockInputStreams StorageSystemProcesses::read(
         res_columns[i++]->insert(UInt64(process.written_bytes));
         res_columns[i++]->insert(process.memory_usage);
         res_columns[i++]->insert(process.query);
+
+        if (has_thread_numbers)
+        {
+            Array thread_numbers;
+            thread_numbers.reserve(process.thread_numbers.size());
+
+            for (const UInt32 thread_number : process.thread_numbers)
+                thread_numbers.emplace_back(UInt64(thread_number));
+
+            res_columns[i++]->insert(std::move(thread_numbers));
+        }
+
+        if (has_profile_counters)
+        {
+            Array profile_counters;
+            profile_counters.reserve(ProfileEvents::Counters::num_counters);
+
+            for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
+            {
+                Array name_and_counter{
+                    String(ProfileEvents::getDescription(event)),
+                    UInt64((*process.profile_counters)[event].load(std::memory_order_relaxed))
+                };
+
+                profile_counters.emplace_back(Tuple(std::move(name_and_counter)));
+            }
+
+            res_columns[i++]->insert(std::move(profile_counters));
+        }
     }
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res_block.cloneWithColumns(std::move(res_columns))));
 }
-
 
 }

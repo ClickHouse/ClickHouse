@@ -1275,10 +1275,9 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     bool final,
     ThreadPool * thread_pool) const
 {
-    auto converter = [&](size_t bucket, const ThreadStatusPtr & main_thread)
+    auto converter = [&](size_t bucket, ThreadStatusPtr main_thread)
     {
-        if (main_thread)
-            ThreadStatus::setCurrentThreadFromSibling(main_thread);
+        ThreadStatus::setCurrentThreadFromSibling(main_thread);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1555,7 +1554,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 
 template <typename Method>
-void NO_INLINE Aggregator:: mergeBucketImpl(
+void NO_INLINE Aggregator::mergeBucketImpl(
     ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena) const
 {
     /// We connect all aggregation results to the first.
@@ -1722,14 +1721,13 @@ private:
         if (max_scheduled_bucket_num >= NUM_BUCKETS)
             return;
 
-        parallel_merge_data->pool.schedule([this, main_thread=current_thread] () { thread(max_scheduled_bucket_num, main_thread); });
+        parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
+            max_scheduled_bucket_num, current_thread));
     }
 
-    void thread(Int32 bucket_num, const ThreadStatusPtr & main_thread)
+    void thread(Int32 bucket_num, ThreadStatusPtr main_thread)
     {
-        if (main_thread)
-            ThreadStatus::setCurrentThreadFromSibling(main_thread);
-
+        ThreadStatus::setCurrentThreadFromSibling(main_thread);
         setThreadName("MergingAggregtd");
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
@@ -2034,10 +2032,9 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, const ThreadStatusPtr & main_thread)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadStatusPtr main_thread)
         {
-            if (main_thread)
-                ThreadStatus::setCurrentThreadFromSibling(main_thread);
+            ThreadStatus::setCurrentThreadFromSibling(main_thread);
 
             for (Block & block : bucket_to_blocks[bucket])
             {

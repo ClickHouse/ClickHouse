@@ -175,7 +175,7 @@ namespace CurrentMemoryTracker
     }
 }
 
-DB::ActionBlockerSingleThread::BlockHolder getCurrentMemoryTrackerBlocker()
+DB::ActionBlockerSingleThread::LockHolder getCurrentMemoryTrackerBlocker()
 {
-    return (DB::current_thread) ? DB::current_thread->memory_tracker.blocker.cancel() : DB::ActionBlockerSingleThread::BlockHolder(nullptr);
+    return (DB::current_thread) ? DB::current_thread->memory_tracker.blocker.cancel() : DB::ActionBlockerSingleThread::LockHolder(nullptr);
 }

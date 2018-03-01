@@ -59,6 +59,10 @@ struct QueryStatusInfo
     size_t written_bytes;
     Int64 memory_usage;
     ClientInfo client_info;
+
+    /// Optional fields, filled by request
+    std::vector<UInt32> thread_numbers;
+    std::unique_ptr<ProfileEvents::Counters> profile_counters;
 };
 
 
@@ -81,7 +85,8 @@ struct QueryStatus
     MemoryTracker memory_tracker;
 
     mutable std::shared_mutex threads_mutex;
-    using QueryThreadStatuses = std::map<int, ThreadStatusPtr>; /// Key is Poco's thread_id
+    /// Key is Poco's thread_id
+    using QueryThreadStatuses = std::map<int, ThreadStatusPtr>;
     QueryThreadStatuses thread_statuses;
 
     CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
@@ -264,16 +269,35 @@ public:
     size_t size() const { return processes.size(); }
 
     /// Get current state of process list.
-    Info getInfo() const
+    Info getInfo(bool get_thread_list = false, bool get_profile_events = false) const
     {
+        Info per_query_infos;
+
         std::lock_guard<std::mutex> lock(mutex);
 
-        Info res;
-        res.reserve(processes.size());
-        for (const auto & elem : processes)
-            res.emplace_back(elem.getInfo());
+        per_query_infos.reserve(processes.size());
+        for (const auto & process : processes)
+        {
+            per_query_infos.emplace_back(process.getInfo());
+            QueryStatusInfo & current_info = per_query_infos.back();
 
-        return res;
+            if (get_thread_list)
+            {
+                std::lock_guard lock(process.threads_mutex);
+                current_info.thread_numbers.reserve(process.thread_statuses.size());
+
+                for (auto & thread_status_elem : process.thread_statuses)
+                    current_info.thread_numbers.emplace_back(thread_status_elem.second->poco_thread_number);
+            }
+
+            if (get_profile_events)
+            {
+                current_info.profile_counters = std::make_unique<ProfileEvents::Counters>(ProfileEvents::Level::Process);
+                process.performance_counters.getPartiallyAtomicSnapshot(*current_info.profile_counters);
+            }
+        }
+
+        return per_query_infos;
     }
 
     void setMaxSize(size_t max_size_)

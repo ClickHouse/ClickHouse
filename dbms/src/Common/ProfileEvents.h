@@ -29,7 +29,7 @@ namespace ProfileEvents
     {
         Counter * counters = nullptr;
         Counters * parent = nullptr;
-        const Level level = Level::Thread;
+        Level level = Level::Thread;
         std::unique_ptr<Counter[]> counters_holder;
 
         Counters() = default;
@@ -54,6 +54,8 @@ namespace ProfileEvents
                 current = current->parent;
             } while (current != nullptr);
         }
+
+        void getPartiallyAtomicSnapshot(Counters & res) const;
 
         /// Reset metrics and parent
         void reset();

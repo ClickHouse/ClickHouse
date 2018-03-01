@@ -56,7 +56,7 @@ class QueryLog;
 class PartLog;
 
 
-/// System logs should be destroyed in destructor of last Context and before tables,
+/// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
 {

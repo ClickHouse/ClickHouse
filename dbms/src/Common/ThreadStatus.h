@@ -3,6 +3,8 @@
 #include <Common/MemoryTracker.h>
 #include <memory>
 #include <ext/shared_ptr_helper.h>
+#include <mutex>
+
 
 namespace Poco
 {
@@ -15,16 +17,18 @@ namespace DB
 
 struct QueryStatus;
 struct ThreadStatus;
+struct ScopeCurrentThread;
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 
 
-struct ThreadStatus : public ext::shared_ptr_helper<ThreadStatus>, public std::enable_shared_from_this<ThreadStatus>
+struct ThreadStatus : public ext::shared_ptr_helper<ThreadStatus>
 {
     UInt32 poco_thread_number = 0;
     QueryStatus * parent_query = nullptr;
-
     ProfileEvents::Counters performance_counters;
     MemoryTracker memory_tracker;
+    bool thread_exited = false;
+    std::mutex mutex;
 
     void init(QueryStatus * parent_query_, ProfileEvents::Counters * parent_counters, MemoryTracker * parent_memory_tracker);
     void onStart();
@@ -38,14 +42,16 @@ struct ThreadStatus : public ext::shared_ptr_helper<ThreadStatus>, public std::e
 
     ~ThreadStatus();
 
-protected:
+    friend struct ScopeCurrentThread;
+
+//protected:
     ThreadStatus();
 
     bool initialized = false;
     Poco::Logger * log;
 
-    struct Payload;
-    std::shared_ptr<Payload> payload;
+    struct Impl;
+    std::shared_ptr<Impl> impl;
 };
 
 
