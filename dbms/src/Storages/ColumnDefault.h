@@ -16,24 +16,6 @@ enum class ColumnDefaultType
     Alias
 };
 
-}
-
-
-namespace std
-{
-    template <> struct hash<DB::ColumnDefaultType>
-    {
-        size_t operator()(const DB::ColumnDefaultType type) const
-        {
-            return hash<int>{}(static_cast<int>(type));
-        }
-    };
-}
-
-
-namespace DB
-{
-
 
 ColumnDefaultType columnDefaultTypeFromString(const std::string & str);
 std::string toString(const ColumnDefaultType type);

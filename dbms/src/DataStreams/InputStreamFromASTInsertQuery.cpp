@@ -43,7 +43,7 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
 
-    res_stream = context.getInputFormat(format, *input_buffer_contacenated, streams.out_sample, context.getSettings().max_insert_block_size);
+    res_stream = context.getInputFormat(format, *input_buffer_contacenated, streams.out->getHeader(), context.getSettings().max_insert_block_size);
 }
 
 }

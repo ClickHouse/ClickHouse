@@ -23,9 +23,10 @@ public:
     /** If non-zero client_revision is specified, additional block information can be written.
       */
     NativeBlockOutputStream(
-        WriteBuffer & ostr_, UInt64 client_revision_ = 0,
+        WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_,
         WriteBuffer * index_ostr_ = nullptr, size_t initial_size_of_file_ = 0);
 
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void flush() override;
 
@@ -36,7 +37,7 @@ public:
 private:
     WriteBuffer & ostr;
     UInt64 client_revision;
-
+    Block header;
     WriteBuffer * index_ostr;
     size_t initial_size_of_file;    /// The initial size of the data file, if `append` done. Used for the index.
     /// If you need to write index, then `ostr` must be a CompressedWriteBuffer.

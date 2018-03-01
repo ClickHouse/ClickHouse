@@ -218,6 +218,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// The dictionary key that defines the "point of view".
@@ -311,6 +313,8 @@ public:
 
         return std::make_shared<DataTypeUInt8>();
     }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -445,6 +449,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -719,6 +725,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    bool isDeterministic() override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {

@@ -82,6 +82,14 @@ public:
         children = inputs;
         if (additional_input_at_end)
             children.push_back(additional_input_at_end);
+
+        size_t num_children = children.size();
+        if (num_children > 1)
+        {
+            Block header = children.at(0)->getHeader();
+            for (size_t i = 1; i < num_children; ++i)
+                assertBlocksHaveEqualStructure(children[i]->getHeader(), header, "UNION");
+        }
     }
 
     String getName() const override { return "Union"; }

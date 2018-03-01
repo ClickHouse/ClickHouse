@@ -61,6 +61,8 @@ class MemoryBlockOutputStream : public IBlockOutputStream
 public:
     explicit MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     void write(const Block & block) override
     {
         storage.check(block, true);

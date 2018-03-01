@@ -82,8 +82,12 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (ARCH_FREEBSD)
+    target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
+endif ()
+
 add_subdirectory(src/Common/ZooKeeper)
-add_subdirectory(src/Common/ConfigProcessor)
+add_subdirectory(src/Common/Config)
 
 if (MAKE_STATIC_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
@@ -137,7 +141,7 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (dbms
     clickhouse_parsers
-    clickhouse_common_configprocessor
+    clickhouse_common_config
     clickhouse_common_io
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
@@ -162,6 +166,7 @@ endif ()
 
 if (Poco_DataODBC_FOUND)
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES})
 endif()
 
 if (Poco_MongoDB_FOUND)

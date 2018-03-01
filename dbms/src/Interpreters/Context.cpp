@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionSettingsSelector.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
@@ -45,7 +46,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
@@ -93,7 +94,7 @@ struct ContextShared
     std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     /// For access of most of shared objects. Recursive mutex.
-    mutable Poco::Mutex mutex;
+    mutable std::recursive_mutex mutex;
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
@@ -229,7 +230,7 @@ struct ContextShared
         Databases current_databases;
 
         {
-            Poco::ScopedLock<Poco::Mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             current_databases = databases;
         }
 
@@ -237,7 +238,7 @@ struct ContextShared
             database.second->shutdown();
 
         {
-            Poco::ScopedLock<Poco::Mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             databases.clear();
         }
     }
@@ -282,19 +283,19 @@ Context::~Context()
 }
 
 
-InterserverIOHandler & Context::getInterserverIOHandler()                       { return shared->interserver_io_handler; }
+InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
 
-std::unique_lock<Poco::Mutex> Context::getLock() const
+std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
     ProfileEvents::increment(ProfileEvents::ContextLock);
     CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    return std::unique_lock<Poco::Mutex>(shared->mutex);
+    return std::unique_lock(shared->mutex);
 }
 
-ProcessList & Context::getProcessList()                                         { return shared->process_list; }
-const ProcessList & Context::getProcessList() const                             { return shared->process_list; }
-MergeList & Context::getMergeList()                                             { return shared->merge_list; }
-const MergeList & Context::getMergeList() const                                 { return shared->merge_list; }
+ProcessList & Context::getProcessList() { return shared->process_list; }
+const ProcessList & Context::getProcessList() const { return shared->process_list; }
+MergeList & Context::getMergeList() { return shared->merge_list; }
+const MergeList & Context::getMergeList() const { return shared->merge_list; }
 
 
 const Databases Context::getDatabases() const
@@ -748,13 +749,10 @@ Tables Context::getExternalTables() const
 
 StoragePtr Context::tryGetExternalTable(const String & table_name) const
 {
-    auto lock = getLock();
-
-    Tables::const_iterator jt = external_tables.find(table_name);
-    if (external_tables.end() == jt)
+    auto it = external_tables.find(table_name);
+    if (external_tables.end() == it)
         return StoragePtr();
-
-    return jt->second;
+    return it->second;
 }
 
 
@@ -824,18 +822,36 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {
-    auto lock = getLock();
-
-    Tables::const_iterator it = external_tables.find(table_name);
+    auto it = external_tables.find(table_name);
     if (external_tables.end() == it)
         return StoragePtr();
 
     auto storage = it->second;
     external_tables.erase(it);
     return storage;
-
-    return {};
 }
+
+
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
+{
+    /// Slightly suboptimal.
+    auto hash = table_expression->getTreeHash();
+    String key = toString(hash.first) + '_' + toString(hash.second);
+
+    StoragePtr & res = table_function_results[key];
+
+    if (!res)
+    {
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
+            typeid_cast<const ASTFunction *>(table_expression.get())->name, *this);
+
+        /// Run it and remember the result
+        res = table_function_ptr->execute(table_expression, *this);
+    }
+
+    return res;
+}
+
 
 DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && /*lock*/, const String & elem, const String & message)
     : map(map_), mutex(mutex_)
@@ -1423,13 +1439,15 @@ QueryLog & Context::getQueryLog()
 
         auto & config = getConfigRef();
 
-        String database = config.getString("query_log.database", "system");
-        String table = config.getString("query_log.table", "query_log");
+        String database     = config.getString("query_log.database",     "system");
+        String table        = config.getString("query_log.table",        "query_log");
+        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
         size_t flush_interval_milliseconds = config.getUInt64(
                 "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
-        system_logs->query_log = std::make_unique<QueryLog>(
-            *global_context, database, table, "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+
+        system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
     }
 
     return *system_logs->query_log;

@@ -33,6 +33,7 @@ public:
     SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
         const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
 
+    Block getHeader() const override { return table.getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -54,7 +55,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & ta
     backup_file_name(backup_file_name_),
     backup_buf(backup_tmp_path + backup_file_name),
     compressed_backup_buf(backup_buf),
-    backup_stream(compressed_backup_buf)
+    backup_stream(compressed_backup_buf, 0, table.getSampleBlock())
 {
 }
 
