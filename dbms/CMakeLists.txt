@@ -87,7 +87,7 @@ if (ARCH_FREEBSD)
 endif ()
 
 add_subdirectory(src/Common/ZooKeeper)
-add_subdirectory(src/Common/ConfigProcessor)
+add_subdirectory(src/Common/Config)
 
 if (MAKE_STATIC_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
@@ -141,7 +141,7 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (dbms
     clickhouse_parsers
-    clickhouse_common_configprocessor
+    clickhouse_common_config
     clickhouse_common_io
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}

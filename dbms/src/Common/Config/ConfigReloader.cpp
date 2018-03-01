@@ -2,12 +2,9 @@
 
 #include <Poco/Util/Application.h>
 #include <Poco/File.h>
-
 #include <common/logger_useful.h>
-
-#include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include "ConfigProcessor.h"
 
 
 namespace DB

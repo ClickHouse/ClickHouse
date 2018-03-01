@@ -15,7 +15,6 @@ option (ENABLE_CLICKHOUSE_COPIER "Enable copier" ${ENABLE_CLICKHOUSE_COPIER})
 configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
 add_library (clickhouse-server-lib
-    ConfigReloader.cpp
     HTTPHandler.cpp
     InterserverIOHTTPHandler.cpp
     MetricsTransmitter.cpp
@@ -35,7 +34,7 @@ add_library (clickhouse-local-lib LocalServer.cpp)
 target_link_libraries (clickhouse-local-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 
 add_library (clickhouse-extract-from-config-lib ${SPLIT_SHARED} ExtractFromConfig.cpp)
-target_link_libraries (clickhouse-extract-from-config-lib clickhouse_common_configprocessor clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-extract-from-config-lib clickhouse_common_config clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-client-lib Client.cpp)
 target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
