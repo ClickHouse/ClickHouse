@@ -11,6 +11,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Storages/System/VirtualColumnsProcessor.h>
 
 
 namespace DB
@@ -19,95 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-}
-
-/// Some virtual columns routines
-namespace
-{
-
-bool hasColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
-{
-    for (const auto & column : columns)
-    {
-        if (column.name == column_name)
-            return true;
-    }
-
-    return false;
-}
-
-
-NameAndTypePair tryGetColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
-{
-    for (const auto & column : columns)
-    {
-        if (column.name == column_name)
-            return {column.name, column.type};
-    }
-
-    return {};
-}
-
-
-struct VirtualColumnsProcessor
-{
-    explicit VirtualColumnsProcessor(const ColumnsWithTypeAndName & all_virtual_columns_)
-        : all_virtual_columns(all_virtual_columns_), virtual_columns_mask(all_virtual_columns_.size(), 0) {}
-
-    /// Separates real and virtual column names, returns real ones
-    Names process(const Names & column_names, const std::vector<bool *> & virtual_columns_exists_flag = {})
-    {
-        Names real_column_names;
-
-        if (!virtual_columns_exists_flag.empty())
-        {
-            for (size_t i = 0; i < all_virtual_columns.size(); ++i)
-                *virtual_columns_exists_flag.at(i) = false;
-        }
-
-        for (const String & column_name : column_names)
-        {
-            ssize_t virtual_column_index = -1;
-
-            for (size_t i = 0; i < all_virtual_columns.size(); ++i)
-            {
-                if (column_name == all_virtual_columns[i].name)
-                {
-                    virtual_column_index = i;
-                    break;
-                }
-            }
-
-            if (virtual_column_index >= 0)
-            {
-                auto index = static_cast<size_t>(virtual_column_index);
-                virtual_columns_mask[index] = 1;
-                if (!virtual_columns_exists_flag.empty())
-                    *virtual_columns_exists_flag.at(index) = true;
-            }
-            else
-            {
-                real_column_names.emplace_back(column_name);
-            }
-        }
-
-        return real_column_names;
-    }
-
-    void appendVirtualColumns(Block & block)
-    {
-        for (size_t i = 0; i < all_virtual_columns.size(); ++i)
-        {
-            if (virtual_columns_mask[i])
-                block.insert(all_virtual_columns[i].cloneEmpty());
-        }
-    }
-
-protected:
-    const ColumnsWithTypeAndName & all_virtual_columns;
-    std::vector<UInt8> virtual_columns_mask;
-};
-
 }
 
 
@@ -160,7 +72,7 @@ BlockInputStreams StorageSystemTables::read(
     bool has_create_table_query = false;
     bool has_engine_full = false;
 
-    VirtualColumnsProcessor virtual_columns_processor(virtual_columns);
+    auto virtual_columns_processor = getVirtualColumnsProcessor();
     real_column_names = virtual_columns_processor.process(column_names, {&has_metadata_modification_time, &has_create_table_query, &has_engine_full});
     check(real_column_names);
 
@@ -263,17 +175,6 @@ BlockInputStreams StorageSystemTables::read(
 
     res_block.setColumns(std::move(res_columns));
     return {std::make_shared<OneBlockInputStream>(res_block)};
-}
-
-bool StorageSystemTables::hasColumn(const String & column_name) const
-{
-    return DB::hasColumn(virtual_columns, column_name) || ITableDeclaration::hasColumn(column_name);
-}
-
-NameAndTypePair StorageSystemTables::getColumn(const String & column_name) const
-{
-    auto virtual_column = DB::tryGetColumn(virtual_columns, column_name);
-    return !virtual_column.name.empty() ? virtual_column : ITableDeclaration::getColumn(column_name);
 }
 
 }

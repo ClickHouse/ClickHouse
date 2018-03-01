@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
+#include <Storages/System/VirtualColumnsProcessor.h>
 
 
 namespace DB
@@ -12,7 +13,7 @@ class Context;
 
 /** Implements `processes` system table, which allows you to get information about the queries that are currently executing.
   */
-class StorageSystemProcesses : public ext::shared_ptr_helper<StorageSystemProcesses>, public IStorage
+class StorageSystemProcesses : public ext::shared_ptr_helper<StorageSystemProcesses>, public StorageWithVirtualColumns
 {
 public:
     std::string getName() const override { return "SystemProcesses"; }

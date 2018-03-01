@@ -5,6 +5,7 @@
 
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <pthread.h>
 
 #include <Interpreters/ProcessList.h>
 
@@ -26,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int PTHREAD_ERROR;
 }
 
 
@@ -105,7 +107,7 @@ struct RusageCounters
 };
 
 
-struct ThreadStatus::Payload
+struct ThreadStatus::Impl
 {
     RusageCounters last_rusage;
 };
@@ -118,13 +120,40 @@ struct ThreadStatus::Payload
 //    LOG_DEBUG(thread_status->log, "Thread " << thread_status->poco_thread_number << " is finished");
 //}
 
+static pthread_once_t once_query_at_exit_callback = PTHREAD_ONCE_INIT;
+static pthread_key_t tid_key_at_exit;
+
+static void thread_destructor(void * data)
+{
+    auto thread_status = static_cast<ThreadStatus *>(data);
+    thread_status->onExit();
+    LOG_DEBUG(thread_status->log, "Destruct thread " << thread_status->poco_thread_number);
+    thread_status->thread_exited = true;
+}
+
+static void thread_create_at_exit_key() {
+    if (0 != pthread_key_create(&tid_key_at_exit, thread_destructor))
+        throw Exception("Failed pthread_key_create", ErrorCodes::PTHREAD_ERROR);
+}
+
 
 ThreadStatus::ThreadStatus()
     : poco_thread_number(Poco::ThreadNumber::get()),
       performance_counters(ProfileEvents::Level::Thread),
       log(&Poco::Logger::get("ThreadStatus"))
 {
+    impl = std::make_shared<Impl>();
+
     LOG_DEBUG(log, "Thread " << poco_thread_number << " created");
+
+    if (0 != pthread_once(&once_query_at_exit_callback, thread_create_at_exit_key))
+        throw Exception("Failed pthread_once", ErrorCodes::PTHREAD_ERROR);
+
+    if (nullptr != pthread_getspecific(tid_key_at_exit))
+        throw Exception("pthread_getspecific is already set", ErrorCodes::LOGICAL_ERROR);
+
+    if (0 != pthread_setspecific(tid_key_at_exit, static_cast<void *>(this)))
+        throw Exception("Failed pthread_setspecific", ErrorCodes::PTHREAD_ERROR);
 }
 
 ThreadStatus::~ThreadStatus()
@@ -134,52 +163,59 @@ ThreadStatus::~ThreadStatus()
 
 void ThreadStatus::init(QueryStatus * parent_query_, ProfileEvents::Counters * parent_counters, MemoryTracker * parent_memory_tracker)
 {
-    if (!initialized)
+    if (initialized)
     {
         if (auto counters_parent = performance_counters.parent)
             if (counters_parent != parent_counters)
-                LOG_WARNING(current_thread->log, "Parent performance counters are already set, overwrite");
+                LOG_WARNING(log, "Parent performance counters are already set, overwrite");
 
         if (auto tracker_parent = memory_tracker.getParent())
             if (tracker_parent != parent_memory_tracker)
-                LOG_WARNING(current_thread->log, "Parent memory tracker is already set, overwrite");
+                LOG_WARNING(log, "Parent memory tracker is already set, overwrite");
 
         return;
     }
 
-    initialized = true;
     parent_query = parent_query_;
     performance_counters.parent = parent_counters;
     memory_tracker.setParent(parent_memory_tracker);
     memory_tracker.setDescription("(for thread)");
+    initialized = true;
+
+    /// Attach current thread to list of query threads
+    if (parent_query)
+    {
+        std::lock_guard lock(parent_query->threads_mutex);
+        auto res = parent_query->thread_statuses.emplace(current_thread->poco_thread_number, current_thread);
+
+        if (!res.second && res.first->second.get() != current_thread.get())
+            throw Exception("Thread " + std::to_string(current_thread->poco_thread_number) + " is set twice", ErrorCodes::LOGICAL_ERROR);
+    }
 
     onStart();
 }
 
 void ThreadStatus::onStart()
 {
-    payload = std::make_shared<Payload>();
-
     /// First init of thread rusage counters, set real time to zero, other metrics remain as is
-    payload->last_rusage.setFromCurrent();
-    RusageCounters::incrementProfileEvents(payload->last_rusage, RusageCounters::zeros(payload->last_rusage.real_time));
+    impl->last_rusage.setFromCurrent();
+    RusageCounters::incrementProfileEvents(impl->last_rusage, RusageCounters::zeros(impl->last_rusage.real_time));
 }
 
 void ThreadStatus::onExit()
 {
-    if (!initialized || !payload)
-        return;
-
-    RusageCounters::updateProfileEvents(payload->last_rusage);
+    RusageCounters::updateProfileEvents(impl->last_rusage);
 }
 
 void ThreadStatus::reset()
 {
+    std::lock_guard lock(mutex);
+
+    initialized = false;
     parent_query = nullptr;
     performance_counters.reset();
     memory_tracker.reset();
     memory_tracker.setParent(nullptr);
-    initialized = false;
 }
 
 
@@ -190,19 +226,11 @@ void ThreadStatus::setCurrentThreadParentQuery(QueryStatus * parent_process)
 
     if (!parent_process)
     {
-        current_thread->init(parent_process, nullptr, nullptr);
+        current_thread->init(nullptr, nullptr, nullptr);
         return;
     }
 
     current_thread->init(parent_process, &parent_process->performance_counters, &parent_process->memory_tracker);
-
-    {
-        std::lock_guard lock(parent_process->threads_mutex);
-        auto res = parent_process->thread_statuses.emplace(current_thread->poco_thread_number, current_thread);
-
-        if (!res.second && res.first->second.get() != current_thread.get())
-            throw Exception("Thread " + std::to_string(current_thread->poco_thread_number) + " is set twice", ErrorCodes::LOGICAL_ERROR);
-    }
 }
 
 void ThreadStatus::setCurrentThreadFromSibling(const ThreadStatusPtr & sibling_thread)
@@ -213,11 +241,39 @@ void ThreadStatus::setCurrentThreadFromSibling(const ThreadStatusPtr & sibling_t
     if (sibling_thread == nullptr)
         throw Exception("Sibling thread was not initialized", ErrorCodes::LOGICAL_ERROR);
 
+    std::lock_guard lock(sibling_thread->mutex);
     current_thread->init(sibling_thread->parent_query, sibling_thread->performance_counters.parent, sibling_thread->memory_tracker.getParent());
 }
 
 
+struct ScopeCurrentThread
+{
+    ScopeCurrentThread()
+    {
+        if (!current_thread)
+            std::terminate(); // current_thread must be initialized
+    }
+
+    ~ScopeCurrentThread()
+    {
+        if (!current_thread)
+            std::terminate(); // current_thread must be initialized
+
+        if (Poco::ThreadNumber::get() != current_thread->poco_thread_number)
+            std::terminate(); // unexpected thread number
+
+        current_thread->onExit();
+        LOG_DEBUG(current_thread->log, "Thread " << current_thread->poco_thread_number << " is exiting");
+        current_thread->thread_exited = true;
+    }
+};
+
 thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
+
+/// Order of current_thread and current_thread_scope matters
+static thread_local ScopeCurrentThread current_thread_scope;
+
+
 
 
 }

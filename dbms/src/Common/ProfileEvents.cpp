@@ -180,6 +180,13 @@ void Counters::reset()
     resetCounters();
 }
 
+void Counters::getPartiallyAtomicSnapshot(Counters & res) const
+{
+    for (Event i = 0; i < num_counters; ++i)
+        res.counters[i].store(counters[i], std::memory_order_relaxed);
+}
+
+
 const char * getDescription(Event event)
 {
     static const char * descriptions[] =

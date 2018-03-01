@@ -370,6 +370,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED = 392;
     extern const int THERE_IS_NO_QUERY = 393;
     extern const int QUERY_WAS_CANCELLED = 394;
+    extern const int PTHREAD_ERROR = 395;
 
 
     extern const int KEEPER_EXCEPTION = 999;

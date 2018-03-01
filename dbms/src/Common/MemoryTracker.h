@@ -123,4 +123,4 @@ namespace CurrentMemoryTracker
 }
 
 
-DB::ActionBlockerSingleThread::BlockHolder getCurrentMemoryTrackerBlocker();
+DB::ActionBlockerSingleThread::LockHolder getCurrentMemoryTrackerBlocker();

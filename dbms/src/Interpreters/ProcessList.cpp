@@ -133,23 +133,16 @@ ProcessListEntry::~ProcessListEntry()
 
     /// Finalize all threads statuses
     {
+        current_thread->onExit();
+
         std::lock_guard lock(it->threads_mutex);
 
         for (auto & elem : it->thread_statuses)
         {
             auto & thread_status = elem.second;
-            thread_status->onExit();
             thread_status->reset();
-            thread_status.reset();
-        }
-
-        it->thread_statuses.clear();
+        };
     }
-
-    /// Also reset query master thread status
-    /// NOTE: we can't destroy it, since master threads are selected from fixed thread pool
-    if (current_thread)
-        current_thread->reset();
 
     std::lock_guard<std::mutex> lock(parent.mutex);
 
