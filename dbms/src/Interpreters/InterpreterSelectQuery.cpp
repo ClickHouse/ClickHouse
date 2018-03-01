@@ -72,7 +72,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
     const BlockInputStreamPtr & input)
-    : query_ptr(query_ptr_->clone())
+    : query_ptr(query_ptr_->clone())    /// Note: the query is cloned because it will be modified during analysis.
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)

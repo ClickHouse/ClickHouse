@@ -2867,8 +2867,9 @@ void ExpressionAnalyzer::getRequiredSourceColumnsImpl(const ASTPtr & ast,
         /** We will not go to the ARRAY JOIN section, because we need to look at the names of non-ARRAY-JOIN columns.
           * There, `collectUsedColumns` will send us separately.
           */
-        if (!typeid_cast<ASTSelectQuery *>(child.get())
-            && !typeid_cast<ASTArrayJoin *>(child.get()))
+        if (!typeid_cast<const ASTSelectQuery *>(child.get())
+            && !typeid_cast<const ASTArrayJoin *>(child.get())
+            && !typeid_cast<const ASTTableExpression *>(child.get()))
             getRequiredSourceColumnsImpl(child, available_columns, required_source_columns,
                 ignored_names, available_joined_columns, required_joined_columns);
     }
