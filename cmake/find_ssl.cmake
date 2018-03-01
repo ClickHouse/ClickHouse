@@ -37,6 +37,7 @@ if (NOT OPENSSL_FOUND)
         set (OPENSSL_SSL_LIBRARY ssl-shared)
     endif ()
     set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+    set (OPENSSL_FOUND 1)
 endif ()
 
 message (STATUS "Using ssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
