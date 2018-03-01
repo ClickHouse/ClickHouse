@@ -10,7 +10,7 @@ if (NOT ZLIB_FOUND)
     else ()
         set (INTERNAL_ZLIB_NAME "zlib")
         if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}")
-            message (WARNING "Will use standard zlib, please clone manually: git clone https://github.com/madler/zlib.git ${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}")
+            message (WARNING "Will use standard zlib, please clone manually:\n git clone https://github.com/madler/zlib.git ${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}")
         endif ()
     endif ()
 
