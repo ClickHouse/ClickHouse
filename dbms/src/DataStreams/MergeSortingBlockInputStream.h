@@ -108,7 +108,7 @@ private:
     /// Before operation, will remove constant columns from blocks. And after, place constant columns back.
     /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)
     /// Save original block structure here.
-    Block sample_block;
+    Block header;
 
     /// Everything below is for external sorting.
     std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;

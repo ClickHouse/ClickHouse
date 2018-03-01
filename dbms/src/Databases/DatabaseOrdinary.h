@@ -59,7 +59,9 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    String getDataPath(const Context & context) const override;
+    String getDataPath() const override;
+    String getMetadataPath() const override;
+    String getTableMetadataPath(const String & table_name) const override;
 
     void shutdown() override;
     void drop() override;

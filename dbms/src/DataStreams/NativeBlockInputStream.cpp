@@ -52,7 +52,7 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
     for (const auto & column : index_block_it->columns)
     {
         auto type = DataTypeFactory::instance().get(column.type);
-        header.insert({ type->createColumn(), type, column.name });
+        header.insert(ColumnWithTypeAndName{ type, column.name });
     }
 }
 

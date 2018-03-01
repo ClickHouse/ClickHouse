@@ -19,8 +19,9 @@ class WriteBuffer;
 class ODBCDriverBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & sample_);
+    ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & header_);
 
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void writePrefix() override;
 
@@ -29,7 +30,7 @@ public:
 
 private:
     WriteBuffer & out;
-    const Block sample;
+    const Block header;
 };
 
 }

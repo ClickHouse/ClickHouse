@@ -25,7 +25,7 @@ public:
     FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name_);
 
     String getName() const override;
-    const Block & getTotals() override;
+    Block getTotals() override;
     Block getHeader() const override;
 
 protected:

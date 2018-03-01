@@ -73,7 +73,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         partition->fields_count = fields_count;
     }
 
-    partition->range = StringRange(begin, pos);
     node = partition;
     return true;
 }

@@ -44,7 +44,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -138,7 +137,7 @@ BlockInputStreams StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query_info.query, context, processed_stage, 0, stream).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, {}, processed_stage, 0, stream).execute().in;
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;
@@ -150,9 +149,7 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
-    if (!blocksHaveEqualStructure(from, to))
-        throw Exception("Cannot append block to buffer: block has different structure. "
-            "Block: " + from.dumpStructure() + ", Buffer: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+    assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
@@ -207,6 +204,8 @@ class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -559,7 +558,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(columns_intersection.size());
     for (const String & column : columns_intersection)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column));
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column, ASTIdentifier::Column));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
 

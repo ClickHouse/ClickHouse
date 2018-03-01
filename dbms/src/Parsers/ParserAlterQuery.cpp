@@ -12,8 +12,6 @@ namespace DB
 
 bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_add_column("ADD COLUMN");
     ParserKeyword s_drop_column("DROP COLUMN");
@@ -218,7 +216,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     while (!parsing_finished);
 
-    query->range = StringRange(begin, pos);
     query->cluster = cluster_str;
     node = query;
 

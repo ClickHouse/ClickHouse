@@ -288,7 +288,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     state.io.out->writePrefix();
 
     /// Send block to the client - table structure.
-    Block block = state.io.out_sample;
+    Block block = state.io.out->getHeader();
     sendData(block);
 
     readData(global_settings);
@@ -400,7 +400,7 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::sendProfileInfo()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(state.io.in.get()))
     {
         writeVarUInt(Protocol::Server::ProfileInfo, *out);
         input->getProfileInfo().write(*out);
@@ -411,13 +411,13 @@ void TCPHandler::sendProfileInfo()
 
 void TCPHandler::sendTotals()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
+    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
     {
         const Block & totals = input->getTotals();
 
         if (totals)
         {
-            initBlockOutput();
+            initBlockOutput(totals);
 
             writeVarUInt(Protocol::Server::Totals, *out);
             writeStringBinary("", *out);
@@ -432,13 +432,13 @@ void TCPHandler::sendTotals()
 
 void TCPHandler::sendExtremes()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
     {
-        const Block & extremes = input->getExtremes();
+        Block extremes = input->getExtremes();
 
         if (extremes)
         {
-            initBlockOutput();
+            initBlockOutput(extremes);
 
             writeVarUInt(Protocol::Server::Extremes, *out);
             writeStringBinary("", *out);
@@ -662,7 +662,7 @@ void TCPHandler::initBlockInput()
 }
 
 
-void TCPHandler::initBlockOutput()
+void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
@@ -674,7 +674,8 @@ void TCPHandler::initBlockOutput()
 
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
-            client_revision);
+            client_revision,
+            block.cloneEmpty());
     }
 }
 
@@ -715,7 +716,7 @@ bool TCPHandler::isQueryCancelled()
 
 void TCPHandler::sendData(const Block & block)
 {
-    initBlockOutput();
+    initBlockOutput(block);
 
     writeVarUInt(Protocol::Server::Data, *out);
     writeStringBinary("", *out);

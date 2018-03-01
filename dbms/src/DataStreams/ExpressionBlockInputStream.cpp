@@ -13,7 +13,7 @@ ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr
 
 String ExpressionBlockInputStream::getName() const { return "Expression"; }
 
-const Block & ExpressionBlockInputStream::getTotals()
+Block ExpressionBlockInputStream::getTotals()
 {
     if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
     {

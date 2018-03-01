@@ -126,6 +126,9 @@ public:
       *  (even for distributed query), but not deterministic it general.
       * Example: now(). Another example: functions that work with periodically updated dictionaries.
       */
+
+    virtual bool isDeterministic() { return true; }
+
     virtual bool isDeterministicInScopeOfQuery() { return true; }
 
     /** Lets you know if the function is monotonic in a range of values.
@@ -319,6 +322,8 @@ public:
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
 
     bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
+
+    bool isDeterministic() override { return function->isDeterministic(); }
 
     bool isDeterministicInScopeOfQuery() override { return function->isDeterministicInScopeOfQuery(); }
 

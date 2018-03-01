@@ -31,12 +31,6 @@ using Poco::Logger;
     oss_internal_rare << message; \
     (logger)->information(oss_internal_rare.str());}} while(false)
 
-#define LOG_NOTICE(logger, message) do { \
-    if ((logger)->notice()) {\
-    std::stringstream oss_internal_rare;    \
-    oss_internal_rare << message; \
-    (logger)->notice(oss_internal_rare.str());}} while(false)
-
 #define LOG_WARNING(logger, message) do { \
     if ((logger)->warning()) {\
     std::stringstream oss_internal_rare;    \
@@ -48,15 +42,3 @@ using Poco::Logger;
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
     (logger)->error(oss_internal_rare.str());}} while(false)
-
-#define LOG_CRITICAL(logger, message) do { \
-    if ((logger)->critical()) {\
-    std::stringstream oss_internal_rare;    \
-    oss_internal_rare << message; \
-    (logger)->critical(oss_internal_rare.str());}} while(false)
-
-#define LOG_FATAL(logger, message) do { \
-    if ((logger)->fatal()) {\
-    std::stringstream oss_internal_rare;    \
-    oss_internal_rare << message; \
-    (logger)->fatal(oss_internal_rare.str());}} while(false)
