@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int TOO_MUCH_COLUMNS;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -210,7 +211,12 @@ BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
     executeImpl(pipeline, input, false);
-    executeUnion(pipeline);
+
+    if (pipeline.hasMoreThanOneStream())
+    {
+        executeUnion(pipeline);
+        executeExtremes(pipeline);
+    }
 
     BlockIO res;
     res.in = pipeline.firstStream();
@@ -474,8 +480,10 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             executeProjection(pipeline, expressions.final_projection);
 
             /** Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
+              * It only make sense if there is one stream.
               */
-            executeExtremes(pipeline);
+            if (!pipeline.hasMoreThanOneStream())
+                executeExtremes(pipeline);
 
             executeLimit(pipeline);
         }
@@ -1008,7 +1016,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
     }
-    else if (pipeline.stream_with_non_joined_data)
+    else if (pipeline.stream_with_non_joined_data)  /// It is the only stream.
     {
         pipeline.streams.push_back(pipeline.stream_with_non_joined_data);
         pipeline.stream_with_non_joined_data = nullptr;
@@ -1141,8 +1149,16 @@ void InterpreterSelectQuery::ignoreWithTotals()
 
 void InterpreterSelectQuery::initSettings()
 {
+    /// It makes no sense to calculate extremes inside subqueries.
+    if (subquery_depth)
+        context.getSettingsRef().extremes = 0;
+
+    /// Apply settings from the SETTINGS clause of the query.
     if (query.settings)
         InterpreterSetQuery(query.settings, context).executeForCurrentContext();
+
+    if (subquery_depth && context.getSettingsRef().extremes)
+        throw Exception("It's not allowed to calculate extremes in a subquery", ErrorCodes::BAD_ARGUMENTS);
 }
 
 }

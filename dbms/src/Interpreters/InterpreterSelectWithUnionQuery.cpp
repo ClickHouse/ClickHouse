@@ -162,16 +162,24 @@ BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams()
 {
     BlockInputStreams nested_streams;
 
-    for (auto & interpreter : nested_interpreters)
+    if (nested_interpreters.size() == 1)
     {
-        BlockInputStreams streams = interpreter->executeWithMultipleStreams();
-        nested_streams.insert(nested_streams.end(), streams.begin(), streams.end());
+        auto & interpreter = nested_interpreters[0];
+        BlockIO io = interpreter->execute();
+        nested_streams.emplace_back(io.in);
     }
+    else
+    {
+        for (auto & interpreter : nested_interpreters)
+        {
+            BlockInputStreams streams = interpreter->executeWithMultipleStreams();
+            nested_streams.insert(nested_streams.end(), streams.begin(), streams.end());
+        }
 
-    /// Unify data structure.
-    if (nested_interpreters.size() > 1)
+        /// Unify data structure.
         for (auto & stream : nested_streams)
             stream = std::make_shared<ConvertingBlockInputStream>(context, stream, result_header, ConvertingBlockInputStream::MatchColumnsMode::Position);
+    }
 
     return nested_streams;
 }
@@ -196,6 +204,11 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     else
     {
         result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, settings.max_threads);
+
+        if (!subquery_depth && context.getSettingsRef().extremes)
+            if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(result_stream.get()))
+                p_stream->enableExtremes();
+
         nested_streams.clear();
     }
 
