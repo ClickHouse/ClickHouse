@@ -262,7 +262,6 @@ namespace ErrorCodes
     extern const int PARTITION_ALREADY_EXISTS = 256;
     extern const int PARTITION_DOESNT_EXIST = 257;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH = 258;
-    extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH = 259;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED = 260;
     extern const int UNKNOWN_BLOCK_INFO_FIELD = 261;
     extern const int BAD_COLLATION = 262;
