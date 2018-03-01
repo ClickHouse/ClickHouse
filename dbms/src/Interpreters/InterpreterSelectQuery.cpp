@@ -72,7 +72,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
     const BlockInputStreamPtr & input)
-    : query_ptr(query_ptr_)
+    : query_ptr(query_ptr_->clone())
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)
@@ -85,7 +85,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 
 InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_)
+    : query_ptr(query_ptr_->clone())
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(QueryProcessingStage::Complete)
