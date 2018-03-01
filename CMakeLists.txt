@@ -222,7 +222,7 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include(GNUInstallDirs)
 
-include (cmake/find_openssl.cmake)
+include (cmake/find_ssl.cmake)
 if (NOT OPENSSL_FOUND)
     message (FATAL_ERROR "Need openssl for build. debian tip: sudo apt install libssl-dev")
 endif ()
