@@ -65,6 +65,8 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -189,13 +191,13 @@ public:
 private:
     void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result)
     {
-        /// Construct a block of full-size columns of size 1 and compute the function as usual.
+        /// Materialize the input column and compute the function as usual.
 
         Block tmp_block;
         ColumnNumbers tmp_arguments;
 
         tmp_block.insert(block.getByPosition(arguments[0]));
-        tmp_block.getByPosition(0).column = static_cast<const ColumnConst *>(tmp_block.getByPosition(0).column.get())->getDataColumnPtr();
+        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(block.rows())->convertToFullColumnIfConst();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -209,9 +211,7 @@ private:
 
         execute(tmp_block, tmp_arguments, tmp_result);
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-            block.rows(),
-            (*tmp_block.getByPosition(tmp_result).column)[0]);
+        block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
     }
 
     template <typename T>
@@ -727,7 +727,7 @@ private:
     /// Different versions of the hash tables to implement the mapping.
 
     using NumToNum = HashMap<UInt64, UInt64, HashCRC32<UInt64>>;
-    using NumToString = HashMap <UInt64, StringRef, HashCRC32 <UInt64 >>;     /// Everywhere StringRef's with trailing zero.
+    using NumToString = HashMap <UInt64, StringRef, HashCRC32<UInt64>>;     /// Everywhere StringRef's with trailing zero.
     using StringToNum = HashMap<StringRef, UInt64, StringRefHash>;
     using StringToString = HashMap<StringRef, StringRef, StringRefHash>;
 
@@ -740,7 +740,7 @@ private:
 
     Field const_default_value;    /// Null, if not specified.
 
-    bool initialized = false;
+    std::atomic<bool> initialized {false};
     std::mutex mutex;
 
     /// Can be called from different threads. It works only on the first call.

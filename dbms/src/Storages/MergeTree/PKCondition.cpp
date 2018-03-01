@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -248,8 +249,7 @@ Block PKCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}
-        .getConstActions();
+    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}.getConstActions();
 
     expr_for_constant_folding->execute(result);
 
@@ -462,9 +462,10 @@ void PKCondition::getPKTuplePositionMapping(
 {
     MergeTreeSetIndex::PKTuplePositionMapping index_mapping;
     index_mapping.tuple_index = tuple_index;
+    DataTypePtr data_type;
     if (isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
             node, context, index_mapping.pk_index,
-            index_mapping.data_type, index_mapping.functions))
+            data_type, index_mapping.functions))
     {
         indexes_mapping.push_back(index_mapping);
         if (out_primary_key_column_num < index_mapping.pk_index)
@@ -593,7 +594,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
     {
         throw Exception("Primary key expression contains comparison between inconvertible types: " +
             desired_type->getName() + " and " + src_type->getName() +
-            " inside " + DB::toString(node->range),
+            " inside " + queryToString(node),
             ErrorCodes::BAD_TYPE_OF_FIELD);
     }
 }
@@ -999,7 +1000,7 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
             PreparedSets::const_iterator it = prepared_sets.find(args[1].get());
             if (in_func && it != prepared_sets.end())
             {
-                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges));
+                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));
                 if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 {
                     rpn_stack.back() = !rpn_stack.back();

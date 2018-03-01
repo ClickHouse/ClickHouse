@@ -130,7 +130,7 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(Block & block);    /// Write a block to the network.
+    void sendData(const Block & block);    /// Write a block to the network.
     void sendException(const Exception & e);
     void sendProgress();
     void sendEndOfStream();
@@ -140,7 +140,7 @@ private:
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
-    void initBlockOutput();
+    void initBlockOutput(const Block & block);
 
     bool isQueryCancelled();
 

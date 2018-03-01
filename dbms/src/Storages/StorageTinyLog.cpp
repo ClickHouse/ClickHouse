@@ -60,7 +60,15 @@ public:
 
     String getName() const override { return "TinyLog"; }
 
-    String getID() const override;
+    Block getHeader() const override
+    {
+        Block res;
+
+        for (const auto & name_type : columns)
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+
+        return Nested::flatten(res);
+    };
 
 protected:
     Block readImpl() override;
@@ -110,6 +118,8 @@ public:
         }
     }
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -142,19 +152,6 @@ private:
 
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams);
 };
-
-
-String TinyLogBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TinyLog(" << storage.getTableName() << ", " << &storage;
-
-    for (const auto & name_type : columns)
-        res << ", " << name_type.name;
-
-    res << ")";
-    return res.str();
-}
 
 
 Block TinyLogBlockInputStream::readImpl()

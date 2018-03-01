@@ -73,7 +73,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
       */
     if (is_local)
         return executeQuery(load_all_query, context, true).in;
-    return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, context);
+    return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
 }
 
 
@@ -103,7 +103,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 {
     if (is_local)
         return executeQuery(query, context, true).in;
-    return std::make_shared<RemoteBlockInputStream>(pool, query, context);
+    return std::make_shared<RemoteBlockInputStream>(pool, query, sample_block, context);
 }
 
 }

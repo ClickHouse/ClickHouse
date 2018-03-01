@@ -39,6 +39,12 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 }
 
 
+Block ReplicatedMergeTreeBlockOutputStream::getHeader() const
+{
+    return storage.getSampleBlock();
+}
+
+
 /// Allow to verify that the session in ZooKeeper is still alive.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {
@@ -145,8 +151,6 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
         {
             LOG_DEBUG(log, "Wrote block with " << block.rows() << " rows");
         }
-
-
 
         try
         {
@@ -416,7 +420,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
                         + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
-
 
     if (quorum)
     {

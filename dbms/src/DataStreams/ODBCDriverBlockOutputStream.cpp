@@ -7,9 +7,8 @@
 namespace DB
 {
 
-ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & sample_)
-    : out(out_)
-    , sample(sample_)
+ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & header_)
+    : out(out_), header(header_)
 {
 }
 
@@ -43,7 +42,7 @@ void ODBCDriverBlockOutputStream::write(const Block & block)
 
 void ODBCDriverBlockOutputStream::writePrefix()
 {
-    const size_t columns = sample.columns();
+    const size_t columns = header.columns();
 
     /// Number of columns.
     writeVarUInt(columns, out);
@@ -51,7 +50,7 @@ void ODBCDriverBlockOutputStream::writePrefix()
     /// Names and types of columns.
     for (size_t i = 0; i < columns; ++i)
     {
-        const ColumnWithTypeAndName & col = sample.getByPosition(i);
+        const ColumnWithTypeAndName & col = header.getByPosition(i);
 
         writeStringBinary(col.name, out);
         writeStringBinary(col.type->getName(), out);

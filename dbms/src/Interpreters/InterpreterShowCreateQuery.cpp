@@ -23,15 +23,16 @@ BlockIO InterpreterShowCreateQuery::execute()
 {
     BlockIO res;
     res.in = executeImpl();
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 
 
 Block InterpreterShowCreateQuery::getSampleBlock()
 {
-    return {{ std::make_shared<DataTypeString>(), "statement" }};
+    return Block{{
+        ColumnString::create(),
+        std::make_shared<DataTypeString>(),
+        "statement"}};
 }
 
 

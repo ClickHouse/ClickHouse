@@ -11,7 +11,6 @@
 #include <Interpreters/PartLog.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 
@@ -202,9 +201,10 @@ void StorageMergeTree::alter(
 
     IDatabase::ASTModifier storage_modifier;
     if (primary_key_is_modified)
+    {
         storage_modifier = [&new_primary_key_ast] (IAST & ast)
         {
-            auto tuple = std::make_shared<ASTFunction>(new_primary_key_ast->range);
+            auto tuple = std::make_shared<ASTFunction>();
             tuple->name = "tuple";
             tuple->arguments = new_primary_key_ast;
             tuple->children.push_back(tuple->arguments);
@@ -214,6 +214,7 @@ void StorageMergeTree::alter(
             auto & storage_ast = typeid_cast<ASTStorage &>(ast);
             typeid_cast<ASTExpressionList &>(*storage_ast.engine->arguments).children.at(1) = tuple;
         };
+    }
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
@@ -293,7 +294,7 @@ bool StorageMergeTree::merge(
     String * out_disable_reason)
 {
     /// Clear old parts. It does not matter to do it more frequently than each second.
-    if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
+    if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
         data.clearOldPartsFromFilesystem();
         data.clearOldTemporaryDirectories();

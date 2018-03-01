@@ -2,15 +2,17 @@
 
 # Репликация данных
 
-## ReplicatedMergeTree
+## ReplicatedAggregatingMergeTree
 
 ## ReplicatedCollapsingMergeTree
 
-## ReplicatedAggregatingMergeTree
+## ReplicatedGraphiteMergeTree
+
+## ReplicatedMergeTree
+
+## ReplicatedReplacingMergeTree
 
 ## ReplicatedSummingMergeTree
-
-## ReplicatedGraphiteMergeTree
 
 Репликация поддерживается только для таблиц семейства MergeTree. Репликация работает на уровне отдельных таблиц, а не всего сервера. То есть, на сервере могут быть расположены одновременно реплицируемые и не реплицируемые таблицы.
 

@@ -11,6 +11,8 @@
 #include <Interpreters/NullableUtils.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
+
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
 
@@ -281,7 +283,7 @@ void Join::setSampleBlock(const Block & block)
     /// Choose data structure to use for JOIN.
     init(chooseMethod(key_columns, key_sizes));
 
-    sample_block_with_columns_to_add = block;
+    sample_block_with_columns_to_add = materializeBlock(block);
 
     /// Move from `sample_block_with_columns_to_add` key columns to `sample_block_with_keys`, keeping the order.
     size_t pos = 0;
@@ -462,8 +464,8 @@ bool Join::insertFromBlock(const Block & block)
 
     if (getFullness(kind))
     {
-        /** Transfer the key columns to the beginning of the block.
-          * This is where NonJoinedBlockInputStream will wait for them.
+        /** Move the key columns to the beginning of the block.
+          * This is where NonJoinedBlockInputStream will expect.
           */
         size_t key_num = 0;
         for (const auto & name : key_names_right)
@@ -990,7 +992,7 @@ public:
         size_t num_columns_left = left_sample_block.columns() - num_keys;
         size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
 
-        result_sample_block = left_sample_block;
+        result_sample_block = materializeBlock(left_sample_block);
 
         /// Add columns from the right-side table to the block.
         for (size_t i = 0; i < num_columns_right; ++i)
@@ -1038,12 +1040,7 @@ public:
 
     String getName() const override { return "NonJoined"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "NonJoined(" << &parent << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return result_sample_block; };
 
 
 protected:
@@ -1159,7 +1156,7 @@ private:
 };
 
 
-BlockInputStreamPtr Join::createStreamWithNonJoinedRows(Block & left_sample_block, size_t max_block_size) const
+BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, size_t max_block_size) const
 {
     return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
 }

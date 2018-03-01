@@ -10,6 +10,9 @@
 *.logrt
 
 build
+/docs/en_single_page/
+/docs/ru_single_page/
+/docs/venv/
 
 # callgrind files
 callgrind.out.*
