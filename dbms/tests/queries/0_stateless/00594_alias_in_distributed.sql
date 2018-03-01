@@ -26,6 +26,10 @@ SELECT field3 FROM test.alias10 WHERE EventDate='2000-01-01';
 SELECT field2, field3 FROM test.alias10;
 SELECT field3 FROM test.alias10;
 
+SELECT field1 FROM test.alias10 WHERE field3 = '12345';
+SELECT field2 FROM test.alias10 WHERE field3 = '12345';
+SELECT field3 FROM test.alias10 WHERE field3 = '12345';
+
 DROP TABLE test.alias10;
 CREATE TABLE test.alias10 (
   Id Int8,
@@ -47,6 +51,10 @@ SELECT field2, field3 FROM test.alias10 WHERE EventDate='2000-01-01';
 SELECT field3 FROM test.alias10 WHERE EventDate='2000-01-01';
 SELECT field2, field3 FROM test.alias10;
 SELECT field3 FROM test.alias10;
+
+SELECT field1 FROM test.alias10 WHERE field3 = '12345';
+SELECT field2 FROM test.alias10 WHERE field3 = '12345';
+SELECT field3 FROM test.alias10 WHERE field3 = '12345';
 
 DROP TABLE test.alias_local10;
 DROP TABLE test.alias10;
