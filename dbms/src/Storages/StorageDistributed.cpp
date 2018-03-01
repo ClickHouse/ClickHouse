@@ -186,7 +186,7 @@ BlockInputStreams StorageDistributed::read(
 
     processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
         ? QueryProcessingStage::Complete
-        : QueryProcessingStage::WithMergeableState;
+        : QueryProcessingStage::FetchColumns;
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);
