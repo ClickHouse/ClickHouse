@@ -458,7 +458,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
               * then DISTINCT needs to be performed once again after merging all streams.
               */
             if (need_second_distinct_pass)
-                executeDistinct(pipeline, false, Names());
+                executeDistinct(pipeline, false, expressions.selected_columns);
 
             if (query.limit_by_expression_list)
             {
