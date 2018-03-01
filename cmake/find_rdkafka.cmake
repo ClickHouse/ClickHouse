@@ -1,4 +1,4 @@
-option (ENABLE_RDKAFKA "Enable kafka" ON)
+option (ENABLE_RDKAFKA "Enable kafka" ${NOT_MSVC})
 
 if (ENABLE_RDKAFKA)
 
