@@ -327,7 +327,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
 
-    LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
+    if (!dry_run)
+        LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
     AnalysisResult expressions = analyzeExpressions(from_stage);
 
@@ -451,27 +452,24 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             }
 
             if (need_merge_streams)
-            {
                 executeUnion(pipeline);
 
-                /** If there was more than one stream,
-                  * then DISTINCT needs to be performed once again after merging all streams.
-                  */
-                if (need_second_distinct_pass)
-                    executeDistinct(pipeline, false, Names());
+            /** If there was more than one stream,
+              * then DISTINCT needs to be performed once again after merging all streams.
+              */
+            if (need_second_distinct_pass)
+                executeDistinct(pipeline, false, Names());
 
-                /** We must do projection after DISTINCT because projection may remove some columns.
-                  */
-                executeProjection(pipeline, expressions.final_projection);
-                executeExtremes(pipeline);
-                executeLimitBy(pipeline);
-                executeLimit(pipeline);
-            }
-            else
-            {
-                executeProjection(pipeline, expressions.final_projection);
-                executeExtremes(pipeline);
-            }
+            /** We must do projection after DISTINCT because projection may remove some columns.
+              */
+            executeLimitBy(pipeline);
+            executeProjection(pipeline, expressions.final_projection);
+
+            /** Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
+              */
+            executeExtremes(pipeline);
+
+            executeLimit(pipeline);
         }
     }
 
