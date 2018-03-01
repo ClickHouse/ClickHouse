@@ -124,6 +124,7 @@ private:
         ExpressionActionsPtr before_aggregation;
         ExpressionActionsPtr before_having;
         ExpressionActionsPtr before_order_and_select;
+        ExpressionActionsPtr before_limit_by;
         ExpressionActionsPtr final_projection;
 
         /// Columns from the SELECT list, before renaming them to aliases.

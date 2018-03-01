@@ -111,6 +111,7 @@ public:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;
 

@@ -286,6 +286,10 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         res.before_order_and_select = chain.getLastActions();
         chain.addStep();
 
+        query_analyzer->appendLimitBy(chain, !res.second_stage);
+        res.before_limit_by = chain.getLastActions();
+        chain.addStep();
+
         query_analyzer->appendProjectResult(chain);
         res.final_projection = chain.getLastActions();
 
@@ -456,9 +460,14 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             if (need_second_distinct_pass)
                 executeDistinct(pipeline, false, Names());
 
+            if (query.limit_by_expression_list)
+            {
+                executeExpression(pipeline, expressions.before_limit_by);
+                executeLimitBy(pipeline);
+            }
+
             /** We must do projection after DISTINCT because projection may remove some columns.
               */
-            executeLimitBy(pipeline);
             executeProjection(pipeline, expressions.final_projection);
 
             /** Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
@@ -1029,7 +1038,7 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 
     Names columns;
     for (const auto & elem : query.limit_by_expression_list->children)
-        columns.emplace_back(elem->getAliasOrColumnName());
+        columns.emplace_back(elem->getColumnName());
 
     size_t value = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_by_value).value);
 

@@ -2529,6 +2529,24 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
     return true;
 }
 
+bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
+{
+    assertSelect();
+
+    if (!select_query->limit_by_expression_list)
+        return false;
+
+    initChain(chain, aggregated_columns);
+    ExpressionActionsChain::Step & step = chain.steps.back();
+
+    getRootActions(select_query->limit_by_expression_list, only_types, false, step.actions);
+
+    for (const auto & child : select_query->limit_by_expression_list->children)
+        step.required_output.push_back(child->getColumnName());
+
+    return true;
+}
+
 void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     assertSelect();
