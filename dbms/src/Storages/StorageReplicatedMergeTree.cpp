@@ -14,7 +14,6 @@
 #include <Databases/IDatabase.h>
 
 #include <Parsers/formatAST.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 

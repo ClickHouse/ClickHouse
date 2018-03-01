@@ -28,6 +28,8 @@ protected:
 };
 
 
+/** Helper template for simple queries like SHOW PROCESSLIST.
+  */
 template <typename ASTIDAndQueryNames>
 class ASTQueryWithOutputImpl : public ASTQueryWithOutput
 {

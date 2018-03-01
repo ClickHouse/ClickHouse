@@ -26,58 +26,45 @@ public:
     /**
      * query_ptr
      * - A query AST to interpret.
-     *   NOTE: The interpreter can modify the query during the execution. If this is undesirable, clone the query.
      *
      * to_stage
      * - the stage to which the query is to be executed. By default - till to the end.
      *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
      *
      * subquery_depth
-     * - to control the restrictions on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
+     * - to control the limit on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
      *   for INSERT SELECT, a value 1 is passed instead of 0.
      *
      * input
-     * - if given - read not from the table specified in the query, but from ready source.
+     * - if given - read not from the table specified in the query, but from prepared source.
      *
-     * required_column_names
-     * - delete all columns except the specified ones from the query - it is used to delete unnecessary columns from subqueries.
-     *
-     * table_column_names
-     * - the list of available columns of the table.
-     *   Used, for example, with reference to `input`.
+     * required_result_column_names
+     * - don't calculate all columns except the specified ones from the query - it is used to remove calculation of unnecessary columns from subqueries.
      */
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        size_t subquery_depth_ = 0,
-        const BlockInputStreamPtr & input = nullptr);
-
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        const Context & context_,
-        const Names & required_column_names,
+        const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
         const BlockInputStreamPtr & input = nullptr);
 
     ~InterpreterSelectQuery();
 
-    /** Execute a query, possibly part of UNION ALL chain.
-     *  Get the stream of blocks to read
-     */
+    /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
-    /** Execute the query without union of threads, if it is possible.
-     */
-    BlockInputStreams executeWithoutUnion();
+    /// Execute the query and return multuple streams for parallel processing.
+    BlockInputStreams executeWithMultipleStreams();
 
     Block getSampleBlock();
 
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
         const Context & context_);
+
+    void ignoreWithTotals();
 
 private:
     struct Pipeline
@@ -113,21 +100,15 @@ private:
         }
     };
 
-    /** - Optimization if an object is created only to call getSampleBlock(): consider only the first SELECT of the UNION ALL chain, because
-      *   the first SELECT is sufficient to determine the required columns.
-      */
     struct OnlyAnalyzeTag {};
     InterpreterSelectQuery(
         OnlyAnalyzeTag,
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    void init(const Names & required_column_names);
-    void basicInit();
-    void initQueryAnalyzer();
+    void init(const Names & required_result_column_names);
 
-    /// Execute one SELECT query from the UNION ALL chain.
-    void executeSingleQuery(Pipeline & pipeline);
+    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
 
     struct AnalysisResult
@@ -137,12 +118,14 @@ private:
         bool need_aggregate = false;
         bool has_having     = false;
         bool has_order_by   = false;
+        bool has_limit_by   = false;
 
         ExpressionActionsPtr before_join;   /// including JOIN
         ExpressionActionsPtr before_where;
         ExpressionActionsPtr before_aggregation;
         ExpressionActionsPtr before_having;
         ExpressionActionsPtr before_order_and_select;
+        ExpressionActionsPtr before_limit_by;
         ExpressionActionsPtr final_projection;
 
         /// Columns from the SELECT list, before renaming them to aliases.
@@ -159,34 +142,18 @@ private:
     AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
 
 
-    /** Leave only the necessary columns of the SELECT section in each query of the UNION ALL chain.
-     *  However, if you use at least one DISTINCT in the chain, then all the columns are considered necessary,
-     *   since otherwise DISTINCT would work differently.
-     *
-     *  Always leave arrayJoin, because it changes number of rows.
-     *
-     *  TODO If query doesn't have GROUP BY, but have aggregate functions,
-     *   then leave at least one aggregate function,
-     *   In order that fact of aggregation has not been lost.
-     */
-    void rewriteExpressionList(const Names & required_column_names);
-
-    /// Does the request contain at least one asterisk?
-    bool hasAsterisk() const;
-
-    // Rename the columns of each query for the UNION ALL chain into the same names as in the first query.
-    void renameColumns();
-
     /** From which table to read. With JOIN, the "left" table is returned.
      */
     void getDatabaseAndTableNames(String & database_name, String & table_name);
 
     /// Different stages of query execution.
 
-    /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
+    /// dry_run - don't read from table, use empty header block instead.
+    void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    void executeWithoutUnionImpl(Pipeline & pipeline, const BlockInputStreamPtr & input);
+    /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
+    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run);
+
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
@@ -201,9 +168,8 @@ private:
     void executeLimit(Pipeline & pipeline);
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
+    void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-
-    void ignoreWithTotals();
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *
@@ -219,19 +185,12 @@ private:
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
-    Block source_header;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
 
-    /// Is it the first SELECT query of the UNION ALL chain?
-    bool is_first_select_inside_union_all;
-
     /// The object was created only for query analysis.
     bool only_analyze = false;
-
-    /// The next SELECT query in the UNION ALL chain, if any.
-    std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
@@ -239,9 +198,6 @@ private:
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;
-
-    /// Do union of streams within a SELECT query?
-    bool union_within_single_query = false;
 
     Poco::Logger * log;
 };
