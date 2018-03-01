@@ -210,6 +210,12 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
 
+    /// Remove unneeded columns according to 'required_source_columns'.
+    /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
+    /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
+    ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
+    removeUnneededColumnsFromSelectClause();
+
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries();
 
@@ -227,9 +233,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns();
-
-    /// All selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
-    calculateRequiredColumnsBeforeProjection();
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
@@ -2498,8 +2501,7 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_
     getRootActions(select_query->select_expression_list, only_types, false, step.actions);
 
     for (const auto & child : select_query->select_expression_list->children)
-        if (required_columns_before_projection.count(child->getColumnName()))
-            step.required_output.push_back(child->getColumnName());
+        step.required_output.push_back(child->getColumnName());
 }
 
 bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
@@ -2667,7 +2669,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     collectJoinedColumns(available_joined_columns, columns_added_by_join);
 
     NameSet required_joined_columns;
-    getRequiredSourceColumnsInSelectImpl(available_columns, required, ignored, available_joined_columns, required_joined_columns);
+    getRequiredSourceColumnsImpl(ast, available_columns, required, ignored, available_joined_columns, required_joined_columns);
 
     for (NamesAndTypesList::iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
     {
@@ -2786,29 +2788,6 @@ Names ExpressionAnalyzer::getRequiredSourceColumns() const
 }
 
 
-void ExpressionAnalyzer::getRequiredSourceColumnsInSelectImpl(
-    const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
-    const NameSet & available_joined_columns, NameSet & required_joined_columns)
-{
-    if (!select_query)
-    {
-        getRequiredSourceColumnsImpl(ast, available_columns, required_source_columns,
-            ignored_names, available_joined_columns, required_joined_columns);
-        return;
-    }
-
-    for (const auto & child : select_query->select_expression_list->children)
-        if (required_columns_before_projection.count(child->getColumnName()))
-            getRequiredSourceColumnsImpl(child, available_columns, required_source_columns,
-                ignored_names, available_joined_columns, required_joined_columns);
-
-    for (const auto & child : select_query->children)
-        if (child != select_query->select_expression_list)
-            getRequiredSourceColumnsImpl(child, available_columns, required_source_columns,
-                ignored_names, available_joined_columns, required_joined_columns);
-}
-
-
 void ExpressionAnalyzer::getRequiredSourceColumnsImpl(const ASTPtr & ast,
     const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
     const NameSet & available_joined_columns, NameSet & required_joined_columns)
@@ -2910,17 +2889,20 @@ static bool hasArrayJoin(const ASTPtr & ast)
 }
 
 
-void ExpressionAnalyzer::calculateRequiredColumnsBeforeProjection()
+void ExpressionAnalyzer::removeUnneededColumnsFromSelectClause()
 {
     if (!select_query)
         return;
 
-    for (const auto & child : select_query->select_expression_list->children)
-        if (required_result_columns.empty()
-            || select_query->distinct
-            || hasArrayJoin(child)
-            || required_result_columns.count(child->getAliasOrColumnName()))
-            required_columns_before_projection.insert(child->getColumnName());
+    if (required_result_columns.empty() || select_query->distinct)
+        return;
+
+    ASTs & elements = select_query->select_expression_list->children;
+
+    elements.erase(std::remove_if(elements.begin(), elements.end(), [this](const auto & node)
+    {
+        return !required_result_columns.count(node->getAliasOrColumnName()) && !hasArrayJoin(node);
+    }), elements.end());
 }
 
 }

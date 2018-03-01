@@ -296,12 +296,6 @@ private:
         const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
         const NameSet & available_joined_columns, NameSet & required_joined_columns);
 
-    /** Same as above but skip unnecessary elements in SELECT according to 'required_result_columns'.
-      */
-    void getRequiredSourceColumnsInSelectImpl(
-        const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
-        const NameSet & available_joined_columns, NameSet & required_joined_columns);
-
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
@@ -331,8 +325,7 @@ private:
     /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
       * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
       */
-    NameSet required_columns_before_projection;
-    void calculateRequiredColumnsBeforeProjection();
+    void removeUnneededColumnsFromSelectClause();
 };
 
 }
