@@ -7,8 +7,6 @@ namespace DB
 
 struct ASTCheckQuery : public ASTQueryWithOutput
 {
-    ASTCheckQuery(StringRange range_ = StringRange()) : ASTQueryWithOutput(range_) {};
-
     /** Get the text that identifies this element. */
     String getID() const override { return ("CheckQuery_" + database + "_" + table); };
 

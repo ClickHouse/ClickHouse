@@ -108,7 +108,8 @@ public:
     ~ReadBufferFromKafkaConsumer() { reset(); }
 
     /// Commit messages read with this consumer
-    void commit() {
+    void commit()
+    {
         LOG_TRACE(log, "Committing " << read_messages << " messages");
         if (read_messages == 0)
             return;
@@ -160,13 +161,6 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "Kafka(" << storage.topics.size() << ", " << storage.format_name << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
         if (isCancelled())
@@ -174,6 +168,8 @@ public:
 
         return reader->read();
     }
+
+    Block getHeader() const override { return reader->getHeader(); };
 
     void readPrefixImpl() override
     {

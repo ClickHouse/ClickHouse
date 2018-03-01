@@ -13,8 +13,6 @@ namespace DB
 
 bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_exists("EXISTS");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_describe("DESCRIBE");
@@ -59,8 +57,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!name_p.parse(pos, table, expected))
             return false;
     }
-
-    query->range = StringRange(begin, pos);
 
     if (database)
         query->database = typeid_cast<ASTIdentifier &>(*database).name;

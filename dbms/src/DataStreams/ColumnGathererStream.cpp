@@ -30,19 +30,6 @@ ColumnGathererStream::ColumnGathererStream(
 }
 
 
-String ColumnGathererStream::getID() const
-{
-    std::stringstream res;
-
-    res << getName() << "(";
-    for (size_t i = 0; i < children.size(); ++i)
-        res << (i == 0 ? "" : ", " ) << children[i]->getID();
-    res << ")";
-
-    return res.str();
-}
-
-
 void ColumnGathererStream::init()
 {
     sources.reserve(children.size());
@@ -107,13 +94,13 @@ void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
     }
     catch (Exception & e)
     {
-        e.addMessage("Cannot fetch required block. Stream " + children[source_num]->getID() + ", part " + toString(source_num));
+        e.addMessage("Cannot fetch required block. Stream " + children[source_num]->getName() + ", part " + toString(source_num));
         throw;
     }
 
     if (0 == source.size)
     {
-        throw Exception("Fetched block is empty. Stream " + children[source_num]->getID() + ", part " + toString(source_num),
+        throw Exception("Fetched block is empty. Stream " + children[source_num]->getName() + ", part " + toString(source_num),
                         ErrorCodes::RECEIVED_EMPTY_DATA);
     }
 }
