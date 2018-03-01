@@ -28,7 +28,7 @@ In ClickHouse, data can reside on different shards. Each shard can be a group of
 ## SQL support
 
 If you are familiar with standard SQL, we can't really talk about SQL support.
-NULL-s are not supported. All the functions have different names.
+All the functions have different names.
 However, this is a declarative query language based on SQL that can't be differentiated from SQL in many instances.
 Support for JOINs. Subqueries are supported in FROM, IN, and JOIN clauses, as well as scalar subqueries.
 Dependent subqueries are not supported.
