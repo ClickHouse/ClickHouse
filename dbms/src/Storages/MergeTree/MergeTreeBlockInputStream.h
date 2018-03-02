@@ -40,6 +40,8 @@ public:
 
     Block getHeader() const override;
 
+    const MergeTreeData::DataPartPtr & getDataPart() const { return data_part; }
+
     /// Closes readers and unlock part locks
     void finish();
 
