@@ -99,7 +99,6 @@ public:
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
-    /// If this `Action` is not already added to `ExpressionActions`, the returned list may be incomplete, because `prerequisites` are not taken into account.
     Names getNeededColumns() const;
 
     std::string toString() const;
@@ -107,7 +106,6 @@ public:
 private:
     friend class ExpressionActions;
 
-    std::vector<ExpressionAction> getPrerequisites(Block & sample_block);
     void prepare(Block & sample_block);
     void execute(Block & block) const;
     void executeOnTotals(Block & block) const;
@@ -147,8 +145,7 @@ public:
 
     void add(const ExpressionAction & action);
 
-    /// Adds new column names to out_new_columns
-    ///  (formed as a result of the added action and its prerequisites).
+    /// Adds new column names to out_new_columns (formed as a result of the added action).
     void add(const ExpressionAction & action, Names & out_new_columns);
 
     /// Adds to the beginning the removal of all extra columns.
@@ -194,13 +191,11 @@ public:
     /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
 
-    std::string getID() const;
-
     std::string dumpActions() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(size_t max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
 
 private:
     NamesAndTypesList input_columns;
@@ -210,9 +205,7 @@ private:
 
     void checkLimits(Block & block) const;
 
-    /// Adds all `prerequisites` first, then the action itself.
-    /// current_names - columns whose `prerequisites` are currently being processed.
-    void addImpl(ExpressionAction action, NameSet & current_names, Names & new_names);
+    void addImpl(ExpressionAction action, Names & new_names);
 
     /// Try to improve something without changing the lists of input and output columns.
     void optimize();

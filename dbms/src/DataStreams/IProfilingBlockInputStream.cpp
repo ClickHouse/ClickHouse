@@ -5,6 +5,7 @@
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 
+
 namespace DB
 {
 
@@ -15,6 +16,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -25,7 +27,11 @@ IProfilingBlockInputStream::IProfilingBlockInputStream()
 
 Block IProfilingBlockInputStream::read()
 {
-    collectAndSendTotalRowsApprox();
+    if (total_rows_approx)
+    {
+        progressImpl(Progress(0, 0, total_rows_approx));
+        total_rows_approx = 0;
+    }
 
     if (!info.started)
     {
@@ -62,13 +68,22 @@ Block IProfilingBlockInputStream::read()
         /** If the thread is over, then we will ask all children to abort the execution.
           * This makes sense when running a query with LIMIT
           * - there is a situation when all the necessary data has already been read,
-          *   but `children sources are still working,
+          *   but children sources are still working,
           *   herewith they can work in separate threads or even remotely.
           */
         cancel();
     }
 
     progress(Progress(res.rows(), res.bytes()));
+
+#ifndef NDEBUG
+    if (res)
+    {
+        Block header = getHeader();
+        if (header)
+            assertBlocksHaveEqualStructure(res, header, getName());
+    }
+#endif
 
     return res;
 }
@@ -78,15 +93,21 @@ void IProfilingBlockInputStream::readPrefix()
 {
     readPrefixImpl();
 
-    for (auto & child : children)
-        child->readPrefix();
+    forEachChild([&] (IBlockInputStream & child)
+    {
+        child.readPrefix();
+        return false;
+    });
 }
 
 
 void IProfilingBlockInputStream::readSuffix()
 {
-    for (auto & child : children)
-        child->readSuffix();
+    forEachChild([&] (IBlockInputStream & child)
+    {
+        child.readSuffix();
+        return false;
+    });
 
     readSuffixImpl();
 }
@@ -335,9 +356,11 @@ void IProfilingBlockInputStream::cancel()
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
 
-    for (auto & child : children)
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-            p_child->cancel();
+    forEachProfilingChild([] (IProfilingBlockInputStream & child)
+    {
+        child.cancel();
+        return false;
+    });
 }
 
 
@@ -345,9 +368,11 @@ void IProfilingBlockInputStream::setProgressCallback(const ProgressCallback & ca
 {
     progress_callback = callback;
 
-    for (auto & child : children)
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-            p_child->setProgressCallback(callback);
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
+    {
+        child.setProgressCallback(callback);
+        return false;
+    });
 }
 
 
@@ -355,71 +380,44 @@ void IProfilingBlockInputStream::setProcessListElement(ProcessListElement * elem
 {
     process_list_elem = elem;
 
-    for (auto & child : children)
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-            p_child->setProcessListElement(elem);
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
+    {
+        child.setProcessListElement(elem);
+        return false;
+    });
 }
 
 
-const Block & IProfilingBlockInputStream::getTotals()
+Block IProfilingBlockInputStream::getTotals()
 {
     if (totals)
         return totals;
 
-    for (auto & child : children)
+    Block res;
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
     {
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-        {
-            const Block & res = p_child->getTotals();
-            if (res)
-                return res;
-        }
-    }
-
-    return totals;
+        res = child.getTotals();
+        if (res)
+            return true;
+        return false;
+    });
+    return res;
 }
 
-const Block & IProfilingBlockInputStream::getExtremes() const
+Block IProfilingBlockInputStream::getExtremes()
 {
     if (extremes)
         return extremes;
 
-    for (const auto & child : children)
+    Block res;
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
     {
-        if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
-        {
-            const Block & res = p_child->getExtremes();
-            if (res)
-                return res;
-        }
-    }
-
-    return extremes;
-}
-
-void IProfilingBlockInputStream::collectTotalRowsApprox()
-{
-    bool old_val = false;
-    if (!collected_total_rows_approx.compare_exchange_strong(old_val, true))
-        return;
-
-    for (auto & child : children)
-    {
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-        {
-            p_child->collectTotalRowsApprox();
-            total_rows_approx += p_child->total_rows_approx;
-        }
-    }
-}
-
-void IProfilingBlockInputStream::collectAndSendTotalRowsApprox()
-{
-    if (collected_total_rows_approx)
-        return;
-
-    collectTotalRowsApprox();
-    progressImpl(Progress(0, 0, total_rows_approx));
+        res = child.getExtremes();
+        if (res)
+            return true;
+        return false;
+    });
+    return res;
 }
 
 }

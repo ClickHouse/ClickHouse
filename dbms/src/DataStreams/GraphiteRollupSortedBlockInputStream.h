@@ -135,23 +135,6 @@ public:
 
     String getName() const override { return "GraphiteRollupSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "GraphiteRollupSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
-
     ~GraphiteRollupSortedBlockInputStream()
     {
         if (aggregate_state_created)

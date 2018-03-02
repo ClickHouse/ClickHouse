@@ -153,9 +153,4 @@ void DatabaseMemory::drop()
     /// Additional actions to delete database are not required.
 }
 
-String DatabaseMemory::getDataPath(const Context &) const
-{
-    return {};
-}
-
 }

@@ -10,17 +10,12 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DataStreams/ProhibitColumnsBlockOutputStream.h>
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
-
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -32,7 +27,9 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -43,8 +40,10 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
@@ -201,8 +200,8 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
                 const auto data_type_ptr = columns.back().type.get();
 
                 default_expr_list->children.emplace_back(setAlias(
-                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
-                        std::make_shared<ASTLiteral>(StringRange(), Field(data_type_ptr->getName()))), final_column_name));
+                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
+                        std::make_shared<ASTLiteral>(Field(data_type_ptr->getName()))), final_column_name));
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
             }
             else
@@ -235,7 +234,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
                 if (!explicit_type->equals(*deduced_type))
                 {
                     col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
-                        std::make_shared<ASTLiteral>(StringRange(), explicit_type->getName()));
+                        std::make_shared<ASTLiteral>(explicit_type->getName()));
 
                     col_decl_ptr->children.clear();
                     col_decl_ptr->children.push_back(col_decl_ptr->type);
@@ -295,7 +294,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, pos, end, "data type");
-        column_declaration->type->query_string = type_name;
+        column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -323,7 +322,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, pos, end, "data type");
-        column_declaration->type->query_string = type_name;
+        column_declaration->type->owned_string = type_name;
 
         const auto it = column_defaults.find(column.name);
         if (it != std::end(column_defaults))
@@ -474,13 +473,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && (create.is_view || create.is_materialized_view))
         create.select->setDatabaseIfNeeded(current_database);
 
-    std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
     if (create.select && (!create.attach || !create.columns))
-    {
-        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->clone(), context);
-        as_select_sample = interpreter_select->getSampleBlock();
-    }
+        as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;
     String as_table_name = create.as_table;
@@ -510,7 +505,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (!create.is_temporary)
         {
             database = context.getDatabase(database_name);
-            data_path = database->getDataPath(context);
+            data_path = database->getDataPath();
 
             /** If the table already exists, and the request specifies IF NOT EXISTS,
               *  then we allow concurrent CREATE queries (which do nothing).
@@ -554,29 +549,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && !create.attach
         && !create.is_view && (!create.is_materialized_view || create.is_populate))
     {
-        auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
+        auto insert = std::make_shared<ASTInsertQuery>();
 
-        /// Also see InterpreterInsertQuery.
-        BlockOutputStreamPtr out;
+        if (!create.is_temporary)
+            insert->database = database_name;
 
-        out = std::make_shared<PushingToViewsBlockOutputStream>(
-            create.database, create.table, res, create.is_temporary ? context.getSessionContext() : context, query_ptr);
+        insert->table = table_name;
+        insert->select = create.select->clone();
 
-        out = std::make_shared<MaterializingBlockOutputStream>(out);
-
-        /// @note shouldn't these two contexts be session contexts in case of temporary table?
-        bool strict_insert_defaults = static_cast<bool>(context.getSettingsRef().strict_insert_defaults);
-        out = std::make_shared<AddingDefaultBlockOutputStream>(
-            out, columns.columns, columns.column_defaults, context, strict_insert_defaults);
-
-        if (!context.getSettingsRef().insert_allow_materialized_columns)
-            out = std::make_shared<ProhibitColumnsBlockOutputStream>(out, columns.materialized_columns);
-
-        BlockIO io;
-        io.in_sample = as_select_sample;
-        io.in = std::make_shared<NullAndDoCopyBlockInputStream>(interpreter_select->execute().in, out);
-
-        return io;
+        return InterpreterInsertQuery(insert, context.getSessionContext(), context.getSettingsRef().insert_allow_materialized_columns).execute();
     }
 
     return {};

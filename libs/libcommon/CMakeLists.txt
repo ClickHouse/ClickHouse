@@ -20,7 +20,7 @@ endif ()
 add_library (common ${SPLIT_SHARED}
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
-    src/exp10.c
+    src/preciseExp10.c
     src/shift10.cpp
     src/mremap.cpp
     src/JSON.cpp
@@ -34,7 +34,7 @@ add_library (common ${SPLIT_SHARED}
     include/common/LocalDate.h
     include/common/LocalDateTime.h
     include/common/ErrorHandlers.h
-    include/common/exp10.h
+    include/common/preciseExp10.h
     include/common/shift10.h
     include/common/intExp.h
     include/common/mremap.h
@@ -111,9 +111,12 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARY}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
+
+if (RT_LIBRARY)
+    target_link_libraries (common ${RT_LIBRARY})
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

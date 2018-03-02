@@ -1087,7 +1087,7 @@ private:
         statistics.last_query_rows_read = 0;
         statistics.last_query_bytes_read = 0;
 
-        RemoteBlockInputStream stream(connection, query, global_context, &settings);
+        RemoteBlockInputStream stream(connection, query, {}, global_context, &settings);
 
         stream.setProgressCallback(
             [&](const Progress & value) { this->checkFulfilledConditionsAndUpdate(value, stream, statistics, stop_conditions); });

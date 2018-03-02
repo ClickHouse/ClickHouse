@@ -140,7 +140,7 @@ BlockIO InterpreterDropQuery::execute()
 
             table.first->is_dropped = true;
 
-            String database_data_path = database->getDataPath(context);
+            String database_data_path = database->getDataPath();
 
             /// If it is not virtual database like Dictionary then drop remaining data dir
             if (!database_data_path.empty())
@@ -173,7 +173,7 @@ BlockIO InterpreterDropQuery::execute()
         database->drop();
 
         /// Remove data directory if it is not virtual database. TODO: should IDatabase::drop() do that?
-        String database_data_path = database->getDataPath(context);
+        String database_data_path = database->getDataPath();
         if (!database_data_path.empty())
             Poco::File(database_data_path).remove(false);
 

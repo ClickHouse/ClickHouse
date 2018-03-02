@@ -262,7 +262,6 @@ namespace ErrorCodes
     extern const int PARTITION_ALREADY_EXISTS = 256;
     extern const int PARTITION_DOESNT_EXIST = 257;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH = 258;
-    extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH = 259;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED = 260;
     extern const int UNKNOWN_BLOCK_INFO_FIELD = 261;
     extern const int BAD_COLLATION = 262;
@@ -367,6 +366,10 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE = 388;
     extern const int INSERT_WAS_DEDUPLICATED = 389;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY = 390;
+    extern const int EXTERNAL_LIBRARY_ERROR = 391;
+    extern const int QUERY_IS_PROHIBITED = 392;
+    extern const int THERE_IS_NO_QUERY = 393;
+
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

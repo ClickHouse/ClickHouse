@@ -14,9 +14,6 @@ class ASTUseQuery : public IAST
 public:
     String database;
 
-    ASTUseQuery() = default;
-    ASTUseQuery(const StringRange range_) : IAST(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return "UseQuery_" + database; };
 

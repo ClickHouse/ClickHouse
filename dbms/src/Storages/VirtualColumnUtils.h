@@ -30,7 +30,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 /// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
 /// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
 /// Returns true if at least one row is discarded.
-bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context);
+void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T1>
