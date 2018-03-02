@@ -48,7 +48,7 @@ namespace ErrorCodes
   *
   * arrayEnumerateUniq(arr)
   *  - outputs an array parallel (having same size) to this, where for each element specified
-  *  how much times this element was encountered before (including this element) among elements with the same value.
+  *  how many times this element was encountered before (including this element) among elements with the same value.
   *  For example: arrayEnumerateUniq([10, 20, 10, 30]) = [1, 1, 2, 1]
   * arrayEnumerateUniq(arr1, arr2...)
   *  - for tuples from elements in the corresponding positions in several arrays.

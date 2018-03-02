@@ -189,7 +189,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
-            && part->info.min_block < (*prev_part)->info.max_block)
+            && part->info.min_block <= (*prev_part)->info.max_block)
         {
             LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
         }
@@ -592,7 +592,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
-        if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+        if (data.hasPrimaryKey())
             src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
         else
@@ -640,10 +640,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         case MergeTreeData::MergingParams::VersionedCollapsing:
             merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
                     src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
-            break;
-
-        case MergeTreeData::MergingParams::Unsorted:
-            merged_stream = std::make_unique<ConcatBlockInputStream>(src_streams);
             break;
 
         default:
@@ -736,7 +732,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
-            MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_settings, offset_written);
+            MergedColumnOnlyOutputStream column_to(data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_settings, offset_written);
             size_t column_elems_written = 0;
 
             column_to.writePrefix();

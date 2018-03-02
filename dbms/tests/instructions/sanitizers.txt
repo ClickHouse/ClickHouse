@@ -13,11 +13,11 @@ make -j24
 
 # Copy binary to your server
 
-scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-libcxx-asan
+scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-asan
 
 # Start ClickHouse and run tests
 
-sudo -u clickhouse ./clickhouse-libcxx-asan --config /etc/clickhouse-server/config.xml
+sudo -u clickhouse ./clickhouse-asan --config /etc/clickhouse-server/config.xml
 
 
 # How to use Thread Sanitizer
@@ -26,13 +26,13 @@ mkdir build && cd build
 
 # Note: All parameters are mandatory.
 
-CC=clang CXX=clang++ cmake -D CCACHE_FOUND=0 -D CMAKE_BUILD_TYPE=TSan -D ENABLE_TCMALLOC=0 ..
+CC=clang CXX=clang++ cmake -D CMAKE_BUILD_TYPE=TSan -D ENABLE_TCMALLOC=0 ..
 make -j24
 
 # Copy binary to your server
 
-scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-libcxx-tsan
+scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-tsan
 
 # Start ClickHouse and run tests
 
-sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1' ./clickhouse-libcxx-tsan --config /etc/clickhouse-server/config.xml
+sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1' ./clickhouse-tsan --config /etc/clickhouse-server/config.xml

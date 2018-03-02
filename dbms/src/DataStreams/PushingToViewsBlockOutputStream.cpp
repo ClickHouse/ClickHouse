@@ -1,4 +1,5 @@
-#include "PushingToViewsBlockOutputStream.h"
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
 
@@ -6,8 +7,8 @@ namespace DB
 {
 
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
-        String database, String table, StoragePtr storage,
-        const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
+    const String & database, const String & table, const StoragePtr & storage,
+    const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
     : context(context_), query_ptr(query_ptr_)
 {
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
@@ -64,7 +65,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         try
         {
             BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-            InterpreterSelectQuery select(view.query, *views_context, QueryProcessingStage::Complete, 0, from);
+            InterpreterSelectQuery select(view.query, *views_context, {}, QueryProcessingStage::Complete, 0, from);
             BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
             copyData(*data, *view.out);
         }

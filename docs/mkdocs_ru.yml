@@ -1,12 +1,19 @@
 site_name: Документация ClickHouse
+copyright: ©2016–2018 Yandex LLC
 
 docs_dir: ru
 site_dir: build/docs/ru
-use_directory_urls: false
+use_directory_urls: true
 
 repo_name: 'yandex/ClickHouse'
 repo_url: 'https://github.com/yandex/ClickHouse/'
 edit_uri: 'edit/master/docs/ru'
+
+extra_css:
+  - assets/stylesheets/custom.css
+
+markdown_extensions:
+  - codehilite
 
 theme:
   name: null
@@ -17,9 +24,9 @@ theme:
   palette:
     primary: 'white'
     accent: 'white'
-  font:
-    text: Roboto
-    code: Roboto Mono
+  font: false
+#    text: Roboto
+#    code: Roboto Mono
   logo: 'images/logo.svg'
   favicon: 'assets/images/favicon.ico'
   include_search_page: false
@@ -28,6 +35,7 @@ theme:
     - 404.html
 
 extra:
+  single_page: false
   search:
     language: 'en, ru'
 
@@ -229,6 +237,11 @@ pages:
     - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
     - 'Настройки': 'operations/settings/settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
+
+- 'Утилиты':
+  - 'Утилиты': 'utils/index.md'
+  - 'clickhouse-copier': 'utils/clickhouse-copier.md'
+  #- 'clickhouse-local' : 'utils/clickhouse-local.md'
 
 - 'ClickHouse Development':
 #  - 'ClickHouse Development': 'development/index.md'

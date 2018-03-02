@@ -59,6 +59,7 @@ public:
       */
     Block getSampleBlock() const;
     Block getSampleBlockNonMaterialized() const;
+    Block getSampleBlockForColumns(const Names & column_names) const;
 
     /** Verify that all the requested names are in the table and are set correctly.
       * (the list of names is not empty and the names do not repeat)
@@ -90,9 +91,9 @@ public:
         const ColumnDefaults & column_defaults);
 
     NamesAndTypesList columns;
-    NamesAndTypesList materialized_columns{};
-    NamesAndTypesList alias_columns{};
-    ColumnDefaults column_defaults{};
+    NamesAndTypesList materialized_columns;
+    NamesAndTypesList alias_columns;
+    ColumnDefaults column_defaults;
 
 private:
     virtual const NamesAndTypesList & getColumnsListImpl() const

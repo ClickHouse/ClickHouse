@@ -56,6 +56,7 @@ class IDatabase;
 class DDLGuard;
 class DDLWorker;
 class IStorage;
+class ITableFunction;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
 class IAST;
@@ -102,7 +103,9 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-    Tables external_tables;                 /// Temporary tables.
+    Tables external_tables;                 /// Temporary tables. Keyed by table name.
+    Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
     SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
@@ -180,6 +183,8 @@ public:
     void addExternalTable(const String & table_name, const StoragePtr & storage);
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
+    StoragePtr executeTableFunction(const ASTPtr & table_expression);
+
     void addDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name);
 
@@ -251,7 +256,11 @@ public:
     std::chrono::steady_clock::duration closeSessions() const;
 
     /// For methods below you may need to acquire a lock by yourself.
-    std::unique_lock<Poco::Mutex> getLock() const;
+    std::unique_lock<std::recursive_mutex> getLock() const;
+
+    const Context & getQueryContext() const;
+    Context & getQueryContext();
+    bool hasQueryContext() const { return query_context != nullptr; }
 
     const Context & getSessionContext() const;
     Context & getSessionContext();
@@ -261,8 +270,9 @@ public:
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
 
-    void setSessionContext(Context & context_)                                  { session_context = &context_; }
-    void setGlobalContext(Context & context_)                                   { global_context = &context_; }
+    void setQueryContext(Context & context_) { query_context = &context_; }
+    void setSessionContext(Context & context_) { session_context = &context_; }
+    void setGlobalContext(Context & context_) { global_context = &context_; }
 
     const Settings & getSettingsRef() const { return settings; };
     Settings & getSettingsRef() { return settings; };
