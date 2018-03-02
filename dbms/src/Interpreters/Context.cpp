@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int THERE_IS_NO_SESSION;
+    extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
@@ -919,30 +920,29 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 Settings Context::getSettings() const
 {
-    auto lock = getLock();
     return settings;
 }
 
 
 Limits Context::getLimits() const
 {
-    auto lock = getLock();
     return settings.limits;
 }
 
 
 void Context::setSettings(const Settings & settings_)
 {
-    auto lock = getLock();
     settings = settings_;
 }
 
 
 void Context::setSetting(const String & name, const Field & value)
 {
-    auto lock = getLock();
     if (name == "profile")
+    {
+        auto lock = getLock();
         settings.setProfile(value.safeGet<String>(), *shared->users_config);
+    }
     else
         settings.set(name, value);
 }
@@ -950,9 +950,11 @@ void Context::setSetting(const String & name, const Field & value)
 
 void Context::setSetting(const String & name, const std::string & value)
 {
-    auto lock = getLock();
     if (name == "profile")
+    {
+        auto lock = getLock();
         settings.setProfile(value, *shared->users_config);
+    }
     else
         settings.set(name, value);
 }
@@ -960,14 +962,12 @@ void Context::setSetting(const String & name, const std::string & value)
 
 String Context::getCurrentDatabase() const
 {
-    auto lock = getLock();
     return current_database;
 }
 
 
 String Context::getCurrentQueryId() const
 {
-    auto lock = getLock();
     return client_info.current_query_id;
 }
 
@@ -982,8 +982,6 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    auto lock = getLock();
-
     if (!client_info.current_query_id.empty())
         throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
@@ -1006,8 +1004,12 @@ void Context::setCurrentQueryId(const String & query_id)
             };
         } random;
 
-        random.a = shared->rng();
-        random.b = shared->rng();
+        {
+            auto lock = getLock();
+
+            random.a = shared->rng();
+            random.b = shared->rng();
+        }
 
         /// Use protected constructor.
         struct UUID : Poco::UUID
@@ -1025,14 +1027,12 @@ void Context::setCurrentQueryId(const String & query_id)
 
 String Context::getDefaultFormat() const
 {
-    auto lock = getLock();
     return default_format.empty() ? "TabSeparated" : default_format;
 }
 
 
 void Context::setDefaultFormat(const String & name)
 {
-    auto lock = getLock();
     default_format = name;
 }
 
@@ -1045,6 +1045,20 @@ void Context::setMacros(Macros && macros)
 {
     /// We assume that this assignment occurs once when the server starts. If this is not the case, you need to use a mutex.
     shared->macros = macros;
+}
+
+const Context & Context::getQueryContext() const
+{
+    if (!query_context)
+        throw Exception("There is no query", ErrorCodes::THERE_IS_NO_QUERY);
+    return *query_context;
+}
+
+Context & Context::getQueryContext()
+{
+    if (!query_context)
+        throw Exception("There is no query", ErrorCodes::THERE_IS_NO_QUERY);
+    return *query_context;
 }
 
 const Context & Context::getSessionContext() const
