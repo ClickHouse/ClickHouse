@@ -1,5 +1,4 @@
 #include <fcntl.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <time.h>
 #include <stdlib.h>
@@ -7,26 +6,23 @@
 #include <malloc.h>
 #endif
 #include <poll.h>
-
 #include <iostream>
 #include <iomanip>
 #include <vector>
-
 #include <random>
 #include <pcg_random.hpp>
-
 #include <Poco/NumberParser.h>
 #include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
-
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
-
 #include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-
 #ifdef __APPLE__
 #include <common/apple_rt.h>
+#endif
+#if !_MSC_VER
+#include <unistd.h>
 #endif
 
 using DB::throwFromErrno;

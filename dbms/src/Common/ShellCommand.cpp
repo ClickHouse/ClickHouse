@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #if !_MSC_VER
-    #include <unistd.h>
+#include <unistd.h>
 #endif
 
 
