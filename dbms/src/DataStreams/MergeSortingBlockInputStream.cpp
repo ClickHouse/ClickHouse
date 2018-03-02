@@ -116,9 +116,7 @@ Block MergeSortingBlockInputStream::readImpl()
             }
         }
 
-        throwIfCancelled();
-
-        if ((blocks.empty() && temporary_files.empty()))
+        if ((blocks.empty() && temporary_files.empty()) || isCancelledOrThrowIfKilled())
             return Block();
 
         if (temporary_files.empty())

@@ -39,9 +39,10 @@ Block IProfilingBlockInputStream::read()
         info.started = true;
     }
 
-    throwIfCancelled();
-
     Block res;
+
+    if (isCancelledOrThrowIfKilled())
+        return res;
 
     if (!checkTimeLimits())
         limit_exceeded_need_break = true;
@@ -349,15 +350,18 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 }
 
 
-void IProfilingBlockInputStream::cancel()
+void IProfilingBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
+
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
 
     forEachProfilingChild([] (IProfilingBlockInputStream & child)
     {
-        child.cancel();
+        child.cancel(kill);
         return false;
     });
 }

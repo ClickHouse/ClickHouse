@@ -27,10 +27,8 @@ Block MergingAggregatedBlockInputStream::readImpl()
         it = blocks.begin();
     }
 
-    throwIfCancelled();
-
     Block res;
-    if (it == blocks.end())
+    if (isCancelledOrThrowIfKilled() || it == blocks.end())
         return res;
 
     res = std::move(*it);

@@ -112,7 +112,7 @@ public:
       * By default - just sets the flag is_cancelled and asks that all children be interrupted.
       * This function can be called several times, including simultaneously from different threads.
       */
-    virtual void cancel();
+    virtual void cancel(bool kill = false);
 
     /** Do you want to abort the receipt of data.
      */
@@ -121,13 +121,13 @@ public:
         return is_cancelled.load(std::memory_order_seq_cst);
     }
 
-    bool throwIfCancelled() const
+    bool isCancelledOrThrowIfKilled() const
     {
-        if (isCancelled())
-        {
+        if (!isCancelled())
+            return false;
+        if (is_killed)
             throw Exception("Query cancelled", ErrorCodes::QUERY_CANCELLED);
-        }
-        return 0;
+        return true;
     }
 
     /** What limitations and quotas should be checked.
@@ -187,6 +187,7 @@ public:
 protected:
     BlockStreamProfileInfo info;
     std::atomic<bool> is_cancelled{false};
+    bool is_killed{false};
     ProgressCallback progress_callback;
     ProcessListElement * process_list_elem = nullptr;
 

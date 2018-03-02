@@ -180,7 +180,8 @@ Block RemoteBlockInputStream::readImpl()
 
     while (true)
     {
-        throwIfCancelled();
+        if (isCancelledOrThrowIfKilled())
+            return Block();
 
         Connection::Packet packet = multiplexed_connections->receivePacket();
 

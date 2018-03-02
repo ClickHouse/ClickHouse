@@ -55,7 +55,8 @@ Block ParallelAggregatingBlockInputStream::readImpl()
 
         execute();
 
-        throwIfCancelled();
+        if (isCancelledOrThrowIfKilled())
+            return {};
 
         if (!aggregator.hasTemporaryFiles())
         {
@@ -90,10 +91,8 @@ Block ParallelAggregatingBlockInputStream::readImpl()
         executed = true;
     }
 
-    throwIfCancelled();
-
     Block res;
-    if (!impl)
+    if (isCancelledOrThrowIfKilled() || !impl)
         return res;
 
     return impl->read();
@@ -175,7 +174,8 @@ void ParallelAggregatingBlockInputStream::execute()
 
     rethrowFirstException(exceptions);
 
-    throwIfCancelled();
+    if (isCancelledOrThrowIfKilled())
+        return;
 
     double elapsed_seconds = watch.elapsedSeconds();
 
