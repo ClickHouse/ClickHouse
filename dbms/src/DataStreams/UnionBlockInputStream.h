@@ -112,8 +112,11 @@ public:
     /** Different from the default implementation by trying to stop all sources,
       * skipping failed by execution.
       */
-    void cancel() override
+    void cancel(bool kill = false) override
     {
+        if (kill)
+            is_killed = true;
+
         bool old_val = false;
         if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
             return;

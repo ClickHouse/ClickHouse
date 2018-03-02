@@ -35,8 +35,10 @@ Block ParallelAggregatingBlockInputStream::getHeader() const
 }
 
 
-void ParallelAggregatingBlockInputStream::cancel()
+void ParallelAggregatingBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;

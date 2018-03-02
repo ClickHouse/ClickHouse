@@ -359,7 +359,7 @@ void IProfilingBlockInputStream::cancel(bool kill)
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
 
-    forEachProfilingChild([] (IProfilingBlockInputStream & child)
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
     {
         child.cancel(kill);
         return false;

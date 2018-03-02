@@ -76,7 +76,7 @@ public:
     /** Different from the default implementation by trying to stop all sources,
       *  skipping failed by execution.
       */
-    void cancel() override;
+    void cancel(bool kill = false) override;
 
     Block getHeader() const override;
 

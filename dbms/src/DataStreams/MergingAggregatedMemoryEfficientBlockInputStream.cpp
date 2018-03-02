@@ -114,8 +114,11 @@ void MergingAggregatedMemoryEfficientBlockInputStream::readSuffix()
 }
 
 
-void MergingAggregatedMemoryEfficientBlockInputStream::cancel()
+void MergingAggregatedMemoryEfficientBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
+
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true))
         return;
@@ -136,7 +139,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::cancel()
         {
             try
             {
-                child->cancel();
+                child->cancel(kill);
             }
             catch (...)
             {
