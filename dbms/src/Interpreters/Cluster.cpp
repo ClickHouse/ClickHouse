@@ -10,7 +10,6 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <openssl/sha.h>
 
 namespace DB
 {
