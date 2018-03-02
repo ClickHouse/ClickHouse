@@ -217,8 +217,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 if (std::end(columns) != column_it)
                     throw Exception{
                         "Cannot add column " + column_name + ": column with this name already exists",
-                        ErrorCodes::ILLEGAL_COLUMN
-                    };
+                        ErrorCodes::ILLEGAL_COLUMN};
             }
             else if (command.type == AlterCommand::MODIFY_COLUMN)
             {
@@ -226,8 +225,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 if (std::end(columns) == column_it)
                     throw Exception{
                         "Wrong column name. Cannot find column " + column_name + " to modify",
-                        ErrorCodes::ILLEGAL_COLUMN
-                    };
+                        ErrorCodes::ILLEGAL_COLUMN};
 
                 columns.erase(column_it);
                 defaults.erase(column_name);
@@ -269,16 +267,17 @@ void AlterCommands::validate(IStorage * table, const Context & context)
             {
                 const auto & default_expression = default_column.second.expression;
                 const auto actions = ExpressionAnalyzer{default_expression, context, {}, columns}.getActions(true);
-                const auto require_columns = actions->getRequiredColumns();
+                const auto required_columns = actions->getRequiredColumns();
 
-                if (std::count(require_columns.begin(), require_columns.end(), command.column_name))
+                if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
                     throw Exception(
                         "Cannot drop column " + command.column_name + ", because column " + default_column.first +
-                        " depends on it", ErrorCodes::ILLEGAL_COLUMN
-                    );
+                        " depends on it", ErrorCodes::ILLEGAL_COLUMN);
             }
+
             auto found = false;
             for (auto it = std::begin(columns); it != std::end(columns);)
+            {
                 if (AlterCommand::namesEqual(command.column_name, *it))
                 {
                     found = true;
@@ -286,12 +285,15 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 }
                 else
                     ++it;
+            }
 
             for (auto it = std::begin(defaults); it != std::end(defaults);)
+            {
                 if (AlterCommand::namesEqual(command.column_name, { it->first, nullptr }))
                     it = defaults.erase(it);
                 else
                     ++it;
+            }
 
             if (!found)
                 throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
