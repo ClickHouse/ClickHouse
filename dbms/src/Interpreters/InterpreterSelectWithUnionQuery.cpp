@@ -47,7 +47,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     nested_interpreters.reserve(num_selects);
 
     std::vector<Names> required_result_column_names_for_other_selects(num_selects);
-    if (!required_result_column_names.empty())
+    if (!required_result_column_names.empty() && num_selects > 1)
     {
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.

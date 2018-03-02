@@ -39,7 +39,9 @@ public:
      * - if given - read not from the table specified in the query, but from prepared source.
      *
      * required_result_column_names
-     * - don't calculate all columns except the specified ones from the query - it is used to remove calculation of unnecessary columns from subqueries.
+     * - don't calculate all columns except the specified ones from the query
+     *  - it is used to remove calculation (and reading) of unnecessary columns from subqueries.
+     *   empty means - use all columns.
      */
 
     InterpreterSelectQuery(
@@ -78,7 +80,7 @@ private:
 
         /** When executing FULL or RIGHT JOIN, there will be a data stream from which you can read "not joined" rows.
           * It has a special meaning, since reading from it should be done after reading from the main streams.
-          * It is joined to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
+          * It is appended to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
           */
         BlockInputStreamPtr stream_with_non_joined_data;
 
