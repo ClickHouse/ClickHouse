@@ -59,7 +59,7 @@ DataTypePtr getDataType(SQLSMALLINT type)
     }
 }
 
-StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
 

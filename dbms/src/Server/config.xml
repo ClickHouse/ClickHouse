@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
     <logger>
+        <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
@@ -226,7 +227,15 @@
         -->
         <database>system</database>
         <table>query_log</table>
-
+        <!-- 
+            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key.html 
+            Example: 
+                event_date
+                toMonday(event_date)
+                toYYYYMM(event_date)
+                toStartOfHour(event_time)
+        -->
+        <partition_by>toYYYYMM(event_date)</partition_by>
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>

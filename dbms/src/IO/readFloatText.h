@@ -5,8 +5,6 @@
 #include <common/likely.h>
 #include <double-conversion/double-conversion.h>
 
-#include <common/iostream_debug_helpers.h>
-
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.

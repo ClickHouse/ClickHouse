@@ -518,6 +518,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
+- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 **Example**
@@ -526,6 +527,7 @@ Use the following parameters to configure logging:
 <part_log>
     <database>system</database>
     <table>part_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </part_log>
 ```
@@ -560,6 +562,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
+- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -570,6 +573,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 <query_log>
     <database>system</database>
     <table>query_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
 ```

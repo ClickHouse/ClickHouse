@@ -170,6 +170,8 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
+    String getDataPath() const override { return full_path; }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();

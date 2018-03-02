@@ -1,16 +1,9 @@
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -18,7 +11,6 @@ namespace DB
 
 bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     auto query = std::make_shared<ASTKillQueryQuery>();
 
     if (!ParserKeyword{"KILL QUERY"}.ignore(pos, expected))
@@ -37,8 +29,6 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         query->sync = false;
     else if (ParserKeyword{"TEST"}.ignore(pos))
         query->test = true;
-
-    query->range = StringRange(begin, pos);
 
     node = std::move(query);
 

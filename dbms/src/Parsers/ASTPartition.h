@@ -17,8 +17,6 @@ public:
 
     String id;
 
-    ASTPartition() = default;
-    ASTPartition(StringRange range_) : IAST(range_) {}
     String getID() const override;
     ASTPtr clone() const override;
 
