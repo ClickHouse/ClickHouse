@@ -39,7 +39,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
 
         /// Default POCO value is 1024. Set property manually to make possible reading of longer strings.
         session->setProperty("maxFieldSize", Poco::Any(field_size));
-        return std::move(session);
+        return session;
     });
 }
 
