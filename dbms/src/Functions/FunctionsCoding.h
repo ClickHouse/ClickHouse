@@ -1111,6 +1111,8 @@ public:
         return std::make_shared<DataTypeUUID>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         auto col_res = ColumnVector<UInt128>::create();

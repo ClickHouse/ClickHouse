@@ -101,7 +101,6 @@ int main(int, char **)
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
-        std::cerr << ast->getTreeID() << std::endl;
 
         /// create an object of an existing hit log table
 
@@ -134,7 +133,7 @@ int main(int, char **)
 
         WriteBufferFromOStream ob(std::cout);
         RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
-        BlockOutputStreamFromRowOutputStream out(out_);
+        BlockOutputStreamFromRowOutputStream out(out_, in->getHeader());
 
         copyData(*in, out);
     }

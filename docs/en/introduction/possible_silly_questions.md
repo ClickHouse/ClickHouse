@@ -2,7 +2,7 @@
 
 ## Why not use something like MapReduce?
 
-We can refer to systems like map-reduce as distributed computing systems in which the reduce operation is based on distributed sorting. In this sense, they include YAMR, Hadoop, and YT.
+We can refer to systems like map-reduce as distributed computing systems in which the reduce operation is based on distributed sorting. In this sense, they include Hadoop and YT (Yandex proprietary technology).
 
 These systems aren't appropriate for online queries due to their high latency. In other words, they can't be used as the back-end for a web interface.
 These types of systems aren't useful for real-time data updates.

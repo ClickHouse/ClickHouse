@@ -14,6 +14,7 @@ class SquashingBlockOutputStream : public IBlockOutputStream
 public:
     SquashingBlockOutputStream(BlockOutputStreamPtr & dst, size_t min_block_size_rows, size_t min_block_size_bytes);
 
+    Block getHeader() const override { return output->getHeader(); }
     void write(const Block & block) override;
 
     void flush() override;

@@ -12,10 +12,3 @@ The table engine (type of table) determines:
 
 Note that for most serious tasks, you should use engines from the MergeTree family.
 
-```eval_rst
-.. toctree::
-    :glob:
-
-    *
-```
-

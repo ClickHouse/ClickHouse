@@ -4,7 +4,7 @@
 
 Движок `Dictionary` отображает данные словаря как таблицу ClickHouse.
 
-К примеру у нас есть словарь `products` со следующим конфигом:
+Рассмотрим для примера словарь `products` со следующей конфигурацией:
 
 ```xml
 <dictionaries>
@@ -37,7 +37,7 @@
 </dictionaries>
 ```
 
-Проверяем:
+Запрос данных словаря:
 
 ```sql
 select name, type, key, attribute.names, attribute.types, bytes_allocated, element_count,source from system.dictionaries where name = 'products';                     
@@ -60,14 +60,18 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-В таком виде данные из словаря можно смотреть/использовать при помощи функций [dictGet*](../functions/ext_dict_functions.md).
-Это бывает не всегда угодно, когда требуется выполнять JOIN операции или просто получить данные находящиеся сейчас в словаре.
+В таком виде данные из словаря можно получить при помощи функций [dictGet*](../functions/ext_dict_functions.md#ext_dict_functions).
 
-Мы можем использовать джок таблицы `Dictionary` для отображения данных словаря в таблицу.
+Такое представление неудобно, когда нам необходимо получить данные в чистом виде, а также при выполнении операции `JOIN`. Для этих случаев можно использовать движок `Dictionary`, который отобразит данные словаря в таблицу.
 
-Синтаксис: `CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
+Синтаксис:
 
-Попробуем:
+```
+CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
+```
+
+
+Пример использования:
 
 ```sql
 create table products (product_id UInt64, title String) Engine = Dictionary(products);

@@ -6,6 +6,12 @@
 namespace DB
 {
 
+Block MergeTreeBlockOutputStream::getHeader() const
+{
+    return storage.getSampleBlock();
+}
+
+
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
     storage.data.delayInsertIfNeeded();

@@ -19,13 +19,6 @@ DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(const BlockInputS
     children.push_back(input);
 }
 
-String DistinctSortedBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "DistinctSorted(" << children.back()->getID() << ")";
-    return res.str();
-}
-
 Block DistinctSortedBlockInputStream::readImpl()
 {
     /// Execute until end of stream or until

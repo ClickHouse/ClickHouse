@@ -18,13 +18,6 @@ DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & i
     children.push_back(input);
 }
 
-String DistinctBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "Distinct(" << children.back()->getID() << ")";
-    return res.str();
-}
-
 Block DistinctBlockInputStream::readImpl()
 {
     /// Execute until end of stream or until

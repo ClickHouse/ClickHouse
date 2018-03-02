@@ -29,6 +29,11 @@ struct MergeTreePartInfo
             < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level);
     }
 
+    bool operator==(const MergeTreePartInfo & rhs) const
+    {
+        return !(*this < rhs || rhs < *this);
+    }
+
     /// Contains another part (obtained after merging another part with some other)
     bool contains(const MergeTreePartInfo & rhs) const
     {
@@ -38,8 +43,20 @@ struct MergeTreePartInfo
             && level >= rhs.level;
     }
 
+    /// True if parts do not intersect in any way.
+    bool isDisjoint(const MergeTreePartInfo & rhs) const
+    {
+        return partition_id != rhs.partition_id
+            || min_block > rhs.max_block
+            || max_block < rhs.min_block;
+    }
+
     String getPartName() const;
     String getPartNameV0(DayNum_t left_date, DayNum_t right_date) const;
+    UInt64 getBlocksCount() const
+    {
+        return static_cast<UInt64>(max_block - min_block + 1);
+    }
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
