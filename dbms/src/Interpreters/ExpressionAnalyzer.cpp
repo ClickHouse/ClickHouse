@@ -83,6 +83,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_AGGREGATION;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_AST;
+    extern const int TOO_BIG_AST;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -932,6 +933,16 @@ void ExpressionAnalyzer::normalizeTree()
     SetOfASTs tmp_set;
     MapOfASTs tmp_map;
     normalizeTreeImpl(ast, tmp_map, tmp_set, "", 0);
+
+    try
+    {
+        ast->checkSize(settings.limits.max_expanded_ast_elements);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("(after expansion of aliases)");
+        throw;
+    }
 }
 
 
@@ -942,7 +953,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(
     ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
 {
     if (level > settings.limits.max_ast_depth)
-        throw Exception("Normalized AST is too deep. Maximum: " + settings.limits.max_ast_depth.toString(), ErrorCodes::TOO_DEEP_AST);
+        throw Exception("Normalized AST is too deep. Maximum: "
+            + settings.limits.max_ast_depth.toString(), ErrorCodes::TOO_DEEP_AST);
 
     if (finished_asts.count(ast))
     {

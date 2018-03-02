@@ -368,6 +368,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY = 390;
     extern const int EXTERNAL_LIBRARY_ERROR = 391;
     extern const int QUERY_IS_PROHIBITED = 392;
+    extern const int THERE_IS_NO_QUERY = 393;
 
 
     extern const int KEEPER_EXCEPTION = 999;

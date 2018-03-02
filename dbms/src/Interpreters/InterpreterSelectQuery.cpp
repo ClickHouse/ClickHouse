@@ -103,6 +103,9 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
 {
     ProfileEvents::increment(ProfileEvents::SelectQuery);
 
+    if (!context.hasQueryContext())
+        context.setQueryContext(context);
+
     initSettings();
     const Settings & settings = context.getSettingsRef();
 
@@ -128,7 +131,7 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     else if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
     {
         /// Read from table function.
-        storage = context.executeTableFunction(table_expression);
+        storage = context.getQueryContext().executeTableFunction(table_expression);
     }
     else
     {
