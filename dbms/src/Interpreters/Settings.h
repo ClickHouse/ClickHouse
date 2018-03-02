@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Poco/Timespan.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
 #include <Core/Field.h>
