@@ -39,8 +39,7 @@ void AlterCommand::apply(
         {
             throw Exception{
                 "Cannot add column " + column_name + ": column with this name already exists",
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
         }
 
         const auto add_column = [this] (NamesAndTypesList & columns)
