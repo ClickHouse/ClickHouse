@@ -63,6 +63,7 @@ struct Limits
     M(SettingUInt64, max_pipeline_depth, 1000, "") \
     M(SettingUInt64, max_ast_depth, 1000, "")        /** Checked not during parsing, */ \
     M(SettingUInt64, max_ast_elements, 50000, "")    /**  but after parsing the request. */ \
+    M(SettingUInt64, max_expanded_ast_elements, 500000, "Limit after expansion of aliases.") \
     \
     /** 0 - everything is allowed. 1 - only read requests. 2 - only read requests, as well as changing settings, except for the readonly setting. */ \
     M(SettingUInt64, readonly, 0, "") \
