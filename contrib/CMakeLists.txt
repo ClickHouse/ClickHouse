@@ -131,16 +131,18 @@ endif ()
 
 
 if (USE_INTERNAL_POCO_LIBRARY)
-    set (ALLOW_DUPLICATE_CUSTOM_TARGETS 1)
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
     if (USE_INTERNAL_SSL_LIBRARY)
-        set (DISABLE_INTERNAL_OPENSSL 1)
-        set (ENABLE_NETSSL 0) # TODO!
-        set (ENABLE_CRYPTO 0) # TODO!
+        set (DISABLE_INTERNAL_OPENSSL 1 CACHE INTERNAL "")
+        set (ENABLE_NETSSL 0 CACHE INTERNAL "") # TODO!
+        set (ENABLE_CRYPTO 0 CACHE INTERNAL "") # TODO!
+    endif ()
+    if (MSVC)
+        set (ENABLE_DATA_ODBC 0 CACHE INTERNAL "") # TODO (build fail)
     endif ()
     add_subdirectory (poco)
     unset (CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
