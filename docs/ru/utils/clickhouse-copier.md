@@ -1,4 +1,4 @@
-<a name="utils-clickhouse-copier"/>
+<a name="utils-clickhouse-copier"></a>
 
 # clickhouse-copier
 
@@ -7,11 +7,13 @@
 Можно запустить несколько `clickhouse-copier` для разных серверах для выполнения одного и того же задания. Для синхронизации между процессами используется ZooKeeper.
 
 После запуска, `clickhouse-copier`:
+
 - Соединяется с ZooKeeper и получает:
-  - Задания на копирование.
-  - Состояние заданий на копирование.
+    - Задания на копирование.
+    - Состояние заданий на копирование.
 - Выполняет задания.
-  Каждый запущенный процесс выбирает "ближайший" шард исходного кластера и копирует данные в кластер назначения, при необходимости перешардируя их.
+
+    Каждый запущенный процесс выбирает "ближайший" шард исходного кластера и копирует данные в кластер назначения, при необходимости перешардируя их.
 
 `clickhouse-copier` отслеживает изменения в ZooKeeper и применяет их "на лету".
 
@@ -26,6 +28,7 @@ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path 
 ```
 
 Параметры запуска:
+
 - `daemon` - запускает `clickhouse-copier` в режиме демона.
 - `config` - путь к файлу `zookeeper.xml` с параметрами соединения с ZooKeeper.
 - `task-path` - путь к ноде ZooKeeper. Нода используется для синхронизации между процессами `clickhouse-copier` и для хранения заданий. Задания хранятся в `$task-path/description`.
@@ -34,14 +37,14 @@ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path 
 ## Формат zookeeper.xml
 
 ```xml
-   <yandex>
+<yandex>
     <zookeeper>
         <node index="1">
             <host>127.0.0.1</host>
             <port>2181</port>
         </node>
     </zookeeper>
-   </yandex>
+</yandex>
 ```
 
 ## Конфигурация заданий на копирование
