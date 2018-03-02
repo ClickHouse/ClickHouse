@@ -140,6 +140,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ProfileEvents::increment(ProfileEvents::Query);
     time_t current_time = time(nullptr);
 
+    context.setQueryContext(context);
+
     const Settings & settings = context.getSettingsRef();
 
     ParserQuery parser(end);
