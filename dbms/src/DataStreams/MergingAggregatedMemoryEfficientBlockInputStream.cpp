@@ -104,7 +104,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::readPrefix()
 
 void MergingAggregatedMemoryEfficientBlockInputStream::readSuffix()
 {
-    if (!all_read && !is_cancelled.load(std::memory_order_seq_cst))
+    if (!all_read && !isCancelled())
         throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
 
     finalize();

@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
+    extern const int QUERY_CANCELLED;
 }
 
 
@@ -22,8 +23,7 @@ Block CreatingSetsBlockInputStream::readImpl()
 
     createAll();
 
-    if (isCancelled())
-        return res;
+    throwIfCancelled();
 
     return children.back()->read();
 }
@@ -54,8 +54,7 @@ void CreatingSetsBlockInputStream::createAll()
         {
             if (elem.second.source) /// There could be prepared in advance Set/Join - no source is specified for them.
             {
-                if (isCancelled())
-                    return;
+                throwIfCancelled();
 
                 createOne(elem.second);
             }
@@ -92,7 +91,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         if (isCancelled())
         {
             LOG_DEBUG(log, "Query was cancelled during set / join or temporary table creation.");
-            return;
+            throw Exception("Query cancelled", ErrorCodes::QUERY_CANCELLED);
         }
 
         if (!done_with_set)

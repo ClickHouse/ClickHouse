@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_CANCELLED;
+}
+
 class QuotaForIntervals;
 struct ProcessListElement;
 class IProfilingBlockInputStream;
@@ -114,6 +119,15 @@ public:
     bool isCancelled() const
     {
         return is_cancelled.load(std::memory_order_seq_cst);
+    }
+
+    bool throwIfCancelled() const
+    {
+        if (isCancelled())
+        {
+            throw Exception("Query cancelled", ErrorCodes::QUERY_CANCELLED);
+        }
+        return 0;
     }
 
     /** What limitations and quotas should be checked.

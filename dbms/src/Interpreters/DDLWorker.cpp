@@ -978,7 +978,7 @@ public:
 
         while(res.rows() == 0)
         {
-            if (is_cancelled)
+            if (isCancelled())
                 return res;
 
             if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)

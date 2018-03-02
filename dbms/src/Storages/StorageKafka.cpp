@@ -163,8 +163,7 @@ public:
 
     Block readImpl() override
     {
-        if (isCancelled())
-            return {};
+        throwIfCancelled();
 
         return reader->read();
     }

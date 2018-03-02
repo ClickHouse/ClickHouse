@@ -148,7 +148,7 @@ public:
 
             /// KILL QUERY could be killed also
             /// Probably interpreting KILL QUERIES as complete (not internal) queries is extra functionality
-            if (is_cancelled)
+            if (isCancelled())
                 break;
 
             /// Sleep if there are unprocessed queries

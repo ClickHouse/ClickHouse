@@ -39,10 +39,9 @@ Block IProfilingBlockInputStream::read()
         info.started = true;
     }
 
-    Block res;
+    throwIfCancelled();
 
-    if (is_cancelled.load(std::memory_order_seq_cst))
-        return res;
+    Block res;
 
     if (!checkTimeLimits())
         limit_exceeded_need_break = true;
