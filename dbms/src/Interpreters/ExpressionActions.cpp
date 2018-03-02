@@ -142,39 +142,11 @@ ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join
 }
 
 
-ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_block)
-{
-    ExpressionActions::Actions res;
-
-    if (type == APPLY_FUNCTION)
-    {
-        if (sample_block.has(result_name))
-            throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
-        ColumnsWithTypeAndName arguments(argument_names.size());
-        for (size_t i = 0; i < argument_names.size(); ++i)
-        {
-            if (!sample_block.has(argument_names[i]))
-                throw Exception("Unknown identifier: '" + argument_names[i] + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-            arguments[i] = sample_block.getByName(argument_names[i]);
-        }
-
-        function = function_builder->build(arguments);
-        result_type = function->getReturnType();
-    }
-
-    return res;
-}
-
 void ExpressionAction::prepare(Block & sample_block)
 {
 //    std::cerr << "preparing: " << toString() << std::endl;
 
     /** Constant expressions should be evaluated, and put the result in sample_block.
-      * For non-constant columns, put the nullptr as the column in sample_block.
-      *
-      * The fact that only for constant expressions column != nullptr,
-      *  can be used later when optimizing the query.
       */
 
     switch (type)
@@ -567,40 +539,43 @@ void ExpressionActions::addInput(const NameAndTypePair & column)
 
 void ExpressionActions::add(const ExpressionAction & action, Names & out_new_columns)
 {
-    NameSet temp_names;
-    addImpl(action, temp_names, out_new_columns);
+    addImpl(action, out_new_columns);
 }
 
 void ExpressionActions::add(const ExpressionAction & action)
 {
-    NameSet temp_names;
     Names new_names;
-    addImpl(action, temp_names, new_names);
+    addImpl(action, new_names);
 }
 
-void ExpressionActions::addImpl(ExpressionAction action, NameSet & current_names, Names & new_names)
+void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
     if (sample_block.has(action.result_name))
         return;
-
-    if (current_names.count(action.result_name))
-        throw Exception("Cyclic function prerequisites: " + action.result_name, ErrorCodes::LOGICAL_ERROR);
-
-    current_names.insert(action.result_name);
 
     if (action.result_name != "")
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
-    Actions prerequisites = action.getPrerequisites(sample_block);
+    if (action.type == ExpressionAction::APPLY_FUNCTION)
+    {
+        if (sample_block.has(action.result_name))
+            throw Exception("Column '" + action.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
-    for (size_t i = 0; i < prerequisites.size(); ++i)
-        addImpl(prerequisites[i], current_names, new_names);
+        ColumnsWithTypeAndName arguments(action.argument_names.size());
+        for (size_t i = 0; i < action.argument_names.size(); ++i)
+        {
+            if (!sample_block.has(action.argument_names[i]))
+                throw Exception("Unknown identifier: '" + action.argument_names[i] + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+            arguments[i] = sample_block.getByName(action.argument_names[i]);
+        }
+
+        action.function = action.function_builder->build(arguments);
+        action.result_type = action.function->getReturnType();
+    }
 
     action.prepare(sample_block);
     actions.push_back(action);
-
-    current_names.erase(action.result_name);
 }
 
 void ExpressionActions::prependProjectInput()
@@ -1017,19 +992,11 @@ void ExpressionActions::optimizeArrayJoin()
 }
 
 
-BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(size_t max_block_size) const
+BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const
 {
     for (const auto & action : actions)
-    {
         if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
-        {
-            Block left_sample_block;
-            for (const auto & input_elem : input_columns)
-                left_sample_block.insert(ColumnWithTypeAndName{ input_elem.type, input_elem.name });
-
-            return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
-        }
-    }
+            return action.join->createStreamWithNonJoinedRows(source_header, max_block_size);
 
     return {};
 }

@@ -8,7 +8,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date, value), 8192, sign, version);
@@ -20,7 +20,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date, value), 8192, sign, version);
@@ -32,7 +32,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date, value), 8192, sign, version);
@@ -44,7 +44,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date, value), 8192, sign, version);
@@ -58,7 +58,7 @@ optimize table test.mult_tab;
 select 'table with 4 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date, value), 8192, sign, version);
@@ -73,7 +73,7 @@ optimize table test.mult_tab;
 select 'table with 5 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date, value), 8192, sign, version);
@@ -85,7 +85,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value UInt64, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(date, (date), 8192, sign, version);
@@ -97,9 +97,9 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 select 'Vertival merge';
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -111,7 +111,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date, value) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -123,7 +123,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date, value) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -135,7 +135,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date, value) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -147,7 +147,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date, value) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -161,7 +161,7 @@ optimize table test.mult_tab;
 select 'table with 4 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date, value) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -176,7 +176,7 @@ optimize table test.mult_tab;
 select 'table with 5 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value String, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date, value) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -188,7 +188,7 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-select '#########################';
+select '-------------------------';
 
 drop table if exists test.mult_tab;
 create table test.mult_tab (date Date, value UInt64, version UInt64, sign Int8) engine = VersionedCollapsingMergeTree(sign, version) order by (date) settings enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 0;
@@ -200,4 +200,4 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-
+DROP TABLE test.mult_tab;

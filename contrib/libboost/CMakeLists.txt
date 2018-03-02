@@ -1,5 +1,6 @@
-add_definitions(-Wno-unused-variable)
-add_definitions(-Wno-deprecated-declarations)
+if (NOT MSVC)
+    add_definitions(-Wno-unused-variable -Wno-deprecated-declarations)
+endif ()
 
 add_library(boost_program_options_internal
 boost_1_65_0/libs/program_options/src/cmdline.cpp

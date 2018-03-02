@@ -11,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -92,19 +91,7 @@ void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged
         if (!*shared_block_ptr)
             continue;
 
-        size_t src_columns = shared_block_ptr->columns();
-        size_t dst_columns = header.columns();
-
-        if (src_columns != dst_columns)
-            throw Exception("Merging blocks have different number of columns ("
-                + toString(src_columns) + " and " + toString(dst_columns) + ")",
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-
-        for (size_t i = 0; i < src_columns; ++i)
-            if (!blocksHaveEqualStructure(*shared_block_ptr, header))
-                throw Exception("Merging blocks have different names or types of columns:\n"
-                    + shared_block_ptr->dumpStructure() + "\nand\n" + header.dumpStructure(),
-                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+        assertBlocksHaveEqualStructure(*shared_block_ptr, header, getName());
     }
 
     merged_columns.resize(num_columns);

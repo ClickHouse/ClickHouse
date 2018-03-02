@@ -40,6 +40,10 @@ public:
 
     bool checkData() const override;
 
+    std::string full_path() const { return path + escapeForFileName(name) + '/';}
+
+    String getDataPath() const override { return full_path(); }
+
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (the correctness of names and paths is not verified)

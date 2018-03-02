@@ -84,7 +84,7 @@ protected:
     Block readImpl() override;
 
 private:
-    static constexpr size_t NUM_BUCKETS = 256;
+    static constexpr int NUM_BUCKETS = 256;
 
     Aggregator aggregator;
     bool final;

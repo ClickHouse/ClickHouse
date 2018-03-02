@@ -30,6 +30,7 @@
     M(ArenaAllocChunks) \
     M(ArenaAllocBytes) \
     M(FunctionExecute) \
+    M(TableFunctionExecute) \
     M(MarkCacheHits) \
     M(MarkCacheMisses) \
     M(CreatedReadBufferOrdinary) \

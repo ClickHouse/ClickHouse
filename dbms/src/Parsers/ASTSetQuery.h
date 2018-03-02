@@ -25,9 +25,6 @@ public:
     using Changes = std::vector<Change>;
     Changes changes;
 
-    ASTSetQuery() = default;
-    explicit ASTSetQuery(const StringRange range_) : IAST(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return "Set"; };
 

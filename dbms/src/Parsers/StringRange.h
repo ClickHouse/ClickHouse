@@ -11,8 +11,8 @@ namespace DB
 
 struct StringRange
 {
-    const char * first;
-    const char * second;
+    const char * first = nullptr;
+    const char * second = nullptr;
 
     StringRange() {}
     StringRange(const char * begin, const char * end) : first(begin), second(end) {}
@@ -41,7 +41,7 @@ using StringPtr = std::shared_ptr<String>;
 
 inline String toString(const StringRange & range)
 {
-    return String(range.first, range.second);
+    return range.first ? String(range.first, range.second) : String();
 }
 
 }

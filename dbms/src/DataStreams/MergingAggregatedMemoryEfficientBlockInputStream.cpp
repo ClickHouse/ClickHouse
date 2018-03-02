@@ -219,10 +219,10 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 
             parallel_merge_data->merged_blocks_changed.wait(lock, [this]
             {
-                return parallel_merge_data->finish                    /// Requested to finish early.
-                    || parallel_merge_data->exception                /// An error in merging thread.
-                    || parallel_merge_data->exhausted                /// No more data in sources.
-                    || !parallel_merge_data->merged_blocks.empty();    /// Have another merged block.
+                return parallel_merge_data->finish                  /// Requested to finish early.
+                    || parallel_merge_data->exception               /// An error in merging thread.
+                    || parallel_merge_data->exhausted               /// No more data in sources.
+                    || !parallel_merge_data->merged_blocks.empty(); /// Have another merged block.
             });
 
             if (parallel_merge_data->exception)
@@ -493,7 +493,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 
     while (true)
     {
-        if (current_bucket_num == NUM_BUCKETS)
+        if (current_bucket_num >= NUM_BUCKETS)
         {
             /// All ordinary data was processed. Maybe, there are also 'overflows'-blocks.
 //            std::cerr << "at end\n";

@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -248,8 +249,7 @@ Block PKCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}
-        .getConstActions();
+    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}.getConstActions();
 
     expr_for_constant_folding->execute(result);
 
@@ -594,7 +594,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
     {
         throw Exception("Primary key expression contains comparison between inconvertible types: " +
             desired_type->getName() + " and " + src_type->getName() +
-            " inside " + DB::toString(node->range),
+            " inside " + queryToString(node),
             ErrorCodes::BAD_TYPE_OF_FIELD);
     }
 }

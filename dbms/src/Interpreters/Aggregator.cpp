@@ -14,6 +14,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 
@@ -111,7 +112,7 @@ Block Aggregator::getHeader(bool final) const
             else
                 type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 
-            res.insert({ type->createColumn(), type, params.aggregates[i].column_name });
+            res.insert({ type, params.aggregates[i].column_name });
         }
     }
     else if (params.intermediate_header)
@@ -130,7 +131,7 @@ Block Aggregator::getHeader(bool final) const
         }
     }
 
-    return res;
+    return materializeBlock(res);
 }
 
 
@@ -840,7 +841,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
-    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get());
+    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
@@ -2134,6 +2135,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
       * Better hash function is needed because during external aggregation,
       *  we may merge partitions of data with total number of keys far greater than 4 billion.
       */
+    auto merge_method = method;
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
         M(key64)            \
@@ -2145,8 +2147,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         M(serialized)       \
 
 #define M(NAME) \
-    if (method == AggregatedDataVariants::Type::NAME) \
-        method = AggregatedDataVariants::Type::NAME ## _hash64; \
+    if (merge_method == AggregatedDataVariants::Type::NAME) \
+        merge_method = AggregatedDataVariants::Type::NAME ## _hash64; \
 
     APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
 #undef M
@@ -2159,7 +2161,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     /// result will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
-    result.init(method);
+    result.init(merge_method);
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
