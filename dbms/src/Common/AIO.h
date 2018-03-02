@@ -14,7 +14,9 @@
 #include <map>
 #include <linux/aio_abi.h>
 #include <sys/syscall.h>
+#if !_MSC_VER
 #include <unistd.h>
+#endif
 
 
 /** Small wrappers for asynchronous I/O.

@@ -1,9 +1,10 @@
-#include <unistd.h>
 #include <iostream>
-
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Common/Exception.h>
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 
 int main(int, char **)

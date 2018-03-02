@@ -1,5 +1,3 @@
-#include <unistd.h>
-
 #include <Interpreters/ClientInfo.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -8,6 +6,10 @@
 #include <Core/Defines.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
+
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 
 namespace DB

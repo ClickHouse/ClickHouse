@@ -10,8 +10,10 @@
 #include <Common/CurrentMetrics.h>
 
 #include <string>
-#include <unistd.h>
 #include <fcntl.h>
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 
 namespace CurrentMetrics

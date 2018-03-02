@@ -11,8 +11,10 @@
 
 #include <string>
 #include <limits>
-#include <unistd.h>
 #include <fcntl.h>
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 
 namespace CurrentMetrics

@@ -1,11 +1,11 @@
 #include <time.h>
-#include <unistd.h>
 #include <sys/types.h>
-
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Core/Types.h>
-
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 #ifdef __APPLE__
 #include <common/apple_rt.h>
 #endif

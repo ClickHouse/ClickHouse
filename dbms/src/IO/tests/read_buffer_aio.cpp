@@ -1,14 +1,15 @@
 #include <IO/ReadBufferAIO.h>
 #include <Core/Defines.h>
-
 #include <boost/filesystem.hpp>
-
 #include <vector>
 #include <iostream>
 #include <fstream>
 #include <functional>
 #include <cstdlib>
+#if !_MSC_VER
 #include <unistd.h>
+#endif
+
 
 namespace
 {

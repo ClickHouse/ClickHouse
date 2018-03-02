@@ -1,9 +1,10 @@
 #pragma once
 
-#include <unistd.h>
-
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 
 namespace DB

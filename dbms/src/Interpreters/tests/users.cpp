@@ -1,8 +1,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Interpreters/SecurityManager.h>
-
 #include <boost/filesystem.hpp>
-
 #include <vector>
 #include <string>
 #include <tuple>
@@ -10,8 +8,10 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <unistd.h>
 #include <cstdlib>
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 namespace
 {

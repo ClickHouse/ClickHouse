@@ -1,13 +1,12 @@
 #include <sys/stat.h>
-#include <unistd.h>
-
 #include <string>
 #include <iostream>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-
 #include <Common/Exception.h>
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 
 namespace DB

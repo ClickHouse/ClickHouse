@@ -3,14 +3,10 @@
 #include <limits>
 #include <regex>
 #include <thread>
-#include <unistd.h>
-
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <sys/stat.h>
-
 #include <common/DateLUT.h>
-
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <Client/Connection.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -27,14 +23,15 @@
 #include <Interpreters/Settings.h>
 #include <common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
-
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
 #include <Poco/SAX/InputSource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
-
 #include "InterruptListener.h"
+#if !_MSC_VER
+#include <unistd.h>
+#endif
 
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with

@@ -1,6 +1,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <iostream>
+#if !_MSC_VER
 #include <unistd.h>
+#endif
 
 using namespace zkutil;
 
