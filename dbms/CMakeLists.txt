@@ -18,7 +18,9 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+if (NOT MSVC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+endif ()
 
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")

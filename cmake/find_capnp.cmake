@@ -1,4 +1,4 @@
-option (ENABLE_CAPNP "Enable Cap'n Proto" ON)
+option (ENABLE_CAPNP "Enable Cap'n Proto" ${NOT_MSVC})
 
 if (ENABLE_CAPNP)
 

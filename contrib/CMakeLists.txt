@@ -1,4 +1,6 @@
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
+if (NOT MSVC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
+endif ()
 
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (libboost)
@@ -48,7 +50,7 @@ if (USE_INTERNAL_UNWIND_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
-    add_subdirectory (zlib-ng)
+    add_subdirectory (${INTERNAL_ZLIB_NAME})
     # todo: make pull to Dead2/zlib-ng and remove:
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
@@ -81,12 +83,33 @@ if (NOT ARCH_ARM)
     add_subdirectory (libcpuid)
 endif ()
 
+if (USE_INTERNAL_SSL_LIBRARY)
+    if (NOT MAKE_STATIC_LIBRARIES)
+        set (BUILD_SHARED 1)
+    endif ()
+    set (USE_SHARED ${USE_STATIC_LIBRARIES})
+    add_subdirectory (ssl)
+    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(${OPENSSL_SSL_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
+endif ()
+
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
     set (RDKAFKA_BUILD_EXAMPLES OFF CACHE INTERNAL "")
     set (RDKAFKA_BUILD_TESTS OFF CACHE INTERNAL "")
-    set (RDKAFKA_BUILD_STATIC ON CACHE INTERNAL "")
+    set (RDKAFKA_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
     mark_as_advanced (ZLIB_INCLUDE_DIR)
+
+    if (USE_INTERNAL_SSL_LIBRARY)
+        add_library(bundled-ssl ALIAS ${OPENSSL_SSL_LIBRARY})
+        set (WITH_BUNDLED_SSL 1)
+    endif ()
+
     add_subdirectory (librdkafka)
+
+    if (USE_INTERNAL_SSL_LIBRARY)
+        target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
+    endif ()
+    target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
@@ -104,17 +127,23 @@ endif ()
 
 
 if (USE_INTERNAL_POCO_LIBRARY)
+    set (ALLOW_DUPLICATE_CUSTOM_TARGETS 1)
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
+    if (USE_INTERNAL_SSL_LIBRARY)
+        set (DISABLE_INTERNAL_OPENSSL 1)
+        set (ENABLE_NETSSL 0) # TODO!
+        set (ENABLE_CRYPTO 0) # TODO!
+    endif ()
     add_subdirectory (poco)
     unset (CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
     set (ENABLE_TESTS ${_save})
     set (CMAKE_CXX_FLAGS ${save_CMAKE_CXX_FLAGS})
     set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    if (OPENSSL_FOUND)
+    if (OPENSSL_FOUND AND TARGET Crypto)
         # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
         target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
