@@ -12,6 +12,9 @@ edit_uri: 'edit/master/docs/en'
 extra_css:
   - assets/stylesheets/custom.css
 
+markdown_extensions:
+  - codehilite
+
 theme:
   name: null
   custom_dir: 'mkdocs-material-theme'
@@ -33,9 +36,6 @@ extra:
   single_page: false
   search:
     language: 'en'
-
-markdown_extensions:
-  - codehilite
 
 pages:
 - 'ClickHouse': 'index.md'
@@ -59,7 +59,7 @@ pages:
     - 'Star Schema Benchmark': 'getting_started/example_datasets/star_schema.md'
 
 - 'Interfaces':
-  - 'Interfaces': 'interfaces/index.md'
+  - 'Introduction': 'interfaces/index.md'
   - 'Command-line client': 'interfaces/cli.md'
   - 'HTTP interface': 'interfaces/http_interface.md'
   - 'JDBC driver': 'interfaces/jdbc.md'
@@ -71,7 +71,6 @@ pages:
 #  - 'Query language': 'query_language/index.md'
   - 'Queries': 'query_language/queries.md'
   - 'Syntax': 'query_language/syntax.md'
-  - 'The clickhouse-local program': 'query_language/clickhouse_local.md'
 
 - 'Table engines':
   - 'Introduction': 'table_engines/index.md'
@@ -234,9 +233,9 @@ pages:
     - 'Settings profiles': 'operations/settings/settings_profiles.md'
 
 - 'Utilites':
-  - 'Utilites': 'utils/index.md'
+  - 'Introduction': 'utils/index.md'
   - 'clickhouse-copier': 'utils/clickhouse-copier.md'
-  #- 'clickhouse-local' : 'utils/clickhouse-local.md'
+  - 'clickhouse-local': 'utils/clickhouse-local.md'
 
 - 'ClickHouse Development':
 #  - 'ClickHouse Development': 'development/index.md'
