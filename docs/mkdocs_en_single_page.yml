@@ -24,8 +24,6 @@ theme:
     primary: 'white'
     accent: 'white'
   font: false
-#    text: Roboto
-#    code: Roboto Mono
   logo: 'images/logo.svg'
   favicon: 'assets/images/favicon.ico'
   include_search_page: false
