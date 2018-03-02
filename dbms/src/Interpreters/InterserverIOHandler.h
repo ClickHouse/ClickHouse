@@ -144,7 +144,7 @@ public:
 
     ActionBlocker & getBlocker() { return endpoint->blocker; }
     void cancelForever() { getBlocker().cancelForever(); }
-    ActionBlocker::BlockHolder cancel() { return getBlocker().cancel(); }
+    ActionBlocker::LockHolder cancel() { return getBlocker().cancel(); }
 
 private:
     String name;

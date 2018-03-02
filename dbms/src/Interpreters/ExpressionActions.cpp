@@ -806,7 +806,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         needed_columns.insert(getSmallestColumn(input_columns));
 
     /// We will not leave the block empty so as not to lose the number of rows in it.
-    if (final_columns.empty())
+    if (final_columns.empty() && !input_columns.empty())
         final_columns.insert(getSmallestColumn(input_columns));
 
     for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
