@@ -1,5 +1,6 @@
 option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library instead of bundled" ${NOT_UNBUNDLED})
 
+# Test random file existing in all package variants
 if (USE_INTERNAL_BOOST_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/libs/system/src/error_code.cpp")
    message (WARNING "submodules in contrib/boost is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_BOOST_LIBRARY 0)
@@ -30,12 +31,17 @@ if (NOT Boost_SYSTEM_LIBRARY)
     set (Boost_FILESYSTEM_LIBRARY boost_filesystem_internal)
 
     set (Boost_INCLUDE_DIRS)
+
+    # For boost from github
     file (GLOB Boost_INCLUDE_DIRS_ "${ClickHouse_SOURCE_DIR}/contrib/boost/libs/*/include")
     list (APPEND Boost_INCLUDE_DIRS ${Boost_INCLUDE_DIRS_})
+    # numeric have additional level
     file (GLOB Boost_INCLUDE_DIRS_ "${ClickHouse_SOURCE_DIR}/contrib/boost/libs/numeric/*/include")
     list (APPEND Boost_INCLUDE_DIRS ${Boost_INCLUDE_DIRS_})
+
     # for packaged version:
     list (APPEND Boost_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/boost")
+
 endif ()
 
 message (STATUS "Using Boost: ${Boost_INCLUDE_DIRS} : ${Boost_PROGRAM_OPTIONS_LIBRARY},${Boost_SYSTEM_LIBRARY},${Boost_FILESYSTEM_LIBRARY}")
