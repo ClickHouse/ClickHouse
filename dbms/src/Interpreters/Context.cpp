@@ -1036,7 +1036,7 @@ void Context::setDefaultFormat(const String & name)
     default_format = name;
 }
 
-const Macros& Context::getMacros() const
+const Macros & Context::getMacros() const
 {
     return shared->macros;
 }
