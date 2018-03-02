@@ -109,7 +109,7 @@ private:
 
 public:
     /** Is used to cancel all merges. On cancel() call all currently running 'mergeParts' methods will throw exception soon.
-      * All new calls to 'mergeParts' will throw exception till all 'BlockHolder' objects will be destroyed.
+      * All new calls to 'mergeParts' will throw exception till all 'LockHolder' objects will be destroyed.
       */
     ActionBlocker merges_blocker;
 
