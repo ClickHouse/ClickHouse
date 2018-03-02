@@ -61,7 +61,13 @@ do
 done
 
 # Even more platform-specific headers
-for src_file in $(ls -1 $SOURCE_PATH/contrib/libboost/boost_1_65_0/boost/smart_ptr/detail/*);
+for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
+do
+    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$src_file";
+done
+
+for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
 do
     mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$src_file";
