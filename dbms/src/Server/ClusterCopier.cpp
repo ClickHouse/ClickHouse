@@ -217,6 +217,7 @@ struct TaskShard
 
     /// There is a task for each destination partition
     TasksPartition partition_tasks;
+    bool partition_tasks_initialized = false;
 
     /// Last CREATE TABLE query of the table of the shard
     ASTPtr current_pull_table_create_query;
@@ -230,7 +231,9 @@ struct TaskShard
 /// Contains all cluster shards that contain a partition (and sorted by the proximity)
 struct ClusterPartition
 {
-    TasksShard shards; /// having that partition
+    /// Shards having that partition
+    TasksShard shards;
+    bool shards_are_initialized = false;
 
     Stopwatch watch;
     UInt64 bytes_copied = 0;
@@ -293,6 +296,9 @@ struct TaskTable
 
     ClusterPartitions cluster_partitions;
     NameSet finished_cluster_partitions;
+
+    /// Parition names to process in user-specified order
+    Strings ordered_partition_names;
 
     ClusterPartition & getClusterPartition(const String & partition_name)
     {
@@ -455,8 +461,8 @@ String DB::TaskShard::getDescription() const
 {
     std::stringstream ss;
     ss << "N" << numberInCluster()
-       << " (with a replica " << getHostNameExample() << ","
-       << " of pull table " + getDatabaseDotTable(task_table.table_pull)
+       << " (having a replica " << getHostNameExample()
+       << ", pull table " + getDatabaseDotTable(task_table.table_pull)
        << " of cluster " + task_table.cluster_pull_name << ")";
     return ss.str();
 }
@@ -759,11 +765,42 @@ public:
         getZooKeeper()->createAncestors(getWorkersPath() + "/");
     }
 
-    /// Compute set of partitions, assume set of partitions aren't changed during the processing
-    void initTaskTable(TaskTable & task_table)
+    template <typename T>
+    decltype(auto) retry(T && func, size_t max_tries)
     {
-        LOG_INFO(log, "Set up table task " << task_table.table_id);
-        LOG_DEBUG(log, "There are " << task_table.all_shards.size() << " shards, " << task_table.local_shards.size() << " of them are local ones");
+        std::exception_ptr exception;
+
+        for (size_t try_number = 1; try_number <= max_tries; ++try_number)
+        {
+            try
+            {
+                return func();
+            }
+            catch (...)
+            {
+                exception = std::current_exception();
+                if (try_number < max_tries)
+                {
+                    tryLogCurrentException(log, "Will retry");
+                    std::this_thread::sleep_for(default_sleep_time);
+                }
+            }
+        }
+
+        std::rethrow_exception(exception);
+    };
+
+
+    void discoverShardPartitions(const TaskShardPtr & task_shard)
+    {
+        TaskTable & task_table = task_shard->task_table;
+
+        LOG_INFO(log, "Set up shard " << task_shard->getDescription());
+
+        auto get_partitions = [&] () { return getShardPartitions(*task_shard); };
+        auto existing_partitions_names = retry(get_partitions, 60);
+        Strings filtered_partitions_names;
+        Strings missing_partitions;
 
         /// Check that user specified correct partition names
         auto check_partition_format = [] (const DataTypePtr & type, const String & partition_text_quoted)
@@ -781,116 +818,70 @@ public:
             }
         };
 
-        auto retry = [this] (auto && func, size_t max_tries)
+        if (task_table.has_enabled_partitions)
         {
-            std::exception_ptr exception;
-
-            for (size_t try_number = 1; try_number <= max_tries; ++try_number)
+            /// Process partition in order specified by <enabled_partitions/>
+            for (const String & partition_name : task_table.enabled_partitions)
             {
-                try
+                /// Check that user specified correct partition names
+                check_partition_format(task_shard->partition_key_column.type, partition_name);
+
+                auto it = existing_partitions_names.find(partition_name);
+
+                /// Do not process partition if it is not in enabled_partitions list
+                if (it == existing_partitions_names.end())
                 {
-                    return func();
+                    missing_partitions.emplace_back(partition_name);
+                    continue;
                 }
-                catch (...)
-                {
-                    exception = std::current_exception();
-                    if (try_number < max_tries)
-                    {
-                        tryLogCurrentException(log, "Will retry");
-                        std::this_thread::sleep_for(default_sleep_time);
-                    }
-                }
+
+                filtered_partitions_names.emplace_back(*it);
             }
 
-            std::rethrow_exception(exception);
-        };
+            for (const String & partition_name : existing_partitions_names)
+            {
+                if (!task_table.enabled_partitions_set.count(partition_name))
+                {
+                    LOG_DEBUG(log, "Partition " << partition_name << " will not be processed, since it is not in "
+                                                << "enabled_partitions of " << task_table.table_id);
+                }
+            }
+        }
+        else
+        {
+            for (const String & partition_name : existing_partitions_names)
+                filtered_partitions_names.emplace_back(partition_name);
+        }
 
+        for (const String & partition_name : filtered_partitions_names)
+            task_shard->partition_tasks.emplace(partition_name, ShardPartition(*task_shard, partition_name));
+        task_shard->partition_tasks_initialized = true;
+
+        if (!missing_partitions.empty())
+        {
+            std::stringstream ss;
+            for (const String & missing_partition : missing_partitions)
+                ss << " " << missing_partition;
+
+            LOG_WARNING(log, "There are no " << missing_partitions.size() << " partitions from enabled_partitions in shard "
+                             << task_shard->getDescription() << " :" << ss.str());
+        }
+
+        LOG_DEBUG(log, "Will copy " << task_shard->partition_tasks.size() << " partitions from shard " << task_shard->getDescription());
+    }
+
+    /// Compute set of partitions, assume set of partitions aren't changed during the processing
+    void discoverTablePartitions(TaskTable & task_table, size_t num_threads = 0)
+    {
         /// Fetch partitions list from a shard
-        auto process_shard = [this, check_partition_format, retry] (const TaskShardPtr & task_shard)
         {
-            TaskTable & task_table = task_shard->task_table;
-
-            LOG_INFO(log, "Set up shard " << task_shard->getDescription());
-
-            auto get_partitions = [&] () { return getShardPartitions(*task_shard); };
-
-            auto existing_partitions_names = retry(get_partitions, 60);
-            Strings filtered_partitions_names;
-            Strings missing_partitions;
-
-            if (task_table.has_enabled_partitions)
-            {
-                /// Process partition in order specified by <enabled_partitions/>
-                for (const String & partition_name : task_table.enabled_partitions)
-                {
-                    /// Check that user specified correct partition names
-                    check_partition_format(task_shard->partition_key_column.type, partition_name);
-
-                    auto it = existing_partitions_names.find(partition_name);
-
-                    /// Do not process partition if it is not in enabled_partitions list
-                    if (it == existing_partitions_names.end())
-                    {
-                        missing_partitions.emplace_back(partition_name);
-                        continue;
-                    }
-
-                    filtered_partitions_names.emplace_back(*it);
-                }
-
-                for (const String & partition_name : existing_partitions_names)
-                {
-                    if (!task_table.enabled_partitions_set.count(partition_name))
-                    {
-                        LOG_DEBUG(log, "Partition " << partition_name << " will not be processed, since it is not in "
-                                                    << "enabled_partitions of " << task_table.table_id);
-                    }
-                }
-            }
-            else
-            {
-                for (const String & partition_name : existing_partitions_names)
-                    filtered_partitions_names.emplace_back(partition_name);
-            }
-
-            for (const String & partition_name : filtered_partitions_names)
-            {
-                task_shard->partition_tasks.emplace(partition_name, ShardPartition(*task_shard, partition_name));
-            }
-
-            if (!missing_partitions.empty())
-            {
-                std::stringstream ss;
-                for (const String & missing_partition : missing_partitions)
-                    ss << " " << missing_partition;
-
-                LOG_WARNING(log, "There are no " << missing_partitions.size() << " partitions from enabled_partitions in shard "
-                                 << task_shard->getDescription() << " :" << ss.str());
-            }
-
-            LOG_DEBUG(log, "Will copy " << task_shard->partition_tasks.size() << " partitions from shard " << task_shard->getDescription());
-        };
-
-        {
-            ThreadPool thread_pool(2 * getNumberOfPhysicalCPUCores());
+            ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
             for (const TaskShardPtr & task_shard : task_table.all_shards)
-                thread_pool.schedule([task_shard, process_shard]() { process_shard(task_shard); });
+                thread_pool.schedule([this, task_shard]() { discoverShardPartitions(task_shard); });
 
             LOG_DEBUG(log, "Waiting for " << thread_pool.active() << " setup jobs");
             thread_pool.wait();
-        }
-
-        /// After partitions of each shard are initialized, initialize cluster partitions
-        for (const TaskShardPtr & task_shard : task_table.all_shards)
-        {
-            for (const auto & partition : task_shard->partition_tasks)
-            {
-                const String & partition_name = partition.first;
-
-                ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
-                cluster_partition.shards.emplace_back(task_shard);
-            }
         }
     }
 
@@ -933,11 +924,12 @@ public:
     bool tryProcessTable(TaskTable & task_table)
     {
         /// Process each partition that is present in cluster
-        for (auto & elem : task_table.cluster_partitions)
+        for (const String & partition_name : task_table.ordered_partition_names)
         {
-            const String & partition_name = elem.first;
-            ClusterPartition & cluster_partition = elem.second;
-            const TasksShard & shards_with_partition = cluster_partition.shards;
+            if (!task_table.cluster_partitions.count(partition_name))
+                throw Exception("There are no expected partition " + partition_name + ". It is a bug", ErrorCodes::LOGICAL_ERROR);
+
+            ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
 
             if (cluster_partition.total_tries == 0)
                 cluster_partition.watch.restart();
@@ -953,27 +945,54 @@ public:
             {
                 ++num_partition_tries;
                 ++cluster_partition.total_tries;
-
-                LOG_DEBUG(log, "Processing partition " << partition_name << " for the whole cluster"
-                               << " (" << shards_with_partition.size() << " shards)");
-
                 size_t num_successful_shards = 0;
 
-                /// Process each source shard and copy current partition
-                /// NOTE: shards are sorted by "distance" to current host
-                for (const TaskShardPtr & shard : shards_with_partition)
-                {
-                    auto it_shard_partition = shard->partition_tasks.find(partition_name);
-                    if (it_shard_partition == shard->partition_tasks.end())
-                        throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+                LOG_DEBUG(log, "Processing partition " << partition_name << " for the whole cluster");
 
-                    ShardPartition & task_shard_partition = it_shard_partition->second;
-                    if (processPartitionTask(task_shard_partition))
-                        ++num_successful_shards;
+                if (!cluster_partition.shards_are_initialized)
+                {
+                    /// Discover partitions of each shard in a deferred manner
+                    /// And copy shard data if current partition is found in it
+                    for (const TaskShardPtr & shard : task_table.all_shards)
+                    {
+                        if (!shard->partition_tasks_initialized)
+                            discoverShardPartitions(shard);
+
+                        auto it_shard_partition = shard->partition_tasks.find(partition_name);
+                        if (it_shard_partition == shard->partition_tasks.end())
+                        {
+                            LOG_DEBUG(log, "Found that shard " << shard->getDescription() << " does not contain current partition "
+                                            << partition_name);
+                            continue;
+                        }
+
+                        if (processPartitionTask(it_shard_partition->second))
+                            ++num_successful_shards;
+
+                        /// Populate list of shard having current partition
+                        cluster_partition.shards.emplace_back(shard);
+                    }
+
+                    cluster_partition.shards_are_initialized = true;
+                }
+                else
+                {
+                    /// Process each source shard having current partition and copy current partition
+                    /// NOTE: shards are sorted by "distance" to current host
+                    for (const TaskShardPtr & shard : cluster_partition.shards)
+                    {
+                        auto it_shard_partition = shard->partition_tasks.find(partition_name);
+                        if (it_shard_partition == shard->partition_tasks.end())
+                             throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+                        if (processPartitionTask(it_shard_partition->second))
+                            ++num_successful_shards;
+                    }
                 }
 
                 try
                 {
+                    const TasksShard & shards_with_partition = cluster_partition.shards;
                     partition_is_done = (num_successful_shards == shards_with_partition.size())
                                         && checkPartitionIsDone(task_table, partition_name, shards_with_partition);
                 }
@@ -1034,11 +1053,49 @@ public:
     {
         for (TaskTable & task_table : task_cluster->table_tasks)
         {
+            LOG_INFO(log, "Process table task " << task_table.table_id << " with "
+                          << task_table.all_shards.size() << " shards, " << task_table.local_shards.size() << " of them are local ones");
+
             if (task_table.all_shards.empty())
                 continue;
 
-            /// Deferred initialization
-            initTaskTable(task_table);
+            /// Discover partitions of each shard and total set of partitions
+            if (!task_table.has_enabled_partitions)
+            {
+                /// If there are no specified enabled_partitions, we must discover them manually
+                discoverTablePartitions(task_table);
+
+                /// After partitions of each shard are initialized, initialize cluster partitions
+                for (const TaskShardPtr & task_shard : task_table.all_shards)
+                {
+                    for (const auto & partition : task_shard->partition_tasks)
+                    {
+                        const String & partition_name = partition.first;
+                        ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
+                        cluster_partition.shards.emplace_back(task_shard);
+                    }
+                }
+
+                for (auto & partition_elem : task_table.cluster_partitions)
+                {
+                    const String & partition_name = partition_elem.first;
+                    auto & partition = partition_elem.second;
+
+                    partition.shards_are_initialized = true;
+                    task_table.ordered_partition_names.emplace_back(partition_name);
+                }
+            }
+            else
+            {
+                /// If enabled_partitions are specified, assume that each shard has all partitions
+                /// We will refine partition set of each shard in future
+
+                for (const String & partition_name : task_table.enabled_partitions)
+                {
+                    task_table.cluster_partitions.emplace(partition_name, ClusterPartition{});
+                    task_table.ordered_partition_names.emplace_back(partition_name);
+                }
+            }
 
             task_table.watch.restart();
 
