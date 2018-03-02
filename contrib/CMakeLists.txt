@@ -3,7 +3,7 @@ if (NOT MSVC)
 endif ()
 
 if (USE_INTERNAL_BOOST_LIBRARY)
-    add_subdirectory (libboost)
+    add_subdirectory (boost-cmake)
 endif ()
 
 if (USE_INTERNAL_LZ4_LIBRARY)
