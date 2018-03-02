@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Poco/Timespan.h>
 #include <Core/Defines.h>
 #include <Core/Field.h>
 #include <Interpreters/SettingsCommon.h>
@@ -11,49 +10,36 @@ namespace DB
 
 /** Limits during query execution are part of the settings.
   * Used to provide a more safe execution of queries from the user interface.
-  * Basically, constraints are checked for each block (not every row). That is, the limits can be slightly violated.
+  * Basically, limits are checked for each block (not every row). That is, the limits can be slightly violated.
   * Almost all limits apply only to SELECTs.
-  * Almost all limits apply to each thread individually.
+  * Almost all limits apply to each stream individually.
   */
 struct Limits
 {
-    /** Enumeration of limits: type, name, default value.
-      * By default: everything is unlimited, except for rather weak restrictions on the depth of recursion and the size of the expressions.
-      */
-
 #define APPLY_FOR_LIMITS(M) \
-    /** Limits on reading from the most "deep" sources. \
-      * That is, only in the deepest subquery. \
-      * When reading from a remote server, it is only checked on a remote server. \
-      */ \
-    M(SettingUInt64, max_rows_to_read, 0, "") \
-    M(SettingUInt64, max_bytes_to_read, 0, "") \
-    M(SettingOverflowMode<false>, read_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingUInt64, max_rows_to_read, 0, "Limit on read rows from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.") \
+    M(SettingUInt64, max_bytes_to_read, 0, "Limit on read bytes (after decompression) from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.") \
+    M(SettingOverflowMode<false>, read_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_rows_to_group_by, 0, "") \
-    M(SettingOverflowMode<true>, group_by_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingOverflowMode<true>, group_by_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingUInt64, max_bytes_before_external_group_by, 0, "") \
     \
     M(SettingUInt64, max_rows_to_sort, 0, "") \
     M(SettingUInt64, max_bytes_to_sort, 0, "") \
-    M(SettingOverflowMode<false>, sort_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingOverflowMode<false>, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingUInt64, max_bytes_before_external_sort, 0, "") \
     \
-    /** Limits on result size. \
-      * Are also checked for subqueries and on remote servers. \
-      */ \
-    M(SettingUInt64, max_result_rows, 0, "") \
-    M(SettingUInt64, max_result_bytes, 0, "") \
-    M(SettingOverflowMode<false>, result_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingUInt64, max_result_rows, 0, "Limit on result size in rows. Also checked for intermediate data sent from remote servers.") \
+    M(SettingUInt64, max_result_bytes, 0, "Limit on result size in bytes (uncompressed). Also checked for intermediate data sent from remote servers.") \
+    M(SettingOverflowMode<false>, result_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     /* TODO: Check also when merging and finalizing aggregate functions. */ \
     M(SettingSeconds, max_execution_time, 0, "") \
-    M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
-    /** In rows per second. */ \
-    M(SettingUInt64, min_execution_speed, 0, "") \
-    /** Check that the speed is not too low after the specified time has elapsed. */ \
-    M(SettingSeconds, timeout_before_checking_execution_speed, 0, "") \
+    M(SettingUInt64, min_execution_speed, 0, "In rows per second.") \
+    M(SettingSeconds, timeout_before_checking_execution_speed, 0, "Check that the speed is not too low after the specified time has elapsed.") \
     \
     M(SettingUInt64, max_columns_to_read, 0, "") \
     M(SettingUInt64, max_temporary_columns, 0, "") \
@@ -61,46 +47,35 @@ struct Limits
     \
     M(SettingUInt64, max_subquery_depth, 100, "") \
     M(SettingUInt64, max_pipeline_depth, 1000, "") \
-    M(SettingUInt64, max_ast_depth, 1000, "")        /** Checked not during parsing, */ \
-    M(SettingUInt64, max_ast_elements, 50000, "")    /**  but after parsing the request. */ \
-    M(SettingUInt64, max_expanded_ast_elements, 500000, "Limit after expansion of aliases.") \
+    M(SettingUInt64, max_ast_depth, 1000, "Maximum depth of query syntax tree. Checked after parsing.") \
+    M(SettingUInt64, max_ast_elements, 50000, "Maximum size of query syntax tree in number of nodes. Checked after parsing.") \
+    M(SettingUInt64, max_expanded_ast_elements, 500000, "Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.") \
     \
-    /** 0 - everything is allowed. 1 - only read requests. 2 - only read requests, as well as changing settings, except for the readonly setting. */ \
-    M(SettingUInt64, readonly, 0, "") \
+    M(SettingUInt64, readonly, 0, "0 - everything is allowed. 1 - only read requests. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.") \
     \
-    /** Limits for the maximum size of the set resulting from the execution of the IN section. */ \
-    M(SettingUInt64, max_rows_in_set, 0, "") \
-    M(SettingUInt64, max_bytes_in_set, 0, "") \
-    M(SettingOverflowMode<false>, set_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingUInt64, max_rows_in_set, 0, "Maximum size of the set (in number of elements) resulting from the execution of the IN section.") \
+    M(SettingUInt64, max_bytes_in_set, 0, "Maximum size of the set (in bytes in memory) resulting from the execution of the IN section.") \
+    M(SettingOverflowMode<false>, set_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
-    /** Limits for the maximum size of the set obtained by executing the IN section. */ \
-    M(SettingUInt64, max_rows_in_join, 0, "") \
-    M(SettingUInt64, max_bytes_in_join, 0, "") \
-    M(SettingOverflowMode<false>, join_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingUInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).") \
+    M(SettingUInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).") \
+    M(SettingOverflowMode<false>, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
-    /** Limits for the maximum size of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed. */ \
-    M(SettingUInt64, max_rows_to_transfer, 0, "") \
-    M(SettingUInt64, max_bytes_to_transfer, 0, "") \
-    M(SettingOverflowMode<false>, transfer_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingUInt64, max_rows_to_transfer, 0, "Maximum size (in rows) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
+    M(SettingUInt64, max_bytes_to_transfer, 0, "Maximum size (in uncompressed bytes) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
+    M(SettingOverflowMode<false>, transfer_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
-    /** Limits for the maximum size of the stored state when executing DISTINCT. */ \
-    M(SettingUInt64, max_rows_in_distinct, 0, "") \
-    M(SettingUInt64, max_bytes_in_distinct, 0, "") \
-    M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW, "") \
+    M(SettingUInt64, max_rows_in_distinct, 0, "Maximum number of elements during execution of DISTINCT.") \
+    M(SettingUInt64, max_bytes_in_distinct, 0, "Maximum total size of state (in uncompressed bytes) in memory for the execution of DISTINCT.") \
+    M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
-    /** Maximum memory usage when processing a request. 0 - not bounded. */ \
-    M(SettingUInt64, max_memory_usage, 0, "") /* For one query */ \
-    /* Totally for concurrently running queries of one user */ \
-    M(SettingUInt64, max_memory_usage_for_user, 0, "") \
-    /* Totally for all concurrent queries */ \
-    M(SettingUInt64, max_memory_usage_for_all_queries, 0, "") \
+    M(SettingUInt64, max_memory_usage, 0, "Maximum memory usage for processing of single query. Zero means unlimited.") \
+    M(SettingUInt64, max_memory_usage_for_user, 0, "Maximum memory usage for processing all concurrently running queries for the user. Zero means unlimited.") \
+    M(SettingUInt64, max_memory_usage_for_all_queries, 0, "Maximum memory usage for processing all concurrently running queries on the server. Zero means unlimited.") \
     \
-    /** The maximum speed of data exchange over the network in bytes per second. 0 - not bounded. */ \
-    M(SettingUInt64, max_network_bandwidth, 0, "") \
-    /** The maximum number of bytes to receive or transmit over the network, as part of the query. */ \
-    M(SettingUInt64, max_network_bytes, 0, "") \
-    /** The maximum speed of data exchange over the network for the user in bytes per second. 0 - not bounded. */ \
-    M(SettingUInt64, max_network_bandwidth_for_user, 0, "")
+    M(SettingUInt64, max_network_bandwidth, 0, "The maximum speed of data exchange over the network in bytes per second. Zero means unlimited.") \
+    M(SettingUInt64, max_network_bytes, 0, "The maximum number of bytes (compressed) to receive or transmit over the network for execution of the query.") \
+    M(SettingUInt64, max_network_bandwidth_for_user, 0, "The maximum speed of data exchange over the network in bytes per second for all concurrently running queries for the user. Zero means unlimited.")
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};
