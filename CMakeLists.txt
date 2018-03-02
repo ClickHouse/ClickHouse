@@ -37,8 +37,14 @@ set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBS
 
 include (cmake/arch.cmake)
 
-set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
-set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
+if (NOT MSVC)
+    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
+endif ()
+
+if (COMPILER_GCC OR COMPILER_CLANG)
+    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
+endif ()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # clang: warning: argument unused during compilation: '-stdlib=libc++'
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
@@ -50,7 +56,7 @@ if (ARCH_LINUX)
 endif ()
 
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
-option (ENABLE_TESTS "Enables tests" ON)
+option (ENABLE_TESTS "Enables tests" ${NOT_MSVC})
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
@@ -222,7 +228,7 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include(GNUInstallDirs)
 
-include (cmake/find_openssl.cmake)
+include (cmake/find_ssl.cmake)
 if (NOT OPENSSL_FOUND)
     message (FATAL_ERROR "Need openssl for build. debian tip: sudo apt install libssl-dev")
 endif ()

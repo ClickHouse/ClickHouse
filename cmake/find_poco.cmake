@@ -57,8 +57,8 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
 
     if (USE_STATIC_LIBRARIES AND USE_INTERNAL_ZLIB_LIBRARY)
         list (APPEND Poco_INCLUDE_DIRS
-            "${ClickHouse_SOURCE_DIR}/contrib/zlib-ng/"
-            "${ClickHouse_BINARY_DIR}/contrib/zlib-ng/"
+            "${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}/"
+            "${ClickHouse_BINARY_DIR}/contrib/${INTERNAL_ZLIB_NAME}/"
         )
     endif ()
 
