@@ -233,7 +233,7 @@ pages:
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'
 
-- 'Utilites':
+- 'Utilities':
   - 'Introduction': 'utils/index.md'
   - 'clickhouse-copier': 'utils/clickhouse-copier.md'
   - 'clickhouse-local': 'utils/clickhouse-local.md'
