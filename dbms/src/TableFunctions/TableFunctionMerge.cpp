@@ -55,7 +55,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 }
 
 
-StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
