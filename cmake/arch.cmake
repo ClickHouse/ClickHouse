@@ -17,3 +17,13 @@ endif ()
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set (ARCH_FREEBSD 1)
 endif ()
+
+if (NOT MSVC)
+    set (NOT_MSVC 1)
+endif ()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (COMPILER_GCC 1)
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set (COMPILER_CLANG 1)
+endif ()
