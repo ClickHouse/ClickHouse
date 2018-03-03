@@ -140,6 +140,10 @@ static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
 
 
+/** For randomized selection of replicas. */
+thread_local pcg64 rng{randomSeed()};
+
+
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard<std::mutex> lock(current_zookeeper_mutex);

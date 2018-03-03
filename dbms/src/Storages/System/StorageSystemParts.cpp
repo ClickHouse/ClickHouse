@@ -66,7 +66,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(static_cast<UInt64>(part->rows_count));
         columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
         columns[i++]->insert(static_cast<UInt64>(part->modification_time));
-        columns[i++]->insert(static_cast<UInt64>(part->remove_time));
+        columns[i++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
         columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));

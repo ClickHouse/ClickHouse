@@ -75,10 +75,7 @@ void IAST::getTreeHashImpl(SipHash & hash_state) const
 {
     auto id = getID();
     hash_state.update(id.data(), id.size());
-
-    size_t num_children = children.size();
-    hash_state.update(reinterpret_cast<const char *>(&num_children), sizeof(num_children));
-
+    hash_state.update(children.size());
     for (const auto & child : children)
         child->getTreeHashImpl(hash_state);
 }
