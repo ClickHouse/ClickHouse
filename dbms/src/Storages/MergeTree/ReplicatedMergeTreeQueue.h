@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -87,7 +89,7 @@ private:
     /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
-    void insertUnlocked(LogEntryPtr & entry, std::lock_guard<std::mutex> &);
+    void insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &);
 
     void remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
@@ -104,11 +106,15 @@ private:
 
     /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
-    void updateTimesOnRemoval(const LogEntryPtr & entry, bool & min_unprocessed_insert_time_changed, bool & max_processed_insert_time_changed,
+    void updateTimesOnRemoval(const LogEntryPtr & entry,
+        std::optional<time_t> & min_unprocessed_insert_time_changed,
+        std::optional<time_t> & max_processed_insert_time_changed,
         std::unique_lock<std::mutex> &);
 
     /// Update the insertion times in ZooKeeper.
-    void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper, bool min_unprocessed_insert_time_changed, bool max_processed_insert_time_changed) const;
+    void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
+        std::optional<time_t> min_unprocessed_insert_time_changed,
+        std::optional<time_t> max_processed_insert_time_changed) const;
 
     /// Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
     Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> &) const;
