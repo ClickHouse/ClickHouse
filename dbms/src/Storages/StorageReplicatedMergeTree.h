@@ -284,8 +284,6 @@ private:
 
     Logger * log;
 
-    pcg64 rng{randomSeed()};
-
     /// Initialization.
 
     /** Creates the minimum set of nodes in ZooKeeper.
