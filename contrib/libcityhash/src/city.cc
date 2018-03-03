@@ -33,6 +33,8 @@
 #include <algorithm>
 #include <string.h>  // for memcpy and memset
 
+#include <sys/types.h>
+
 using namespace std;
 
 
