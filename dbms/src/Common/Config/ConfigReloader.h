@@ -39,6 +39,9 @@ public:
 
     ~ConfigReloader();
 
+    /// Call this method to run the backround thread.
+    void start();
+
 private:
     void run();
 

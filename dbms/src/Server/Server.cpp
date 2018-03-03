@@ -473,6 +473,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (auto & server : servers)
             server->start();
 
+        main_config_reloader->start();
+        users_config_reloader->start();
+
         {
             std::stringstream message;
             message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
