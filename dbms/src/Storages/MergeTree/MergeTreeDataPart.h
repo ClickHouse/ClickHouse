@@ -139,7 +139,7 @@ struct MergeTreeDataPart
     std::atomic<UInt64> size_in_bytes {0};  /// size in bytes, 0 - if not counted;
                                             ///  is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
-    mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// When the part is removed from the working set.
+    mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() }; /// When the part is removed from the working set. Changes once.
 
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
