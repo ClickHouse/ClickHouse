@@ -98,7 +98,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
 {
     NamedNodeMapPtr attrs = element->attributes();
     std::vector<std::pair<std::string, std::string>> attrs_kv;
-    for (size_t i = 0; i < attrs->length(); ++i)
+    for (size_t i = 0, size = attrs->length(); i < size; ++i)
     {
         Node * node = attrs->item(i);
         std::string name = node->nodeName();
@@ -123,7 +123,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
 static Node * getRootNode(Document * document)
 {
     NodeListPtr children = document->childNodes();
-    for (size_t i = 0; i < children->length(); ++i)
+    for (size_t i = 0, size = children->length(); i < size; ++i)
     {
         Node * child = children->item(i);
         /// Besides the root element there can be comment nodes on the top level.
@@ -160,7 +160,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         node = next_node;
     }
 
-    for (size_t i = 0; i < with_nodes->length(); ++i)
+    for (size_t i = 0, size = with_nodes->length(); i < size; ++i)
     {
         Node * with_node = with_nodes->item(i);
 
@@ -305,14 +305,14 @@ void ConfigProcessor::doIncludesRecursive(
             }
 
             NodeListPtr children = node_to_include->childNodes();
-            for (size_t i = 0; i < children->length(); ++i)
+            for (size_t i = 0, size = children->length(); i < size; ++i)
             {
                 NodePtr new_node = config->importNode(children->item(i), true);
                 node->appendChild(new_node);
             }
 
             NamedNodeMapPtr from_attrs = node_to_include->attributes();
-            for (size_t i = 0; i < from_attrs->length(); ++i)
+            for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
             {
                 element->setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
             }
@@ -349,7 +349,7 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     NodeListPtr children = node->childNodes();
-    for (size_t i = 0; i < children->length(); ++i)
+    for (size_t i = 0, size = children->length(); i < size; ++i)
     {
         doIncludesRecursive(config, include_from, children->item(i), zk_node_cache, contributing_zk_paths);
     }
