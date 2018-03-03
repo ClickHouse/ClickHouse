@@ -118,8 +118,7 @@ void ReplicatedMergeTreeQueue::insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
         insertUnlocked(entry, min_unprocessed_insert_time_changed, lock);
     }
 
-    if (min_unprocessed_insert_time_changed)
-        updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, {});
+    updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, {});
 }
 
 
