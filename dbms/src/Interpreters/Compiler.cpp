@@ -59,7 +59,7 @@ static Compiler::HashedKey getHash(const std::string & key)
     SipHash hash;
 
     auto revision = ClickHouseRevision::get();
-    hash.update(reinterpret_cast<const char *>(&revision), sizeof(revision));
+    hash.update(revision);
     hash.update(key.data(), key.size());
 
     Compiler::HashedKey res;
