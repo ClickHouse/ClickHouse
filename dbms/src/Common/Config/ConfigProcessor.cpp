@@ -96,11 +96,11 @@ using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 
 static ElementIdentifier getElementIdentifier(Node * element)
 {
-    NamedNodeMapPtr attrs = element->attributes();
+    const NamedNodeMapPtr attrs = element->attributes();
     std::vector<std::pair<std::string, std::string>> attrs_kv;
-    for (size_t i = 0; i < attrs->length(); ++i)
+    for (size_t i = 0, size = attrs->length(); i < size; ++i)
     {
-        Node * node = attrs->item(i);
+        const Node * node = attrs->item(i);
         std::string name = node->nodeName();
         if (name == "replace" || name == "remove" || name == "incl" || name == "from_zk")
             continue;
@@ -122,8 +122,8 @@ static ElementIdentifier getElementIdentifier(Node * element)
 
 static Node * getRootNode(Document * document)
 {
-    NodeListPtr children = document->childNodes();
-    for (size_t i = 0; i < children->length(); ++i)
+    const NodeListPtr children = document->childNodes();
+    for (size_t i = 0, size = children->length(); i < size; ++i)
     {
         Node * child = children->item(i);
         /// Besides the root element there can be comment nodes on the top level.
@@ -140,9 +140,9 @@ static bool allWhitespace(const std::string & s)
     return s.find_first_not_of(" \t\n\r") == std::string::npos;
 }
 
-void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, Node * with_root)
+void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
-    NodeListPtr with_nodes = with_root->childNodes();
+    const NodeListPtr with_nodes = with_root->childNodes();
     using ElementsByIdentifier = std::multimap<ElementIdentifier, Node *>;
     ElementsByIdentifier config_element_by_id;
     for (Node * node = config_root->firstChild(); node;)
@@ -160,7 +160,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         node = next_node;
     }
 
-    for (size_t i = 0; i < with_nodes->length(); ++i)
+    for (size_t i = 0, size = with_nodes->length(); i < size; ++i)
     {
         Node * with_node = with_nodes->item(i);
 
@@ -267,8 +267,8 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     NamedNodeMapPtr attributes = node->attributes();
-    Node * incl_attribute = attributes->getNamedItem("incl");
-    Node * from_zk_attribute = attributes->getNamedItem("from_zk");
+    const Node * incl_attribute = attributes->getNamedItem("incl");
+    const Node * from_zk_attribute = attributes->getNamedItem("from_zk");
 
     if (incl_attribute && from_zk_attribute)
         throw Poco::Exception("both incl and from_zk attributes set for element <" + node->nodeName() + ">");
@@ -276,10 +276,10 @@ void ConfigProcessor::doIncludesRecursive(
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
 
-    auto process_include = [&](const Node * include_attr, const std::function<Node * (const std::string &)> & get_node, const char * error_msg)
+    auto process_include = [&](const Node * include_attr, const std::function<const Node * (const std::string &)> & get_node, const char * error_msg)
     {
         std::string name = include_attr->getNodeValue();
-        Node * node_to_include = get_node(name);
+        const Node * node_to_include = get_node(name);
         if (!node_to_include)
         {
             if (attributes->getNamedItem("optional"))
@@ -304,15 +304,15 @@ void ConfigProcessor::doIncludesRecursive(
                 element->removeAttribute("replace");
             }
 
-            NodeListPtr children = node_to_include->childNodes();
-            for (size_t i = 0; i < children->length(); ++i)
+            const NodeListPtr children = node_to_include->childNodes();
+            for (size_t i = 0, size = children->length(); i < size; ++i)
             {
                 NodePtr new_node = config->importNode(children->item(i), true);
                 node->appendChild(new_node);
             }
 
-            NamedNodeMapPtr from_attrs = node_to_include->attributes();
-            for (size_t i = 0; i < from_attrs->length(); ++i)
+            const NamedNodeMapPtr from_attrs = node_to_include->attributes();
+            for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
             {
                 element->setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
             }
@@ -333,7 +333,7 @@ void ConfigProcessor::doIncludesRecursive(
         if (zk_node_cache)
         {
             XMLDocumentPtr zk_document;
-            auto get_zk_node = [&](const std::string & name) -> Node *
+            auto get_zk_node = [&](const std::string & name) -> const Node *
             {
                 std::optional<std::string> contents = zk_node_cache->get(name);
                 if (!contents)
@@ -349,9 +349,10 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     NodeListPtr children = node->childNodes();
-    for (size_t i = 0; i < children->length(); ++i)
+    Node * child = nullptr;
+    for (size_t i = 0; (child = children->item(i)); ++i)
     {
-        doIncludesRecursive(config, include_from, children->item(i), zk_node_cache, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, child, zk_node_cache, contributing_zk_paths);
     }
 }
 

@@ -561,7 +561,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
         {
-            (*it)->remove_time = (*it)->modification_time;
+            (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
         };
 
@@ -677,9 +677,11 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
         {
             const DataPartPtr & part = *it;
 
+            auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
+
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
-                part->remove_time < now &&
-                now - part->remove_time > settings.old_parts_lifetime.totalSeconds())
+                part_remove_time < now &&
+                now - part_remove_time > settings.old_parts_lifetime.totalSeconds())
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1519,7 +1521,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         auto current_time = time(nullptr);
         for (const DataPartPtr & covered_part : covered_parts)
         {
-            covered_part->remove_time = current_time;
+            covered_part->remove_time.store(current_time, std::memory_order_relaxed);
             modifyPartState(covered_part, DataPartState::Outdated);
             removePartContributionToColumnSizes(covered_part);
         }
@@ -1550,7 +1552,7 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
             removePartContributionToColumnSizes(part);
 
         modifyPartState(part, DataPartState::Outdated);
-        part->remove_time = remove_time;
+        part->remove_time.store(remove_time, std::memory_order_relaxed);
     }
 }
 
@@ -2175,7 +2177,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
                 LOG_WARNING(data->log, "Tried to commit obsolete part " << part->name
                     << " covered by " << covering_part->getNameWithState());
 
-                part->remove_time = 0; /// The part will be removed without waiting for old_parts_lifetime seconds.
+                part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
                 data->modifyPartState(part, DataPartState::Outdated);
             }
             else
@@ -2183,7 +2185,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
                 total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
                 for (const DataPartPtr & covered_part : covered_parts)
                 {
-                    covered_part->remove_time = current_time;
+                    covered_part->remove_time.store(current_time, std::memory_order_relaxed);
                     data->modifyPartState(covered_part, DataPartState::Outdated);
                     data->removePartContributionToColumnSizes(covered_part);
                 }
