@@ -88,45 +88,6 @@ namespace ErrorCodes
 }
 
 
-/** Calls to these functions in the GROUP BY statement would be
-  * replaced by their immediate argument.
-  */
-const std::unordered_set<String> injective_function_names
-{
-    "negate",
-    "bitNot",
-    "reverse",
-    "reverseUTF8",
-    "toString",
-    "toFixedString",
-    "IPv4NumToString",
-    "IPv4StringToNum",
-    "hex",
-    "unhex",
-    "bitmaskToList",
-    "bitmaskToArray",
-    "tuple",
-    "regionToName",
-    "concatAssumeInjective",
-};
-
-const std::unordered_set<String> possibly_injective_function_names
-{
-    "dictGetString",
-    "dictGetUInt8",
-    "dictGetUInt16",
-    "dictGetUInt32",
-    "dictGetUInt64",
-    "dictGetInt8",
-    "dictGetInt16",
-    "dictGetInt32",
-    "dictGetInt64",
-    "dictGetFloat32",
-    "dictGetFloat64",
-    "dictGetDate",
-    "dictGetDateTime"
-};
-
 namespace
 {
 
@@ -1302,6 +1263,45 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 
 void ExpressionAnalyzer::optimizeGroupBy()
 {
+    /** Calls to these functions in the GROUP BY statement would be
+      * replaced by their immediate argument.
+      */
+    static const std::unordered_set<String> injective_function_names
+    {
+        "negate",
+        "bitNot",
+        "reverse",
+        "reverseUTF8",
+        "toString",
+        "toFixedString",
+        "IPv4NumToString",
+        "IPv4StringToNum",
+        "hex",
+        "unhex",
+        "bitmaskToList",
+        "bitmaskToArray",
+        "tuple",
+        "regionToName",
+        "concatAssumeInjective",
+    };
+
+    static const std::unordered_set<String> possibly_injective_function_names
+    {
+        "dictGetString",
+        "dictGetUInt8",
+        "dictGetUInt16",
+        "dictGetUInt32",
+        "dictGetUInt64",
+        "dictGetInt8",
+        "dictGetInt16",
+        "dictGetInt32",
+        "dictGetInt64",
+        "dictGetFloat32",
+        "dictGetFloat64",
+        "dictGetDate",
+        "dictGetDateTime"
+    };
+
     if (!(select_query && select_query->group_expression_list))
         return;
 
