@@ -17,7 +17,7 @@ scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-asan
 
 # Start ClickHouse and run tests
 
-sudo -u clickhouse ./clickhouse-asan --config /etc/clickhouse-server/config.xml
+sudo -u clickhouse ./clickhouse-asan server --config /etc/clickhouse-server/config.xml
 
 
 # How to use Thread Sanitizer
@@ -35,4 +35,4 @@ scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-tsan
 
 # Start ClickHouse and run tests
 
-sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1 suppressions=tsan_suppressions' ./clickhouse-tsan --config /etc/clickhouse-server/config.xml
+sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1 suppressions=tsan_suppressions' ./clickhouse-tsan server --config /etc/clickhouse-server/config.xml
