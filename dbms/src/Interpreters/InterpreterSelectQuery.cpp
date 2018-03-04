@@ -43,6 +43,7 @@
 #include <Core/Field.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -195,6 +196,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         for (const auto & it : query_analyzer->getExternalTables())
             if (!context.tryGetExternalTable(it.first))
                 context.addExternalTable(it.first, it.second);
+
+        if (query_analyzer->isRewriteSubQueriesPredicate())
+            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+                table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
     }
 
     if (interpreter_subquery)
@@ -656,10 +661,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else if (interpreter_subquery)
     {
         /// Subquery.
-
+        
         /// If we need less number of columns that subquery have - update the interpreter.
         if (required_columns.size() < source_header.columns())
         {
+
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                 query.table(), getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
 
