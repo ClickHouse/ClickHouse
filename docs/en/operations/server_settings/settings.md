@@ -67,7 +67,7 @@ ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes th
 
 The default database.
 
-Use a [ SHOW DATABASES](../query_language/queries.md#query_language_queries_show_databases) query to get a list of databases.
+Use a [ SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases) query to get a list of databases.
 
 **Example**
 
@@ -518,6 +518,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
+- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 **Example**
@@ -526,6 +527,7 @@ Use the following parameters to configure logging:
 <part_log>
     <database>system</database>
     <table>part_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </part_log>
 ```
@@ -552,7 +554,7 @@ The end slash is mandatory.
 
 ## query_log
 
-Setting for logging queries received with the [log_queries=1](#settings-log_queries) setting.
+Setting for logging queries received with the [log_queries=1](../settings/settings.md#settings_settings-log_queries) setting.
 
 Queries are logged in the ClickHouse table, not in a separate file.
 
@@ -560,6 +562,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
+- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -570,6 +573,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 <query_log>
     <database>system</database>
     <table>query_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
 ```
@@ -589,22 +593,6 @@ For more information, see the section "[Duplicated table engine](../../table_eng
 ```
 
 For the value of the `incl` attribute, see the section "[Configuration files](../configuration_files.md#configuration_files)".
-
-<a name="server_settings-resharding"></a>
-
-## resharding
-
-The ZooKeeper path to the task queue.
-
-For more information, see "[Resharding](../../table_engines/resharding.md#table_engines-resharding)".
-
-**Example**
-
-```xml
-<resharding>
-    <task_queue_path>/clickhouse/task_queue</task_queue_path>
-</resharding>
-```
 
 <a name="server_settings-timezone"></a>
 

@@ -71,3 +71,19 @@ Returns the first element in the 'arr1' array for which 'func' returns something
 
 Returns the index of the first element in the 'arr1' array for which 'func' returns something other than 0.
 
+### arrayCumSum(\[func,\] arr1, ...)
+
+Returns the cumulative sum of the array obtained from the original application of the 'func' function to each element in the 'arr' array.
+
+Example:
+
+```sql
+SELECT arrayCumSum([1, 1, 1, 1]) AS res
+```
+
+```text
+┌─res──────────┐
+│ [1, 2, 3, 4] │
+└──────────────┘
+```
+

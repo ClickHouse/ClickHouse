@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -142,9 +143,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                         /// Have to call resize(0) instead of cloneEmpty to save structure.
                         /// (To keep offsets possibly shared between different arrays.)
-                        static_cast<ColumnArray &>(*column_array->assumeMutable()).getOffsets().resize(0);
+                        static_cast<ColumnArray &>(column_array->assumeMutableRef()).getOffsets().resize(0);
                         /// It's ok until multidimensional arrays are not stored in MergeTree.
-                        static_cast<ColumnArray &>(*column_array->assumeMutable()).getDataPtr() = column_array->getDataPtr()->cloneEmpty();
+                        static_cast<ColumnArray &>(column_array->assumeMutableRef()).getDataPtr() = column_array->getDataPtr()->cloneEmpty();
                     }
                     else
                         col.column = col.column->cloneEmpty();
@@ -233,20 +234,18 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
               */
             if (constant_filter_description.always_false)
             {
-                if (pre_range_reader)
-                {
-                    /// Have to read rows from last partly read granula.
-                    if (!ranges_to_read.empty())
-                    {
-                        auto & range = ranges_to_read.back();
-                        task->current_range_reader = reader->readRange(range.begin, range.end);
-                    }
-                    /// But can just skip them.
-                    task->number_of_rows_to_skip = rows_was_read_in_last_range;
-                }
-                else
-                    task->current_range_reader.reset();
-
+	            /*
+                  If this filter is PREWHERE 0, MergeTree Stream can be marked as done,
+                  and this task can be clear.
+                  If we don't mark this task finished here, readImpl could
+                  jump into endless loop.
+                  Error scenario:
+                  select * from table where isNull(NOT_NULLABLE_COLUMN) AND OTHER PRED;
+                  and isNull pred is promoted to PREWHERE.
+                  (though it is difficult to reproduce)
+                */
+                task->current_range_reader.reset();
+                task->mark_ranges.clear();
                 res.clear();
                 return res;
             }
@@ -339,11 +338,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         const size_t limit = std::min(pre_filter.size(), pre_filter_pos + unread_rows_in_current_granule);
                         bool will_read_until_mark = unread_rows_in_current_granule == limit - pre_filter_pos;
 
-                        UInt8 nonzero = 0;
-                        for (size_t row = pre_filter_pos; row < limit; ++row)
-                            nonzero |= pre_filter[row];
-
-                        if (!nonzero)
+                        if (memoryIsZero(&pre_filter[pre_filter_pos], (limit - pre_filter_pos) * sizeof(pre_filter[0])))
                         {
                             /// Zero! Prewhere condition is false for all (limit - pre_filter_pos) rows.
                             readRows();
@@ -397,16 +392,21 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 post_filter.resize(post_filter_pos);
 
+                /// At this point we may have arrays with non-zero offsets but with empty data,
+                ///  as a result of reading components of Nested data structures with no data in filesystem.
+                /// We must fill these arrays to filter them correctly.
+
+                reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
+
                 /// Filter the columns related to PREWHERE using pre_filter,
                 ///  other columns - using post_filter.
                 size_t rows = 0;
                 for (const auto i : ext::range(0, res.columns()))
                 {
-                    auto & col = res.safeGetByPosition(i);
+                    auto & col = res.getByPosition(i);
                     if (col.name == prewhere_column_name && res.columns() > 1)
                         continue;
-                    col.column =
-                        col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
+                    col.column = col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
                     rows = col.column->size();
                 }
                 if (task->size_predictor)
@@ -414,8 +414,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)
-                    res.getByName(prewhere_column_name).column = DataTypeUInt8().createColumnConst(rows, UInt64(1));
-
+                    res.getByName(prewhere_column_name).column = DataTypeUInt8().createColumnConst(rows, UInt64(1))->convertToFullColumnIfConst();
             }
 
             if (res)
@@ -472,7 +471,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 }
 
 
-void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
+void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 {
     const auto rows = block.rows();
 
@@ -484,17 +483,23 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
         {
             if (virt_column_name == "_part")
             {
-                block.insert(ColumnWithTypeAndName{
-                    DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeString>(),
-                    virt_column_name});
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeString().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeString>(), virt_column_name});
             }
             else if (virt_column_name == "_part_index")
             {
-                block.insert(ColumnWithTypeAndName{
-                    DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeUInt64>(),
-                    virt_column_name});
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUInt64().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
             }
         }
     }

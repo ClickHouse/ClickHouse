@@ -37,7 +37,8 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
 
         {"database",            std::make_shared<DataTypeString>()},
         {"table",               std::make_shared<DataTypeString>()},
-        {"engine",              std::make_shared<DataTypeString>()}
+        {"engine",              std::make_shared<DataTypeString>()},
+        {"path",                std::make_shared<DataTypeString>()}
     }
     )
 {
@@ -65,7 +66,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(static_cast<UInt64>(part->rows_count));
         columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
         columns[i++]->insert(static_cast<UInt64>(part->modification_time));
-        columns[i++]->insert(static_cast<UInt64>(part->remove_time));
+        columns[i++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
         columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
@@ -81,6 +82,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(info.database);
         columns[i++]->insert(info.table);
         columns[i++]->insert(info.engine);
+        columns[i++]->insert(part->getFullPath());
 
         if (has_state_column)
             columns[i++]->insert(part->stateString());

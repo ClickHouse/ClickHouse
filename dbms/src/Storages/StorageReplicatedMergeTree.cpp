@@ -14,7 +14,6 @@
 #include <Databases/IDatabase.h>
 
 #include <Parsers/formatAST.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -95,6 +94,7 @@ namespace ErrorCodes
     extern const int TOO_MUCH_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
 }
 
@@ -140,6 +140,10 @@ static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
 
 
+/** For randomized selection of replicas. */
+thread_local pcg64 rng{randomSeed()};
+
+
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
@@ -172,13 +176,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const ColumnDefaults & column_defaults_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
+    const ASTPtr & secondary_sorting_expr_list_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     current_zookeeper(context.getZooKeeper()), database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros().expand(zookeeper_path_)),
@@ -186,7 +191,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     data(database_name, table_name,
         full_path, columns_,
         materialized_columns_, alias_columns_, column_defaults_,
-        context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
+        context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
         sampling_expression_, merging_params_,
         settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
@@ -195,6 +200,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
+    if (path_.empty())
+        throw Exception("ReplicatedMergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
     /// If zookeeper chroot prefix is used, path should starts with '/', because chroot concatenates without it.
@@ -736,6 +744,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
     /// Which local parts to added into ZK.
     MergeTreeData::DataPartsVector parts_to_add;
+    UInt64 parts_to_add_rows = 0;
 
     /// Which parts should be taken from other replicas.
     Strings parts_to_fetch;
@@ -751,6 +760,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
             {
                 parts_to_add.push_back(containing);
                 unexpected_parts.erase(containing);
+                parts_to_add_rows += containing->rows_count;
             }
         }
         else
@@ -763,21 +773,53 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const String & name : parts_to_fetch)
         expected_parts.erase(name);
 
+
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
       * Because unexpected new parts usually arise only because they did not have time to enroll in ZK with a rough restart of the server.
       * It also occurs from deduplicated parts that did not have time to retire.
       */
     size_t unexpected_parts_nonnew = 0;
+    UInt64 unexpected_parts_nonnew_rows = 0;
+    UInt64 unexpected_parts_rows = 0;
     for (const auto & part : unexpected_parts)
+    {
         if (part->info.level > 0)
+        {
             ++unexpected_parts_nonnew;
+            unexpected_parts_nonnew_rows += part->rows_count;
+        }
 
-    String sanity_report = "There are "
-            + toString(unexpected_parts.size()) + " unexpected parts ("
-            + toString(unexpected_parts_nonnew) + " of them is not just-written), "
-            + toString(parts_to_add.size()) + " unexpectedly merged parts, "
-            + toString(expected_parts.size()) + " missing obsolete parts, "
-            + toString(parts_to_fetch.size()) + " missing parts";
+        unexpected_parts_rows += part->rows_count;
+    }
+
+
+    /// Additional helpful statistics
+    auto get_blocks_count_in_data_part = [&] (const String & part_name) -> UInt64
+    {
+        MergeTreePartInfo part_info;
+        if (MergeTreePartInfo::tryParsePartName(part_name, &part_info, data.format_version))
+            return part_info.getBlocksCount();
+
+        LOG_ERROR(log, "Unexpected part name: " << part_name);
+        return 0;
+    };
+
+    UInt64 parts_to_fetch_blocks = 0;
+    for (const String & name : parts_to_fetch)
+        parts_to_fetch_blocks += get_blocks_count_in_data_part(name);
+
+    UInt64 expected_parts_blocks = 0;
+    for (const String & name : expected_parts)
+        expected_parts_blocks += get_blocks_count_in_data_part(name);
+
+
+    std::stringstream sanity_report;
+    sanity_report << "There are "
+        << unexpected_parts.size() << " unexpected parts with " << unexpected_parts_rows << " rows ("
+        << unexpected_parts_nonnew << " of them is not just-written with " << unexpected_parts_rows << " rows), "
+        << parts_to_add.size() << " unexpectedly merged parts with " << parts_to_add_rows << " rows, "
+        << expected_parts.size() << " missing obsolete parts (with " << expected_parts_blocks << " blocks), "
+        << parts_to_fetch.size() << " missing parts (with " << parts_to_fetch_blocks << " blocks).";
 
     /** We can automatically synchronize data,
       *  if the ratio of the total number of errors to the total number of parts (minimum - on the local filesystem or in ZK)
@@ -788,17 +830,28 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
       * In this case, the protection mechanism does not allow the server to start.
       */
 
-    size_t min_parts_local_or_expected = std::min(expected_parts_vec.size(), parts.size());
-    size_t total_difference = parts_to_add.size() + unexpected_parts_nonnew + parts_to_fetch.size();
+    UInt64 total_rows_on_filesystem = 0;
+    for (const auto & part : parts)
+        total_rows_on_filesystem += part->rows_count;
 
-    bool insane = total_difference > min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts;
+    UInt64 total_suspicious_rows = parts_to_add_rows + unexpected_parts_rows;
+    UInt64 total_suspicious_rows_no_new = parts_to_add_rows + unexpected_parts_nonnew_rows;
+
+    bool insane = total_suspicious_rows > total_rows_on_filesystem * data.settings.replicated_max_ratio_of_wrong_parts;
 
     if (insane && !skip_sanity_checks)
-        throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
-            + sanity_report, ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+    {
+        std::stringstream why;
+        why << "The local set of parts of table " << database_name  << "." << table_name << " doesn't look like the set of parts "
+            << "in ZooKeeper: "
+            << formatReadableQuantity(total_suspicious_rows) << " rows of " << formatReadableQuantity(total_rows_on_filesystem)
+            << " total rows in filesystem are suspicious.";
 
-    if (total_difference > 0)
-        LOG_WARNING(log, sanity_report);
+        throw Exception(why.str() + " " + sanity_report.str(), ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+    }
+
+    if (total_suspicious_rows_no_new > 0)
+        LOG_WARNING(log, sanity_report.str());
 
     /// Add information to the ZK about the parts that cover the missing parts.
     for (const MergeTreeData::DataPartPtr & part : parts_to_add)
@@ -1664,7 +1717,7 @@ namespace
 
             if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
             {
-                if (out_reason) 
+                if (out_reason)
                     *out_reason = "Quorum 'last part' condition is unsatisfied";
                 return false;
             }
@@ -2254,13 +2307,13 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             checkPartAndAddToZooKeeper(part, ops, part_name);
 
             MergeTreeData::Transaction transaction;
-            replaced_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
+            data.renameTempPartAndReplace(part, nullptr, &transaction);
 
             /// Do not commit if the part is obsolete
             if (!transaction.isEmpty())
             {
                 getZooKeeper()->multi(ops);
-                transaction.commit();
+                replaced_parts = transaction.commit();
             }
 
             /** If a quorum is tracked for this part, you must update it.
@@ -3208,8 +3261,8 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.database,
         "", "", timeouts, "ClickHouse replica");
 
-    RemoteBlockInputStream stream(connection, formattedAST(new_query), context, &settings);
-    NullBlockOutputStream output;
+    RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
+    NullBlockOutputStream output({});
 
     copyData(stream, output);
     return;

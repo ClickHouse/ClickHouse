@@ -2,11 +2,15 @@
 
 # Data replication
 
-## ReplicatedMergeTree
+## ReplicatedAggregatingMergeTree
 
 ## ReplicatedCollapsingMergeTree
 
-## ReplicatedAggregatingMergeTree
+## ReplicatedGraphiteMergeTree
+
+## ReplicatedMergeTree
+
+## ReplicatedReplacingMergeTree
 
 ## ReplicatedSummingMergeTree
 

@@ -14,7 +14,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -312,10 +312,8 @@ try
     if (mark_cache_size)
         context->setMarkCache(mark_cache_size);
 
-    /// Load global settings from default profile.
-    String default_profile_name = config().getString("default_profile", "default");
-    context->setDefaultProfileName(default_profile_name);
-    context->setSetting("profile", default_profile_name);
+    /// Load global settings from default_profile and system_profile.
+    context->setDefaultProfiles(config());
 
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server enviroment
@@ -463,6 +461,14 @@ static const char * minimal_default_user_xml =
 "</yandex>";
 
 
+static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
+{
+    std::stringstream ss{std::string{xml_data}};
+    Poco::XML::InputSource input_source{ss};
+    return {new Poco::Util::XMLConfiguration{&input_source}};
+}
+
+
 void LocalServer::setupUsers()
 {
     ConfigurationPtr users_config;
@@ -477,11 +483,7 @@ void LocalServer::setupUsers()
     }
     else
     {
-        std::stringstream default_user_stream;
-        default_user_stream << minimal_default_user_xml;
-
-        Poco::XML::InputSource default_user_source(default_user_stream);
-        users_config = ConfigurationPtr(new Poco::Util::XMLConfiguration(&default_user_source));
+        users_config = getConfigurationFromXMLString(minimal_default_user_xml);
     }
 
     if (users_config)

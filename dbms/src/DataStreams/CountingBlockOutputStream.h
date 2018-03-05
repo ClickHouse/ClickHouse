@@ -12,7 +12,6 @@ namespace DB
 class CountingBlockOutputStream : public IBlockOutputStream
 {
 public:
-
     CountingBlockOutputStream(const BlockOutputStreamPtr & stream_)
         : stream(stream_) {}
 
@@ -31,6 +30,7 @@ public:
         return progress;
     }
 
+    Block getHeader() const override { return stream->getHeader(); }
     void write(const Block & block) override;
 
     void writePrefix() override                         { stream->writePrefix(); }
@@ -40,7 +40,6 @@ public:
     String getContentType() const override              { return stream->getContentType(); }
 
 protected:
-
     BlockOutputStreamPtr stream;
     Progress progress;
     ProgressCallback progress_callback;

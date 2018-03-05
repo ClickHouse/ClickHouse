@@ -81,9 +81,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.partition_expr->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
-    partition_columns.reserve(data.partition_expr_columns.size());
-    for (const String & name : data.partition_expr_columns)
-        partition_columns.emplace_back(block_copy.getByName(name).column.get());
+    partition_columns.reserve(data.partition_key_sample.columns());
+    for (const ColumnWithTypeAndName & element : data.partition_key_sample)
+        partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
@@ -103,7 +103,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     if (partitions_count == 1)
     {
         /// A typical case is when there is one partition (you do not need to split anything).
-        result.emplace_back(std::move(block_copy), get_partition(0));
+        /// NOTE: returning a copy of the original block so that calculated partition key columns
+        /// do not interfere with possible calculated primary key columns of the same name.
+        result.emplace_back(Block(block), get_partition(0));
         return result;
     }
 
@@ -172,9 +174,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     dir.createDirectories();
 
-    /// If you need to calculate some columns to sort, we do it.
-    if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    /// If we need to calculate some columns to sort.
+    if (data.hasPrimaryKey())
+    {
         data.getPrimaryExpression()->execute(block);
+        auto secondary_sort_expr = data.getSecondarySortExpression();
+        if (secondary_sort_expr)
+            secondary_sort_expr->execute(block);
+    }
 
     SortDescription sort_descr = data.getSortDescription();
 
@@ -183,7 +190,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// Sort.
     IColumn::Permutation * perm_ptr = nullptr;
     IColumn::Permutation perm;
-    if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    if (data.hasPrimaryKey())
     {
         if (!isAlreadySorted(block, sort_descr))
         {

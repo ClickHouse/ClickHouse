@@ -97,7 +97,10 @@ public:
         UInt32 shard_num;
         UInt32 weight;
         Addresses local_addresses;
+        /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
+        /// Connection pool for each replica, contains nullptr for local replicas
+        ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication;
     };
 
@@ -168,8 +171,9 @@ public:
     Clusters & operator=(const Clusters &) = delete;
 
     ClusterPtr getCluster(const std::string & cluster_name) const;
+    void setCluster(const String & cluster_name, const ClusterPtr & cluster);
 
-    void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
+    void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name);
 
 public:
     using Impl = std::map<String, ClusterPtr>;

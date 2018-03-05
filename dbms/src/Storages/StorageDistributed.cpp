@@ -1,6 +1,5 @@
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/BlockExtraInfoInputStream.h>
-#include <DataStreams/UnionBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
 
 #include <Databases/IDatabase.h>
 
@@ -20,7 +19,6 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTWeightedZooKeeperPath.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 
@@ -50,6 +48,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int STORAGE_REQUIRES_PARAMETER;
+    extern const int BAD_ARGUMENTS;
+    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
@@ -62,8 +62,8 @@ namespace
 /// Creates a copy of query, changes database and table names.
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 {
-    auto modified_query_ast = typeid_cast<const ASTSelectQuery &>(*query).cloneFirstSelect();
-    modified_query_ast->replaceDatabaseAndTable(database, table);
+    auto modified_query_ast = query->clone();
+    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -141,8 +141,8 @@ StorageDistributed::StorageDistributed(
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(context.getMacros().expand(cluster_name_)), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
@@ -191,40 +191,41 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);
 
-    Tables external_tables;
-
-    if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
-        external_tables = context.getExternalTables();
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
-        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
+        header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
 
     return ClusterProxy::executeQuery(
-            select_stream_factory, cluster, modified_query_ast, context, settings);
+        select_stream_factory, cluster, modified_query_ast, context, settings);
 }
 
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
+    auto cluster = (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
 
-    /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
-    bool write_enabled = (!path.empty() || owned_cluster)
-                         && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
+    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
+    {
+        throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
+                        ErrorCodes::BAD_ARGUMENTS);
+    }
 
-    if (!write_enabled)
-        throw Exception{
-            "Method write is not supported by storage " + getName() +
-            " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER};
+    /// If sharding key is not specified, then you can only write to a shard containing only one shard
+    if (!has_sharding_key && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    {
+        throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
+                        ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+    }
 
+    /// Force sync insertion if it is remote() table function
     bool insert_sync = settings.insert_distributed_sync || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, insert_sync, timeout);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings, insert_sync, timeout);
 }
 
 
@@ -265,13 +266,10 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     std::string name = remote_database + '.' + remote_table;
 
-    auto id = std::make_shared<ASTIdentifier>();
-    id->name = name;
+    auto id = std::make_shared<ASTIdentifier>(name);
 
-    auto desc_database = std::make_shared<ASTIdentifier>();
-    auto desc_table = std::make_shared<ASTIdentifier>();
-    desc_database->name = remote_database;
-    desc_table->name = remote_table;
+    auto desc_database = std::make_shared<ASTIdentifier>(remote_database);
+    auto desc_table = std::make_shared<ASTIdentifier>(remote_table);
 
     id->children.push_back(desc_database);
     id->children.push_back(desc_table);
@@ -319,11 +317,13 @@ void StorageDistributed::createDirectoryMonitors()
 
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
+    std::lock_guard lock(cluster_nodes_mutex);
     cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
 }
 
 ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
 {
+    std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[name];
     node_data.requireConnectionPool(name, *this);
     return node_data.conneciton_pool;

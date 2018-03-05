@@ -138,11 +138,12 @@ private:
 
 struct OpResult : public zoo_op_result_t
 {
-    /// Указатели в этой структуре указывают на поля в классе Op.
-    /// Поэтому деструктор не нужен
+    /// Pointers in this class point to fields of class Op.
+    /// Op instances have the same (or longer lifetime), therefore destructor is not required.
 };
 
-using Ops = std::vector<std::unique_ptr<Op>>;
+using OpPtr = std::unique_ptr<Op>;
+using Ops = std::vector<OpPtr>;
 using OpResults = std::vector<OpResult>;
 using OpResultsPtr = std::shared_ptr<OpResults>;
 using Strings = std::vector<std::string>;

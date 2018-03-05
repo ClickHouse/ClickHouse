@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -61,17 +62,15 @@ public:
 
     String getName() const override { return "Log"; }
 
-    String getID() const override
+    Block getHeader() const override
     {
-        std::stringstream res;
-        res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
+        Block res;
 
         for (const auto & name_type : columns)
-            res << ", " << name_type.name;
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        res << ")";
-        return res.str();
-    }
+        return Nested::flatten(res);
+    };
 
 protected:
     Block readImpl() override;
@@ -128,6 +127,7 @@ public:
         }
     }
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -363,15 +363,15 @@ StorageLog::StorageLog(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     size_t max_compress_block_size_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_), name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json")
 {
-    if (columns.empty())
-        throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    /// create files if they do not exist
+     /// create files if they do not exist
     Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
     for (const auto & column : getColumnsList())

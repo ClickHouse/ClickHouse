@@ -25,31 +25,13 @@ class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 public:
     CollapsingSortedBlockInputStream(
             BlockInputStreams inputs_, const SortDescription & description_,
-            const String & sign_column_, size_t max_block_size_,
-            WriteBuffer * out_row_sources_buf_ = nullptr)
+            const String & sign_column_, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
         : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
         , sign_column(sign_column_)
     {
     }
 
     String getName() const override { return "CollapsingSorted"; }
-
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "CollapsingSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ", sign_column, " << sign_column << ")";
-        return res.str();
-    }
 
 protected:
     /// Can return 1 more records than max_block_size.

@@ -15,12 +15,10 @@ class ASTShowTablesQuery : public ASTQueryWithOutput
 {
 public:
     bool databases{false};
+    bool temporary{false};
     String from;
     String like;
     bool not_like{false};
-
-    ASTShowTablesQuery() = default;
-    ASTShowTablesQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
     /** Get the text that identifies this element. */
     String getID() const override { return "ShowTables"; };

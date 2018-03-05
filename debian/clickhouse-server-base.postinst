@@ -6,6 +6,7 @@ CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 
+test -f /etc/default/clickhouse && . /etc/default/clickhouse
 
 if [ "$1" = configure ]; then
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then

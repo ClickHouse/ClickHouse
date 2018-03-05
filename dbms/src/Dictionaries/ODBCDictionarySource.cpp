@@ -6,6 +6,7 @@
 #include <Dictionaries/ODBCBlockInputStream.h>
 #include <common/logger_useful.h>
 #include <Dictionaries/readInvalidateQuery.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -17,7 +18,7 @@ static const size_t max_block_size = 8192;
 
 ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-    const Block & sample_block)
+    const Block & sample_block, const Context & context)
     : log(&Logger::get("ODBCDictionarySource")),
     dict_struct{dict_struct_},
     db{config.getString(config_prefix + ".db", "")},
@@ -28,11 +29,17 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     load_all_query{query_builder.composeLoadAllQuery()},
     invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
+    std::size_t field_size = context.getSettingsRef().odbc_max_field_size;
+
     pool = createAndCheckResizePocoSessionPool([&]
     {
-        return std::make_shared<Poco::Data::SessionPool>(
+        auto session = std::make_shared<Poco::Data::SessionPool>(
             config.getString(config_prefix + ".connector", "ODBC"),
             config.getString(config_prefix + ".connection_string"));
+
+        /// Default POCO value is 1024. Set property manually to make possible reading of longer strings.
+        session->setProperty("maxFieldSize", Poco::Any(field_size));
+        return session;
     });
 }
 

@@ -29,6 +29,7 @@ STRONG_TYPEDEF(TupleBackend, Tuple); /// Array and Tuple are different types wit
 
 
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
+  * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
 #define DBMS_MIN_FIELD_SIZE 32
 
@@ -542,5 +543,4 @@ void writeBinary(const Tuple & x, WriteBuffer & buf);
 void writeText(const Tuple & x, WriteBuffer & buf);
 
 inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
-
 }

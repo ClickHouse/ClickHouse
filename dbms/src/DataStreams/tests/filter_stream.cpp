@@ -37,7 +37,6 @@ try
 
     formatAST(*ast, std::cerr);
     std::cerr << std::endl;
-    std::cerr << ast->getTreeID() << std::endl;
 
     Context context = Context::createGlobal();
 
@@ -61,7 +60,7 @@ try
 
     WriteBufferFromOStream ob(std::cout);
     RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
-    BlockOutputStreamFromRowOutputStream out(out_);
+    BlockOutputStreamFromRowOutputStream out(out_, expression->getSampleBlock());
 
 
     {

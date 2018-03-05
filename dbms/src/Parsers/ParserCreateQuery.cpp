@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 
 
@@ -21,8 +21,6 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr name;
     ASTPtr columns;
 
-    Pos begin = pos;
-
     /// For now `name == 'Nested'`, probably alternative nested data structures will appear
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -36,7 +34,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!close.ignore(pos))
         return false;
 
-    auto func = std::make_shared<ASTFunction>(StringRange(begin, pos));
+    auto func = std::make_shared<ASTFunction>();
     func->name = typeid_cast<ASTIdentifier &>(*name).name;
     func->arguments = columns;
     func->children.push_back(columns);
@@ -65,15 +63,13 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     ParserIdentifier non_parametric;
     ParserIdentifierWithParameters parametric;
 
-    Pos begin = pos;
-
     if (parametric.parse(pos, node, expected))
         return true;
 
     ASTPtr ident;
     if (non_parametric.parse(pos, ident, expected))
     {
-        auto func = std::make_shared<ASTFunction>(StringRange(begin));
+        auto func = std::make_shared<ASTFunction>();
         func->name = typeid_cast<ASTIdentifier &>(*ident).name;
         node = func;
         return true;
@@ -84,10 +80,10 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
 
 bool ParserTypeInCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (ParserIdentifierWithOptionalParameters::parseImpl(pos, node, expected))
+    if (ParserIdentifierWithOptionalParameters().parse(pos, node, expected))
     {
         const auto & id_with_params = typeid_cast<const ASTFunction &>(*node);
-        node = std::make_shared<ASTIdentifier>(id_with_params.range, String{ id_with_params.range.first, id_with_params.range.second });
+        node = std::make_shared<ASTIdentifier>(String{ id_with_params.range.first, id_with_params.range.second });
         return true;
     }
 
@@ -119,8 +115,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
-
-    Pos begin = pos;
 
     ASTPtr engine;
     ASTPtr partition_by;
@@ -171,7 +165,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         break;
     }
 
-    auto storage = std::make_shared<ASTStorage>(StringRange(begin, pos));
+    auto storage = std::make_shared<ASTStorage>();
     storage->set(storage->engine, engine);
     storage->set(storage->partition_by, partition_by);
     storage->set(storage->order_by, order_by);
@@ -185,8 +179,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_create("CREATE");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
@@ -203,7 +195,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserStorage storage_p;
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
-    ParserSelectQuery select_p;
+    ParserSelectWithUnionQuery select_p;
 
     ASTPtr database;
     ASTPtr table;
@@ -259,7 +251,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         // Shortcut for ATTACH a previously detached table
         if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
         {
-            auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));
+            auto query = std::make_shared<ASTCreateQuery>();
             node = query;
 
             query->attach = attach;
@@ -398,12 +390,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!s_as.ignore(pos, expected))
             return false;
 
-        ParserSelectQuery select_p;
         if (!select_p.parse(pos, select, expected))
             return false;
     }
 
-    auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTCreateQuery>();
     node = query;
 
     query->attach = attach;

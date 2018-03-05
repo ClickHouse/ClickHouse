@@ -51,6 +51,7 @@ using DictionaryLifetime = ExternalLoadableLifetime;
 *        decimal representation for numeric attributes;
 *    - hierarchical, whether this attribute defines a hierarchy;
 *    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?)
+*    - is_object_id, used in mongo dictionary, converts string key to objectid
 */
 struct DictionaryAttribute final
 {
@@ -61,6 +62,7 @@ struct DictionaryAttribute final
     const Field null_value;
     const bool hierarchical;
     const bool injective;
+    const bool is_object_id;
 };
 
 

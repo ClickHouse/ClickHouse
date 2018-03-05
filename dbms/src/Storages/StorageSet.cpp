@@ -21,12 +21,19 @@ namespace ErrorCodes
 }
 
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_FILE_NAME;
+}
+
+
 class SetOrJoinBlockOutputStream : public IBlockOutputStream
 {
 public:
     SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
         const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
 
+    Block getHeader() const override { return table.getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -48,7 +55,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & ta
     backup_file_name(backup_file_name_),
     backup_buf(backup_tmp_path + backup_file_name),
     compressed_backup_buf(backup_buf),
-    backup_stream(compressed_backup_buf)
+    backup_stream(compressed_backup_buf, 0, table.getSampleBlock())
 {
 }
 
@@ -86,9 +93,13 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_ + escapeForFileName(name_) + '/'), name(name_), columns(columns_)
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_)
 {
+    if (path_.empty())
+        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    path = path_ + escapeForFileName(name_) + '/';
 }
 
 
@@ -107,7 +118,7 @@ StorageSet::StorageSet(
 }
 
 
-void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block, /*fill_set_elements=*/false); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
 
 
@@ -147,7 +158,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ReadBufferFromFile backup_buf(file_path);
     CompressedReadBuffer compressed_backup_buf(backup_buf);
-    NativeBlockInputStream backup_stream(compressed_backup_buf);
+    NativeBlockInputStream backup_stream(compressed_backup_buf, 0);
 
     backup_stream.readPrefix();
     while (Block block = backup_stream.read())

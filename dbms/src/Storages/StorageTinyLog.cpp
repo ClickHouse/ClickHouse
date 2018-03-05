@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -59,7 +60,15 @@ public:
 
     String getName() const override { return "TinyLog"; }
 
-    String getID() const override;
+    Block getHeader() const override
+    {
+        Block res;
+
+        for (const auto & name_type : columns)
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+
+        return Nested::flatten(res);
+    };
 
 protected:
     Block readImpl() override;
@@ -109,6 +118,8 @@ public:
         }
     }
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -141,19 +152,6 @@ private:
 
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams);
 };
-
-
-String TinyLogBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TinyLog(" << storage.getTableName() << ", " << &storage;
-
-    for (const auto & name_type : columns)
-        res << ", " << name_type.name;
-
-    res << ")";
-    return res.str();
-}
 
 
 Block TinyLogBlockInputStream::readImpl()
@@ -284,14 +282,14 @@ StorageTinyLog::StorageTinyLog(
     const ColumnDefaults & column_defaults_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_), name(name_), columns(columns_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
-    if (columns.empty())
-        throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = path + escapeForFileName(name) + '/';
     if (!attach)

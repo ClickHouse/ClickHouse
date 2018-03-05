@@ -170,6 +170,8 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
+    String getDataPath() const override { return full_path; }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
@@ -281,8 +283,6 @@ private:
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
     Logger * log;
-
-    pcg64 rng{randomSeed()};
 
     /// Initialization.
 
@@ -449,6 +449,7 @@ protected:
         const ColumnDefaults & column_defaults_,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
+        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,
