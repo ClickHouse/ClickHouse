@@ -1118,14 +1118,14 @@ private:
         if (stop_conditions.areFulfilled())
         {
             statistics.last_query_was_cancelled = true;
-            stream.cancel();
+            stream.cancel(false);
         }
 
         if (interrupt_listener.check())
         {
             gotSIGINT = true;
             statistics.last_query_was_cancelled = true;
-            stream.cancel();
+            stream.cancel(false);
         }
     }
 
