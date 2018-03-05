@@ -122,7 +122,7 @@ public:
             return;
 
         //std::cerr << "cancelling\n";
-        processor.cancel();
+        processor.cancel(kill);
     }
 
     BlockExtraInfo getBlockExtraInfo() const override

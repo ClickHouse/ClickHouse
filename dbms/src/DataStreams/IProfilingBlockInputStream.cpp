@@ -71,7 +71,7 @@ Block IProfilingBlockInputStream::read()
           *   but children sources are still working,
           *   herewith they can work in separate threads or even remotely.
           */
-        cancel();
+        cancel(false);
     }
 
     progress(Progress(res.rows(), res.bytes()));
@@ -264,7 +264,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
     if (process_list_elem)
     {
         if (!process_list_elem->updateProgressIn(value))
-            cancel();
+            cancel(false);
 
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
@@ -302,7 +302,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
                     if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
                         || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
                     {
-                        cancel();
+                        cancel(false);
                     }
 
                     break;

@@ -115,7 +115,7 @@ public:
       *  with kill = false only is_cancelled is set - streams will stop silently with returning some processed data.
       *  with kill = true also is_killed set - queries will stop with exception.
       */
-    virtual void cancel(bool kill = false);
+    virtual void cancel(bool kill);
 
     /** Do you want to abort the receipt of data.
      */

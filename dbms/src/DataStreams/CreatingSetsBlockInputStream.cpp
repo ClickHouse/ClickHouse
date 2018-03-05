@@ -139,7 +139,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         if (done_with_set && done_with_join && done_with_table)
         {
             if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
-                profiling_in->cancel();
+                profiling_in->cancel(false);
 
             break;
         }

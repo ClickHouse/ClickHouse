@@ -44,7 +44,7 @@ void ParallelAggregatingBlockInputStream::cancel(bool kill)
         return;
 
     if (!executed)
-        processor.cancel();
+        processor.cancel(kill);
 }
 
 
