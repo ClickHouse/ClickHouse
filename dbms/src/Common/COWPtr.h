@@ -66,6 +66,12 @@
   * In contrast, COWPtr is intended for the cases when you need to share states of large objects,
   * (when you usually will use std::shared_ptr) but you also want precise control over modification
   * of this shared state.
+  *
+  * Caveats:
+  * - after a call to 'mutate' method, you can still have a reference to immutable ptr somewhere
+  *   and it can still become shared. Also it would be better to make 'mutate' method rvalue-qualified.
+  * - as 'mutable_ptr' should be unique, it's refcount is redundant - probably it would be better
+  *   to use std::unique_ptr for it, but see above.
   */
 template <typename Derived>
 class COWPtr : public boost::intrusive_ref_counter<Derived>
