@@ -321,7 +321,7 @@ void TCPHandler::processOrdinaryQuery()
                 if (isQueryCancelled())
                 {
                     /// A packet was received requesting to stop execution of the request.
-                    async_in.cancel();
+                    async_in.cancel(false);
                     break;
                 }
                 else
