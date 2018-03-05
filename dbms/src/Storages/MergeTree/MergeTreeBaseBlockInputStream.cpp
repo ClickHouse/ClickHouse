@@ -119,19 +119,30 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     {
         if (prewhere_actions)
         {
-            task->pre_range_reader = MergeTreeRangeReader(
-                    pre_reader.get(), index_granularity, nullptr, prewhere_actions,
-                    &prewhere_column_name, &task->ordered_names, task->should_reorder);
+            if (reader->getColumns().empty())
+            {
+                task->range_reader = MergeTreeRangeReader(
+                        pre_reader.get(), index_granularity, nullptr, prewhere_actions,
+                        &prewhere_column_name, &task->ordered_names,
+                        task->should_reorder, task->remove_prewhere_column, true);
+            }
+            else
+            {
+                task->pre_range_reader = MergeTreeRangeReader(
+                        pre_reader.get(), index_granularity, nullptr, prewhere_actions,
+                        &prewhere_column_name, &task->ordered_names,
+                        task->should_reorder, task->remove_prewhere_column, false);
 
-            task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, &task->pre_range_reader, nullptr,
-                    nullptr, &task->ordered_names, true);
+                task->range_reader = MergeTreeRangeReader(
+                        reader.get(), index_granularity, &task->pre_range_reader, nullptr,
+                        nullptr, &task->ordered_names, true, false, true);
+            }
         }
         else
         {
             task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, nullptr, nullptr,
-                    nullptr, &task->ordered_names, task->should_reorder);
+                    reader.get(), index_granularity, nullptr, prewhere_actions,
+                    nullptr, &task->ordered_names, task->should_reorder, false, true);
         }
     }
 
@@ -145,27 +156,23 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     if (read_result.block.rows() == 0)
         read_result.block.clear();
 
-    size_t rows_read = read_result.numAddedRows() + read_result.numFilteredRows();
+    size_t num_filtered_rows = read_result.numReadRows() - read_result.block.rows();
 
-    progressImpl({ rows_read, read_result.numBytesRead() });
+    progressImpl({ read_result.numReadRows(), read_result.numBytesRead() });
 
     if (task->size_predictor)
     {
-        task->size_predictor->updateFilteredRowsRation(rows_read, read_result.numFilteredRows());
+        task->size_predictor->updateFilteredRowsRation(read_result.numReadRows(), num_filtered_rows);
 
         if (read_result.block)
             task->size_predictor->update(read_result.block);
     }
 
-    if (!prewhere_column_name.empty() && read_result.block.has(prewhere_column_name))
+    if (prewhere_actions && !task->remove_prewhere_column)
     {
-        if (task->remove_prewhere_column)
-            read_result.block.erase(prewhere_column_name);
-        else
-        {
-            auto & column = read_result.block.getByName(prewhere_column_name);
-            column.column = column.column->convertToFullColumnIfConst();
-        }
+        /// Convert const column to full here because it's cheaper to filter const column than full.
+        auto & column = read_result.block.getByName(prewhere_column_name);
+        column.column = column.column->convertToFullColumnIfConst();
     }
 
     read_result.block.checkNumberOfRows();
