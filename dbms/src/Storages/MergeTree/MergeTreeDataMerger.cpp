@@ -13,6 +13,7 @@
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -188,7 +189,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
-            && part->info.min_block < (*prev_part)->info.max_block)
+            && part->info.min_block <= (*prev_part)->info.max_block)
         {
             LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
         }
@@ -322,14 +323,20 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
 
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns, ExpressionActionsPtr primary_key_expressions,
+static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns,
+    const ExpressionActionsPtr & primary_key_expressions, const ExpressionActionsPtr & secondary_key_expressions,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names
 )
 {
-    Names key_columns_dup = primary_key_expressions->getRequiredColumns();
-    std::set<String> key_columns(key_columns_dup.cbegin(), key_columns_dup.cend());
+    Names primary_key_columns_dup = primary_key_expressions->getRequiredColumns();
+    std::set<String> key_columns(primary_key_columns_dup.cbegin(), primary_key_columns_dup.cend());
+    if (secondary_key_expressions)
+    {
+        Names secondary_key_columns_dup = secondary_key_expressions->getRequiredColumns();
+        key_columns.insert(secondary_key_columns_dup.begin(), secondary_key_columns_dup.end());
+    }
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -338,6 +345,10 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     /// Force version column for Replacing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
         key_columns.emplace(merging_params.version_column);
+
+    /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
+    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        key_columns.emplace(merging_params.sign_column);
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
@@ -455,7 +466,7 @@ public:
 
         merge_entry->bytes_read_uncompressed += value.bytes;
         merge_entry->rows_read += value.rows;
-        merge_entry->progress = average_elem_progress * merge_entry->rows_read;
+        merge_entry->progress.store(average_elem_progress * merge_entry->rows_read, std::memory_order_relaxed);
     };
 };
 
@@ -465,10 +476,9 @@ public:
 class MergeProgressCallbackVerticalStep : public MergeProgressCallback
 {
 public:
-
     MergeProgressCallbackVerticalStep(MergeList::Entry & merge_entry_, size_t num_total_rows_exact,
         const ColumnSizeEstimator & column_sizes, const String & column_name, UInt64 & watch_prev_elapsed_)
-    : MergeProgressCallback(merge_entry_, watch_prev_elapsed_), initial_progress(merge_entry->progress)
+    : MergeProgressCallback(merge_entry_, watch_prev_elapsed_), initial_progress(merge_entry->progress.load(std::memory_order_relaxed))
     {
         average_elem_progress = column_sizes.columnProgress(column_name, 1, num_total_rows_exact);
         updateWatch();
@@ -485,7 +495,9 @@ public:
 
         rows_read_internal += value.rows;
         Float64 local_progress = average_elem_progress * rows_read_internal;
-        merge_entry->progress = initial_progress + local_progress;
+
+        /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
+        merge_entry->progress.store(initial_progress + local_progress, std::memory_order_relaxed);
     };
 };
 
@@ -530,8 +542,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
-    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.merging_params,
-        gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.getSecondarySortExpression()
+            , data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, future_part.name, future_part.part_info);
@@ -581,7 +593,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
-        if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+        if (data.hasPrimaryKey())
             src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
         else
@@ -626,8 +638,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
-        case MergeTreeData::MergingParams::Unsorted:
-            merged_stream = std::make_unique<ConcatBlockInputStream>(src_streams);
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
+                    src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
             break;
 
         default:
@@ -666,7 +679,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             /// But now we are using inaccurate row-based estimation in Horizontal case for backward compability
             Float64 progress = (merge_alg == MergeAlgorithm::Horizontal)
                 ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
-                : std::min(1., merge_entry->progress);
+                : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));
 
             disk_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
         }
@@ -684,7 +697,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     {
         size_t sum_input_rows_exact = merge_entry->rows_read;
         merge_entry->columns_written = merging_column_names.size();
-        merge_entry->progress = column_sizes.keyColumnsProgress(sum_input_rows_exact, sum_input_rows_exact);
+        merge_entry->progress.store(column_sizes.keyColumnsProgress(sum_input_rows_exact, sum_input_rows_exact), std::memory_order_relaxed);
 
         BlockInputStreams column_part_streams(parts.size());
         NameSet offset_columns_written;
@@ -703,7 +716,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             const DataTypePtr & column_type = it_name_and_type->type;
             const String offset_column_name = Nested::extractTableName(column_name);
             Names column_name_{column_name};
-            Float64 progress_before = merge_entry->progress;
+            Float64 progress_before = merge_entry->progress.load(std::memory_order_relaxed);
             bool offset_written = offset_columns_written.count(offset_column_name);
 
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
@@ -720,7 +733,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
-            MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_settings, offset_written);
+            MergedColumnOnlyOutputStream column_to(data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_settings, offset_written);
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -741,9 +754,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             if (typeid_cast<const DataTypeArray *>(column_type.get()))
                 offset_columns_written.emplace(offset_column_name);
 
+            /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
+
             merge_entry->columns_written = merging_column_names.size() + column_num;
             merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
-            merge_entry->progress = progress_before + column_sizes.columnProgress(column_name, sum_input_rows_exact, sum_input_rows_exact);
+            merge_entry->progress.store(progress_before + column_sizes.columnProgress(column_name, sum_input_rows_exact, sum_input_rows_exact), std::memory_order_relaxed);
 
             if (merges_blocker.isCancelled())
                 throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
@@ -792,7 +807,8 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
     bool is_supported_storage =
         data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
         data.merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+        data.merging_params.mode == MergeTreeData::MergingParams::Replacing ||
+        data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
     bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
 

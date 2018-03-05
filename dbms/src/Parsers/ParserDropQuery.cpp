@@ -13,10 +13,9 @@ namespace DB
 
 bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_drop("DROP");
     ParserKeyword s_detach("DETACH");
+    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
@@ -28,6 +27,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String cluster_str;
     bool detach = false;
     bool if_exists = false;
+    bool temporary = false;
 
     if (!s_drop.ignore(pos, expected))
     {
@@ -53,6 +53,9 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
+        if (s_temporary.ignore(pos, expected))
+            temporary = true;
+
         if (!s_table.ignore(pos, expected))
             return false;
 
@@ -76,11 +79,12 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    auto query = std::make_shared<ASTDropQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTDropQuery>();
     node = query;
 
     query->detach = detach;
     query->if_exists = if_exists;
+    query->temporary = temporary;
     if (database)
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)

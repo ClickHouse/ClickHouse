@@ -13,6 +13,10 @@ namespace ErrorCodes
 }
 
 
+/** It's safe to access children without mutex as long as these methods are called before first call to read, readPrefix.
+  */
+
+
 String IBlockInputStream::getTreeID() const
 {
     std::stringstream s;
@@ -64,6 +68,7 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
     ostr << String(indent, ' ') << getName();
     if (multiplier > 1)
         ostr << " × " << multiplier;
+    //ostr << ": " << getHeader().dumpStructure();
     ostr << std::endl;
     ++indent;
 
@@ -85,53 +90,6 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
         }
     }
 }
-
-
-BlockInputStreams IBlockInputStream::getLeaves()
-{
-    BlockInputStreams res;
-    getLeavesImpl(res, nullptr);
-    return res;
-}
-
-
-void IBlockInputStream::getLeafRowsBytes(size_t & rows, size_t & bytes)
-{
-    BlockInputStreams leaves = getLeaves();
-    rows = 0;
-    bytes = 0;
-
-    for (BlockInputStreams::const_iterator it = leaves.begin(); it != leaves.end(); ++it)
-    {
-        if (const IProfilingBlockInputStream * profiling = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
-        {
-            const BlockStreamProfileInfo & info = profiling->getProfileInfo();
-            rows += info.rows;
-            bytes += info.bytes;
-        }
-    }
-}
-
-
-void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, const BlockInputStreamPtr & this_shared_ptr)
-{
-    if (children.empty())
-    {
-        if (this_shared_ptr)
-            res.push_back(this_shared_ptr);
-    }
-    else
-        for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-            (*it)->getLeavesImpl(res, *it);
-}
-
-/// By default all instances is different streams
-String IBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << getName() << "(" << this << ")";
-    return res.str();
-};
 
 }
 

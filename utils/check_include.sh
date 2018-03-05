@@ -4,10 +4,11 @@
 # Finds missing #include <...>
 # prints compile time, number of includes, use with sort: ./check_include.sh 2>&1 | sort -rk3
 pwd=`pwd`
+BUILD_DIR=${BUILD_DIR:=./build}
 inc="-I. \
 -I./contrib/libdivide \
--I./contrib/libre2 \
--I./build/contrib/libre2 \
+-I./contrib/re2 \
+-I${BUILD_DIR}/contrib/re2_st \
 -I./contrib/libfarmhash \
 -I./contrib/libmetrohash/src \
 -I./contrib/double-conversion \
@@ -15,7 +16,7 @@ inc="-I. \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
 -I./contrib/libtcmalloc/include \
--I./build/contrib/zlib-ng \
+-I${BUILD_DIR}/contrib/zlib-ng \
 -I./contrib/zlib-ng \
 -I./contrib/poco/MongoDB/include \
 -I./contrib/poco/XML/include \
@@ -25,17 +26,18 @@ inc="-I. \
 -I./contrib/poco/Net/include \
 -I./contrib/poco/Util/include \
 -I./contrib/poco/Foundation/include \
--I./contrib/libboost/boost_1_62_0 \
+-I./contrib/boost/libs/*/include \
+-I./contrib/boost \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
--I./build/libs/libcommon/include \
+-I${BUILD_DIR}/libs/libcommon/include \
 -I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
 -I./dbms/src \
--I./build/dbms/src"
+-I${BUILD_DIR}/dbms/src"
 
 if [ -z $1 ]; then
     cd ..
@@ -43,5 +45,5 @@ if [ -z $1 ]; then
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "
-    echo -e "#include <$1> \n int main() {return 0;}" | time --format "%e %M" g++-7 -c -std=c++1z $inc -x c++ -
+    echo -e "#include <$1> \n int main() {return 0;}" | time --format "%e %M" ${CXX:=g++-7} -c -std=c++1z $inc -x c++ -
 fi

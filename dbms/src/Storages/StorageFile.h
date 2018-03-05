@@ -52,6 +52,8 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
+    String getDataPath() const override { return path; }
+
 protected:
     friend class StorageFileBlockInputStream;
     friend class StorageFileBlockOutputStream;
@@ -77,7 +79,6 @@ private:
 
     std::string table_name;
     std::string format_name;
-    NamesAndTypesList columns;
     Context & context_global;
 
     std::string path;

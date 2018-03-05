@@ -15,13 +15,14 @@
 #include <vector>
 
 // TODO: https://stackoverflow.com/questions/16464032/how-to-enhance-this-variable-dumping-debug-macro-to-be-variadic
-#define DUMPS(VAR) #VAR " = " << VAR
+#define DUMPS(VAR) #VAR " = " << (VAR)
 #define DUMPHEAD std::cerr << __FILE__ << ":" << __LINE__ << " "
 #define DUMP(V1) DUMPHEAD << DUMPS(V1) << "\n";
 #define DUMP2(V1, V2) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << "\n";
 #define DUMP3(V1, V2, V3) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3) << "\n";
 #define DUMP4(V1, V2, V3, V4) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << "\n";
 #define DUMP5(V1, V2, V3, V4, V5) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << ", " << DUMPS(V5) << "\n";
+#define DUMP6(V1, V2, V3, V4, V5, V6) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << ", " << DUMPS(V5) << ", " << DUMPS(V6) << "\n";
 
 
 namespace std
@@ -74,9 +75,25 @@ ostream & operator<<(ostream & stream, const map<K, V> & what)
 }
 
 template <typename K, typename V>
+ostream & operator<<(ostream & stream, const multimap<K, V> & what)
+{
+    stream << "multimap(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K, typename V>
 ostream & operator<<(ostream & stream, const unordered_map<K, V> & what)
 {
     stream << "unordered_map(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K, typename V>
+ostream & operator<<(ostream & stream, const unordered_multimap<K, V> & what)
+{
+    stream << "unordered_multimap(size = " << what.size() << ")";
     dumpContainer(stream, what);
     return stream;
 }
@@ -90,9 +107,25 @@ ostream & operator<<(ostream & stream, const set<K> & what)
 }
 
 template <typename K>
+ostream & operator<<(ostream & stream, const multiset<K> & what)
+{
+    stream << "multiset(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K>
 ostream & operator<<(ostream & stream, const unordered_set<K> & what)
 {
     stream << "unordered_set(size = " << what.size() << ")";
+    dumpContainer(stream, what);
+    return stream;
+}
+
+template <typename K>
+ostream & operator<<(ostream & stream, const unordered_multiset<K> & what)
+{
+    stream << "unordered_multiset(size = " << what.size() << ")";
     dumpContainer(stream, what);
     return stream;
 }

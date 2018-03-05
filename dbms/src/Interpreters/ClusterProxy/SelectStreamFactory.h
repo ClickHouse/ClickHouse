@@ -14,6 +14,7 @@ class SelectStreamFactory final : public IStreamFactory
 {
 public:
     SelectStreamFactory(
+        const Block & header,
         QueryProcessingStage::Enum processed_stage,
         QualifiedTableName main_table,
         const Tables & external_tables);
@@ -25,9 +26,10 @@ public:
         BlockInputStreams & res) override;
 
 private:
+    const Block header;
     QueryProcessingStage::Enum processed_stage;
     QualifiedTableName main_table;
-    const Tables & external_tables;
+    Tables external_tables;
 };
 
 }

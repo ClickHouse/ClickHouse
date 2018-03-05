@@ -1,5 +1,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
+#include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <Storages/IStorage.h>
@@ -34,7 +35,7 @@ void CreatingSetsBlockInputStream::readPrefixImpl()
 }
 
 
-const Block & CreatingSetsBlockInputStream::getTotals()
+Block CreatingSetsBlockInputStream::getTotals()
 {
     auto input = dynamic_cast<IProfilingBlockInputStream *>(children.back().get());
 
@@ -96,7 +97,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_set)
         {
-            if (!subquery.set->insertFromBlock(block))
+            if (!subquery.set->insertFromBlock(block, /*fill_set_elements=*/false))
                 done_with_set = true;
         }
 
@@ -108,6 +109,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_table)
         {
+            block = materializeBlock(block);
             table_out->write(block);
 
             rows_to_transfer += block.rows();
@@ -146,24 +148,20 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     if (table_out)
         table_out->writeSuffix();
 
-    /// We will display information about how many rows and bytes are read.
-    size_t rows = 0;
-    size_t bytes = 0;
-
     watch.stop();
-
-    subquery.source->getLeafRowsBytes(rows, bytes);
 
     size_t head_rows = 0;
     if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
     {
-        head_rows = profiling_in->getProfileInfo().rows;
+        const BlockStreamProfileInfo & profile_info = profiling_in->getProfileInfo();
+
+        head_rows = profile_info.rows;
 
         if (subquery.join)
             subquery.join->setTotals(profiling_in->getTotals());
     }
 
-    if (rows != 0)
+    if (head_rows != 0)
     {
         std::stringstream msg;
         msg << std::fixed << std::setprecision(3);
@@ -176,9 +174,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         if (subquery.table)
             msg << "Table with " << head_rows << " rows. ";
 
-        msg << "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
-            << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.";
-
+        msg << "In " << watch.elapsedSeconds() << " sec.";
         LOG_DEBUG(log, msg.rdbuf());
     }
     else

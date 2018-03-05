@@ -68,3 +68,6 @@ target_link_libraries (allocator clickhouse_common_io)
 
 add_executable (cow_columns cow_columns.cpp)
 target_link_libraries (cow_columns clickhouse_common_io)
+
+add_executable (stopwatch stopwatch.cpp)
+target_link_libraries (stopwatch clickhouse_common_io)

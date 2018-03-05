@@ -78,20 +78,20 @@ public:
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
+    bool onlyNull() const override { return nested_column->isDummy(); }
 
 
     /// Return the column that represents values.
-    IColumn & getNestedColumn() { return *nested_column->assumeMutable(); }
+    IColumn & getNestedColumn() { return nested_column->assumeMutableRef(); }
     const IColumn & getNestedColumn() const { return *nested_column; }
 
-    //ColumnPtr & getNestedColumnPtr() { return nested_column->assumeMutable(); }
     const ColumnPtr & getNestedColumnPtr() const { return nested_column; }
 
     /// Return the column that represents the byte map.
     //ColumnPtr & getNullMapColumnPtr() { return null_map; }
     const ColumnPtr & getNullMapColumnPtr() const { return null_map; }
 
-    ColumnUInt8 & getNullMapColumn() { return static_cast<ColumnUInt8 &>(*null_map->assumeMutable()); }
+    ColumnUInt8 & getNullMapColumn() { return static_cast<ColumnUInt8 &>(null_map->assumeMutableRef()); }
     const ColumnUInt8 & getNullMapColumn() const { return static_cast<const ColumnUInt8 &>(*null_map); }
 
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sstream>
+#include <optional>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -17,8 +18,7 @@ namespace DB
 {
 
 class IFunction;
-using FunctionPtr = std::shared_ptr<IFunction>;
-
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 /** Range with open or closed ends; possibly unbounded.
   */
@@ -189,6 +189,32 @@ public:
     String toString() const;
 };
 
+/// Class that extends arbitrary objects with infinities, like +-inf for floats
+class FieldWithInfinity
+{
+public:
+    enum Type
+    {
+        MINUS_INFINITY = -1,
+        NORMAL = 0,
+        PLUS_INFINITY = 1
+    };
+
+    explicit FieldWithInfinity(const Field & field_);
+    FieldWithInfinity(Field && field_);
+
+    static FieldWithInfinity getMinusInfinity();
+    static FieldWithInfinity getPlusinfinity();
+
+    bool operator<(const FieldWithInfinity & other) const;
+    bool operator==(const FieldWithInfinity & other) const;
+
+private:
+    Field field;
+    Type type;
+
+    FieldWithInfinity(const Type type_);
+};
 
 /** Condition on the index.
   *
@@ -266,12 +292,14 @@ public:
         size_t key_column;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         ASTPtr in_function;
+        using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
+        MergeTreeSetIndexPtr set_index;
 
         /** A chain of possibly monotone functions.
           * If the primary key column is wrapped in functions that can be monotonous in some value ranges
           * (for example: -toFloat64(toDayOfWeek(date))), then here the functions will be located: toDayOfWeek, toFloat64, negate.
           */
-        using MonotonicFunctionsChain = std::vector<FunctionPtr>;
+        using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
         mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
     };
 
@@ -280,6 +308,11 @@ public:
 
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
     static const AtomMap atom_map;
+
+    static std::optional<Range> applyMonotonicFunctionsChainToRange(
+        Range key_range,
+        RPNElement::MonotonicFunctionsChain & functions,
+        DataTypePtr current_type);
 
 private:
     using RPN = std::vector<RPNElement>;
@@ -323,6 +356,20 @@ private:
         DataTypePtr & out_primary_key_column_type,
         Field & out_value,
         DataTypePtr & out_type);
+
+    void getPKTuplePositionMapping(
+        const ASTPtr & node,
+        const Context & context,
+        std::vector<MergeTreeSetIndex::PKTuplePositionMapping> & indexes_mapping,
+        const size_t tuple_index,
+        size_t & out_primary_key_column_num);
+
+    bool isTupleIndexable(
+        const ASTPtr & node,
+        const Context & context,
+        RPNElement & out,
+        const SetPtr & prepared_set,
+        size_t & out_primary_key_column_num);
 
     RPN rpn;
 

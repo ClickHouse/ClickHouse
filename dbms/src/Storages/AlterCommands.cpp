@@ -39,8 +39,7 @@ void AlterCommand::apply(
         {
             throw Exception{
                 "Cannot add column " + column_name + ": column with this name already exists",
-                DB::ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
         }
 
         const auto add_column = [this] (NamesAndTypesList & columns)
@@ -57,7 +56,7 @@ void AlterCommand::apply(
 
                 if (reverse_insert_it == columns.rend())
                     throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                                    DB::ErrorCodes::ILLEGAL_COLUMN);
+                                    ErrorCodes::ILLEGAL_COLUMN);
                 else
                 {
                     /// base returns an iterator that is already offset by one element to the right
@@ -107,7 +106,7 @@ void AlterCommand::apply(
             !remove_column(alias_columns))
         {
             throw Exception("Wrong column name. Cannot find column " + column_name + " to drop",
-                            DB::ErrorCodes::ILLEGAL_COLUMN);
+                            ErrorCodes::ILLEGAL_COLUMN);
         }
     }
     else if (type == MODIFY_COLUMN)
@@ -128,7 +127,7 @@ void AlterCommand::apply(
                 std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
             if (it == columns.end())
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to modify",
-                                DB::ErrorCodes::ILLEGAL_COLUMN);
+                                ErrorCodes::ILLEGAL_COLUMN);
 
             return it;
         };
@@ -217,8 +216,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 if (std::end(columns) != column_it)
                     throw Exception{
                         "Cannot add column " + column_name + ": column with this name already exists",
-                        DB::ErrorCodes::ILLEGAL_COLUMN
-                    };
+                        ErrorCodes::ILLEGAL_COLUMN};
             }
             else if (command.type == AlterCommand::MODIFY_COLUMN)
             {
@@ -226,8 +224,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 if (std::end(columns) == column_it)
                     throw Exception{
                         "Wrong column name. Cannot find column " + column_name + " to modify",
-                        DB::ErrorCodes::ILLEGAL_COLUMN
-                    };
+                        ErrorCodes::ILLEGAL_COLUMN};
 
                 columns.erase(column_it);
                 defaults.erase(column_name);
@@ -245,8 +242,8 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                     const auto column_type_raw_ptr = command.data_type.get();
 
                     default_expr_list->children.emplace_back(setAlias(
-                        makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
-                            std::make_shared<ASTLiteral>(StringRange(), Field(column_type_raw_ptr->getName()))),
+                        makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
+                            std::make_shared<ASTLiteral>(Field(column_type_raw_ptr->getName()))),
                         final_column_name));
 
                     default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -265,8 +262,21 @@ void AlterCommands::validate(IStorage * table, const Context & context)
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
+            for (const auto & default_column : defaults)
+            {
+                const auto & default_expression = default_column.second.expression;
+                const auto actions = ExpressionAnalyzer{default_expression, context, {}, columns}.getActions(true);
+                const auto required_columns = actions->getRequiredColumns();
+
+                if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
+                    throw Exception(
+                        "Cannot drop column " + command.column_name + ", because column " + default_column.first +
+                        " depends on it", ErrorCodes::ILLEGAL_COLUMN);
+            }
+
             auto found = false;
             for (auto it = std::begin(columns); it != std::end(columns);)
+            {
                 if (AlterCommand::namesEqual(command.column_name, *it))
                 {
                     found = true;
@@ -274,16 +284,19 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 }
                 else
                     ++it;
+            }
 
             for (auto it = std::begin(defaults); it != std::end(defaults);)
+            {
                 if (AlterCommand::namesEqual(command.column_name, { it->first, nullptr }))
                     it = defaults.erase(it);
                 else
                     ++it;
+            }
 
             if (!found)
                 throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
-                    DB::ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 
@@ -299,8 +312,8 @@ void AlterCommands::validate(IStorage * table, const Context & context)
         const auto & column_type_ptr = column_it->type;
 
             default_expr_list->children.emplace_back(setAlias(
-                makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
-                    std::make_shared<ASTLiteral>(StringRange(), Field(column_type_ptr->getName()))),
+                makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
+                    std::make_shared<ASTLiteral>(Field(column_type_ptr->getName()))),
                 column_name));
 
         default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), tmp_column_name));
@@ -345,7 +358,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                 }
 
                 command_ptr->default_expression = makeASTFunction("CAST", command_ptr->default_expression->clone(),
-                    std::make_shared<ASTLiteral>(StringRange(), Field(explicit_type->getName())));
+                    std::make_shared<ASTLiteral>(Field(explicit_type->getName())));
             }
         }
         else

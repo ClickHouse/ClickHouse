@@ -44,7 +44,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -56,8 +55,8 @@ StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList 
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    name(name_), columns(columns_), context(context_),
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    name(name_), context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
@@ -71,25 +70,15 @@ StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList 
 class BufferBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_)
-        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
+    BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage_)
+        : column_names(column_names_.begin(), column_names_.end()), buffer(buffer_), storage(storage_) {}
 
-    String getName() const { return "Buffer"; }
+    String getName() const override { return "Buffer"; }
 
-    String getID() const
-    {
-        std::stringstream res;
-        res << "Buffer(" << &buffer;
-
-        for (const auto & name : column_names)
-            res << ", " << name;
-
-        res << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); };
 
 protected:
-    Block readImpl()
+    Block readImpl() override
     {
         Block res;
 
@@ -111,6 +100,7 @@ protected:
 private:
     Names column_names;
     StorageBuffer::Buffer & buffer;
+    const StorageBuffer & storage;
     bool has_been_read = false;
 };
 
@@ -140,14 +130,14 @@ BlockInputStreams StorageBuffer::read(
     BlockInputStreams streams_from_buffers;
     streams_from_buffers.reserve(num_shards);
     for (auto & buf : buffers)
-        streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf));
+        streams_from_buffers.push_back(std::make_shared<BufferBlockInputStream>(column_names, buf, *this));
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query_info.query, context, processed_stage, 0, stream).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, {}, processed_stage, 0, stream).execute().in;
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;
@@ -159,9 +149,7 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
-    if (!blocksHaveEqualStructure(from, to))
-        throw Exception("Cannot append block to buffer: block has different structure. "
-            "Block: " + from.dumpStructure() + ", Buffer: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+    assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
@@ -216,6 +204,8 @@ class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -338,6 +328,12 @@ BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settin
 
 void StorageBuffer::startup()
 {
+    if (context.getSettingsRef().limits.readonly)
+    {
+        LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
+            << " Set apropriate system_profile to fix this.");
+    }
+
     flush_thread = std::thread(&StorageBuffer::flushThread, this);
 }
 
@@ -562,7 +558,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(columns_intersection.size());
     for (const String & column : columns_intersection)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column));
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column, ASTIdentifier::Column));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
 

@@ -53,8 +53,6 @@ public:
     std::string getName() const override { return "Buffer"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -82,7 +80,6 @@ public:
 
 private:
     String name;
-    NamesAndTypesList columns;
 
     Context & context;
 

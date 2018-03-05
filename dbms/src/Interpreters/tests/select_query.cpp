@@ -36,7 +36,7 @@ try
 
     loadMetadata(context);
 
-    DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/");
+    DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/", context);
     context.addDatabase("system", system);
     system->loadTables(context, nullptr, false);
     attachSystemTablesLocal(*context.getDatabase("system"));

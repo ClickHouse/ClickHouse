@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int UNFINISHED;
     extern const int UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -227,6 +228,15 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
         max_tasks_in_queue = std::max(static_cast<UInt64>(1), config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+
+        if (config->has(prefix + ".profile"))
+            context.setSetting("profile", config->getString(prefix + ".profile"));
+    }
+
+    if (context.getSettingsRef().limits.readonly)
+    {
+        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries"
+            << " Set apropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -633,13 +643,6 @@ void DDLWorker::processTaskAlter(
 
     if (execute_once_on_replica)
     {
-        /// The following code can perform ALTER twice if:
-        ///  current server acquires the lock, executes replicated alter,
-        ///  loses zookeeper connection and doesn't have time to create /executed node, second server executes replicated alter again
-        /// To avoid this problem alter() method of replicated tables should be changed and takes into account ddl query id tag.
-        if (!context.getSettingsRef().distributed_ddl_allow_replicated_alter)
-            throw Exception("Distributed DDL alters for replicated tables don't work properly yet", ErrorCodes::NOT_IMPLEMENTED);
-
         /// Generate unique name for shard node, it will be used to execute the query by only single host
         /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
         /// Where replica_name is 'escape(replica_ip_address):replica_port'
@@ -938,7 +941,7 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 public:
 
     DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
-    : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
+        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
@@ -952,7 +955,7 @@ public:
         for (const HostID & host: entry.hosts)
             waiting_hosts.emplace(host.toString());
 
-        setTotalRowsApprox(entry.hosts.size());
+        addTotalRowsApprox(entry.hosts.size());
 
         timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
     }
@@ -962,10 +965,7 @@ public:
         return "DDLQueryStatusInputSream";
     }
 
-    String getID() const override
-    {
-        return "DDLQueryStatusInputSream(" + node_path + ")";
-    }
+    Block getHeader() const override { return sample; };
 
     Block readImpl() override
     {
@@ -981,21 +981,32 @@ public:
             if (is_cancelled)
                 return res;
 
-            auto elapsed_seconds = watch.elapsedSeconds();
-            if (timeout_seconds >= 0 && elapsed_seconds > timeout_seconds)
+            if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
             {
-                throw Exception("Watching task " + node_path + " is executing too long (" + toString(std::round(elapsed_seconds)) + " sec.)",
-                                ErrorCodes::TIMEOUT_EXCEEDED);
+                size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
+                size_t num_active_hosts = current_active_hosts.size();
+
+                std::stringstream msg;
+                msg << "Watching task " << node_path << " is executing longer than distributed_ddl_task_timeout"
+                    << " (=" << timeout_seconds << ") seconds."
+                    << " There are " << num_unfinished_hosts << " unfinished hosts"
+                    << " (" << num_active_hosts << " of them are currently active)"
+                    << ", they are going to execute the query in background";
+
+                throw Exception(msg.str(), ErrorCodes::TIMEOUT_EXCEEDED);
             }
 
             if (num_hosts_finished != 0 || try_number != 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(static_cast<size_t>(20), try_number + 1)));
+            {
+                auto current_sleep_for = std::chrono::milliseconds(std::min(static_cast<size_t>(1000), 50 * (try_number + 1)));
+                std::this_thread::sleep_for(current_sleep_for);
+            }
 
             /// TODO: add shared lock
             if (!zookeeper->exists(node_path))
             {
                 throw Exception("Cannot provide query execution status. The query's node " + node_path
-                                + " had been deleted by the cleaner since it was finished (or its lifetime is expired)",
+                                + " has been deleted by the cleaner since it was finished (or its lifetime is expired)",
                                 ErrorCodes::UNFINISHED);
             }
 
@@ -1004,7 +1015,7 @@ public:
             if (new_hosts.empty())
                 continue;
 
-            Strings cur_active_hosts = getChildrenAllowNoNode(zookeeper, node_path + "/active");
+            current_active_hosts = getChildrenAllowNoNode(zookeeper, node_path + "/active");
 
             MutableColumns columns = sample.cloneEmptyColumns();
             for (const String & host_id : new_hosts)
@@ -1020,12 +1031,14 @@ public:
                 UInt16 port;
                 Cluster::Address::fromString(host_id, host, port);
 
+                ++num_hosts_finished;
+
                 columns[0]->insert(host);
                 columns[1]->insert(static_cast<UInt64>(port));
                 columns[2]->insert(static_cast<Int64>(status.code));
                 columns[3]->insert(status.message);
-                columns[4]->insert(static_cast<UInt64>(waiting_hosts.size() - (++num_hosts_finished)));
-                columns[5]->insert(static_cast<UInt64>(cur_active_hosts.size()));
+                columns[4]->insert(static_cast<UInt64>(waiting_hosts.size() - num_hosts_finished));
+                columns[5]->insert(static_cast<UInt64>(current_active_hosts.size()));
             }
             res = sample.cloneWithColumns(std::move(columns));
         }
@@ -1087,6 +1100,7 @@ private:
     NameSet waiting_hosts;  /// hosts from task host list
     NameSet finished_hosts; /// finished hosts from host list
     NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
+    Strings current_active_hosts; /// Hosts that were in active state at the last check
     size_t num_hosts_finished = 0;
 
     Int64 timeout_seconds = 120;
@@ -1095,21 +1109,18 @@ private:
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
 {
+    /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
-
-    /// Remove FORMAT ... INTO OUTFILE if exists
-    if (dynamic_cast<const ASTQueryWithOutput *>(query_ptr_.get()))
-    {
-        auto query_with_output = dynamic_cast<ASTQueryWithOutput *>(query_ptr.get());
-        query_with_output->out_file = nullptr;
-        query_with_output->format = nullptr;
-    }
+    ASTQueryWithOutput::resetOutputASTIfExist(*query_ptr);
 
     auto query = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
     if (!query)
     {
         throw Exception("Distributed execution is not supported for such DDL queries", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    if (!context.getSettingsRef().allow_distributed_ddl)
+        throw Exception("Distributed DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
     if (auto query_alter = dynamic_cast<const ASTAlterQuery *>(query_ptr.get()))
     {
@@ -1142,7 +1153,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         return io;
 
     auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, entry, context);
-    io.in_sample = stream->getSampleBlock();
     io.in = std::move(stream);
     return io;
 }

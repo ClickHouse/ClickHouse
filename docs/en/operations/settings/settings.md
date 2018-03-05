@@ -95,13 +95,13 @@ Used for the same purpose as `max_block_size`, but it sets the recommended block
 However, the block size cannot be more than `max_block_size` rows.
 Disabled by default (set to 0). It only works when reading from MergeTree engines.
 
-<a name="settings-log_queries"></a>
+<a name="settings_settings-log_queries"></a>
 
 ## log_queries
 
 Setting up query the logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_setings/settings.md#server_settings-query_log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_settings/settings.md#server_settings-query_log) server configuration parameter.
 
 **Example**:
 

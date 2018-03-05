@@ -108,7 +108,8 @@ public:
     ~ReadBufferFromKafkaConsumer() { reset(); }
 
     /// Commit messages read with this consumer
-    void commit() {
+    void commit()
+    {
         LOG_TRACE(log, "Committing " << read_messages << " messages");
         if (read_messages == 0)
             return;
@@ -160,13 +161,6 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "Kafka(" << storage.topics.size() << ", " << storage.format_name << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
         if (isCancelled())
@@ -174,6 +168,8 @@ public:
 
         return reader->read();
     }
+
+    Block getHeader() const override { return reader->getHeader(); };
 
     void readPrefixImpl() override
     {
@@ -228,9 +224,9 @@ StorageKafka::StorageKafka(
     const ColumnDefaults & column_defaults_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, const String & schema_name_, size_t num_consumers_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
     table_name(table_name_), database_name(database_name_), context(context_),
-    columns(columns_), topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
+    topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
     semaphore(0, num_consumers_), mutex(), consumers(), event_update()
 {

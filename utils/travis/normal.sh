@@ -7,18 +7,20 @@
 set -e
 set -x
 
-TEST_TRUE=${TEST_TRUE:=false}
+date
 
 # clean not used ~600mb
 [ -n "$TRAVIS" ] && rm -rf .git contrib/poco/openssl
 
 ccache -s
-ccache -M 4G
+ccache -M ${CCACHE_SIZE:=4G}
 df -h
+
+date
 
 mkdir -p build
 cd build
-cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` \
+cmake .. -DCMAKE_CXX_COMPILER=`which $DEB_CXX $CXX` -DCMAKE_C_COMPILER=`which $DEB_CC $CC` \
     `# Does not optimize to speedup build, skip debug info to use less disk` \
     -DCMAKE_C_FLAGS_ADD="-O0 -g0" -DCMAKE_CXX_FLAGS_ADD="-O0 -g0" \
     `# ignore ccache disabler on trusty` \
@@ -26,9 +28,11 @@ cmake .. -DCMAKE_CXX_COMPILER=`which $CXX` -DCMAKE_C_COMPILER=`which $CC` \
     `# Use all possible contrib libs from system` \
     -DUNBUNDLED=1 \
     `# Disable all features` \
-    -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DUSE_EMBEDDED_COMPILER=0 -DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 $CMAKE_FLAGS \
+    -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 $CMAKE_FLAGS \
     && make -j `nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4` clickhouse-bundle \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00428 requires sudo (not all vms allow this)` \
-    && ( ( cd .. && env TEST_OPT="--no-long --no-shard --skip 00281 00428 $TEST_OPT" bash -x dbms/tests/clickhouse-test-server ) || $TEST_TRUE )
+    && ( [ ${TEST_RUN=1} ] && ( ( cd .. && env TEST_OPT="--skip long compile 00428 $TEST_OPT" bash -x dbms/tests/clickhouse-test-server ) || ${TEST_TRUE=false} ) || true )
+
+date

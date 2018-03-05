@@ -87,8 +87,6 @@ public:
 
     void addParameters(const Parameters & params);
 
-    explicit ASTAlterQuery(StringRange range_ = StringRange());
-
     /** Get the text that identifies this element. */
     String getID() const override;
 

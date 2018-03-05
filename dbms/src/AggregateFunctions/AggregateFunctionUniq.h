@@ -206,9 +206,7 @@ template <> struct AggregateFunctionUniqTraits<UInt128>
 {
     static UInt64 hash(UInt128 x)
     {
-        SipHash hash;
-        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
-        return hash.get64();
+        return sipHash64(x);
     }
 };
 
@@ -243,9 +241,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<UInt128>
 {
     static UInt32 hash(UInt128 x)
     {
-        SipHash hash;
-        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
-        return static_cast<UInt32>(hash.get64());
+        return sipHash64(x);
     }
 };
 
