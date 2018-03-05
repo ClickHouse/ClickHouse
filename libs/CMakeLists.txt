@@ -3,6 +3,10 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+if (MSVC)
+    add_definitions (-Dssize_t=unsigned)
+endif ()
+
 add_subdirectory (libcommon)
 add_subdirectory (libpocoext)
 add_subdirectory (libdaemon)

@@ -27,6 +27,10 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+if (MSVC)
+    add_definitions (-Dssize_t=unsigned)
+endif ()
+
 find_package (Threads)
 
 add_subdirectory (src)
