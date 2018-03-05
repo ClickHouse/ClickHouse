@@ -54,6 +54,7 @@ private:
 
     IServer & server;
     Poco::Logger * log;
+    String display_name;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
