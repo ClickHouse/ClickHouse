@@ -318,7 +318,15 @@ void DistributedBlockOutputStream::writeSuffix()
                     pool->schedule([&job] () { job.stream->writeSuffix(); });
             }
 
-        pool->wait();
+        try
+        {
+            pool->wait();
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage(getCurrentStateDescription());
+            throw;
+        }
 
         LOG_DEBUG(&Logger::get("DistributedBlockOutputStream"), getCurrentStateDescription());
     }
