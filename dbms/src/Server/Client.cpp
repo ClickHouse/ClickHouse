@@ -484,6 +484,12 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
         server_display_name = connection->getServerDisplayName();
+        
+        if (server_display_name.length() == 0)
+        {
+            server_display_name = config().getString("host", "localhost");
+        }
+
         if (is_interactive)
         {
             std::cout << "Connected to " << server_name
