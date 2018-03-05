@@ -111,6 +111,9 @@ public:
     /** Ask to abort the receipt of data as soon as possible.
       * By default - just sets the flag is_cancelled and asks that all children be interrupted.
       * This function can be called several times, including simultaneously from different threads.
+      * Have two modes:
+      *  with kill = false only is_cancelled is set - streams will stop silently with returning some processed data.
+      *  with kill = true also is_killed set - queries will stop with exception.
       */
     virtual void cancel(bool kill = false);
 

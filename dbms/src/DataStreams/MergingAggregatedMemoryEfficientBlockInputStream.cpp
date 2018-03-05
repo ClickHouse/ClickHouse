@@ -268,7 +268,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEffici
     try
     {
         if (!all_read)
-            cancel();
+            cancel(false);
 
         finalize();
     }

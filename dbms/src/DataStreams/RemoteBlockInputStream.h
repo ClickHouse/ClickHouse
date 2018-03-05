@@ -62,7 +62,7 @@ public:
       */
     void progress(const Progress & /*value*/) override {}
 
-    void cancel(bool kill = false) override;
+    void cancel(bool kill) override;
 
     String getName() const override { return "Remote"; }
 

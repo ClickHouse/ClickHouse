@@ -99,7 +99,7 @@ public:
         try
         {
             if (!all_read)
-                cancel();
+                cancel(false);
 
             finalize();
         }
@@ -112,7 +112,7 @@ public:
     /** Different from the default implementation by trying to stop all sources,
       * skipping failed by execution.
       */
-    void cancel(bool kill = false) override
+    void cancel(bool kill) override
     {
         if (kill)
             is_killed = true;
@@ -284,7 +284,7 @@ private:
             ///  and the exception is lost.
 
             parent.output_queue.push(exception);
-            parent.cancel();    /// Does not throw exceptions.
+            parent.cancel(false);    /// Does not throw exceptions.
         }
 
         Self & parent;
