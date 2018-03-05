@@ -30,7 +30,7 @@
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include "ConfigReloader.h"
+#include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
 #include "StatusFile.h"
@@ -228,7 +228,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         std::move(main_config_zk_node_cache),
-        [&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+        [&](ConfigurationPtr config)
+        {
+            buildLoggers(*config);
+            global_context->setClustersConfig(config);
+        },
         /* already_loaded = */ true);
 
     /// Initialize users config reloader.
@@ -468,6 +472,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        main_config_reloader->start();
+        users_config_reloader->start();
 
         {
             std::stringstream message;

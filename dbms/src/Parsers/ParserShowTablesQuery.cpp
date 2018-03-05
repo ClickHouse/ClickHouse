@@ -15,8 +15,6 @@ namespace DB
 
 bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_show("SHOW");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_tables("TABLES");
@@ -66,8 +64,6 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else
             return false;
     }
-
-    query->range = StringRange(begin, pos);
 
     if (database)
         query->from = typeid_cast<ASTIdentifier &>(*database).name;

@@ -140,6 +140,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ProfileEvents::increment(ProfileEvents::Query);
     time_t current_time = time(nullptr);
 
+    context.setQueryContext(context);
+
     const Settings & settings = context.getSettingsRef();
 
     ParserQuery parser(end);
@@ -223,6 +225,20 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 stream->setProgressCallback(context.getProgressCallback());
                 stream->setProcessListElement(context.getProcessListElement());
+
+                /// Limits on the result, the quota on the result, and also callback for progress.
+                /// Limits apply only to the final result.
+                if (stage == QueryProcessingStage::Complete)
+                {
+                    IProfilingBlockInputStream::LocalLimits limits;
+                    limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
+                    limits.max_rows_to_read = settings.limits.max_result_rows;
+                    limits.max_bytes_to_read = settings.limits.max_result_bytes;
+                    limits.read_overflow_mode = settings.limits.result_overflow_mode;
+
+                    stream->setLimits(limits);
+                    stream->setQuota(quota);
+                }
             }
         }
 

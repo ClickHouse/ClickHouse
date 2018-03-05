@@ -27,8 +27,9 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -199,8 +200,8 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
                 const auto data_type_ptr = columns.back().type.get();
 
                 default_expr_list->children.emplace_back(setAlias(
-                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(StringRange(), tmp_column_name),
-                        std::make_shared<ASTLiteral>(StringRange(), Field(data_type_ptr->getName()))), final_column_name));
+                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
+                        std::make_shared<ASTLiteral>(Field(data_type_ptr->getName()))), final_column_name));
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
             }
             else
@@ -233,7 +234,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
                 if (!explicit_type->equals(*deduced_type))
                 {
                     col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
-                        std::make_shared<ASTLiteral>(StringRange(), explicit_type->getName()));
+                        std::make_shared<ASTLiteral>(explicit_type->getName()));
 
                     col_decl_ptr->children.clear();
                     col_decl_ptr->children.push_back(col_decl_ptr->type);
@@ -293,7 +294,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, pos, end, "data type");
-        column_declaration->type->query_string = type_name;
+        column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -321,7 +322,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, pos, end, "data type");
-        column_declaration->type->query_string = type_name;
+        column_declaration->type->owned_string = type_name;
 
         const auto it = column_defaults.find(column.name);
         if (it != std::end(column_defaults))
@@ -474,7 +475,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     Block as_select_sample;
     if (create.select && (!create.attach || !create.columns))
-        as_select_sample = InterpreterSelectQuery::getSampleBlock(create.select->clone(), context);
+        as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;
     String as_table_name = create.as_table;
@@ -504,7 +505,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (!create.is_temporary)
         {
             database = context.getDatabase(database_name);
-            data_path = database->getDataPath(context);
+            data_path = database->getDataPath();
 
             /** If the table already exists, and the request specifies IF NOT EXISTS,
               *  then we allow concurrent CREATE queries (which do nothing).

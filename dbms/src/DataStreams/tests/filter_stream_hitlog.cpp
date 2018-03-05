@@ -101,7 +101,6 @@ int main(int, char **)
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
-        std::cerr << ast->getTreeID() << std::endl;
 
         /// create an object of an existing hit log table
 

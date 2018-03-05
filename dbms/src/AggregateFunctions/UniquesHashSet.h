@@ -59,7 +59,7 @@
 
 
 /** This hash function is not the most optimal, but UniquesHashSet states counted with it,
-  * stored in many places on disks (in the Meter), so it continues to be used.
+  * stored in many places on disks (in the Yandex.Metrika), so it continues to be used.
   */
 struct UniquesHashSetDefaultHash
 {
@@ -337,8 +337,8 @@ public:
         /** Correction of a systematic error due to collisions during hashing in UInt32.
           * `fixed_res(res)` formula
           * - with how many different elements of fixed_res,
-          *   when randomly scattered across 2^32 baskets,
-          *   filled baskets with average of res is obtained.
+          *   when randomly scattered across 2^32 buckets,
+          *   filled buckets with average of res is obtained.
           */
         size_t p32 = 1ULL << 32;
         size_t fixed_res = round(p32 * (log(p32) - log(p32 - res)));

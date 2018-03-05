@@ -14,7 +14,6 @@
 #include <Databases/IDatabase.h>
 
 #include <Parsers/formatAST.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -139,6 +138,10 @@ static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
   * But here it's too easy to get confused with the consistency of this flag.
   */
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
+
+
+/** For randomized selection of replicas. */
+thread_local pcg64 rng{randomSeed()};
 
 
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
@@ -2304,13 +2307,13 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             checkPartAndAddToZooKeeper(part, ops, part_name);
 
             MergeTreeData::Transaction transaction;
-            replaced_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
+            data.renameTempPartAndReplace(part, nullptr, &transaction);
 
             /// Do not commit if the part is obsolete
             if (!transaction.isEmpty())
             {
                 getZooKeeper()->multi(ops);
-                transaction.commit();
+                replaced_parts = transaction.commit();
             }
 
             /** If a quorum is tracked for this part, you must update it.

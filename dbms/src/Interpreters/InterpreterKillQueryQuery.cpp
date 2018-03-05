@@ -102,7 +102,6 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 class SyncKillQueryInputStream : public IProfilingBlockInputStream
 {
 public:
-
     SyncKillQueryInputStream(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
                              const Block & res_sample_block_)
         : process_list(process_list_),
@@ -110,7 +109,7 @@ public:
         processes_block(std::move(processes_block_)),
         res_sample_block(res_sample_block_)
     {
-        total_rows_approx = processes_to_stop.size();
+        addTotalRowsApprox(processes_to_stop.size());
     }
 
     String getName() const override

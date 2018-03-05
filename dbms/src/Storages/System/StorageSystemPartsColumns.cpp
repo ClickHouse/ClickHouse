@@ -39,6 +39,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
                       {"database",            std::make_shared<DataTypeString>()},
                       {"table",               std::make_shared<DataTypeString>()},
                       {"engine",              std::make_shared<DataTypeString>()},
+                      {"path",                std::make_shared<DataTypeString>()},
                       {"column",              std::make_shared<DataTypeString>()},
                       { "type",               std::make_shared<DataTypeString>() },
                       { "default_kind",       std::make_shared<DataTypeString>() },
@@ -111,7 +112,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             columns[j++]->insert(static_cast<UInt64>(part->rows_count));
             columns[j++]->insert(static_cast<UInt64>(part->size_in_bytes));
             columns[j++]->insert(static_cast<UInt64>(part->modification_time));
-            columns[j++]->insert(static_cast<UInt64>(part->remove_time));
+            columns[j++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
 
             columns[j++]->insert(static_cast<UInt64>(use_count));
 
@@ -126,6 +127,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             columns[j++]->insert(info.database);
             columns[j++]->insert(info.table);
             columns[j++]->insert(info.engine);
+            columns[j++]->insert(part->getFullPath());
             columns[j++]->insert(column.name);
             columns[j++]->insert(column.type->getName());
 

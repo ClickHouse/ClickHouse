@@ -3,21 +3,19 @@
 #include <Common/typeid_cast.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
-#include <DataStreams/NullableAdapterBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
@@ -104,8 +102,6 @@ BlockIO InterpreterInsertQuery::execute()
 
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
-    out = std::make_shared<MaterializingBlockOutputStream>(out, table->getSampleBlock());
-
     out = std::make_shared<AddingDefaultBlockOutputStream>(
         out, getSampleBlock(query, table), required_columns, table->column_defaults, context,
         static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
@@ -123,12 +119,12 @@ BlockIO InterpreterInsertQuery::execute()
     /// What type of query: INSERT or INSERT SELECT?
     if (query.select)
     {
-        InterpreterSelectQuery interpreter_select{query.select, context};
+        /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
+        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, {}, QueryProcessingStage::Complete, 1};
 
         res.in = interpreter_select.execute().in;
 
-        res.in = std::make_shared<NullableAdapterBlockInputStream>(res.in, res.in->getHeader(), res.out->getHeader());
-        res.in = std::make_shared<CastTypeBlockInputStream>(context, res.in, res.out->getHeader());
+        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, res.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
 
         res.out = nullptr;
