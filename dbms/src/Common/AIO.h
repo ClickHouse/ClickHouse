@@ -1,6 +1,6 @@
 #pragma once
 
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
+#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
@@ -14,9 +14,7 @@
 #include <map>
 #include <linux/aio_abi.h>
 #include <sys/syscall.h>
-#if !_MSC_VER
 #include <unistd.h>
-#endif
 
 
 /** Small wrappers for asynchronous I/O.

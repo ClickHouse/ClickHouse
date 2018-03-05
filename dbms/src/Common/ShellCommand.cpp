@@ -6,9 +6,7 @@
 #include <Common/ShellCommand.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#if !_MSC_VER
 #include <unistd.h>
-#endif
 
 
 namespace DB
