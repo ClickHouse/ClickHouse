@@ -129,7 +129,7 @@ public:
         if (!isCancelled())
             return false;
         if (is_killed)
-            throw Exception("Query cancelled", ErrorCodes::QUERY_CANCELLED);
+            throw Exception("Query was cancelled", ErrorCodes::QUERY_CANCELLED);
         return true;
     }
 
