@@ -14,7 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 class QuotaForIntervals;
@@ -129,7 +129,7 @@ public:
         if (!isCancelled())
             return false;
         if (is_killed)
-            throw Exception("Query was cancelled", ErrorCodes::QUERY_CANCELLED);
+            throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
         return true;
     }
 
