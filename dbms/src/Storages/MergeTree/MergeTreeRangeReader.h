@@ -90,6 +90,32 @@ public:
         size_t readRows(Block & block, size_t num_rows);
     };
 
+    class FilterWithZerosCounter
+    {
+    public:
+        /// By default, filter is null and has always_true status.
+        FilterWithZerosCounter() = default;
+        explicit FilterWithZerosCounter(const ColumnPtr & filter);
+
+        /// Can be used only if isConstant().
+        const IColumn::Filter & getFilter() const;
+        size_t numZeros() const { return num_zeros; }
+
+        bool alwaysTrue() const { return always_true; }
+        bool alwaysFalse() const { return always_false; }
+        bool isConstant() const { return always_false || always_true; }
+
+        void setFilter(const ColumnPtr & filter, size_t num_zeros_);
+
+    private:
+        ColumnPtr holder;
+        const IColumn::Filter * filter;
+        size_t num_zeros = 0;
+
+        bool always_true = true;
+        bool always_false = false;
+    };
+
     /// Statistics after next reading step.
     class ReadResult
     {
@@ -117,7 +143,7 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
-        const ColumnPtr & getFilter() const { return filter; }
+        const FilterWithZerosCounter & getFilter() const { return filter; }
 
         void addGranule(size_t num_rows);
         void adjustLastGranule();
@@ -125,7 +151,7 @@ public:
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
         /// Set filter or replace old one. Filter must have more zeroes than previous.
-        void setFilter(ColumnPtr filter_);
+        void setFilter(const FilterWithZerosCounter & filter_);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
         void optimize();
         /// Remove all rows from granules.
@@ -145,18 +171,15 @@ public:
         size_t num_added_rows = 0;
         /// num_zeros_in_filter + the number of rows removed after optimizes.
         size_t num_filtered_rows = 0;
-        /// Zero if filter is nullptr.
-        size_t num_zeros_in_filter = 0;
         /// The number of rows was removed from last granule after clear or optimize.
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;
-        /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= num_read_rows.
-        ColumnPtr filter;
+        /// alwaysTrue() if prev reader hasn't prewhere_actions. Otherwise filter.size() >= num_read_rows.
+        FilterWithZerosCounter filter;
 
         void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter, const NumRows & zero_tails);
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails) const;
-        size_t numZerosInFilter() const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
     };
 
@@ -167,7 +190,7 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Block continueReadingChain(ReadResult & result);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
-    void filterBlock(Block & block, const ColumnPtr & filter) const;
+    void filterBlock(Block & block, const FilterWithZerosCounter & filter) const;
 
     size_t index_granularity = 0;
     MergeTreeReader * merge_tree_reader = nullptr;
