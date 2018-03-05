@@ -73,8 +73,8 @@ create table test.enums_copy engine = TinyLog as select * from test.enums;
 select * from test.enums_copy;
 
 drop table test.enums_copy;
-create table test.enums_copy engine = TinyLog as select * from remote('localhost', test, enums);
-select * from remote('localhost', test, enums_copy);
+create table test.enums_copy engine = TinyLog as select * from remote('127.0.0.2', test, enums);
+select * from remote('127.0.0.2', test, enums_copy);
 
 drop table test.enums_copy;
 drop table test.enums;

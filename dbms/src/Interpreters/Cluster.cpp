@@ -335,7 +335,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_shared)
+                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote)
 {
     UInt32 current_shard_num = 1;
 
@@ -355,7 +355,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 
         for (const auto & replica : current)
         {
-            if (replica.is_local && !treat_local_as_shared)
+            if (replica.is_local && !treat_local_as_remote)
             {
                 shard_local_addresses.push_back(replica);
                 all_replicas.emplace_back(nullptr);
