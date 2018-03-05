@@ -104,6 +104,7 @@ private:
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
     std::map<String, String> colors = {
+        { "bold",    "1"  },
         /* Foreground */
         { "black",   "30" },
         { "red",     "31" },
