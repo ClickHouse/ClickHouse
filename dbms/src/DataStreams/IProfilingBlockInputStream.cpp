@@ -41,7 +41,7 @@ Block IProfilingBlockInputStream::read()
 
     Block res;
 
-    if (is_cancelled.load(std::memory_order_seq_cst))
+    if (isCancelledOrThrowIfKilled())
         return res;
 
     if (!checkTimeLimits())
@@ -71,7 +71,7 @@ Block IProfilingBlockInputStream::read()
           *   but children sources are still working,
           *   herewith they can work in separate threads or even remotely.
           */
-        cancel();
+        cancel(false);
     }
 
     progress(Progress(res.rows(), res.bytes()));
@@ -264,7 +264,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
     if (process_list_elem)
     {
         if (!process_list_elem->updateProgressIn(value))
-            cancel();
+            cancel(false);
 
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
@@ -302,7 +302,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
                     if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
                         || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
                     {
-                        cancel();
+                        cancel(false);
                     }
 
                     break;
@@ -350,15 +350,18 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 }
 
 
-void IProfilingBlockInputStream::cancel()
+void IProfilingBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
+
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
 
-    forEachProfilingChild([] (IProfilingBlockInputStream & child)
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
     {
-        child.cancel();
+        child.cancel(kill);
         return false;
     });
 }

@@ -135,7 +135,7 @@ public:
                 if (curr_process.processed)
                     continue;
 
-                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user);
+                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
                 if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
@@ -148,7 +148,7 @@ public:
 
             /// KILL QUERY could be killed also
             /// Probably interpreting KILL QUERIES as complete (not internal) queries is extra functionality
-            if (is_cancelled)
+            if (isCancelled())
                 break;
 
             /// Sleep if there are unprocessed queries
@@ -190,7 +190,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         for (const auto & query_desc : queries_to_stop)
         {
-            auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
+            auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
             insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
         }
 
