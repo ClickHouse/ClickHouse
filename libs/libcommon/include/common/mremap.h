@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#if !_MSC_VER
 #include <sys/mman.h>
+#endif
 
 #if defined(MREMAP_MAYMOVE)
 // we already have implementation (linux)
