@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <sys/types.h>
 #if !_MSC_VER
 #include <sys/mman.h>
 #endif
