@@ -507,10 +507,10 @@ private:
     {
         String pattern = prompt_by_server_display_name;
 
-        for (const auto & pair: colors)
+        for (const auto & [key, value]: colors)
         {
-            String name = static_cast<String>(pair.first);
-            String code = static_cast<String>(pair.second);
+            String name = static_cast<String>(key);
+            String code = static_cast<String>(value);
 
             boost::replace_all(pattern, "[" + name + "]",  "\33[1;" + code + "m");
             boost::replace_all(pattern, "[/" + name + "]", "\033[0m");
@@ -524,12 +524,9 @@ private:
             {"database",     config().getString("database", "default")},
         };
 
-        for (const auto & pair: environment)
+        for (const auto & [key, value]: environment)
         {
-            String key   = static_cast<String>(pair.first);
-            String value = static_cast<String>(pair.second);
-
-            boost::replace_all(pattern, "%" + key + "%",  value);
+            boost::replace_all(pattern, "%" + static_cast<String>(key) + "%",  static_cast<String>(value));
         }
 
         return pattern;
