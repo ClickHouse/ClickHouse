@@ -74,7 +74,12 @@
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
-#define ALWAYS_INLINE __attribute__((__always_inline__))
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+#else
+    #define ALWAYS_INLINE __attribute__((__always_inline__))
+#endif
+
 #define NO_INLINE __attribute__((__noinline__))
 
 #define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64 (work in progress)"
