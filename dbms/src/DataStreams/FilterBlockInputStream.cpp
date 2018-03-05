@@ -53,7 +53,7 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
 String FilterBlockInputStream::getName() const { return "Filter"; }
 
 
-const Block & FilterBlockInputStream::getTotals()
+Block FilterBlockInputStream::getTotals()
 {
     if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
     {

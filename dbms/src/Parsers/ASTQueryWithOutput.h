@@ -14,9 +14,6 @@ public:
     ASTPtr out_file;
     ASTPtr format;
 
-    ASTQueryWithOutput() = default;
-    explicit ASTQueryWithOutput(const StringRange range_) : IAST(range_) {}
-
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
@@ -31,17 +28,17 @@ protected:
 };
 
 
-template <typename AstIDAndQueryNames>
+/** Helper template for simple queries like SHOW PROCESSLIST.
+  */
+template <typename ASTIDAndQueryNames>
 class ASTQueryWithOutputImpl : public ASTQueryWithOutput
 {
 public:
-    explicit ASTQueryWithOutputImpl() = default;
-    explicit ASTQueryWithOutputImpl(StringRange range_) : ASTQueryWithOutput(range_) {}
-    String getID() const override { return AstIDAndQueryNames::ID; };
+    String getID() const override { return ASTIDAndQueryNames::ID; };
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTQueryWithOutputImpl<AstIDAndQueryNames>>(*this);
+        auto res = std::make_shared<ASTQueryWithOutputImpl<ASTIDAndQueryNames>>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         return res;
@@ -51,7 +48,7 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << AstIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
+            << ASTIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
     }
 };
 

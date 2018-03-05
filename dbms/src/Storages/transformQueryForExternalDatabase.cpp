@@ -62,7 +62,7 @@ String transformQueryForExternalDatabase(
     const Context & context)
 {
     ExpressionAnalyzer analyzer(query.clone(), context, {}, available_columns);
-    const Names & used_columns = analyzer.getRequiredColumns();
+    const Names & used_columns = analyzer.getRequiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -70,7 +70,7 @@ String transformQueryForExternalDatabase(
 
     auto select_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & name : used_columns)
-        select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(StringRange(), name));
+        select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
 
     select->select_expression_list = std::move(select_expr_list);
 

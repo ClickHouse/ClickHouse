@@ -28,6 +28,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
@@ -60,6 +61,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 }
 
 
@@ -1231,7 +1233,7 @@ public:
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
     {
-        return std::make_shared<PreparedFunctionCast>(prepare(getArgumentTypes()[0], getReturnType().get()), name);
+        return std::make_shared<PreparedFunctionCast>(prepare(getArgumentTypes()[0], getReturnType()), name);
     }
 
     String getName() const override { return name; }
@@ -1314,7 +1316,7 @@ private:
             throw Exception{"CAST AS Array can only be performed between same-dimensional array types or from String", ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
-        const auto nested_function = prepare(from_nested_type, to_nested_type.get());
+        const auto nested_function = prepare(from_nested_type, to_nested_type);
 
         return [nested_function, from_nested_type, to_nested_type](
             Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1368,7 +1370,7 @@ private:
 
         /// Create conversion wrapper for each element in tuple
         for (const auto & idx_type : ext::enumerate(from_type->getElements()))
-            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
+            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1519,7 +1521,7 @@ private:
         bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type) const
+    WrapperType prepare(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
         /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -1527,12 +1529,11 @@ private:
         nullable_conversion.source_is_nullable = from_type->isNullable();
         nullable_conversion.result_is_nullable = to_type->isNullable();
 
-        /// Check that the requested conversion is allowed.
-        if (nullable_conversion.source_is_nullable && !nullable_conversion.result_is_nullable)
-            throw Exception{"Cannot convert data from a nullable type to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
-
         if (from_type->onlyNull())
         {
+            if (!nullable_conversion.result_is_nullable)
+                throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
+
             return [](Block & block, const ColumnNumbers &, const size_t result)
             {
                 auto & res = block.getByPosition(result);
@@ -1540,28 +1541,8 @@ private:
             };
         }
 
-        DataTypePtr from_inner_type;
-        const IDataType * to_inner_type;
-
-        /// Create the requested conversion.
-        if (nullable_conversion.result_is_nullable)
-        {
-            if (nullable_conversion.source_is_nullable)
-            {
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
-                from_inner_type = nullable_type.getNestedType();
-            }
-            else
-                from_inner_type = from_type;
-
-            const auto & nullable_type = static_cast<const DataTypeNullable &>(*to_type);
-            to_inner_type = nullable_type.getNestedType().get();
-        }
-        else
-        {
-            from_inner_type = from_type;
-            to_inner_type = to_type;
-        }
+        DataTypePtr from_inner_type = removeNullable(from_type);
+        DataTypePtr to_inner_type = removeNullable(to_type);
 
         auto wrapper = prepareImpl(from_inner_type, to_inner_type);
 
@@ -1609,51 +1590,73 @@ private:
                 res.column = ColumnNullable::create(tmp_res.column, null_map);
             };
         }
+        else if (nullable_conversion.source_is_nullable)
+        {
+            /// Conversion from Nullable to non-Nullable.
+
+            return [wrapper] (Block & block, const ColumnNumbers & arguments, const size_t result)
+            {
+                Block tmp_block = createBlockWithNestedColumns(block, arguments, result);
+
+                /// Check that all values are not-NULL.
+
+                const auto & col = block.getByPosition(arguments[0]).column;
+                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+                const auto & null_map = nullable_col.getNullMapData();
+
+                if (!memoryIsZero(null_map.data(), null_map.size()))
+                    throw Exception{"Cannot convert NULL value to non-Nullable type",
+                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+
+                wrapper(tmp_block, arguments, result);
+                block.getByPosition(result).column = tmp_block.getByPosition(result).column;
+            };
+        }
         else
             return wrapper;
     }
 
-    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * to_type) const
+    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
         else if (checkDataType<DataTypeNothing>(from_type.get()))
-            return createNothingWrapper(to_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type))
+            return createNothingWrapper(to_type.get());
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDate>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDate>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto to_actual_type = checkAndGetDataType<DataTypeString>(to_type))
+        else if (const auto to_actual_type = checkAndGetDataType<DataTypeString>(to_type.get()))
             return createWrapper(from_type, to_actual_type);
-        else if (const auto type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type))
+        else if (const auto type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type.get()))
             return createFixedStringWrapper(from_type, type_fixed_string->getN());
-        else if (const auto type_array = checkAndGetDataType<DataTypeArray>(to_type))
+        else if (const auto type_array = checkAndGetDataType<DataTypeArray>(to_type.get()))
             return createArrayWrapper(from_type, type_array);
-        else if (const auto type_tuple = checkAndGetDataType<DataTypeTuple>(to_type))
+        else if (const auto type_tuple = checkAndGetDataType<DataTypeTuple>(to_type.get()))
             return createTupleWrapper(from_type, type_tuple);
-        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum8>(to_type))
+        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum8>(to_type.get()))
             return createEnumWrapper(from_type, type_enum);
-        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum16>(to_type))
+        else if (const auto type_enum = checkAndGetDataType<DataTypeEnum16>(to_type.get()))
             return createEnumWrapper(from_type, type_enum);
 
         /// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,

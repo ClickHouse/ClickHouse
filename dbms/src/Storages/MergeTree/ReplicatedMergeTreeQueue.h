@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -87,27 +89,35 @@ private:
     /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
-    void insertUnlocked(LogEntryPtr & entry);
+    void insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &);
 
     void remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
     /** Can I now try this action. If not, you need to leave it in the queue and try another one.
       * Called under queue_mutex.
       */
-    bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data);
+    bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data,
+        std::lock_guard<std::mutex> &) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under queue's mutex.
       */
-    bool isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason);
+    bool isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason, std::lock_guard<std::mutex> &) const;
 
     /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
-    void updateTimesOnRemoval(const LogEntryPtr & entry, bool & min_unprocessed_insert_time_changed, bool & max_processed_insert_time_changed);
+    void updateTimesOnRemoval(const LogEntryPtr & entry,
+        std::optional<time_t> & min_unprocessed_insert_time_changed,
+        std::optional<time_t> & max_processed_insert_time_changed,
+        std::unique_lock<std::mutex> &);
 
     /// Update the insertion times in ZooKeeper.
-    void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper, bool min_unprocessed_insert_time_changed, bool max_processed_insert_time_changed);
+    void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
+        std::optional<time_t> min_unprocessed_insert_time_changed,
+        std::optional<time_t> max_processed_insert_time_changed) const;
 
+    /// Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
+    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> &) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -165,12 +175,6 @@ public:
      */
     void disableMergesAndFetchesInRange(const LogEntry & entry);
 
-    /** Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
-     * Call it under mutex
-     */
-    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description);
-
-
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
       * (in order to download a already merged part from another replica).
@@ -203,7 +207,7 @@ public:
     bool addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason);
 
     /// Count the number of merges in the queue.
-    size_t countMerges();
+    size_t countMerges() const;
 
     struct Status
     {
@@ -220,11 +224,11 @@ public:
     };
 
     /// Get information about the queue.
-    Status getStatus();
+    Status getStatus() const;
 
     /// Get the data of the queue elements.
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
-    void getEntries(LogEntriesData & res);
+    void getEntries(LogEntriesData & res) const;
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;

@@ -145,45 +145,43 @@ FieldVisitorHash::FieldVisitorHash(SipHash & hash) : hash(hash) {}
 void FieldVisitorHash::operator() (const Null &) const
 {
     UInt8 type = Field::Types::Null;
-    hash.update(reinterpret_cast<const char *>(&type), sizeof(type));
+    hash.update(type);
 }
 
 void FieldVisitorHash::operator() (const UInt64 & x) const
 {
     UInt8 type = Field::Types::UInt64;
-    hash.update(reinterpret_cast<const char *>(&type), sizeof(type));
-    hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+    hash.update(type);
+    hash.update(x);
 }
 
 void FieldVisitorHash::operator() (const Int64 & x) const
 {
     UInt8 type = Field::Types::Int64;
-    hash.update(reinterpret_cast<const char *>(&type), sizeof(type));
-    hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+    hash.update(type);
+    hash.update(x);
 }
 
 void FieldVisitorHash::operator() (const Float64 & x) const
 {
     UInt8 type = Field::Types::Float64;
-    hash.update(reinterpret_cast<const char *>(&type), sizeof(type));
-    hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+    hash.update(type);
+    hash.update(x);
 }
 
 void FieldVisitorHash::operator() (const String & x) const
 {
     UInt8 type = Field::Types::String;
-    hash.update(reinterpret_cast<const char *>(&type), sizeof(type));
-    size_t size = x.size();
-    hash.update(reinterpret_cast<const char *>(&size), sizeof(size));
+    hash.update(type);
+    hash.update(x.size());
     hash.update(x.data(), x.size());
 }
 
 void FieldVisitorHash::operator() (const Array & x) const
 {
     UInt8 type = Field::Types::Array;
-    hash.update(reinterpret_cast<const char *>(&type), sizeof(type));
-    size_t size = x.size();
-    hash.update(reinterpret_cast<const char *>(&size), sizeof(size));
+    hash.update(type);
+    hash.update(x.size());
 
     for (const auto & elem : x)
         applyVisitor(*this, elem);

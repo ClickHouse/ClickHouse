@@ -44,9 +44,14 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
         select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
         select_table_name = ast_id->name;
     }
-    else if (auto ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
     {
-        extractDependentTable(*ast_select, select_database_name, select_table_name);
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::INCORRECT_QUERY);
+
+        auto inner_query = ast_select->list_of_selects->children.at(0);
+
+        extractDependentTable(typeid_cast<const ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
     }
     else
         throw Exception("Logical error while creating StorageMaterializedView."
@@ -76,7 +81,12 @@ StorageMaterializedView::StorageMaterializedView(
             "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
             ErrorCodes::INCORRECT_QUERY);
 
-    extractDependentTable(*query.select, select_database_name, select_table_name);
+    if (query.select->list_of_selects->children.size() != 1)
+        throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::INCORRECT_QUERY);
+
+    inner_query = query.select->list_of_selects->children.at(0);
+
+    extractDependentTable(typeid_cast<const ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
 
     if (!select_table_name.empty())
         global_context.addDependency(
@@ -95,8 +105,6 @@ StorageMaterializedView::StorageMaterializedView(
         target_table_name = ".inner." + table_name;
         has_inner_table = true;
     }
-
-    inner_query = query.select->ptr();
 
     /// If there is an ATTACH request, then the internal table must already be connected.
     if (!attach_ && has_inner_table)

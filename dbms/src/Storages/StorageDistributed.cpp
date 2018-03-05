@@ -62,8 +62,8 @@ namespace
 /// Creates a copy of query, changes database and table names.
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 {
-    auto modified_query_ast = typeid_cast<const ASTSelectQuery &>(*query).cloneFirstSelect();
-    modified_query_ast->replaceDatabaseAndTable(database, table);
+    auto modified_query_ast = query->clone();
+    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -171,7 +171,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 
 
 BlockInputStreams StorageDistributed::read(
-    const Names & column_names,
+    const Names & /*column_names*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
@@ -191,8 +191,7 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, processed_stage, 0,
-        std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
         header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
@@ -267,13 +266,10 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     std::string name = remote_database + '.' + remote_table;
 
-    auto id = std::make_shared<ASTIdentifier>();
-    id->name = name;
+    auto id = std::make_shared<ASTIdentifier>(name);
 
-    auto desc_database = std::make_shared<ASTIdentifier>();
-    auto desc_table = std::make_shared<ASTIdentifier>();
-    desc_database->name = remote_database;
-    desc_table->name = remote_table;
+    auto desc_database = std::make_shared<ASTIdentifier>(remote_database);
+    auto desc_table = std::make_shared<ASTIdentifier>(remote_table);
 
     id->children.push_back(desc_database);
     id->children.push_back(desc_table);

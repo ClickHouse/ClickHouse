@@ -32,8 +32,6 @@ class ASTDescribeQuery : public ASTQueryWithOutput
 public:
     ASTPtr table_expression;
 
-    ASTDescribeQuery() = default;
-    explicit ASTDescribeQuery(StringRange range_) : ASTQueryWithOutput(range_) {}
     String getID() const override { return "DescribeQuery"; };
 
     ASTPtr clone() const override

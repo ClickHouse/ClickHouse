@@ -80,6 +80,8 @@ public:
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
 
+    String getDataPath() const override { return full_path; }
+
 private:
     String path;
     String database_name;
@@ -98,7 +100,7 @@ private:
     SimpleIncrement increment{0};
 
     /// For clearOldParts, clearOldTemporaryDirectories.
-    StopwatchWithLock time_after_previous_cleanup;
+    AtomicStopwatch time_after_previous_cleanup;
 
     MergeTreeData::DataParts currently_merging;
     std::mutex currently_merging_mutex;

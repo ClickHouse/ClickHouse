@@ -25,7 +25,7 @@ namespace ErrorCodes
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
 {
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
-        node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}).getConstActions();
+        node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}, Names()).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.
     Block block_with_constants{{ ColumnConst::create(ColumnUInt8::create(1, 0), 1), std::make_shared<DataTypeUInt8>(), "_dummy" }};
@@ -55,15 +55,14 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return node;
 
-    return std::make_shared<ASTLiteral>(node->range,
-        evaluateConstantExpression(node, context).first);
+    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (auto id = typeid_cast<const ASTIdentifier *>(node.get()))
-        return std::make_shared<ASTLiteral>(node->range, Field(id->name));
+        return std::make_shared<ASTLiteral>(Field(id->name));
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }

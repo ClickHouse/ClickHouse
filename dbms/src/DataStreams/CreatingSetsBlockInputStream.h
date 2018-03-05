@@ -38,7 +38,7 @@ public:
     Block getHeader() const override { return children.back()->getHeader(); }
 
     /// Takes `totals` only from the main source, not from subquery sources.
-    const Block & getTotals() override;
+    Block getTotals() override;
 
 protected:
     Block readImpl() override;

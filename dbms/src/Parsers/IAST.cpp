@@ -61,32 +61,6 @@ size_t IAST::checkSize(size_t max_size) const
 }
 
 
-String IAST::getTreeID() const
-{
-    WriteBufferFromOwnString out;
-    getTreeIDImpl(out);
-    return out.str();
-}
-
-
-void IAST::getTreeIDImpl(WriteBuffer & out) const
-{
-    out << getID();
-
-    if (!children.empty())
-    {
-        out << '(';
-        for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-        {
-            if (it != children.begin())
-                out << ", ";
-            (*it)->getTreeIDImpl(out);
-        }
-        out << ')';
-    }
-}
-
-
 IAST::Hash IAST::getTreeHash() const
 {
     SipHash hash_state;
@@ -101,10 +75,7 @@ void IAST::getTreeHashImpl(SipHash & hash_state) const
 {
     auto id = getID();
     hash_state.update(id.data(), id.size());
-
-    size_t num_children = children.size();
-    hash_state.update(reinterpret_cast<const char *>(&num_children), sizeof(num_children));
-
+    hash_state.update(children.size());
     for (const auto & child : children)
         child->getTreeHashImpl(hash_state);
 }

@@ -36,7 +36,7 @@ ColumnNullable::ColumnNullable(const ColumnPtr & nested_column_, const ColumnPtr
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
     const auto & arr = getNullMapData();
-    hash.update(reinterpret_cast<const char *>(&arr[n]), sizeof(arr[0]));
+    hash.update(arr[n]);
     if (arr[n] == 0)
         getNestedColumn().updateHashWithValue(n, hash);
 }

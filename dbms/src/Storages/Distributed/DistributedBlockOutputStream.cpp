@@ -93,16 +93,104 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
 }
 
 
-ThreadPool::Job DistributedBlockOutputStream::createWritingJob(
-    WritingJobContext & context, const Block & block, const Cluster::Address & address, size_t shard_id, size_t job_id)
+std::string DistributedBlockOutputStream::getCurrentStateDescription()
+{
+    std::stringstream buffer;
+    const auto & addresses = cluster->getShardsAddresses();
+
+    buffer << "Insertion status:\n";
+    for (auto & shard_jobs : per_shard_jobs)
+        for (JobInfo & job : shard_jobs)
+        {
+            buffer << "Wrote " << job.blocks_written << " blocks and " << job.rows_written << " rows"
+                   << " on shard " << job.shard_index << " replica " << job.replica_index
+                   << ", " << addresses[job.shard_index][job.replica_index].readableString() << "\n";
+        }
+
+    return buffer.str();
+}
+
+
+void DistributedBlockOutputStream::initWritingJobs()
+{
+    const auto & addresses_with_failovers = cluster->getShardsAddresses();
+    const auto & shards_info = cluster->getShardsInfo();
+
+    remote_jobs_count = 0;
+    local_jobs_count = 0;
+    per_shard_jobs.resize(shards_info.size());
+
+    for (size_t shard_index : ext::range(0, shards_info.size()))
+    {
+        const auto & shard_info = shards_info[shard_index];
+        auto & shard_jobs = per_shard_jobs[shard_index];
+
+        /// If hasInternalReplication, than prefer local replica
+        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
+        {
+            const auto & replicas = addresses_with_failovers[shard_index];
+
+            for (size_t replica_index : ext::range(0, replicas.size()))
+            {
+                if (!replicas[replica_index].is_local)
+                {
+                    shard_jobs.emplace_back(shard_index, replica_index, false);
+                    ++remote_jobs_count;
+
+                    if (shard_info.hasInternalReplication())
+                        break;
+                }
+            }
+        }
+
+        if (shard_info.isLocal())
+        {
+            shard_jobs.emplace_back(shard_index, 0, true);
+            ++local_jobs_count;
+        }
+    }
+}
+
+
+void DistributedBlockOutputStream::waitForJobs()
+{
+    size_t jobs_count = remote_jobs_count + local_jobs_count;
+    auto cond = [this, jobs_count] { return finished_jobs_count >= jobs_count; };
+
+    if (insert_timeout)
+    {
+        bool were_jobs_finished;
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            were_jobs_finished = cond_var.wait_until(lock, deadline, cond);
+        }
+
+        pool->wait();
+
+        if (!were_jobs_finished)
+        {
+            ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
+            throw Exception("Synchronous distributed insert timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
+        }
+    }
+    else
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        cond_var.wait(lock, cond);
+        pool->wait();
+    }
+}
+
+
+ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobInfo & job)
 {
     auto memory_tracker = current_memory_tracker;
-    return [this, memory_tracker, & context, & block, & address, shard_id, job_id]()
+    return [this, memory_tracker, &job]()
     {
         SCOPE_EXIT({
-            std::lock_guard<std::mutex> lock(context.mutex);
-            ++context.finished_jobs_count;
-            context.cond_var.notify_one();
+            std::lock_guard<std::mutex> lock(mutex);
+            ++finished_jobs_count;
+            cond_var.notify_one();
         });
 
         if (!current_memory_tracker)
@@ -111,155 +199,71 @@ ThreadPool::Job DistributedBlockOutputStream::createWritingJob(
             setThreadName("DistrOutStrProc");
         }
 
-        const auto & shard_info = cluster->getShardsInfo()[shard_id];
-        if (address.is_local)
+        const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
+        const auto & addresses = cluster->getShardsAddresses();
+        Block & block = current_blocks.at(job.shard_index);
+
+        if (!job.is_local_job)
         {
-            writeToLocal(block, shard_info.getLocalNodeCount());
-            context.done_local_jobs[job_id] = true;
+            if (!job.stream)
+            {
+                if (shard_info.hasInternalReplication())
+                {
+                    /// Skip replica_index in case of internal replication
+                    if (per_shard_jobs[job.shard_index].size() != 1)
+                        throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
+
+                    /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
+                    auto connections = shard_info.pool->getMany(&settings, PoolMode::GET_ONE);
+                    if (connections.empty() || connections.front().isNull())
+                        throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
+
+                    job.connection_entry = std::move(connections.front());
+                }
+                else
+                {
+                    const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
+
+                    const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
+                    if (!connection_pool)
+                        throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
+
+                    job.connection_entry = connection_pool->get(&settings);
+                    if (job.connection_entry.isNull())
+                        throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
+                }
+
+                if (throttler)
+                    job.connection_entry->setThrottler(throttler);
+
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, query_string, &settings);
+                job.stream->writePrefix();
+            }
+
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
+            job.stream->write(block);
         }
         else
         {
-            writeToShardSync(block, shard_info.hasInternalReplication()
-                                    ? shard_info.dir_name_for_internal_replication
-                                    : address.toStringFull());
-            context.done_remote_jobs[job_id] = true;
+            if (!job.stream)
+            {
+                /// Forward user settings
+                job.local_context = std::make_unique<Context>(storage.context);
+                job.local_context->setSettings(settings);
+
+                InterpreterInsertQuery interp(query_ast, *job.local_context);
+                job.stream = interp.execute().out;
+                job.stream->writePrefix();
+            }
+
+            size_t num_repetitions = shard_info.getLocalNodeCount();
+            for (size_t i = 0; i < num_repetitions; ++i)
+                job.stream->write(block);
         }
+
+        ++job.blocks_written;
+        job.rows_written += block.rows();
     };
-}
-
-
-std::string DistributedBlockOutputStream::getCurrentStateDescription(const WritingJobContext & context)
-{
-    const Cluster::ShardsInfo & shards_info = cluster->getShardsInfo();
-    String description;
-    WriteBufferFromString buffer(description);
-
-    buffer << "Insertion status:\n";
-
-    auto writeDescription = [&buffer](const Cluster::Address & address, size_t shard_id, size_t blocks_wrote)
-    {
-        buffer << "Wrote " << blocks_wrote << " blocks on shard " << shard_id << " replica ";
-        buffer << address.toString() << '\n';
-    };
-
-    const auto addresses_with_failovers = cluster->getShardsAddresses();
-
-    size_t remote_job_id = 0;
-    size_t local_job_id = 0;
-    for (size_t shard_id : ext::range(0, shards_info.size()))
-    {
-        const auto & shard_info = shards_info[shard_id];
-        /// If hasInternalReplication, than prefer local replica
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
-        {
-            for (const auto & address : addresses_with_failovers[shard_id])
-                if (!address.is_local)
-                {
-                    writeDescription(address, shard_id, blocks_inserted + (context.done_remote_jobs[remote_job_id] ? 1 : 0));
-                    ++remote_job_id;
-                    if (shard_info.hasInternalReplication())
-                        break;
-                }
-        }
-
-        if (shard_info.isLocal())
-        {
-            const auto & address = shard_info.local_addresses.front();
-            writeDescription(address, shard_id, blocks_inserted + (context.done_local_jobs[local_job_id] ? 1 : 0));
-            ++local_job_id;
-        }
-    }
-
-    return description;
-}
-
-
-void DistributedBlockOutputStream::createWritingJobs(WritingJobContext & context, const Blocks & blocks)
-{
-    const auto & addresses_with_failovers = cluster->getShardsAddresses();
-    const Cluster::ShardsInfo & shards_info = cluster->getShardsInfo();
-
-    size_t remote_job_id = 0;
-    size_t local_job_id = 0;
-    for (size_t shard_id : ext::range(0, blocks.size()))
-    {
-        const auto & shard_info = shards_info[shard_id];
-        /// If hasInternalReplication, than prefer local replica
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
-        {
-            for (const auto & address : addresses_with_failovers[shard_id])
-                if (!address.is_local)
-                {
-                    pool->schedule(createWritingJob(context, blocks[shard_id], address, shard_id, remote_job_id));
-                    ++remote_job_id;
-                    if (shard_info.hasInternalReplication())
-                        break;
-                }
-        }
-
-        if (shards_info[shard_id].isLocal())
-        {
-            const auto & address = shards_info[shard_id].local_addresses.front();
-            pool->schedule(createWritingJob(context, blocks[shard_id], address, shard_id, local_job_id));
-            ++local_job_id;
-        }
-    }
-}
-
-
-void DistributedBlockOutputStream::calculateJobsCount()
-{
-    remote_jobs_count = 0;
-    local_jobs_count = 0;
-
-    const auto & addresses_with_failovers = cluster->getShardsAddresses();
-
-    const auto & shards_info = cluster->getShardsInfo();
-    for (size_t shard_id : ext::range(0, shards_info.size()))
-    {
-        const auto & shard_info = shards_info[shard_id];
-        /// If hasInternalReplication, than prefer local replica
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
-        {
-            for (const auto & address : addresses_with_failovers[shard_id])
-                if (!address.is_local)
-                {
-                    ++remote_jobs_count;
-                    if (shard_info.hasInternalReplication())
-                        break;
-                }
-        }
-
-        local_jobs_count += shard_info.isLocal() ? 1 : 0;
-    }
-}
-
-
-void DistributedBlockOutputStream::waitForUnfinishedJobs(WritingJobContext & context)
-{
-    size_t jobs_count = remote_jobs_count + local_jobs_count;
-    auto cond = [& context, jobs_count] { return context.finished_jobs_count == jobs_count; };
-
-    if (insert_timeout)
-    {
-        bool were_jobs_finished;
-        {
-            std::unique_lock<std::mutex> lock(context.mutex);
-            were_jobs_finished = context.cond_var.wait_until(lock, deadline, cond);
-        }
-        if (!were_jobs_finished)
-        {
-            pool->wait();
-            ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
-            throw Exception("Timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
-        }
-    }
-    else
-    {
-        std::unique_lock<std::mutex> lock(context.mutex);
-        context.cond_var.wait(lock, cond);
-    }
-    pool->wait();
 }
 
 
@@ -268,30 +272,56 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        calculateJobsCount();
+        initWritingJobs();
         pool.emplace(remote_jobs_count + local_jobs_count);
+        query_string = queryToString(query_ast);
+
+        if (!throttler && (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes))
+        {
+            throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth, settings.limits.max_network_bytes,
+                                                    "Network bandwidth limit for a query exceeded.");
+        }
     }
 
-    WritingJobContext context;
-    context.done_remote_jobs.assign(remote_jobs_count, false);
-    context.done_local_jobs.assign(local_jobs_count, false);
-    context.finished_jobs_count = 0;
+    const auto & shards_info = cluster->getShardsInfo();
+    current_blocks = shards_info.size() > 1 ? splitBlock(block) : Blocks({block});
 
-    const Cluster::ShardsInfo & shards_info = cluster->getShardsInfo();
-    Blocks blocks = shards_info.size() > 1 ? splitBlock(block) : Blocks({block});
-    createWritingJobs(context, blocks);
+    /// Run jobs in parallel for each block and wait them
+    finished_jobs_count = 0;
+    for (size_t shard_index : ext::range(0, current_blocks.size()))
+        for (JobInfo & job : per_shard_jobs.at(shard_index))
+            pool->schedule(runWritingJob(job));
 
     try
     {
-        waitForUnfinishedJobs(context);
+        waitForJobs();
     }
     catch (Exception & exception)
     {
-        exception.addMessage(getCurrentStateDescription(context));
+        exception.addMessage(getCurrentStateDescription());
         throw;
     }
 
     ++blocks_inserted;
+}
+
+
+void DistributedBlockOutputStream::writeSuffix()
+{
+    if (insert_sync && pool)
+    {
+        finished_jobs_count = 0;
+        for (auto & shard_jobs : per_shard_jobs)
+            for (JobInfo & job : shard_jobs)
+            {
+                if (job.stream)
+                    pool->schedule([&job] () { job.stream->writeSuffix(); });
+            }
+
+        pool->wait();
+
+        LOG_DEBUG(&Logger::get("DistributedBlockOutputStream"), getCurrentStateDescription());
+    }
 }
 
 
@@ -400,43 +430,16 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 
 void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
 {
-    std::unique_ptr<Context> local_context;
-    std::optional<InterpreterInsertQuery> interp;
-
     /// Async insert does not support settings forwarding yet whereas sync one supports
-    if (insert_sync)
-        interp.emplace(query_ast, storage.context);
-    else
-    {
-        /// Overwrite global settings by user settings
-        local_context = std::make_unique<Context>(storage.context);
-        local_context->setSettings(settings);
-        interp.emplace(query_ast, *local_context);
-    }
+    InterpreterInsertQuery interp(query_ast, storage.context);
 
-    auto block_io = interp->execute();
+    auto block_io = interp.execute();
     block_io.out->writePrefix();
 
     for (size_t i = 0; i < repeats; ++i)
         block_io.out->write(block);
 
     block_io.out->writeSuffix();
-}
-
-
-void DistributedBlockOutputStream::writeToShardSync(const Block & block, const std::string & connection_pool_name)
-{
-    auto pool = storage.requireConnectionPool(connection_pool_name);
-    auto connection = pool->get();
-
-    const auto & query_string = queryToString(query_ast);
-    RemoteBlockOutputStream remote{*connection, query_string, &settings};
-
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
-
-    remote.writePrefix();
-    remote.write(block);
-    remote.writeSuffix();
 }
 
 

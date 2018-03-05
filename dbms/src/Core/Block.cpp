@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/FieldVisitors.h>
 
 #include <Core/Block.h>
 
@@ -409,10 +410,16 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
-        if (actual.column->isColumnConst() && expected.column->isColumnConst()
-            && static_cast<const ColumnConst &>(*actual.column).getField() != static_cast<const ColumnConst &>(*expected.column).getField())
-            return on_error("Block structure mismatch in " + context_description + " stream: different values of constants",
-                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+        if (actual.column->isColumnConst() && expected.column->isColumnConst())
+        {
+            Field actual_value = static_cast<const ColumnConst &>(*actual.column).getField();
+            Field expected_value = static_cast<const ColumnConst &>(*expected.column).getField();
+
+            if (actual_value != expected_value)
+                return on_error("Block structure mismatch in " + context_description + " stream: different values of constants, actual: "
+                    + applyVisitor(FieldVisitorToString(), actual_value) + ", expected: " + applyVisitor(FieldVisitorToString(), expected_value),
+                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+        }
     }
 
     return ReturnType(true);

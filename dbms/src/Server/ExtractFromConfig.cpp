@@ -9,7 +9,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 
 

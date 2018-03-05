@@ -81,7 +81,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 
     ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
-    auto literal = std::make_shared<ASTLiteral>(StringRange(), value);
+    auto literal = std::make_shared<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
     with.children.push_back(literal);
@@ -105,7 +105,7 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
 static void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
-    const ASTFunction * function = typeid_cast<const ASTFunction *>(&*expression);
+    const ASTFunction * function = typeid_cast<const ASTFunction *>(expression.get());
     if (function && function->name == "and")
     {
         for (size_t i = 0; i < function->arguments->children.size(); ++i)
@@ -149,6 +149,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         extractFunctions(select.where_expression, columns, functions);
     if (select.prewhere_expression)
         extractFunctions(select.prewhere_expression, columns, functions);
+
     ASTPtr expression_ast = buildWhereExpression(functions);
     if (!expression_ast)
         return;
@@ -156,6 +157,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     /// Let's analyze and calculate the expression.
     ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
+
     actions->execute(block);
 
     /// Filter the block.
@@ -170,6 +172,8 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         ColumnPtr & column = block.safeGetByPosition(i).column;
         column = column->filter(filter, -1);
     }
+
+    block.erase(filter_column_name);
 }
 
 }

@@ -13,8 +13,6 @@ namespace DB
 
 bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_drop("DROP");
     ParserKeyword s_detach("DETACH");
     ParserKeyword s_temporary("TEMPORARY");
@@ -81,7 +79,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    auto query = std::make_shared<ASTDropQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTDropQuery>();
     node = query;
 
     query->detach = detach;
