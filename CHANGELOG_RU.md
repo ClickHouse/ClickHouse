@@ -79,8 +79,8 @@
 
 ## Обратно несовместимые изменения:
 
-* Удалена настройка distributed_ddl_allow_replicated_alter. Соответствующее поведение включено по-умолчанию.
-* Удалён движок таблиц UnsortedMergeTree.
+* Удалена настройка `distributed_ddl_allow_replicated_alter`. Соответствующее поведение включено по-умолчанию.
+* Удалён движок таблиц `UnsortedMergeTree`.
 
 # Релиз ClickHouse 1.1.54343, 2018-02-05
 
