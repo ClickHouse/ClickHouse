@@ -43,8 +43,6 @@ private:
     RowRef next_key;
     /// Last row with maximum version for current primary key.
     RowRef selected_row;
-    /// Max version for current primary key.
-    UInt64 max_version = 0;
     /// The position (into current_row_sources) of the row with the highest version.
     size_t max_pos = 0;
 
