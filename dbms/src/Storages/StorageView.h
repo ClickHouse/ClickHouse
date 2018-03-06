@@ -42,7 +42,7 @@ protected:
     StorageView(
         const String & table_name_,
         const ASTCreateQuery & query,
-        const NamesAndTypesList & columns_);
+        const ColumnsDescription & columns_);
 };
 
 }

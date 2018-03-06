@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -43,10 +43,7 @@ struct AlterCommand
         return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
     }
 
-    void apply(NamesAndTypesList & columns,
-               NamesAndTypesList & materialized_columns,
-               NamesAndTypesList & alias_columns,
-               ColumnDefaults & column_defaults) const;
+    void apply(ColumnsDescription & columns_description) const;
 
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
@@ -63,10 +60,7 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(NamesAndTypesList & columns,
-               NamesAndTypesList & materialized_columns,
-               NamesAndTypesList & alias_columns,
-               ColumnDefaults & column_defaults) const;
+    void apply(ColumnsDescription & columns_description) const;
 
     void validate(IStorage * table, const Context & context);
 };

@@ -245,20 +245,20 @@ BlockInputStreams StorageSystemPartsBase::read(
 
     /// Create the result.
 
-    MutableColumns columns = getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
-        columns.push_back(ColumnString::create());
+        res_columns.push_back(ColumnString::create());
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(columns, info, has_state_column);
+        processNextStorage(res_columns, info, has_state_column);
     }
 
     Block block = getSampleBlock();
     if (has_state_column)
         block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(columns))));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
 }
 
 NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
@@ -280,7 +280,7 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
     : name(std::move(name_))
 {
-    columns = columns_;
+    columns.ordinary = columns_;
 }
 
 }

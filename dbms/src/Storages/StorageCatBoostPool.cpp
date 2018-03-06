@@ -220,7 +220,6 @@ void StorageCatBoostPool::parseColumnDescription()
 
 void StorageCatBoostPool::createSampleBlockAndColumns()
 {
-    columns.clear();
     NamesAndTypesList cat_columns;
     NamesAndTypesList num_columns;
     sample_block.clear();
@@ -239,19 +238,19 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
         else if (desc.column_type == DatasetColumnType::Num)
             num_columns.emplace_back(desc.column_name, type);
         else
-            materialized_columns.emplace_back(desc.column_name, type);
+            columns.materialized.emplace_back(desc.column_name, type);
 
         if (!desc.alias.empty())
         {
             auto alias = std::make_shared<ASTIdentifier>(desc.column_name);
-            column_defaults[desc.alias] = {ColumnDefaultType::Alias, alias};
-            alias_columns.emplace_back(desc.alias, type);
+            columns.defaults[desc.alias] = {ColumnDefaultType::Alias, alias};
+            columns.aliases.emplace_back(desc.alias, type);
         }
 
         sample_block.insert(ColumnWithTypeAndName(type, desc.column_name));
     }
-    columns.insert(columns.end(), num_columns.begin(), num_columns.end());
-    columns.insert(columns.end(), cat_columns.begin(), cat_columns.end());
+    columns.ordinary.insert(columns.ordinary.end(), num_columns.begin(), num_columns.end());
+    columns.ordinary.insert(columns.ordinary.end(), cat_columns.begin(), cat_columns.end());
 }
 
 BlockInputStreams StorageCatBoostPool::read(const Names & column_names,

@@ -193,13 +193,10 @@ private:
 StorageStripeLog::StorageStripeLog(
     const std::string & path_,
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
@@ -301,7 +298,6 @@ void registerStorageStripeLog(StorageFactory & factory)
 
         return StorageStripeLog::create(
             args.data_path, args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

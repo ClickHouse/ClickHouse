@@ -418,7 +418,7 @@ UInt64 MergeTreeDataPart::getColumnMrkSize(const String & name) const
   */
 String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
-    const auto & columns = storage.getColumnsList();
+    const auto & columns = storage.columns.getList();
     const std::string * minimum_size_column = nullptr;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
@@ -774,7 +774,7 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 {
     std::shared_lock<std::shared_mutex> part_lock(columns_lock);
 
-    for (const NameAndTypePair & name_type : storage.columns)
+    for (const NameAndTypePair & name_type : storage.columns.getList())
     {
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {
@@ -794,7 +794,7 @@ void MergeTreeDataPart::loadColumns(bool require)
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
-        for (const NameAndTypePair & column : storage.getColumnsList())
+        for (const NameAndTypePair & column : storage.columns.getList())
             if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
                 columns.push_back(column);
 

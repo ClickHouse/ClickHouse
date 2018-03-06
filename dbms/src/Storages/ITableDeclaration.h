@@ -1,50 +1,17 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <Core/NamesAndTypes.h>
-#include <Common/Exception.h>
-#include <Core/Block.h>
-#include <Storages/ColumnDefault.h>
-
-#include <boost/range/iterator_range.hpp>
-#include <boost/range/join.hpp>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
 {
 
-class Context;
-
 /** Description of the table.
-  * Do not thread safe. See IStorage::lockStructure ().
+  * Is not thread safe. See IStorage::lockStructure ().
   */
 class ITableDeclaration
 {
 public:
-    /** The name of the table.
-      */
-    virtual std::string getTableName() const = 0;
-
-    /** Get a list of names and table column types, only non-virtual.
-      */
-    NamesAndTypesList getColumnsList() const;
-    const NamesAndTypesList & getColumnsListNonMaterialized() const { return getColumnsListImpl(); }
-
-    /** Get a list of column table names, only non-virtual.
-      */
-    virtual Names getColumnNamesList() const;
-
-    /** Get a description of the real (non-virtual) column by its name.
-      */
-    virtual NameAndTypePair getRealColumn(const String & column_name) const;
-
-    /** Is there a real (non-virtual) column with that name.
-      */
-    virtual bool hasRealColumn(const String & column_name) const;
-
-    NameAndTypePair getMaterializedColumn(const String & column_name) const;
-    bool hasMaterializedColumn(const String & column_name) const;
-
     /** Get a description of any column by its name.
       */
     virtual NameAndTypePair getColumn(const String & column_name) const;
@@ -53,10 +20,6 @@ public:
       */
     virtual bool hasColumn(const String & column_name) const;
 
-    const DataTypePtr getDataTypeByName(const String & column_name) const;
-
-    /** The same, but in the form of a block-sample.
-      */
     Block getSampleBlock() const;
     Block getSampleBlockNonMaterialized() const;
     Block getSampleBlockForColumns(const Names & column_names) const;
@@ -81,29 +44,11 @@ public:
     void check(const Block & block, bool need_all = false) const;
 
 
+    ITableDeclaration() = default;
+    explicit ITableDeclaration(ColumnsDescription columns_);
     virtual ~ITableDeclaration() = default;
 
-    ITableDeclaration() = default;
-    ITableDeclaration(
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults);
-
-    NamesAndTypesList columns;
-    NamesAndTypesList materialized_columns;
-    NamesAndTypesList alias_columns;
-    ColumnDefaults column_defaults;
-
-private:
-    virtual const NamesAndTypesList & getColumnsListImpl() const
-    {
-        return columns;
-    }
-
-    using ColumnsListRange = boost::range::joined_range<const NamesAndTypesList, const NamesAndTypesList>;
-    /// Returns a lazily joined range of table's ordinary and materialized columns, without unnecessary copying
-    ColumnsListRange getColumnsListRange() const;
+    ColumnsDescription columns;
 };
 
 }

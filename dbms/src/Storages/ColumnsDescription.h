@@ -1,28 +1,53 @@
 #pragma once
 
-#include <Storages/ColumnDefault.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Names.h>
+#include <Storages/ColumnDefault.h>
+#include <Core/Block.h>
 
 
 namespace DB
 {
 
-
-template <bool store>
 struct ColumnsDescription
 {
-    template <typename T>
-    using by_value_or_cref = std::conditional_t<store, T, const T &>;
+    NamesAndTypesList ordinary;
+    NamesAndTypesList materialized;
+    NamesAndTypesList aliases;
+    ColumnDefaults defaults;
 
-    by_value_or_cref<NamesAndTypesList> columns;
-    by_value_or_cref<NamesAndTypesList> materialized;
-    by_value_or_cref<NamesAndTypesList> alias;
-    by_value_or_cref<ColumnDefaults> defaults;
+
+    bool operator==(const ColumnsDescription & other) const
+    {
+        return ordinary == other.ordinary
+            && materialized == other.materialized
+            && aliases == other.aliases
+            && defaults == other.defaults;
+    }
+
+    bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
+
+    /** Get a list of names and table column types, only non-virtual.
+     */
+    NamesAndTypesList getList() const;
+    const NamesAndTypesList & getListNonMaterialized() const { return ordinary; }
+
+    /** Get a list of column names.
+     */
+    Names getNames() const;
+
+    /** Get a description of any column by its name.
+     */
+    NameAndTypePair get(const String & column_name) const;
+
+    /** Is there a column with that name.
+      */
+    bool has(const String & column_name) const;
+
 
     String toString() const;
 
     static ColumnsDescription parse(const String & str);
 };
-
 
 }

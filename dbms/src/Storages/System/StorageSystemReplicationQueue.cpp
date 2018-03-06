@@ -20,7 +20,7 @@ namespace DB
 StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    columns.ordinary = NamesAndTypesList{
         /// Table properties.
         { "database",                std::make_shared<DataTypeString>() },
         { "table",                   std::make_shared<DataTypeString>() },

@@ -114,7 +114,7 @@ protected:
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList
+    columns.ordinary = NamesAndTypesList
     {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},

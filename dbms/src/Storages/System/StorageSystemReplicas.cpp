@@ -17,7 +17,7 @@ namespace DB
 StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    columns.ordinary = NamesAndTypesList{
         { "database",                             std::make_shared<DataTypeString>()   },
         { "table",                                std::make_shared<DataTypeString>()   },
         { "engine",                               std::make_shared<DataTypeString>()   },

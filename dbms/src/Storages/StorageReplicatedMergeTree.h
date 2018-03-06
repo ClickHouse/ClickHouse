@@ -84,8 +84,6 @@ public:
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
     bool supportsReplication() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
-
     NameAndTypePair getColumn(const String & column_name) const override
     {
         return data.getColumn(column_name);
@@ -443,10 +441,7 @@ protected:
         const String & replica_name_,
         bool attach,
         const String & path_, const String & database_name_, const String & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
         const ASTPtr & secondary_sorting_expr_list_,

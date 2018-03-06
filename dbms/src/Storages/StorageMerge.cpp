@@ -37,14 +37,11 @@ namespace ErrorCodes
 
 StorageMerge::StorageMerge(
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     name(name_), source_database(source_database_),
     table_name_regexp(table_name_regexp_), context(context_)
 {
@@ -184,7 +181,7 @@ BlockInputStreams StorageMerge::read(
 
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.size() == 0)
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->columns.getList()));
 
         /// Substitute virtual column for its value when querying tables.
         ASTPtr modified_query_ast = query->clone();
@@ -336,11 +333,9 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
-    context.getDatabase(database_name)->alterTable(
-        context, table_name,
-        columns, materialized_columns, alias_columns, column_defaults, {});
+    params.apply(columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, columns, {});
 }
 
 
@@ -367,7 +362,6 @@ void registerStorageMerge(StorageFactory & factory)
 
         return StorageMerge::create(
             args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             source_database, table_name_regexp, args.context);
     });
 }

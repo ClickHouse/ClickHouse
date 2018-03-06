@@ -173,7 +173,7 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
 void createASTsForAllColumnsInTable(const CollectTables::TableInfo & table, ASTs & res)
 {
     if (table.storage)
-        for (const auto & name : table.storage->getColumnNamesList())
+        for (const auto & name : table.storage->columns.getNames())
             res.emplace_back(createASTIdentifierForColumnInTable(name, table));
     else
         for (size_t i = 0, size = table.structure_of_subquery.columns(); i < size; ++i)
@@ -315,7 +315,7 @@ void processIdentifier(
     }
     else if (table->storage)
     {
-        info.data_type = table->storage->getDataTypeByName(column_name);
+        info.data_type = table->storage->getColumn(column_name).type;
     }
     else
         throw Exception("Logical error: no storage and no structure of subquery is specified for table", ErrorCodes::LOGICAL_ERROR);

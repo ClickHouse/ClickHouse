@@ -14,7 +14,7 @@ namespace DB
 StorageSystemMerges::StorageSystemMerges(const std::string & name)
     : name{name}
 {
-    columns = NamesAndTypesList{
+    columns.ordinary = NamesAndTypesList{
         { "database",                    std::make_shared<DataTypeString>() },
         { "table",                       std::make_shared<DataTypeString>() },
         { "elapsed",                     std::make_shared<DataTypeFloat64>() },

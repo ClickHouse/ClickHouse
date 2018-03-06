@@ -14,7 +14,7 @@ namespace DB
 StorageSystemClusters::StorageSystemClusters(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    columns.ordinary = NamesAndTypesList{
         { "cluster",      std::make_shared<DataTypeString>() },
         { "shard_num",    std::make_shared<DataTypeUInt32>() },
         { "shard_weight", std::make_shared<DataTypeUInt32>() },

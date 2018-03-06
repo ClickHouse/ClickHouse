@@ -238,8 +238,8 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
             if (!required_column_names.empty())
                 data.check(part.data_part->columns, required_column_names);
 
-            per_part_pre_columns.push_back(data.getColumnsList().addTypes(required_pre_column_names));
-            per_part_columns.push_back(data.getColumnsList().addTypes(required_column_names));
+            per_part_pre_columns.push_back(data.columns.getList().addTypes(required_pre_column_names));
+            per_part_columns.push_back(data.columns.getList().addTypes(required_column_names));
         }
         else
         {
