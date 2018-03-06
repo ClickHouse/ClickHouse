@@ -360,7 +360,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                     throw Exception("The column " + version_column +
                         " cannot be used as a version column for storage " + storage +
                         " because it is of type " + column.type->getName() +
-                        " (must use an integer or Date or DateTime)", ErrorCodes::BAD_TYPE_OF_FIELD);
+                        " (must be of an integer type or of type Date or DateTime)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
