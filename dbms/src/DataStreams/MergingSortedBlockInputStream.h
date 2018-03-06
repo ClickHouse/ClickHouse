@@ -105,6 +105,12 @@ protected:
             return !(*this == other);
         }
 
+        void reset()
+        {
+            RowRef empty;
+            swap(empty);
+        }
+
         bool empty() const { return columns == nullptr; }
         size_t size() const { return empty() ? 0 : columns->size(); }
     };
