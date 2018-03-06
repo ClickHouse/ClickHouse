@@ -111,7 +111,8 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    merging_params.check(columns);
+    /// NOTE: using the same columns list as is read when performing actual merges.
+    merging_params.check(getColumnsList());
 
     if (!primary_expr_ast)
         throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -355,10 +356,11 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
         {
             if (column.name == version_column)
             {
-                if (!column.type->isUnsignedInteger() && !column.type->isDateOrDateTime())
-                    throw Exception("Version column (" + version_column + ")"
-                            " for storage " + storage + " must have type of UInt family or Date or DateTime."
-                            " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                if (!column.type->canBeUsedAsVersion())
+                    throw Exception("The column " + version_column +
+                        " cannot be used as a version column for storage " + storage +
+                        " because it is of type " + column.type->getName() +
+                        " (must be of an integer type or of type Date or DateTime)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
