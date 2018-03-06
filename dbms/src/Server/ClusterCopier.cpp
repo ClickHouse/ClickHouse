@@ -721,7 +721,6 @@ public:
         context(context_),
         log(&Poco::Logger::get("ClusterCopier"))
     {
-        initZooKeeper();
     }
 
     void init()
@@ -883,11 +882,14 @@ public:
 
     void reloadTaskDescription()
     {
+        auto zookeeper = getZooKeeper();
+        task_description_watch_zookeeper = zookeeper;
+
         String task_config_str;
         zkutil::Stat stat;
         int code;
 
-        getZooKeeper()->tryGetWatch(task_description_path, task_config_str, &stat, task_description_watch_callback, &code);
+        zookeeper->tryGetWatch(task_description_path, task_config_str, &stat, task_description_watch_callback, &code);
         if (code != ZOK)
             throw Exception("Can't get description node " + task_description_path, ErrorCodes::BAD_ARGUMENTS);
 
@@ -905,7 +907,10 @@ public:
     void updateConfigIfNeeded()
     {
         UInt64 version_to_update = task_descprtion_version;
-        if (task_descprtion_current_version == version_to_update)
+        bool is_outdated_version = task_descprtion_current_version != version_to_update;
+        bool is_expired_session = !task_description_watch_zookeeper || task_description_watch_zookeeper->expired();
+
+        if (!is_outdated_version && !is_expired_session)
             return;
 
         LOG_DEBUG(log, "Updating task description");
@@ -964,14 +969,15 @@ public:
 
             task_table.watch.restart();
 
-            bool table_is_done = false;
-            size_t num_table_tries = 0;
-
             /// Retry table processing
-            while (!table_is_done && num_table_tries < max_table_tries)
+            bool table_is_done = false;
+            for (size_t num_table_tries = 0; num_table_tries < max_table_tries; ++num_table_tries)
             {
-                table_is_done = tryProcessTable(task_table);
-                ++num_table_tries;
+                if (tryProcessTable(task_table))
+                {
+                    table_is_done = true;
+                    break;
+                }
             }
 
             if (!table_is_done)
@@ -1940,17 +1946,17 @@ protected:
         return successful_shards;
     }
 
-    void initZooKeeper()
+    zkutil::ZooKeeperPtr getZooKeeper()
     {
-        current_zookeeper = std::make_shared<zkutil::ZooKeeper>(*zookeeper_config, "zookeeper");
-    }
+        auto zookeeper = context.getZooKeeper();
 
-    const zkutil::ZooKeeperPtr & getZooKeeper()
-    {
-        if (!current_zookeeper)
-            throw Exception("Cannot get ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+        if (!zookeeper)
+        {
+            context.setZooKeeper(std::make_shared<zkutil::ZooKeeper>(*zookeeper_config, "zookeeper"));
+            zookeeper = context.getZooKeeper();
+        }
 
-        return current_zookeeper;
+        return zookeeper;
     }
 
 private:
@@ -1960,17 +1966,18 @@ private:
     String host_id;
     String working_database_name;
 
+    /// Auto update config stuff
     UInt64 task_descprtion_current_version = 1;
     std::atomic<UInt64> task_descprtion_version{1};
     zkutil::WatchCallback task_description_watch_callback;
+    /// ZooKeeper session used to set the callback
+    zkutil::ZooKeeperPtr task_description_watch_zookeeper;
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
     zkutil::Stat task_descprtion_current_stat;
 
     std::unique_ptr<TaskCluster> task_cluster;
-
-    zkutil::ZooKeeperPtr current_zookeeper;
 
     bool is_safe_mode = false;
     double copy_fault_probability = 0.0;
