@@ -95,7 +95,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
 
-    NamesAndTypesList required_columns = table->getColumnsList();
+    NamesAndTypesList required_columns = table->columns.getList();
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
@@ -103,7 +103,7 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), required_columns, table->column_defaults, context);
+        out, getSampleBlock(query, table), required_columns, table->columns.defaults, context);
 
     /// Do not squash blocks if it is a sync INSERT into Distributed
     if (!(context.getSettingsRef().insert_distributed_sync && table->getName() == "Distributed"))
@@ -135,7 +135,7 @@ BlockIO InterpreterInsertQuery::execute()
         if (!allow_materialized)
         {
             Block in_header = res.in->getHeader();
-            for (const auto & name_type : table->materialized_columns)
+            for (const auto & name_type : table->columns.materialized)
                 if (in_header.has(name_type.name))
                     throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }

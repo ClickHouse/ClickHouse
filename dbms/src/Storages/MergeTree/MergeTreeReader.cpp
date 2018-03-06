@@ -463,7 +463,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
             if (!has_column)
             {
                 should_sort = true;
-                if (storage.column_defaults.count(requested_column.name) != 0)
+                if (storage.columns.defaults.count(requested_column.name) != 0)
                 {
                     should_evaluate_defaults = true;
                     continue;
@@ -498,7 +498,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
 
         /// evaluate defaulted columns if necessary
         if (should_evaluate_defaults)
-            evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+            evaluateMissingDefaults(res, columns, storage.columns.defaults, storage.context);
 
         /// sort columns to ensure consistent order among all blocks
         if (should_sort)

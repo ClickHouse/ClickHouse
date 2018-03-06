@@ -14,7 +14,7 @@ namespace DB
 StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    columns.ordinary = NamesAndTypesList{
         { "is_initial_query",     std::make_shared<DataTypeUInt8>() },
 
         { "user",                 std::make_shared<DataTypeString>() },

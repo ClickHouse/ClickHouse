@@ -141,8 +141,8 @@ try
         if (!column_names.empty())
             storage.check(data_part->columns, column_names);
 
-        pre_columns = storage.getColumnsList().addTypes(pre_column_names);
-        columns = storage.getColumnsList().addTypes(column_names);
+        pre_columns = storage.columns.getList().addTypes(pre_column_names);
+        columns = storage.columns.getList().addTypes(column_names);
     }
     else
     {

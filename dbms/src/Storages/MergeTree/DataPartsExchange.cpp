@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
+#include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>

@@ -56,12 +56,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
             zkutil::Stat stat;
             const String columns_str = zookeeper->get(storage.zookeeper_path + "/columns", &stat, wakeup_event);
-            auto columns_desc = ColumnsDescription<true>::parse(columns_str);
-
-            auto & columns = columns_desc.columns;
-            auto & materialized_columns = columns_desc.materialized;
-            auto & alias_columns = columns_desc.alias;
-            auto & column_defaults = columns_desc.defaults;
+            auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
             bool changed_version = (stat.version != storage.columns_version);
 
@@ -92,42 +87,15 @@ void ReplicatedMergeTreeAlterThread::run()
 
                     auto table_lock = storage.lockStructureForAlter(__PRETTY_FUNCTION__);
 
-                    const auto columns_changed = columns != storage.data.getColumnsListNonMaterialized();
-                    const auto materialized_columns_changed = materialized_columns != storage.data.materialized_columns;
-                    const auto alias_columns_changed = alias_columns != storage.data.alias_columns;
-                    const auto column_defaults_changed = column_defaults != storage.data.column_defaults;
-
-                    if (columns_changed || materialized_columns_changed || alias_columns_changed ||
-                        column_defaults_changed)
+                    if (columns_in_zk != storage.data.columns)
                     {
                         LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 
                         storage.context.getDatabase(storage.database_name)->alterTable(
-                            storage.context, storage.table_name,
-                            columns, materialized_columns, alias_columns, column_defaults, {});
+                            storage.context, storage.table_name, columns_in_zk, {});
 
-                        if (columns_changed)
-                        {
-                            storage.data.setColumnsList(columns);
-                        }
-
-                        if (materialized_columns_changed)
-                        {
-                            storage.materialized_columns = materialized_columns;
-                            storage.data.materialized_columns = std::move(materialized_columns);
-                        }
-
-                        if (alias_columns_changed)
-                        {
-                            storage.alias_columns = alias_columns;
-                            storage.data.alias_columns = std::move(alias_columns);
-                        }
-
-                        if (column_defaults_changed)
-                        {
-                            storage.column_defaults = column_defaults;
-                            storage.data.column_defaults = std::move(column_defaults);
-                        }
+                        storage.columns = columns_in_zk;
+                        storage.data.columns = std::move(columns_in_zk);
 
                         /// Reinitialize primary key because primary key column types might have changed.
                         storage.data.initPrimaryKey();
@@ -158,7 +126,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     if (!changed_version)
                         parts = storage.data.getDataParts();
 
-                    const auto columns_plus_materialized = storage.data.getColumnsList();
+                    const auto columns_plus_materialized = storage.data.columns.getList();
 
                     for (const MergeTreeData::DataPartPtr & part : parts)
                     {

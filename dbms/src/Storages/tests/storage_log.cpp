@@ -36,7 +36,7 @@ try
         {
             ColumnWithTypeAndName column;
             column.name = "a";
-            column.type = table->getDataTypeByName("a");
+            column.type = table->columns.getColumn("a").type;
             auto col = column.type->createColumn();
             ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
@@ -51,7 +51,7 @@ try
         {
             ColumnWithTypeAndName column;
             column.name = "b";
-            column.type = table->getDataTypeByName("b");
+            column.type = table->columns.getColumn("b").type;
             auto col = column.type->createColumn();
             ColumnUInt8::Container & vec = typeid_cast<ColumnUInt8 &>(*col).getData();
 

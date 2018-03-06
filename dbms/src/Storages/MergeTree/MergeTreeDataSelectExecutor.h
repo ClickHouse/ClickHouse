@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/QueryProcessingStage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 

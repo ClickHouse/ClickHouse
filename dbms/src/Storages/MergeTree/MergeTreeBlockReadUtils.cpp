@@ -26,9 +26,9 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
             continue;
         }
 
-        const auto default_it = storage.column_defaults.find(column_name);
+        const auto default_it = storage.columns.defaults.find(column_name);
         /// columns has no explicit default expression
-        if (default_it == std::end(storage.column_defaults))
+        if (default_it == std::end(storage.columns.defaults))
             continue;
 
         /// collect identifiers required for evaluation

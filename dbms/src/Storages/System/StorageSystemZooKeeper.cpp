@@ -22,7 +22,7 @@ namespace DB
 StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    columns.ordinary = NamesAndTypesList{
         { "name",           std::make_shared<DataTypeString>() },
         { "value",          std::make_shared<DataTypeString>() },
         { "czxid",          std::make_shared<DataTypeInt64>() },

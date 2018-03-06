@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -7,8 +8,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/Exception.h>
+
+#include <ext/collection_cast.h>
+#include <ext/map.h>
+
+#include <boost/range/join.hpp>
 
 
 namespace DB
@@ -16,17 +22,47 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_PARSE_TEXT;
 }
 
 
-template <bool store>
-String ColumnsDescription<store>::toString() const
+NamesAndTypesList ColumnsDescription::getList() const
+{
+    return ext::collection_cast<NamesAndTypesList>(boost::join(ordinary, materialized));
+}
+
+
+Names ColumnsDescription::getNames() const
+{
+    return ext::map<Names>(boost::join(ordinary, materialized), [] (const auto & it) { return it.name; });
+}
+
+
+NameAndTypePair ColumnsDescription::get(const String & column_name) const
+{
+    for (auto & it : boost::join(ordinary, materialized))
+        if (it.name == column_name)
+            return it;
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+}
+
+
+bool ColumnsDescription::has(const String & column_name) const
+{
+    for (auto & it : boost::join(ordinary, materialized))
+        if (it.name == column_name)
+            return true;
+    return false;
+}
+
+
+String ColumnsDescription::toString() const
 {
     WriteBufferFromOwnString buf;
 
     writeString("columns format version: 1\n", buf);
-    writeText(columns.size() + materialized.size() + alias.size(), buf);
+    writeText(ordinary.size() + materialized.size() + aliases.size(), buf);
     writeString(" columns:\n", buf);
 
     const auto write_columns = [this, &buf] (const NamesAndTypesList & columns)
@@ -53,16 +89,15 @@ String ColumnsDescription<store>::toString() const
         }
     };
 
-    write_columns(columns);
+    write_columns(ordinary);
     write_columns(materialized);
-    write_columns(alias);
+    write_columns(aliases);
 
     return buf.str();
 }
 
 
-template <>
-ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
+ColumnsDescription ColumnsDescription::parse(const String & str)
 {
     ReadBufferFromString buf{str};
 
@@ -74,7 +109,7 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
     ParserExpression expr_parser;
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    ColumnsDescription<true> result{};
+    ColumnsDescription result;
     for (size_t i = 0; i < count; ++i)
     {
         String column_name;
@@ -88,7 +123,7 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
         {
             assertChar('\n', buf);
 
-            result.columns.emplace_back(column_name, std::move(type));
+            result.ordinary.emplace_back(column_name, std::move(type));
             continue;
         }
         assertChar('\t', buf);
@@ -107,11 +142,11 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
         ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default expression");
 
         if (ColumnDefaultType::Default == default_type)
-            result.columns.emplace_back(column_name, std::move(type));
+            result.ordinary.emplace_back(column_name, std::move(type));
         else if (ColumnDefaultType::Materialized == default_type)
             result.materialized.emplace_back(column_name, std::move(type));
         else if (ColumnDefaultType::Alias == default_type)
-            result.alias.emplace_back(column_name, std::move(type));
+            result.aliases.emplace_back(column_name, std::move(type));
 
         result.defaults.emplace(column_name, ColumnDefault{default_type, default_expr});
     }
@@ -120,9 +155,5 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
 
     return result;
 }
-
-
-template struct ColumnsDescription<false>;
-template struct ColumnsDescription<true>;
 
 }

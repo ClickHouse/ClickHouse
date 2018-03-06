@@ -113,7 +113,8 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
         columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
     }
 
-    auto result = StorageODBC::create(table_name, connection_string, "", table_name, columns);
+    auto result = StorageODBC::create(table_name, connection_string, "", table_name,
+        ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
     result->startup();
     return result;
 }

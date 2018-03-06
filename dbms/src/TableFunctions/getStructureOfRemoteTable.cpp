@@ -32,7 +32,7 @@ NamesAndTypesList getStructureOfRemoteTable(
     const auto & shard_info = cluster.getAnyShardInfo();
 
     if (shard_info.isLocal())
-        return context.getTable(database, table)->getColumnsList();
+        return context.getTable(database, table)->columns.getList();
 
     auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context);
     input->setPoolMode(PoolMode::GET_ONE);

@@ -34,20 +34,19 @@ public:
     ~StorageDistributed() override;
 
     static StoragePtr createWithOwnCluster(
-        const std::string & name_,            /// The name of the table.
-        const NamesAndTypesList & columns_,        /// List of columns.
+        const std::string & table_name_,
+        const NamesAndTypesList & columns_,
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,
         const Context & context_);
 
     std::string getName() const override { return "Distributed"; }
-    std::string getTableName() const override { return name; }
+    std::string getTableName() const override { return table_name; }
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
@@ -64,7 +63,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     void drop() override {}
-    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { table_name = new_table_name; }
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
@@ -95,7 +94,7 @@ public:
     ClusterPtr getCluster() const;
 
 
-    String name;
+    String table_name;
     String remote_database;
     String remote_table;
 
@@ -132,10 +131,7 @@ public:
 protected:
     StorageDistributed(
         const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,

@@ -64,12 +64,9 @@ StorageMaterializedView::StorageMaterializedView(
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
+    : IStorage{columns_}, table_name(table_name_),
     database_name(database_name_), global_context(local_context.getGlobalContext())
 {
     if (!query.select)
@@ -213,8 +210,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         /// Pass local_context here to convey setting for inner table
         return StorageMaterializedView::create(
             args.table_name, args.database_name, args.local_context, args.query,
-            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
-            args.attach);
+            args.columns, args.attach);
     });
 }
 
