@@ -28,6 +28,8 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override;
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(
@@ -36,13 +38,18 @@ public:
     bool isModified() const override { return true; }
     bool supportsSelectiveLoad() const override { return true; }
 
+    bool hasUpdateField() const override;
+
     DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
 
 private:
+    std::string getUpdateFieldAndDate();
+
     BlockInputStreamPtr createStreamForSelectiveLoad(const std::string & query);
 
+    std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string host;
     const UInt16 port;
@@ -51,6 +58,7 @@ private:
     const std::string db;
     const std::string table;
     const std::string where;
+    const std::string update_field;
     ExternalQueryBuilder query_builder;
     Block sample_block;
     Context & context;
