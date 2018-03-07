@@ -757,8 +757,6 @@ Tables Context::getExternalTables() const
 
 StoragePtr Context::tryGetExternalTable(const String & table_name) const
 {
-    auto lock = getLock();
-
     TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
     if (external_tables.end() == jt)
         return StoragePtr();
@@ -833,8 +831,6 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {
-    auto lock = getLock();
-
     TableAndCreateASTs::const_iterator it = external_tables.find(table_name);
 
     if (external_tables.end() == it)
@@ -932,8 +928,6 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 
 ASTPtr Context::getCreateExternalQuery(const String & table_name) const
 {
-    auto lock = getLock();
-
     TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
     if (external_tables.end() == jt)
         throw Exception("Temporary Table" + table_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
