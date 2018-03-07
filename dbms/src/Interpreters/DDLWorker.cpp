@@ -372,7 +372,7 @@ void DDLWorker::processTasks()
             String reason;
             if (!initAndCheckTask(entry_name, reason))
             {
-                LOG_DEBUG(log, "Will not execute task " << entry_name << " : " << reason);
+                LOG_DEBUG(log, "Will not execute task " << entry_name << ": " << reason);
                 last_processed_task_name = entry_name;
                 continue;
             }
@@ -978,7 +978,7 @@ public:
 
         while(res.rows() == 0)
         {
-            if (is_cancelled)
+            if (isCancelled())
                 return res;
 
             if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)

@@ -35,14 +35,16 @@ Block ParallelAggregatingBlockInputStream::getHeader() const
 }
 
 
-void ParallelAggregatingBlockInputStream::cancel()
+void ParallelAggregatingBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
 
     if (!executed)
-        processor.cancel();
+        processor.cancel(kill);
 }
 
 
@@ -55,7 +57,7 @@ Block ParallelAggregatingBlockInputStream::readImpl()
 
         execute();
 
-        if (isCancelled())
+        if (isCancelledOrThrowIfKilled())
             return {};
 
         if (!aggregator.hasTemporaryFiles())
@@ -92,7 +94,7 @@ Block ParallelAggregatingBlockInputStream::readImpl()
     }
 
     Block res;
-    if (isCancelled() || !impl)
+    if (isCancelledOrThrowIfKilled() || !impl)
         return res;
 
     return impl->read();
@@ -150,7 +152,7 @@ void ParallelAggregatingBlockInputStream::Handler::onFinish()
 void ParallelAggregatingBlockInputStream::Handler::onException(std::exception_ptr & exception, size_t thread_num)
 {
     parent.exceptions[thread_num] = exception;
-    parent.cancel();
+    parent.cancel(false);
 }
 
 
@@ -174,7 +176,7 @@ void ParallelAggregatingBlockInputStream::execute()
 
     rethrowFirstException(exceptions);
 
-    if (isCancelled())
+    if (isCancelledOrThrowIfKilled())
         return;
 
     double elapsed_seconds = watch.elapsedSeconds();
