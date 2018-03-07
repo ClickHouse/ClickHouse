@@ -41,16 +41,16 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     const ASTShowCreateQuery & ast = typeid_cast<const ASTShowCreateQuery &>(*query_ptr);
 
     if (ast.temporary && !ast.database.empty())
-        throw Exception("Can't add database When using `TEMPORARY`", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
 
-    ASTPtr createQuery = (ast.temporary ? context.getCreateExternalQuery(ast.table) :
+    ASTPtr create_query = (ast.temporary ? context.getCreateExternalQuery(ast.table) :
                           context.getCreateQuery(ast.database, ast.table));
 
-    if (!createQuery && ast.temporary)
-        throw Exception("Unable to show the create query of " + ast.table + ", It maybe created by system.");
+    if (!create_query && ast.temporary)
+        throw Exception("Unable to show the create query of " + ast.table + ". Maybe it is created by the system.");
 
     std::stringstream stream;
-    formatAST(*createQuery, stream, false, true);
+    formatAST(*create_query, stream, false, true);
     String res = stream.str();
 
     MutableColumnPtr column = ColumnString::create();
