@@ -124,7 +124,7 @@ private:
         { "light magenta", "95" },
         { "light cyan",    "96" },
 
-        /* Background*/
+        /* Background */
         { "background black",   "40" },
         { "background red",     "41" },
         { "background green",   "42" },
