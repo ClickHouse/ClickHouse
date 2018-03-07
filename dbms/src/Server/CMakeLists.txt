@@ -10,7 +10,7 @@ option (ENABLE_CLICKHOUSE_LOCAL "Enable local" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_BENCHMARK "Enable benchmark" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_PERFORMANCE "Enable performance" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_TOOLS "Enable tools: compressor format extract-from-config-lib" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_COPIER "Enable copier" ${ENABLE_CLICKHOUSE_COPIER})
+option (ENABLE_CLICKHOUSE_COPIER "Enable copier" ${ENABLE_CLICKHOUSE_ALL})
 
 configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
