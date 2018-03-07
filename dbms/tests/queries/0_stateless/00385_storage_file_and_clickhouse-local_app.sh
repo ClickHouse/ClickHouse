@@ -25,7 +25,7 @@ function pack_unpack_compare()
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.buf"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.buf_file"
-    rm -f "${CLICKHOUSE_TMP}/$buf_file" stderr
+    rm -f "$buf_file" stderr
 
     echo $((res_orig - res_db_file)) $((res_orig - res_ch_local1)) $((res_orig - res_ch_local2))
 }
