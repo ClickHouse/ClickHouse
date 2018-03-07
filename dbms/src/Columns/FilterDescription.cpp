@@ -25,7 +25,20 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
     if (column.isColumnConst())
     {
-        if (static_cast<const ColumnConst &>(column).getValue<UInt8>())
+        const ColumnConst & column_const = static_cast<const ColumnConst &>(column);
+        const IColumn & column_nested = column_const.getDataColumn();
+
+        if (!typeid_cast<const ColumnUInt8 *>(&column_nested))
+        {
+            const ColumnNullable * column_nested_nullable = typeid_cast<const ColumnNullable *>(&column_nested);
+            if (!column_nested_nullable || !typeid_cast<const ColumnUInt8 *>(&column_nested_nullable->getNestedColumn()))
+            {
+                throw Exception("Illegal type " + column_nested.getName() + " of column for constant filter. Must be UInt8 or Nullable(UInt8).",
+                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+            }
+        }
+
+        if (column_const.getValue<UInt64>())
             always_true = true;
         else
             always_false = true;
