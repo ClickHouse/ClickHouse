@@ -8,13 +8,10 @@
 #include <Core/Defines.h>
 #include <Common/AIO.h>
 #include <Common/CurrentMetrics.h>
-
+#include <unistd.h>
 #include <string>
 #include <limits>
 #include <fcntl.h>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
 
 
 namespace CurrentMetrics

@@ -11,9 +11,7 @@
 
 #include <string>
 #include <fcntl.h>
-#if !_MSC_VER
 #include <unistd.h>
-#endif
 
 
 namespace CurrentMetrics

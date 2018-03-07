@@ -47,10 +47,7 @@
 #include "InterruptListener.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code

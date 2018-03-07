@@ -6,7 +6,7 @@
 #include <Common/ShellCommand.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <unistd.h>
+#include <port/unistd.h>
 
 
 namespace DB

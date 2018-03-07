@@ -6,10 +6,7 @@
 #include <Core/Defines.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
-
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 
 
 namespace DB

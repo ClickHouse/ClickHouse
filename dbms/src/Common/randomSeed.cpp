@@ -4,9 +4,7 @@
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <Core/Types.h>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 #ifdef __APPLE__
 #include <common/apple_rt.h>
 #endif

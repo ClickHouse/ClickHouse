@@ -4,9 +4,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 #include <Common/Exception.h>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 
 
 namespace DB

@@ -12,9 +12,7 @@
 #if defined(WIN32) || defined(_WIN32)
 #include <Windows.h>
 #else
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 #include <sys/types.h>
 #include <sys/param.h>
 #if defined(BSD)

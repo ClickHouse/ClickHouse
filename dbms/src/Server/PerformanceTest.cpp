@@ -29,9 +29,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
 #include "InterruptListener.h"
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with

@@ -2,9 +2,7 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Common/Exception.h>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 
 
 int main(int, char **)

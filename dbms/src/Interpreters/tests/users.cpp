@@ -9,9 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <cstdlib>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 
 namespace
 {

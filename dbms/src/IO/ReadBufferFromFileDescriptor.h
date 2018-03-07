@@ -2,9 +2,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
+#include <port/unistd.h>
 
 
 namespace DB
