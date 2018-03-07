@@ -184,7 +184,7 @@ Deletes all tables inside the 'db' database, then deletes the 'db' database itse
 If `IF EXISTS` is specified, it doesn't return an error if the database doesn't exist.
 
 ```sql
-DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Deletes the table.
@@ -452,7 +452,7 @@ See also the section "Formats".
 ## SHOW TABLES
 
 ```sql
-SHOW TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
+SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Displays a list of tables
@@ -499,7 +499,7 @@ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ## SHOW CREATE TABLE
 
 ```sql
-SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
@@ -517,7 +517,7 @@ Nested data structures are output in "expanded" format. Each column is shown sep
 ## EXISTS
 
 ```sql
-EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
+EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn't exist, or `1` if the table exists in the specified database.

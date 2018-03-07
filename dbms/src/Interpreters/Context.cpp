@@ -673,6 +673,11 @@ bool Context::isDatabaseExist(const String & database_name) const
     return shared->databases.end() != shared->databases.find(db);
 }
 
+bool Context::isExternalTableExist(const String & table_name) const
+{
+    return external_tables.end() != external_tables.find(table_name);
+}
+
 
 void Context::assertTableExists(const String & database_name, const String & table_name) const
 {
@@ -733,7 +738,10 @@ Tables Context::getExternalTables() const
 {
     auto lock = getLock();
 
-    Tables res = external_tables;
+    Tables res;
+    for (auto & table : external_tables)
+        res[table.first] = table.second.first;
+
     if (session_context && session_context != this)
     {
         Tables buf = session_context->getExternalTables();
@@ -750,10 +758,11 @@ Tables Context::getExternalTables() const
 
 StoragePtr Context::tryGetExternalTable(const String & table_name) const
 {
-    auto it = external_tables.find(table_name);
-    if (external_tables.end() == it)
+    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
+    if (external_tables.end() == jt)
         return StoragePtr();
-    return it->second;
+
+    return jt->second.first;
 }
 
 
@@ -807,12 +816,12 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 }
 
 
-void Context::addExternalTable(const String & table_name, const StoragePtr & storage)
+void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
     if (external_tables.end() != external_tables.find(table_name))
         throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-    external_tables[table_name] = storage;
+    external_tables[table_name] = std::pair(storage, ast);
 
     if (process_list_elem)
     {
@@ -823,11 +832,12 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {
-    auto it = external_tables.find(table_name);
+    TableAndCreateASTs::const_iterator it = external_tables.find(table_name);
+
     if (external_tables.end() == it)
         return StoragePtr();
 
-    auto storage = it->second;
+    auto storage = it->second.first;
     external_tables.erase(it);
     return storage;
 }
@@ -915,6 +925,15 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
     assertDatabaseExists(db);
 
     return shared->databases[db]->getCreateQuery(*this, table_name);
+}
+
+ASTPtr Context::getCreateExternalQuery(const String & table_name) const
+{
+    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
+    if (external_tables.end() == jt)
+        throw Exception("Temporary Table" + table_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
+
+    return jt->second.second;
 }
 
 
