@@ -16,7 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int SYNTAX_ERROR;
+    extern const int SYNTAX_ERROR;
+    extern const int THERE_IS_NO_QUERY;
 }
 
 BlockIO InterpreterShowCreateQuery::execute()
@@ -47,7 +48,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
                           context.getCreateQuery(ast.database, ast.table));
 
     if (!create_query && ast.temporary)
-        throw Exception("Unable to show the create query of " + ast.table + ". Maybe it is created by the system.");
+        throw Exception("Unable to show the create query of " + ast.table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     std::stringstream stream;
     formatAST(*create_query, stream, false, true);
