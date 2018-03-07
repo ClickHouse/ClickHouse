@@ -71,7 +71,7 @@ def test_DROP_DNS_CACHE(started_cluster):
 
     instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
     instance.query("SELECT * FROM distributed_lost_host")
-    assert TSV(instance.query("SELECT DISTINCT host_name, host_address FROM system.clusters")) == TSV("lost_host\t127.0.0.1\n")
+    assert TSV(instance.query("SELECT DISTINCT host_name, host_address FROM system.clusters WHERE cluster='lost_host_cluster'")) == TSV("lost_host\t127.0.0.1\n")
 
 
 if __name__ == '__main__':

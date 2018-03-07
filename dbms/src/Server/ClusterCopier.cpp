@@ -23,7 +23,7 @@
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
@@ -1374,9 +1374,7 @@ protected:
                 local_context.getSettingsRef() = task_cluster->settings_pull;
                 local_context.getSettingsRef().skip_unavailable_shards = true;
 
-                InterpreterSelectQuery interperter(query_select_ast, local_context);
-
-                Block block = getBlockWithAllStreamData(interperter.execute().in);
+                Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().in);
                 count = (block) ? block.safeGetByPosition(0).column->getUInt(0) : 0;
             }
 
@@ -1465,11 +1463,8 @@ protected:
                 Context context_insert = context;
                 context_insert.getSettingsRef() = task_cluster->settings_push;
 
-                InterpreterSelectQuery interpreter_select(query_select_ast, context_select);
-                BlockIO io_select = interpreter_select.execute();
-
-                InterpreterInsertQuery interpreter_insert(query_insert_ast, context_insert);
-                BlockIO io_insert = interpreter_insert.execute();
+                BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
+                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
                 using ExistsFuture = zkutil::ZooKeeper::ExistsFuture;
                 auto future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
@@ -1668,8 +1663,7 @@ protected:
         ASTPtr query_ast = parseQuery(parser_query, query);
 
         Context local_context = context;
-        InterpreterSelectQuery interp(query_ast, local_context);
-        Block block = getBlockWithAllStreamData(interp.execute().in);
+        Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().in);
 
         std::set<String> res;
         if (block)
