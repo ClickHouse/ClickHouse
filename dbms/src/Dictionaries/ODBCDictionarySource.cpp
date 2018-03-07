@@ -25,7 +25,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     db{config.getString(config_prefix + ".db", "")},
     table{config.getString(config_prefix + ".table")},
     where{config.getString(config_prefix + ".where", "")},
-    update_field{config.getString(config_prefix + ".update_field")},
+    update_field{config.getString(config_prefix + ".update_field", "")},
     sample_block{sample_block},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},    /// NOTE Better to obtain quoting style via ODBC interface.
     load_all_query{query_builder.composeLoadAllQuery()},
