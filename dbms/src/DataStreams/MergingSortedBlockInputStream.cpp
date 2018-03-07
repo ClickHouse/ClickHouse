@@ -176,7 +176,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         if (limit && total_merged_rows == limit)
         {
     //        std::cerr << "Limit reached\n";
-            cancel();
+            cancel(false);
             finished = true;
             return true;
         }
@@ -236,7 +236,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                         column = column->cut(0, merged_rows);
                     }
 
-                    cancel();
+                    cancel(false);
                     finished = true;
                 }
 
@@ -304,7 +304,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             return;
     }
 
-    cancel();
+    cancel(false);
     finished = true;
 }
 

@@ -230,7 +230,7 @@ ProcessListElement * ProcessList::tryGetProcessListElement(const String & curren
 }
 
 
-ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -251,7 +251,7 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
         IProfilingBlockInputStream * input_stream_casted;
         if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
         {
-            input_stream_casted->cancel();
+            input_stream_casted->cancel(kill);
             return CancellationCode::CancelSent;
         }
         return CancellationCode::CancelCannotBeSent;

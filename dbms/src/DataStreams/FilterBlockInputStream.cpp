@@ -33,19 +33,18 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     expression->execute(header);
 
     filter_column = header.getPositionByName(filter_column_name);
+    auto & column_elem = header.safeGetByPosition(filter_column);
 
     /// Isn't the filter already constant?
-    ColumnPtr column = header.safeGetByPosition(filter_column).column;
-
-    if (column)
-        constant_filter_description = ConstantFilterDescription(*column);
+    if (column_elem.column)
+        constant_filter_description = ConstantFilterDescription(*column_elem.column);
 
     if (!constant_filter_description.always_false
         && !constant_filter_description.always_true)
     {
         /// Replace the filter column to a constant with value 1.
-        auto & header_filter_elem = header.getByPosition(filter_column);
-        header_filter_elem.column = header_filter_elem.type->createColumnConst(header.rows(), UInt64(1));
+        FilterDescription filter_description_check(*column_elem.column);
+        column_elem.column = column_elem.type->createColumnConst(header.rows(), UInt64(1));
     }
 }
 

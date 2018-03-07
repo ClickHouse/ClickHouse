@@ -22,7 +22,7 @@ Block CreatingSetsBlockInputStream::readImpl()
 
     createAll();
 
-    if (isCancelled())
+    if (isCancelledOrThrowIfKilled())
         return res;
 
     return children.back()->read();
@@ -54,7 +54,7 @@ void CreatingSetsBlockInputStream::createAll()
         {
             if (elem.second.source) /// There could be prepared in advance Set/Join - no source is specified for them.
             {
-                if (isCancelled())
+                if (isCancelledOrThrowIfKilled())
                     return;
 
                 createOne(elem.second);
@@ -139,7 +139,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         if (done_with_set && done_with_join && done_with_table)
         {
             if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
-                profiling_in->cancel();
+                profiling_in->cancel(false);
 
             break;
         }

@@ -99,7 +99,7 @@ public:
         try
         {
             if (!all_read)
-                cancel();
+                cancel(false);
 
             finalize();
         }
@@ -112,14 +112,17 @@ public:
     /** Different from the default implementation by trying to stop all sources,
       * skipping failed by execution.
       */
-    void cancel() override
+    void cancel(bool kill) override
     {
+        if (kill)
+            is_killed = true;
+
         bool old_val = false;
         if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
             return;
 
         //std::cerr << "cancelling\n";
-        processor.cancel();
+        processor.cancel(kill);
     }
 
     BlockExtraInfo getBlockExtraInfo() const override
@@ -217,7 +220,7 @@ protected:
     void readSuffix() override
     {
         //std::cerr << "readSuffix\n";
-        if (!all_read && !is_cancelled.load(std::memory_order_seq_cst))
+        if (!all_read && !isCancelled())
             throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
 
         finalize();
@@ -281,7 +284,7 @@ private:
             ///  and the exception is lost.
 
             parent.output_queue.push(exception);
-            parent.cancel();    /// Does not throw exceptions.
+            parent.cancel(false);    /// Does not throw exceptions.
         }
 
         Self & parent;
