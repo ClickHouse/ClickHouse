@@ -538,7 +538,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             false);
 
         if (create.is_temporary)
-            context.getSessionContext().addExternalTable(table_name, res);
+            context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
     }
@@ -557,7 +557,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         insert->table = table_name;
         insert->select = create.select->clone();
 
-        return InterpreterInsertQuery(insert, context.getSessionContext(), context.getSettingsRef().insert_allow_materialized_columns).execute();
+        return InterpreterInsertQuery(insert,
+            create.is_temporary ? context.getSessionContext() : context,
+            context.getSettingsRef().insert_allow_materialized_columns).execute();
     }
 
     return {};

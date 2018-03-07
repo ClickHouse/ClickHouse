@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-static void extractDependentTable(const ASTSelectQuery & query, String & select_database_name, String & select_table_name)
+static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
     auto query_table = query.table();
 
@@ -37,21 +37,20 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
         auto query_database = query.database();
 
         if (!query_database)
-            throw Exception("Logical error while creating StorageMaterializedView."
-                " Could not retrieve database name from select query.",
-                DB::ErrorCodes::LOGICAL_ERROR);
+            query.setDatabaseIfNeeded(select_database_name);
 
-        select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
         select_table_name = ast_id->name;
+        select_database_name = query_database ? typeid_cast<const ASTIdentifier &>(*query_database).name : select_database_name;
+
     }
-    else if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::INCORRECT_QUERY);
 
-        auto inner_query = ast_select->list_of_selects->children.at(0);
+        auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        extractDependentTable(typeid_cast<const ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
+        extractDependentTable(typeid_cast<ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
     }
     else
         throw Exception("Logical error while creating StorageMaterializedView."
@@ -81,12 +80,14 @@ StorageMaterializedView::StorageMaterializedView(
             "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
             ErrorCodes::INCORRECT_QUERY);
 
+    /// Default value, if only table name exist in the query
+    select_database_name = local_context.getCurrentDatabase();
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::INCORRECT_QUERY);
 
     inner_query = query.select->list_of_selects->children.at(0);
 
-    extractDependentTable(typeid_cast<const ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
+    extractDependentTable(typeid_cast<ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
 
     if (!select_table_name.empty())
         global_context.addDependency(
