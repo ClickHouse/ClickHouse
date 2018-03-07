@@ -674,8 +674,6 @@ bool Context::isDatabaseExist(const String & database_name) const
 
 bool Context::isExternalTableExist(const String & table_name) const
 {
-    auto lock = getLock();
-
     return external_tables.end() != external_tables.find(table_name);
 }
 
