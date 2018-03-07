@@ -102,7 +102,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
     std::string load_update_query = getUpdateFieldAndDate();
     if (is_local)
         return executeQuery(load_update_query, context, true).in;
-    return std::make_shared<RemoteBlockInputStream>(pool, load_update_query, context);
+    return std::make_shared<RemoteBlockInputStream>(pool, load_update_query, sample_block, context);
 }
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
