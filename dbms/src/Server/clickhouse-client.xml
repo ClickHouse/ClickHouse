@@ -13,9 +13,18 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
+    <!--
+        It's a custom prompt settings for the clickhouse-client
+        Possible macros: 
+            {host}
+            {port}
+            {user}
+            {database} 
+            {display_name}
+    -->
     <prompt_by_server_display_name>
-        <default>%display_name% :)</default>
-        <test>%display_name% [green]:)[/green]</test>
-        <production>%display_name% [red]:)[/red]</production> 
+        <default>{display_name} :) </default>
+        <test>{display_name} [green]:)[/green </test> <!-- if it matched to the substring "test" in the server display name - -->
+        <production>{display_name} [red]:)[/red] </production> <!-- if it matched to the substring "production" in the server display name -->
     </prompt_by_server_display_name>
 </config>
