@@ -1,4 +1,4 @@
-# ClickHouse 1.1.54356 Release Candidate, 2018-03-06
+# ClickHouse 1.1.54358 Release Candidate, 2018-03-08
 
 ## Новые возможности:
 
@@ -12,13 +12,15 @@
 * Добавлена функция `arrayCumSum` (Javi Santana).
 * Добавлена функция `parseDateTimeBestEffort`, `parseDateTimeBestEffortOrZero`, `parseDateTimeBestEffortOrNull`, позволяющая прочитать DateTime из строки, содержащей текст в широком множестве возможных форматов.
 * Возможность изменения параметров логгирования без перезагрузки сервера.
+* Возможность частичной перезагрузки данных внешних словарей при их обновлении (загрузка лишь записей со значением заданного поля большим, чем при предыдущей загрузке) (Arsen Hakobyan).
 * Добавлена табличная функция `cluster`. Пример: `cluster(cluster_name, db, table)`. Табличная функция `remote` может принимать имя кластера в качестве первого аргумента, если оно указано в виде идентификатора.
+* Возможность использования табличных функций `remote`, `cluster` в `INSERT` запросах.
 * Добавлены виртуальные столбцы `create_table_query`, `engine_full` в таблице `system.tables`. Столбец `metadata_modification_time` сделан виртуальным.
 * Добавлены столбцы `data_path`, `metadata_path` в таблицы `system.tables` и` system.databases`, а также столбец `path` в таблицы `system.parts` и `system.parts_columns`.
 * Добавлена дополнительная информация о слияниях в таблице `system.part_log`.
 * Возможность использования произвольного ключа партиционирования для таблицы `system.query_log` (Kirill Shvakov).
 * Запрос `SHOW TABLES` теперь показывает также и временные таблицы. Добавлены временные таблицы и столбец `is_temporary` в таблице `system.tables` (zhang2014).
-* Добавлен запрос `DROP TEMPORARY TABLE` (zhang2014).
+* Добавлен запрос `DROP TEMPORARY TABLE`, `EXISTS TEMPORARY TABLE` (zhang2014).
 * Поддержка `SHOW CREATE TABLE` для временных таблиц (zhang2014).
 * Добавлен конфигурационный параметр `system_profile` для настроек, используемых внутренними процессами.
 * Поддержка загрузки `object_id` в качестве атрибута в словарях с источником `MongoDB` (Павел Литвиненко).
