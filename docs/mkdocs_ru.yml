@@ -219,7 +219,7 @@ pages:
   - 'Встроенные словари': 'dicts/internal_dicts.md'
 
 - 'Эксплуатация':
-  - 'Эксплуатация': 'operations/index.md'
+#  - 'Эксплуатация': 'operations/index.md'
   - 'Права доступа': 'operations/access_rights.md'
   - 'Конфигурационные файлы': 'operations/configuration_files.md'
   - 'Квоты': 'operations/quotas.md'
