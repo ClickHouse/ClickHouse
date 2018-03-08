@@ -153,12 +153,9 @@ public:
         current_size = 0;
         hits = 0;
         misses = 0;
-        current_weight_lost = 0;
     }
 
-protected:
-    /// Total weight of evicted values. This value is reset every time it is sent to profile events.
-    size_t current_weight_lost = 0;
+    virtual ~LRUCache() {}
 
 private:
 
@@ -312,6 +309,7 @@ private:
 
     void removeOverflow(const Timestamp & last_timestamp)
     {
+        size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
         while ((current_size > max_size) && (queue_size > 1))
         {
@@ -336,12 +334,17 @@ private:
             --queue_size;
         }
 
+        onRemoveOverflowWeightLoss(current_weight_lost);
+
         if (current_size > (1ull << 63))
         {
             LOG_ERROR(&Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
     }
+
+    /// Override this method if you want to track how much weight was lost in removeOverflow method.
+    virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
 };
 
 
