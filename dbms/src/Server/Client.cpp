@@ -381,7 +381,7 @@ private:
         Strings keys;
         config().keys("prompt_by_server_display_name", keys);
 
-        prompt_by_server_display_name = config().getString("prompt_by_server_display_name.default", "%display_name% :)");
+        prompt_by_server_display_name = config().getString("prompt_by_server_display_name.default", "{display_name} :) ");
 
         for (const String & key : keys)
         {
@@ -514,11 +514,8 @@ private:
     {
         String pattern = prompt_by_server_display_name;
 
-        for (const auto & [key, value]: colors)
+        for (const auto & [name, code]: colors)
         {
-            String name = static_cast<String>(key);
-            String code = static_cast<String>(value);
-
             boost::replace_all(pattern, "[" + name + "]",  "\33[1;" + code + "m");
             boost::replace_all(pattern, "[/" + name + "]", "\033[0m");
         }
@@ -533,7 +530,7 @@ private:
 
         for (const auto & [key, value]: environment)
         {
-            boost::replace_all(pattern, "%" + static_cast<String>(key) + "%",  static_cast<String>(value));
+            boost::replace_all(pattern, "{" + key + "}", value);
         }
 
         return pattern;

@@ -31,7 +31,6 @@
 #include "TCPHandler.h"
 
 #include <Common/NetException.h>
-#include <Common/getFQDNOrHostName.h>
 
 
 namespace DB
@@ -511,7 +510,7 @@ void TCPHandler::sendHello()
     }
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
     {
-        writeStringBinary(server.config().getString("display_name", getFQDNOrHostName()), *out);
+        writeStringBinary(server_display_name, *out);
     }
     out->next();
 }

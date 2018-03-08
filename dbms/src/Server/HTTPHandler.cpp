@@ -198,7 +198,7 @@ HTTPHandler::HTTPHandler(IServer & server_)
     : server(server_)
     , log(&Logger::get("HTTPHandler"))
 {
-    display_name = server.config().getString("display_name", getFQDNOrHostName());
+    server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
 
 
@@ -632,7 +632,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     try
     {
         response.setContentType("text/plain; charset=UTF-8");
-        response.set("X-ClickHouse-Display-Name", display_name);
+        response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
         if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
