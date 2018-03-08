@@ -112,11 +112,11 @@ protected:
     class LockedObjectsMap
     {
     public:
-        LockedObjectsMap(std::mutex & mutex, const ObjectsMap & objectsMap) : lock(mutex), objectsMap(objectsMap) {}
-        const ObjectsMap & get() { return objectsMap; }
+        LockedObjectsMap(std::mutex & mutex, const ObjectsMap & objects_map) : lock(mutex), objects_map(objects_map) {}
+        const ObjectsMap & get() { return objects_map; }
     private:
         std::unique_lock<std::mutex> lock;
-        const ObjectsMap & objectsMap;
+        const ObjectsMap & objects_map;
     };
 
     /// Direct access to objects.
