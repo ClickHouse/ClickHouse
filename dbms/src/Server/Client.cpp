@@ -103,46 +103,6 @@ private:
         "учшеж", "йгшеж", "дщпщгеж",
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
-    std::map<String, String> colors = {
-        { "bold",    "1"  },
-        /* Foreground */
-        { "black",   "30" },
-        { "red",     "31" },
-        { "green",   "32" },
-        { "yellow",  "33" },
-        { "blue",    "34" },
-        { "magenta", "35" },
-        { "cyan",    "36" },
-        { "white",   "97" },
-
-        { "light gray",    "37" },
-        { "dark gray",     "90" },
-        { "light red",     "91" },
-        { "light green",   "92" },
-        { "light yellow",  "93" },
-        { "light blue",    "94" },
-        { "light magenta", "95" },
-        { "light cyan",    "96" },
-
-        /* Background */
-        { "background black",   "40" },
-        { "background red",     "41" },
-        { "background green",   "42" },
-        { "background yellow",  "43" },
-        { "background blue",    "44" },
-        { "background magenta", "45" },
-        { "background cyan",    "46" },
-        { "background white",   "107" },
-
-        { "background light gray",    "47" },
-        { "background dark gray",     "100" },
-        { "background light red",     "101" },
-        { "background light green",   "102" },
-        { "background light yellow",  "103" },
-        { "background light blue",    "104" },
-        { "background light magenta", "105" },
-        { "background light cyan",    "106" },
-    };
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
@@ -379,9 +339,10 @@ private:
         }
 
         Strings keys;
-        config().keys("prompt_by_server_display_name", keys);
 
         prompt_by_server_display_name = config().getString("prompt_by_server_display_name.default", "{display_name} :) ");
+
+        config().keys("prompt_by_server_display_name", keys);
 
         for (const String & key : keys)
         {
@@ -390,6 +351,30 @@ private:
                 prompt_by_server_display_name = config().getString("prompt_by_server_display_name." + key);
                 break;
             }
+        }
+
+        std::map<String, String> terminalCharacters = {
+            { "\\e[",   "\e["  },
+            { "\\33[",  "\33[" },
+            { "\\033[", "\033["},
+            { "\\x1B[", "\x1B["},
+        };
+
+        for (const auto & [key, value]: terminalCharacters)
+        {
+            boost::replace_all(prompt_by_server_display_name, key, value);
+        }
+
+        std::map<String, String> environment = {
+            {"host",         config().getString("host", "localhost")},
+            {"port",         config().getString("port", "9000")},
+            {"user",         config().getString("user", "default")},
+            {"display_name", server_display_name},
+        };
+
+        for (const auto & [key, value]: environment)
+        {
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
         }
 
         if (is_interactive)
@@ -483,9 +468,8 @@ private:
         connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
-        server_display_name = connection->getServerDisplayName();
-        
-        if (server_display_name.length() == 0)
+
+        if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -513,26 +497,7 @@ private:
     const String prompt() const
     {
         String pattern = prompt_by_server_display_name;
-
-        for (const auto & [name, code]: colors)
-        {
-            boost::replace_all(pattern, "[" + name + "]",  "\33[1;" + code + "m");
-            boost::replace_all(pattern, "[/" + name + "]", "\033[0m");
-        }
-
-        std::map<String, String> environment = {
-            {"host",         config().getString("host", "localhost")},
-            {"port",         config().getString("port", "9000")},
-            {"display_name", server_display_name},
-            {"user",         config().getString("user",     "default")},
-            {"database",     config().getString("database", "default")},
-        };
-
-        for (const auto & [key, value]: environment)
-        {
-            boost::replace_all(pattern, "{" + key + "}", value);
-        }
-
+        boost::replace_all(pattern, "{database}", config().getString("database", "default"));
         return pattern;
     }
 
