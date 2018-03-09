@@ -75,7 +75,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 
     const ColumnString & query_id_col = typeid_cast<const ColumnString &>(*processes_block.getByName("query_id").column);
     const ColumnString & user_col = typeid_cast<const ColumnString &>(*processes_block.getByName("user").column);
-    const ClientInfo & my_client = context.getProcessListElement()->client_info;
+    const ClientInfo & my_client = context.getProcessListElement()->getClientInfo();
 
     for (size_t i = 0; i < num_processes; ++i)
     {

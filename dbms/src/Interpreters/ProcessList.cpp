@@ -25,6 +25,9 @@ ProcessList::EntryPtr ProcessList::insert(
     EntryPtr res;
     bool is_kill_query = ast && typeid_cast<const ASTKillQueryQuery *>(ast);
 
+    if (client_info.current_query_id.empty())
+        throw Exception("Query id cannot be empty", ErrorCodes::LOGICAL_ERROR);
+
     {
         std::lock_guard<std::mutex> lock(mutex);
 
@@ -54,19 +57,16 @@ ProcessList::EntryPtr ProcessList::insert(
                         + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
                         ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-                if (!client_info.current_query_id.empty())
+                auto range = user_process_list->second.queries.equal_range(client_info.current_query_id);
+                if (range.first != range.second)
                 {
-                    auto range = user_process_list->second.queries.equal_range(client_info.current_query_id);
-                    if (range.first != range.second)
-                    {
-                        if (!settings.replace_running_query)
-                            throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
-                                ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                    if (!settings.replace_running_query)
+                        throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
+                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
-                        /// Ask queries to cancel. They will check this flag.
-                        for (auto it = range.first; it != range.second; ++it)
-                            it->second->is_cancelled.store(true, std::memory_order_relaxed);
-                    }
+                    /// Ask queries to cancel. They will check this flag.
+                    for (auto it = range.first; it != range.second; ++it)
+                        it->second->is_cancelled.store(true, std::memory_order_relaxed);
                 }
             }
         }
@@ -78,39 +78,36 @@ ProcessList::EntryPtr ProcessList::insert(
             settings.limits.max_memory_usage, settings.memory_tracker_fault_probability,
             priorities.insert(settings.priority)));
 
-        if (!client_info.current_query_id.empty())
+        ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
+        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+
+        if (current_memory_tracker)
         {
-            ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
-            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+            /// Limits are only raised (to be more relaxed) or set to something instead of zero,
+            ///  because settings for different queries will interfere each other:
+            ///  setting from one query effectively sets values for all other queries.
 
-            if (current_memory_tracker)
-            {
-                /// Limits are only raised (to be more relaxed) or set to something instead of zero,
-                ///  because settings for different queries will interfere each other:
-                ///  setting from one query effectively sets values for all other queries.
+            /// Track memory usage for all simultaneously running queries from single user.
+            user_process_list.user_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
+            user_process_list.user_memory_tracker.setDescription("(for user)");
+            current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
 
-                /// Track memory usage for all simultaneously running queries from single user.
-                user_process_list.user_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
-                user_process_list.user_memory_tracker.setDescription("(for user)");
-                current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
-
-                /// Track memory usage for all simultaneously running queries.
-                /// You should specify this value in configuration for default profile,
-                ///  not for specific users, sessions or queries,
-                ///  because this setting is effectively global.
-                total_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
-                total_memory_tracker.setDescription("(total)");
-                user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
-            }
-
-            if (settings.limits.max_network_bandwidth_for_user && !user_process_list.user_throttler)
-            {
-                user_process_list.user_throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth_for_user, 0,
-                    "Network bandwidth limit for a user exceeded.");
-            }
-
-            res->get().user_process_list = &user_process_list;
+            /// Track memory usage for all simultaneously running queries.
+            /// You should specify this value in configuration for default profile,
+            ///  not for specific users, sessions or queries,
+            ///  because this setting is effectively global.
+            total_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
+            total_memory_tracker.setDescription("(total)");
+            user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
         }
+
+        if (settings.limits.max_network_bandwidth_for_user && !user_process_list.user_throttler)
+        {
+            user_process_list.user_throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth_for_user, 0,
+                "Network bandwidth limit for a user exceeded.");
+        }
+
+        res->get().user_process_list = &user_process_list;
     }
 
     return res;
@@ -124,8 +121,8 @@ ProcessListEntry::~ProcessListEntry()
 
     std::lock_guard<std::mutex> lock(parent.mutex);
 
-    String user = it->client_info.current_user;
-    String query_id = it->client_info.current_query_id;
+    String user = it->getClientInfo().current_user;
+    String query_id = it->getClientInfo().current_query_id;
 
     const ProcessListElement * process_list_element_ptr = &*it;
 
@@ -133,39 +130,39 @@ ProcessListEntry::~ProcessListEntry()
     parent.cont.erase(it);
 
     auto user_process_list_it = parent.user_to_queries.find(user);
-    if (user_process_list_it != parent.user_to_queries.end())
+    if (user_process_list_it == parent.user_to_queries.end())
     {
-        ProcessListForUser & user_process_list = user_process_list_it->second;
+        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
+        std::terminate();
+    }
 
-        if (!query_id.empty())
+    ProcessListForUser & user_process_list = user_process_list_it->second;
+
+    bool found = false;
+
+    auto range = user_process_list.queries.equal_range(query_id);
+    if (range.first != range.second)
+    {
+        for (auto it = range.first; it != range.second; ++it)
         {
-            bool found = false;
-
-            auto range = user_process_list.queries.equal_range(query_id);
-            if (range.first != range.second)
+            if (it->second == process_list_element_ptr)
             {
-                for (auto it = range.first; it != range.second; ++it)
-                {
-                    if (it->second == process_list_element_ptr)
-                    {
-                        user_process_list.queries.erase(it);
-                        found = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!found)
-            {
-                LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
-                std::terminate();
+                user_process_list.queries.erase(it);
+                found = true;
+                break;
             }
         }
-
-        /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
-        if (user_process_list.queries.empty())
-            user_process_list.reset();
     }
+
+    if (!found)
+    {
+        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        std::terminate();
+    }
+
+    /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
+    if (user_process_list.queries.empty())
+        user_process_list.reset();
 
     --parent.cur_size;
     parent.have_space.signal();
@@ -216,6 +213,14 @@ bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutpu
     in = query_stream_in;
     out = query_stream_out;
     return true;
+}
+
+
+ThrottlerPtr ProcessListElement::getUserNetworkThrottler()
+{
+    if (!user_process_list)
+        return {};
+    return user_process_list->user_throttler;
 }
 
 

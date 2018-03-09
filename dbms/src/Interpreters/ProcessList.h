@@ -50,14 +50,18 @@ struct ProcessInfo
     size_t written_rows;
     size_t written_bytes;
     Int64 memory_usage;
+    Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
 };
 
 
 /// Query and information about its execution.
-struct ProcessListElement
+class ProcessListElement
 {
+    friend class ProcessList;
+
+private:
     String query;
     ClientInfo client_info;
 
@@ -79,8 +83,6 @@ struct ProcessListElement
     /// Be careful using it. For example, queries field could be modified concurrently.
     const ProcessListForUser * user_process_list = nullptr;
 
-protected:
-
     mutable std::mutex query_streams_mutex;
 
     /// Streams with query results, point to BlockIO from executeQuery()
@@ -93,7 +95,6 @@ protected:
     bool query_streams_released{false};
 
 public:
-
     ProcessListElement(
         const String & query_,
         const ClientInfo & client_info_,
@@ -114,6 +115,23 @@ public:
     {
         current_memory_tracker = nullptr;
     }
+
+    const ClientInfo & getClientInfo() const
+    {
+        return client_info;
+    }
+
+    ProgressValues getProgressIn() const
+    {
+        return progress_in.getValues();
+    }
+
+    ProgressValues getProgressOut() const
+    {
+        return progress_out.getValues();
+    }
+
+    ThrottlerPtr getUserNetworkThrottler();
 
     bool updateProgressIn(const Progress & value)
     {
@@ -146,6 +164,7 @@ public:
         res.written_rows      = progress_out.rows;
         res.written_bytes     = progress_out.bytes;
         res.memory_usage      = memory_tracker.get();
+        res.peak_memory_usage = memory_tracker.getPeak();
 
         return res;
     }

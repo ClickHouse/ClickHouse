@@ -277,21 +277,22 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (!process_list_elem)
                     return;
 
-                double elapsed_seconds = process_list_elem->watch.elapsedSeconds();
+                ProcessInfo info = process_list_elem->getInfo();
+
+                double elapsed_seconds = info.elapsed_seconds;
 
                 elem.type = QueryLogElement::QUERY_FINISH;
 
                 elem.event_time = time(nullptr);
                 elem.query_duration_ms = elapsed_seconds * 1000;
 
-                elem.read_rows = process_list_elem->progress_in.rows;
-                elem.read_bytes = process_list_elem->progress_in.bytes;
+                elem.read_rows = info.read_rows;
+                elem.read_bytes = info.read_bytes;
 
-                elem.written_rows = process_list_elem->progress_out.rows;
-                elem.written_bytes = process_list_elem->progress_out.bytes;
+                elem.written_rows = info.written_rows;
+                elem.written_bytes = info.written_bytes;
 
-                auto memory_usage = process_list_elem->memory_tracker.getPeak();
-                elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
+                elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
                 if (stream_in)
                 {
@@ -341,15 +342,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (process_list_elem)
                 {
-                    double elapsed_seconds = process_list_elem->watch.elapsedSeconds();
+                    ProcessInfo info = process_list_elem->getInfo();
 
-                    elem.query_duration_ms = elapsed_seconds * 1000;
+                    elem.query_duration_ms = info.elapsed_seconds * 1000;
 
-                    elem.read_rows = process_list_elem->progress_in.rows;
-                    elem.read_bytes = process_list_elem->progress_in.bytes;
+                    elem.read_rows = info.read_rows;
+                    elem.read_bytes = info.read_bytes;
 
-                    auto memory_usage = process_list_elem->memory_tracker.getPeak();
-                    elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
+                    elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
                 }
 
                 setExceptionStackTrace(elem);

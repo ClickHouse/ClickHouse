@@ -752,7 +752,7 @@ void TCPHandler::updateProgress(const Progress & value)
 void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
-    Progress increment = state.progress.fetchAndResetPiecewiseAtomically();
+    auto increment = state.progress.fetchAndResetPiecewiseAtomically();
     increment.write(*out, client_revision);
     out->next();
 }
