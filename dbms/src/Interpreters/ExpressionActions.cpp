@@ -27,8 +27,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_ACTION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
-    extern const int TOO_MUCH_TEMPORARY_COLUMNS;
-    extern const int TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS;
+    extern const int TOO_MANY_TEMPORARY_COLUMNS;
+    extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
 }
 
 
@@ -503,7 +503,7 @@ void ExpressionActions::checkLimits(Block & block) const
     if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
         throw Exception("Too many temporary columns: " + block.dumpNames()
             + ". Maximum: " + limits.max_temporary_columns.toString(),
-            ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
+            ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
 
     if (limits.max_temporary_non_const_columns)
     {
@@ -521,7 +521,7 @@ void ExpressionActions::checkLimits(Block & block) const
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
                 + ". Maximum: " + limits.max_temporary_non_const_columns.toString(),
-                ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
 }

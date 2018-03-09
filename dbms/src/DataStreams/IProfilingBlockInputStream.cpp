@@ -11,8 +11,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MUCH_ROWS;
-    extern const int TOO_MUCH_BYTES;
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
@@ -203,14 +203,14 @@ bool IProfilingBlockInputStream::checkDataSizeLimits()
                 std::string("Limit for result rows")
                     + " exceeded: read " + toString(info.rows)
                     + " rows, maximum: " + toString(limits.max_rows_to_read),
-                ErrorCodes::TOO_MUCH_ROWS);
+                ErrorCodes::TOO_MANY_ROWS);
 
         if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
             return handleOverflowMode(limits.read_overflow_mode,
                 std::string("Limit for result bytes (uncompressed)")
                     + " exceeded: read " + toString(info.bytes)
                     + " bytes, maximum: " + toString(limits.max_bytes_to_read),
-                ErrorCodes::TOO_MUCH_BYTES);
+                ErrorCodes::TOO_MANY_BYTES);
     }
 
     return true;
@@ -286,11 +286,11 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
                     if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
                         throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
                             + " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
-                            ErrorCodes::TOO_MUCH_ROWS);
+                            ErrorCodes::TOO_MANY_ROWS);
                     else
                         throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(progress.bytes)
                             + " bytes read, maximum: " + toString(limits.max_bytes_to_read),
-                            ErrorCodes::TOO_MUCH_BYTES);
+                            ErrorCodes::TOO_MANY_BYTES);
                     break;
                 }
 
