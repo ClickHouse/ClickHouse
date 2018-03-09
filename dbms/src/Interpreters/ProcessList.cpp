@@ -63,7 +63,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
                         /// Kill query could be replaced since system.processes is continuously updated
                         element->second->is_cancelled = true;
-                        /// If the request is canceled, the data about it is deleted from the map at the time of cancellation.
+                        /// If the query is canceled, the data about it is deleted from the map at the time of cancellation.
                         user_process_list->second.queries.erase(element);
                     }
                 }
@@ -129,13 +129,13 @@ ProcessListEntry::~ProcessListEntry()
     String query_id = it->client_info.current_query_id;
     bool is_cancelled = it->is_cancelled;
 
-    /// This removes the memory_tracker of one request.
+    /// This removes the memory_tracker of one query.
     parent.cont.erase(it);
 
     auto user_process_list = parent.user_to_queries.find(user);
     if (user_process_list != parent.user_to_queries.end())
     {
-        /// In case the request is canceled, the data about it is deleted from the map at the time of cancellation, and not here.
+        /// In case the query is canceled, the data about it is deleted from the map at the time of cancellation, and not here.
         if (!is_cancelled && !query_id.empty())
         {
             auto element = user_process_list->second.queries.find(query_id);
@@ -149,7 +149,7 @@ ProcessListEntry::~ProcessListEntry()
         /// This also clears the MemoryTracker for the user, and a message about the memory consumption is output to the log.
         /// This also clears network bandwidth Throttler, so it will not count periods of inactivity.
         /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
-        ///  due to the fact that there are cases when memory can be allocated while processing the request, but released later.
+        ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
         if (user_process_list->second.queries.empty())
             parent.user_to_queries.erase(user_process_list);
     }
@@ -203,14 +203,6 @@ bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutpu
     in = query_stream_in;
     out = query_stream_out;
     return true;
-}
-
-
-void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage)
-{
-    std::lock_guard<std::mutex> lock(mutex);
-
-    elem.temporary_tables[table_name] = storage;
 }
 
 
