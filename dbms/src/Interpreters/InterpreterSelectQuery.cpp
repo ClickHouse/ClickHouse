@@ -61,7 +61,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
-    extern const int TOO_MUCH_COLUMNS;
+    extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -577,7 +577,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         throw Exception("Limit for number of columns to read exceeded. "
             "Requested: " + toString(required_columns.size())
             + ", maximum: " + settings.limits.max_columns_to_read.toString(),
-            ErrorCodes::TOO_MUCH_COLUMNS);
+            ErrorCodes::TOO_MANY_COLUMNS);
 
     size_t limit_length = 0;
     size_t limit_offset = 0;
