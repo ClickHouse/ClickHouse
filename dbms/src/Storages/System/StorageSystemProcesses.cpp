@@ -49,6 +49,7 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
         { "written_rows",         std::make_shared<DataTypeUInt64>() },
         { "written_bytes",        std::make_shared<DataTypeUInt64>() },
         { "memory_usage",         std::make_shared<DataTypeInt64>() },
+        { "peak_memory_usage",    std::make_shared<DataTypeInt64>() },
         { "query",                std::make_shared<DataTypeString>() }
     };
 }
@@ -99,6 +100,7 @@ BlockInputStreams StorageSystemProcesses::read(
         res_columns[i++]->insert(UInt64(process.written_rows));
         res_columns[i++]->insert(UInt64(process.written_bytes));
         res_columns[i++]->insert(process.memory_usage);
+        res_columns[i++]->insert(process.peak_memory_usage);
         res_columns[i++]->insert(process.query);
     }
 
