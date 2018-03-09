@@ -427,6 +427,7 @@ void LocalServer::processQueries()
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
+    context->setCurrentQueryId("");
 
     for (const auto & query : queries)
     {
