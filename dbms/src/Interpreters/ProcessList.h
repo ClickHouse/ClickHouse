@@ -74,7 +74,7 @@ struct ProcessListElement
 
     CurrentMetrics::Increment num_queries {CurrentMetrics::Query};
 
-    bool is_cancelled = false;
+    std::atomic<bool> is_cancelled { false };
 
     /// Be careful using it. For example, queries field could be modified concurrently.
     const ProcessListForUser * user_process_list = nullptr;
@@ -122,13 +122,13 @@ public:
         if (priority_handle)
             priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
 
-        return !is_cancelled;
+        return !is_cancelled.load(std::memory_order_relaxed);
     }
 
     bool updateProgressOut(const Progress & value)
     {
         progress_out.incrementPiecewiseAtomically(value);
-        return !is_cancelled;
+        return !is_cancelled.load(std::memory_order_relaxed);
     }
 
 
@@ -139,7 +139,7 @@ public:
         res.query             = query;
         res.client_info       = client_info;
         res.elapsed_seconds   = watch.elapsedSeconds();
-        res.is_cancelled      = is_cancelled;
+        res.is_cancelled      = is_cancelled.load(std::memory_order_relaxed);
         res.read_rows         = progress_in.rows;
         res.read_bytes        = progress_in.bytes;
         res.total_rows        = progress_in.total_rows;
@@ -167,8 +167,8 @@ public:
 /// Data about queries for one user.
 struct ProcessListForUser
 {
-    /// Query id -> ProcessListElement *
-    using QueryToElement = std::unordered_map<String, ProcessListElement *>;
+    /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
+    using QueryToElement = std::unordered_multimap<String, ProcessListElement *>;
     QueryToElement queries;
 
     /// Limit and counter for memory of all simultaneously running queries of single user.
@@ -176,6 +176,17 @@ struct ProcessListForUser
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
+
+    /// Clears MemoryTracker for the user.
+    /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
+    ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
+    /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
+    void reset()
+    {
+        user_memory_tracker.reset();
+        if (user_throttler)
+            user_throttler->reset();
+    }
 };
 
 
