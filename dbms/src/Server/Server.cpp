@@ -230,7 +230,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::move(main_config_zk_node_cache),
         [&](ConfigurationPtr config)
         {
-            buildLoggers(*config);
             global_context->setClustersConfig(config);
         },
         /* already_loaded = */ true);
