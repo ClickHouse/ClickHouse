@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 class QuotaForIntervals;
-struct ProcessListElement;
+class ProcessListElement;
 class IProfilingBlockInputStream;
 
 using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;

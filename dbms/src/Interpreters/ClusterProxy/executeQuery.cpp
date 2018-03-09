@@ -42,8 +42,7 @@ BlockInputStreams executeQuery(
     ThrottlerPtr user_level_throttler;
     if (settings.limits.max_network_bandwidth_for_user)
         if (auto process_list_element = context.getProcessListElement())
-            if (auto user_process_list = process_list_element->user_process_list)
-                user_level_throttler = user_process_list->user_throttler;
+            user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
     ThrottlerPtr throttler;

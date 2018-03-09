@@ -45,7 +45,7 @@ class Compiler;
 class MarkCache;
 class UncompressedCache;
 class ProcessList;
-struct ProcessListElement;
+class ProcessListElement;
 class Macros;
 struct Progress;
 class Clusters;
