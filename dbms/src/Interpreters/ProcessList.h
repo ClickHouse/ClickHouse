@@ -75,9 +75,6 @@ struct ProcessListElement
 
     bool is_cancelled = false;
 
-    /// Temporary tables could be registered here. Modify under mutex.
-    Tables temporary_tables;
-
     /// Be careful using it. For example, queries field could be modified concurrently.
     const ProcessListForUser * user_process_list = nullptr;
 
@@ -272,9 +269,6 @@ public:
         std::lock_guard<std::mutex> lock(mutex);
         max_size = max_size_;
     }
-
-    /// Register temporary table. Then it is accessible by query_id and name.
-    void addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage);
 
     enum class CancellationCode
     {

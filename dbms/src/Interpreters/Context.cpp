@@ -822,12 +822,6 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
         throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     external_tables[table_name] = std::pair(storage, ast);
-
-    if (process_list_elem)
-    {
-        auto lock = getLock();
-        shared->process_list.addTemporaryTable(*process_list_elem, table_name, storage);
-    }
 }
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
