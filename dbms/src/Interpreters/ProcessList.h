@@ -51,6 +51,7 @@ struct ProcessInfo
     size_t written_bytes;
     Int64 memory_usage;
     ClientInfo client_info;
+    bool is_cancelled;
 };
 
 
@@ -138,6 +139,7 @@ public:
         res.query             = query;
         res.client_info       = client_info;
         res.elapsed_seconds   = watch.elapsedSeconds();
+        res.is_cancelled      = is_cancelled;
         res.read_rows         = progress_in.rows;
         res.read_bytes        = progress_in.bytes;
         res.total_rows        = progress_in.total_rows;
@@ -165,7 +167,7 @@ public:
 /// Data about queries for one user.
 struct ProcessListForUser
 {
-    /// Query_id -> ProcessListElement *
+    /// Query id -> ProcessListElement *
     using QueryToElement = std::unordered_map<String, ProcessListElement *>;
     QueryToElement queries;
 
