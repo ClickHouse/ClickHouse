@@ -94,8 +94,6 @@ struct Settings
     M(SettingBool, force_index_by_date, 0, "Throw an exception if there is a partition key in a table, and it is not used.") \
     M(SettingBool, force_primary_key, 0, "Throw an exception if there is primary key in a table, and it is not used.") \
     \
-    M(SettingBool, strict_insert_defaults, 0, "In the INSERT query with specified columns, fill in the default values only for columns with explicit DEFAULTs.") \
-    \
     M(SettingUInt64, mark_cache_min_lifetime, 10000, "If the maximum size of mark_cache is exceeded, delete only records older than mark_cache_min_lifetime seconds.") \
     \
     M(SettingFloat, max_streams_to_max_threads_ratio, 1, "Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution, since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.") \

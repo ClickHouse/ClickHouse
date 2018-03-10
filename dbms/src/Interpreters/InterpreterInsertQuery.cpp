@@ -103,8 +103,7 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), required_columns, table->column_defaults, context,
-        static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
+        out, getSampleBlock(query, table), required_columns, table->column_defaults, context);
 
     out = std::make_shared<SquashingBlockOutputStream>(
         out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
