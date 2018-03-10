@@ -142,7 +142,7 @@ StorageDistributed::StorageDistributed(
     table_name(table_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(context.getMacros().expand(cluster_name_)), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns.ordinary).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns.getList()).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
@@ -385,7 +385,7 @@ void registerStorageDistributed(StorageFactory & factory)
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns.ordinary).getActions(true);
+            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns.getList()).getActions(true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)

@@ -903,7 +903,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
-    for (const auto & column : columns.ordinary)
+    for (const auto & column : columns.getList())
         old_types.emplace(column.name, column.type.get());
 
     for (const AlterCommand & command : commands)
@@ -1868,7 +1868,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : columns.ordinary)
+    for (const auto & column : columns.getList())
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";
