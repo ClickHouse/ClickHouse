@@ -1479,28 +1479,29 @@ In all other cases, we don't recommend using the asterisk, since it only gives y
 ## KILL QUERY
 
 ```sql
-KILL QUERY WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
+KILL QUERY
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
 ```
 
 Attempts to terminate queries currently running.
-The queries to terminate are selected from the system.processes table for which expression_for_system.processes is true.
+The queries to terminate are selected from the system.processes table for which `WHERE` expression is true.
 
 Examples:
 
 ```sql
+-- Terminates all queries with the specified query_id.
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
-```
 
-Terminates all queries with the specified query_id.
-
-```sql
+-- Synchronously terminates all queries run by `username`.
 KILL QUERY WHERE user='username' SYNC
 ```
 
-Synchronously terminates all queries run by `username`.
-
 Readonly-users can only terminate their own requests.
+
 By default, the asynchronous version of queries is used (`ASYNC`), which terminates without waiting for queries to complete.
+
 The synchronous version (`SYNC`) waits for all queries to be completed and displays information about each process as it terminates.
 The response contains the `kill_status` column, which can take the following values:
 
@@ -1509,4 +1510,3 @@ The response contains the `kill_status` column, which can take the following val
 3. The other values ​​explain why the query can't be terminated.
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to terminate.
-
