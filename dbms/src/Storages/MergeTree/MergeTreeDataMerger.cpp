@@ -537,7 +537,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         part->accumulateColumnSizes(merged_column_to_size);
 
     Names all_column_names = data.columns.getNames();
-    NamesAndTypesList all_columns = data.columns.getList();
+    NamesAndTypesList all_columns = data.columns.getPhysical();
     const SortDescription sort_desc = data.getSortDescription();
 
     NamesAndTypesList gathering_columns, merging_columns;

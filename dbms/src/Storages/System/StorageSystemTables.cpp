@@ -114,7 +114,7 @@ protected:
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_)
 {
-    columns.ordinary = NamesAndTypesList
+    columns = ColumnsDescription(
     {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
@@ -122,7 +122,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
-    };
+    });
 
     virtual_columns =
     {

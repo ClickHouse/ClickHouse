@@ -16,6 +16,20 @@ struct ColumnsDescription
     NamesAndTypesList aliases;
     ColumnDefaults defaults;
 
+    ColumnsDescription() = default;
+
+    ColumnsDescription(
+        NamesAndTypesList ordinary_,
+        NamesAndTypesList materialized_,
+        NamesAndTypesList aliases_,
+        ColumnDefaults defaults_)
+        : ordinary(std::move(ordinary_))
+        , materialized(std::move(materialized_))
+        , aliases(std::move(aliases_))
+        , defaults(std::move(defaults_))
+    {}
+
+    explicit ColumnsDescription(NamesAndTypesList ordinary_) : ordinary(std::move(ordinary_)) {}
 
     bool operator==(const ColumnsDescription & other) const
     {
@@ -27,21 +41,19 @@ struct ColumnsDescription
 
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
-    /** Get a list of names and table column types, only non-virtual.
-     */
-    NamesAndTypesList getList() const;
-    const NamesAndTypesList & getListNonMaterialized() const { return ordinary; }
+    /// ordinary + materialized.
+    NamesAndTypesList getPhysical() const;
 
-    /** Get a list of column names.
-     */
+    /// ordinary + materialized + aliases.
+    NamesAndTypesList getAll() const;
+
+    /// Get names of physical columns.
     Names getNames() const;
 
-    /** Get a description of any column by its name.
-     */
+    /// Get a physical column by name.
     NameAndTypePair get(const String & column_name) const;
 
-    /** Is there a column with that name.
-      */
+    /// Is there a physical column with the given name.
     bool has(const String & column_name) const;
 
 

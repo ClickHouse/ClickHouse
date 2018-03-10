@@ -152,7 +152,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         std::move(pool),
         database_name,
         table_name,
-        ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
+        ColumnsDescription{columns});
 
     res->startup();
     return res;

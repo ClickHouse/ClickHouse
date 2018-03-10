@@ -111,7 +111,7 @@ static NamesAndTypesMap getColumnsMap(const Args &... args)
 
 void ITableDeclaration::check(const Names & column_names) const
 {
-    const NamesAndTypesList & available_columns = columns.getList();
+    const NamesAndTypesList & available_columns = columns.getPhysical();
 
     if (column_names.empty())
         throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
@@ -139,7 +139,7 @@ void ITableDeclaration::check(const Names & column_names) const
 
 void ITableDeclaration::check(const NamesAndTypesList & provided_columns) const
 {
-    const NamesAndTypesList & available_columns = columns.getList();
+    const NamesAndTypesList & available_columns = columns.getPhysical();
     const auto columns_map = getColumnsMap(available_columns);
 
     using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
@@ -167,7 +167,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns) const
 
 void ITableDeclaration::check(const NamesAndTypesList & provided_columns, const Names & column_names) const
 {
-    const NamesAndTypesList & available_columns = columns.getList();
+    const NamesAndTypesList & available_columns = columns.getPhysical();
     const auto available_columns_map = getColumnsMap(available_columns);
     const NamesAndTypesMap & provided_columns_map = getColumnsMap(provided_columns);
 
@@ -204,7 +204,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns, const 
 
 void ITableDeclaration::check(const Block & block, bool need_all) const
 {
-    const NamesAndTypesList & available_columns = columns.getList();
+    const NamesAndTypesList & available_columns = columns.getPhysical();
     const auto columns_map = getColumnsMap(available_columns);
 
     using NameSet = std::unordered_set<String>;

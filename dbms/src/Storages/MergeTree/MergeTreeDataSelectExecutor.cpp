@@ -175,7 +175,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         }
     }
 
-    NamesAndTypesList available_real_columns = data.columns.getList();
+    NamesAndTypesList available_real_columns = data.columns.getPhysical();
 
     NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
     for (const auto & name : virt_column_names)
@@ -857,7 +857,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     arguments->children.push_back(sign);
     arguments->children.push_back(one);
 
-    out_expression = ExpressionAnalyzer(function, context, {}, data.columns.getList()).getActions(false);
+    out_expression = ExpressionAnalyzer(function, context, {}, data.columns.getPhysical()).getActions(false);
     out_column = function->getColumnName();
 }
 

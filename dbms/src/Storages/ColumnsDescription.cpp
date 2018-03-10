@@ -27,9 +27,15 @@ namespace ErrorCodes
 }
 
 
-NamesAndTypesList ColumnsDescription::getList() const
+NamesAndTypesList ColumnsDescription::getPhysical() const
 {
     return ext::collection_cast<NamesAndTypesList>(boost::join(ordinary, materialized));
+}
+
+
+NamesAndTypesList ColumnsDescription::getAll() const
+{
+    return ext::collection_cast<NamesAndTypesList>(boost::join(ordinary, boost::join(materialized, aliases)));
 }
 
 

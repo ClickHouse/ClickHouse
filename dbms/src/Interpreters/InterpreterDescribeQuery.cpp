@@ -99,8 +99,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
 
         auto table_lock = table->lockStructure(false, __PRETTY_FUNCTION__);
-        columns = table->columns.getList();
-        columns.insert(std::end(columns), std::begin(table->columns.aliases), std::end(table->columns.aliases));
+        columns = table->columns.getAll();
         column_defaults = table->columns.defaults;
     }
 
