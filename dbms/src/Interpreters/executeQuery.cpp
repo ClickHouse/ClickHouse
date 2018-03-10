@@ -125,7 +125,8 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
         setExceptionStackTrace(elem);
         logException(context, elem);
 
-        context.getQueryLog().add(elem);
+        if (auto query_log = context.getQueryLog())
+            query_log->add(elem);
     }
 }
 
@@ -267,7 +268,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             /// Log into system table start of query execution, if need.
             if (log_queries)
-                context.getQueryLog().add(elem);
+            {
+                if (auto query_log = context.getQueryLog())
+                    query_log->add(elem);
+            }
 
             /// Also make possible for caller to log successful query finish and exception during execution.
             res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
@@ -325,7 +329,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (log_queries)
-                    context.getQueryLog().add(elem);
+                {
+                    if (auto query_log = context.getQueryLog())
+                        query_log->add(elem);
+                }
             };
 
             res.exception_callback = [elem, &context, log_queries] () mutable
@@ -356,7 +363,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logException(context, elem);
 
                 if (log_queries)
-                    context.getQueryLog().add(elem);
+                {
+                    if (auto query_log = context.getQueryLog())
+                        query_log->add(elem);
+                }
             };
 
             if (!internal && res.in)

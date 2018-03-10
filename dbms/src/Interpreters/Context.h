@@ -339,11 +339,17 @@ public:
     void reloadClusterConfig();
 
     Compiler & getCompiler();
-    QueryLog & getQueryLog();
+
+    /// Call after initialization before using system logs. Call for global context.
+    void initializeSystemLogs();
+
+    /// Nullptr if the query log is not ready for this moment.
+    QueryLog * getQueryLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & database, const String & table);
+    PartLog * getPartLog(const String & part_database);
+
     const MergeTreeSettings & getMergeTreeSettings();
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)

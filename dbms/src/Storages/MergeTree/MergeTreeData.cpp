@@ -736,7 +736,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
-    if (auto part_log = context.getPartLog(database_name, table_name))
+    if (auto part_log = context.getPartLog(database_name))
     {
         PartLogElement part_log_elem;
 
