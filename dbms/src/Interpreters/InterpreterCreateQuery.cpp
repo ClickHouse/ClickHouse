@@ -305,7 +305,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 {
     auto columns_list = std::make_shared<ASTExpressionList>();
 
-    for (const auto & column : boost::join(columns.ordinary, boost::join(columns.materialized, columns.aliases)))
+    for (const auto & column : columns.getAll())
     {
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};

@@ -72,7 +72,7 @@ void ExecuteTableFunctions::dump(WriteBuffer & out) const
     {
         writeString(table.second->getName(), out);
         writeCString("\n\n", out);
-        writeString(table.second->columns.getList().toString(), out);
+        writeString(table.second->columns.getPhysical().toString(), out);
         writeCString("\n", out);
     }
 }

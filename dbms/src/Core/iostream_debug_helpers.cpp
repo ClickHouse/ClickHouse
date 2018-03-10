@@ -44,7 +44,7 @@ std::ostream & operator<<(std::ostream & stream, const IDataType & what)
 std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
-           << what.columns.getList().toString()
+           << what.columns.getPhysical().toString()
            << "}";
     // isRemote supportsSampling supportsFinal supportsPrewhere
     return stream;

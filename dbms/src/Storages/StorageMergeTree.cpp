@@ -176,7 +176,7 @@ void StorageMergeTree::alter(
         throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
-    auto columns_for_parts = new_columns.getList();
+    auto columns_for_parts = new_columns.getPhysical();
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
         if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
@@ -422,7 +422,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto new_columns = data.columns;
     alter_command.apply(new_columns);
 
-    auto columns_for_parts = new_columns.getList();
+    auto columns_for_parts = new_columns.getPhysical();
     for (const auto & part : parts)
     {
         if (part->info.partition_id != partition_id)

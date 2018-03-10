@@ -25,15 +25,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
 {
     if (type == ADD_COLUMN)
     {
-        const auto exists_in = [this] (const NamesAndTypesList & columns)
-        {
-            return columns.end() != std::find_if(columns.begin(), columns.end(),
-                std::bind(namesEqual, std::cref(column_name), std::placeholders::_1));
-        };
-
-        if (exists_in(columns_description.ordinary) ||
-            exists_in(columns_description.materialized) ||
-            exists_in(columns_description.aliases))
+        if (columns_description.getAll().contains(column_name))
         {
             throw Exception{
                 "Cannot add column " + column_name + ": column with this name already exists",
@@ -185,8 +177,7 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
 
 void AlterCommands::validate(IStorage * table, const Context & context)
 {
-    auto all_columns = table->columns.getList();
-    all_columns.insert(std::end(all_columns), std::begin(table->columns.aliases), std::end(table->columns.aliases));
+    auto all_columns = table->columns.getAll();
     auto defaults = table->columns.defaults;
 
     std::vector<std::pair<NameAndTypePair, AlterCommand *>> defaulted_columns{};

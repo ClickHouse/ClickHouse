@@ -95,7 +95,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
 
-    NamesAndTypesList required_columns = table->columns.getList();
+    NamesAndTypesList required_columns = table->columns.getPhysical();
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;

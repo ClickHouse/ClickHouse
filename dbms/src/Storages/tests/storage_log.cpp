@@ -25,8 +25,8 @@ try
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
     names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
-    StoragePtr table = StorageLog::create("./", "test", names_and_types,
-        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    StoragePtr table = StorageLog::create(
+        "./", "test", ColumnsDescription{names_and_types}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
     table->startup();
 
     /// write into it
@@ -36,7 +36,7 @@ try
         {
             ColumnWithTypeAndName column;
             column.name = "a";
-            column.type = table->columns.getColumn("a").type;
+            column.type = table->getColumn("a").type;
             auto col = column.type->createColumn();
             ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
@@ -51,7 +51,7 @@ try
         {
             ColumnWithTypeAndName column;
             column.name = "b";
-            column.type = table->columns.getColumn("b").type;
+            column.type = table->getColumn("b").type;
             auto col = column.type->createColumn();
             ColumnUInt8::Container & vec = typeid_cast<ColumnUInt8 &>(*col).getData();
 

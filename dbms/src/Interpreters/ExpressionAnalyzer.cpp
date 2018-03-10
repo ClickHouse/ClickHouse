@@ -190,7 +190,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     }
 
     if (storage && source_columns.empty())
-        source_columns = storage->columns.getList();
+        source_columns = storage->columns.getPhysical();
     else
         removeDuplicateColumns(source_columns);
 
@@ -712,7 +712,7 @@ static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         /// get columns list for target table
         auto database_table = getDatabaseAndTableNameFromIdentifier(*table);
         const auto & storage = context.getTable(database_table.first, database_table.second);
-        const auto & columns = storage->columns.getListNonMaterialized();
+        const auto & columns = storage->columns.ordinary;
         select_expression_list->children.reserve(columns.size());
 
         /// manually substitute column names in place of asterisk
@@ -826,9 +826,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     Block sample = interpreter->getSampleBlock();
     NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-    StoragePtr external_storage = StorageMemory::create(
-        external_table_name,
-        ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
+    StoragePtr external_storage = StorageMemory::create(external_table_name, ColumnsDescription{columns});
     external_storage->startup();
 
     /** We replace the subquery with the name of the temporary table.
@@ -1052,7 +1050,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
                 if (storage)
                 {
                     /// If we select from a table, get only not MATERIALIZED, not ALIAS columns.
-                    for (const auto & name_type : storage->columns.getListNonMaterialized())
+                    for (const auto & name_type : storage->columns.ordinary)
                         all_columns.emplace_back(std::make_shared<ASTIdentifier>(name_type.name));
                 }
                 else

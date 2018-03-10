@@ -13,12 +13,12 @@ namespace DB
 StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
     : name(name_)
 {
-    columns.ordinary = NamesAndTypesList{
+    columns = ColumnsDescription({
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
-    };
+    });
 }
 
 
