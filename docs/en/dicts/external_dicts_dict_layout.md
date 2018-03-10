@@ -27,7 +27,7 @@ The configuration looks like this:
     <dictionary>
         ...
         <layout>
-            <layout_type> 
+            <layout_type>
                 <!-- layout settings -->
             </layout_type>
         </layout>
@@ -87,7 +87,7 @@ Configuration example:
 
 ### complex_key_hashed
 
-This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). It is similar to hashed.
+This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). It is similar to hashed.
 
 Configuration example:
 
@@ -195,7 +195,7 @@ Example of settings:
 ```xml
 <layout>
     <cache>
-        <!-- The size of the cache, in number of cells. Rounded up to a power of two. --> 
+        <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
                <size_in_cells>1000000000</size_in_cells>
     </cache>
 </layout>
@@ -219,4 +219,3 @@ Do not use ClickHouse as a source, because it is slow to process queries with ra
 ### complex_key_cache
 
 This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.
-
