@@ -77,7 +77,7 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
     return result;
 }
 
-void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffer & out) const
+void MergeTreePartition::serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const
 {
     size_t key_size = storage.partition_key_sample.columns();
 
@@ -98,7 +98,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         const DataTypePtr & type = storage.partition_key_sample.getByPosition(i).type;
         auto column = type->createColumn();
         column->insert(value[i]);
-        type->serializeText(*column, 0, out);
+        type->serializeTextQuoted(*column, 0, out);
     }
 
     if (key_size > 1)
