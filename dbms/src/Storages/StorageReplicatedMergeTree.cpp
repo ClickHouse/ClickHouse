@@ -1152,7 +1152,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
     {
         try
         {
-            auto part_log = context.getPartLog(database_name, table_name);
+            auto part_log = context.getPartLog(database_name);
             if (!part_log)
                 return;
 
@@ -2259,7 +2259,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         try
         {
-            auto part_log = context.getPartLog(database_name, table_name);
+            auto part_log = context.getPartLog(database_name);
             if (!part_log)
                 return;
 

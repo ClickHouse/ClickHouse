@@ -66,19 +66,8 @@ StorageMergeTree::StorageMergeTree(
 
     data.loadDataParts(has_force_restore_data_flag);
 
-    if (!attach)
-    {
-        if (!data.getDataParts().empty())
-            throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
-    }
-    else
-    {
-        data.clearOldPartsFromFilesystem();
-    }
-
-    /// Temporary directories contain incomplete results of merges (after forced restart)
-    ///  and don't allow to reinitialize them, so delete each of them immediately
-    data.clearOldTemporaryDirectories(0);
+    if (!attach && !data.getDataParts().empty())
+        throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
 
     increment.set(data.getMaxDataPartIndex());
 }
@@ -87,6 +76,13 @@ StorageMergeTree::StorageMergeTree(
 void StorageMergeTree::startup()
 {
     merge_task_handle = background_pool.addTask([this] { return mergeTask(); });
+
+    data.clearOldPartsFromFilesystem();
+
+    /// Temporary directories contain incomplete results of merges (after forced restart)
+    ///  and don't allow to reinitialize them, so delete each of them immediately
+    data.clearOldTemporaryDirectories(0);
+
 }
 
 
@@ -346,7 +342,7 @@ bool StorageMergeTree::merge(
     {
         try
         {
-            auto part_log = context.getPartLog(database_name, table_name);
+            auto part_log = context.getPartLog(database_name);
             if (!part_log)
                 return;
 
