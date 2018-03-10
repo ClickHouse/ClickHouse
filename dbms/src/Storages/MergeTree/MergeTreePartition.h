@@ -25,7 +25,7 @@ public:
 
     String getID(const MergeTreeData & storage) const;
 
-    void serializeText(const MergeTreeData & storage, WriteBuffer & out) const;
+    void serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const;
 
     void load(const MergeTreeData & storage, const String & part_path);
     void store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
