@@ -106,8 +106,12 @@ BlockIO InterpreterInsertQuery::execute()
         out, getSampleBlock(query, table), required_columns, table->column_defaults, context,
         static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
 
-    out = std::make_shared<SquashingBlockOutputStream>(
-        out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+    /// Do not squash blocks if it is a sync INSERT into Distributed
+    if (!(context.getSettingsRef().insert_distributed_sync && table->getName() == "Distributed"))
+    {
+        out = std::make_shared<SquashingBlockOutputStream>(
+            out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+    }
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());

@@ -235,6 +235,7 @@ struct ClusterPartition
     double elapsed_time_seconds = 0;
     UInt64 bytes_copied = 0;
     UInt64 rows_copied = 0;
+    UInt64 blocks_copied = 0;
 
     size_t total_tries = 0;
 };
@@ -1334,9 +1335,9 @@ protected:
                 double elapsed = cluster_partition.elapsed_time_seconds;
 
                 LOG_INFO(log, "It took " << std::fixed << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name
-                                         << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied)
-                                         << " uncompressed bytes and "
-                                         << formatReadableQuantity(cluster_partition.rows_copied) << " rows are copied");
+                         << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied) << " uncompressed bytes"
+                         << ", " << formatReadableQuantity(cluster_partition.rows_copied) << " rows"
+                         << " and " << cluster_partition.blocks_copied << " source blocks are copied");
 
                 if (cluster_partition.rows_copied)
                 {
@@ -1347,8 +1348,7 @@ protected:
                 if (task_table.rows_copied)
                 {
                     LOG_INFO(log, "Average table " << task_table.table_id << " speed: "
-                                                   << formatReadableSizeWithDecimalSuffix(task_table.bytes_copied / elapsed)
-                                                   << " per second.");
+                        << formatReadableSizeWithDecimalSuffix(task_table.bytes_copied / elapsed) << " per second.");
                 }
             }
         }
@@ -1430,6 +1430,7 @@ protected:
         {
             String query;
             query += "SELECT " + fields + " FROM " + getDatabaseDotTable(from_table);
+            /// TODO: Bad, it is better to rewrite with ASTLiteral(partition_key_field)
             query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = " + task_partition.name + ")";
             if (!task_table.where_condition_str.empty())
                 query += " AND (" + task_table.where_condition_str + ")";
@@ -1655,19 +1656,15 @@ protected:
 
                 /// Update statistics
                 /// It is quite rough: bytes_copied don't take into account DROP PARTITION.
-                if (auto in = dynamic_cast<IProfilingBlockInputStream *>(io_select.in.get()))
+                auto update_stats = [&cluster_partition] (const Block & block)
                 {
-                    auto update_table_stats = [&] (const Progress & progress)
-                    {
-                        cluster_partition.bytes_copied += progress.bytes;
-                        cluster_partition.rows_copied += progress.rows;
-                    };
-
-                    in->setProgressCallback(update_table_stats);
-                }
+                    cluster_partition.bytes_copied += block.bytes();
+                    cluster_partition.rows_copied += block.rows();
+                    cluster_partition.blocks_copied += 1;
+                };
 
                 /// Main work is here
-                copyData(*io_select.in, *io_insert.out, cancel_check);
+                copyData(*io_select.in, *io_insert.out, cancel_check, update_stats);
 
                 // Just in case
                 if (future_is_dirty_checker != nullptr)
@@ -1844,8 +1841,7 @@ protected:
 
         Context local_context = context;
         local_context.setSettings(task_cluster->settings_pull);
-        InterpreterSelectQuery interp(query_ast, local_context);
-        return interp.execute().in->read().rows() != 0;
+        return InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows() != 0;
     }
 
     /** Executes simple query (without output streams, for example DDL queries) on each shard of the cluster
