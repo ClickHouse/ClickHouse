@@ -46,14 +46,6 @@ BlockInputStreams StorageSystemSettings::read(
     APPLY_FOR_SETTINGS(ADD_SETTING)
 #undef ADD_SETTING
 
-#define ADD_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    res_columns[0]->insert(String(#NAME)); \
-    res_columns[1]->insert(settings.limits.NAME.toString()); \
-    res_columns[2]->insert(UInt64(settings.limits.NAME.changed)); \
-    res_columns[3]->insert(String(DESCRIPTION));
-    APPLY_FOR_LIMITS(ADD_LIMIT)
-#undef ADD_LIMIT
-
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 

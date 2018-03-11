@@ -371,6 +371,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_QUERY = 393;
     extern const int QUERY_WAS_CANCELLED = 394;
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO = 395;
+    extern const int TOO_MANY_ROWS_OR_BYTES = 396;
 
 
     extern const int KEEPER_EXCEPTION = 999;

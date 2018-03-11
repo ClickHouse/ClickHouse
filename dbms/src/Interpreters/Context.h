@@ -212,8 +212,6 @@ public:
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
-    Limits getLimits() const;
-
     /// Set a setting by name.
     void setSetting(const String & name, const Field & value);
 
