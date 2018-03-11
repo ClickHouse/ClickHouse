@@ -1500,12 +1500,12 @@ KILL QUERY WHERE user='username' SYNC
 
 Readonly-users can only terminate their own requests.
 
-By default, the asynchronous version of queries is used (`ASYNC`), which terminates without waiting for queries to complete.
+By default, the asynchronous version of queries is used (`ASYNC`), which doesn't wait for query termination.
 
-The synchronous version (`SYNC`) waits for all queries to be completed and displays information about each process as it terminates.
+The synchronous version (`SYNC`) waits for all queries to be killed and displays information about each process as it terminates.
 The response contains the `kill_status` column, which can take the following values:
 
-1. 'finished' – The query completed successfully.
+1. 'finished' – The query terminated successfully.
 2. 'waiting' – Waiting for the query to finish after sending it a signal to terminate.
 3. The other values ​​explain why the query can't be terminated.
 
