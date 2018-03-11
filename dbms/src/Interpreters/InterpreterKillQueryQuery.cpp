@@ -85,7 +85,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
         if (my_client.current_query_id == query_id && my_client.current_user == user)
             continue;
 
-        if (context.getSettingsRef().limits.readonly && my_client.current_user != user)
+        if (context.getSettingsRef().readonly && my_client.current_user != user)
         {
             throw Exception("Readonly user " + my_client.current_user + " attempts to kill query created by " + user,
                     ErrorCodes::READONLY);

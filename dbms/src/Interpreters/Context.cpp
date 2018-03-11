@@ -936,12 +936,6 @@ Settings Context::getSettings() const
 }
 
 
-Limits Context::getLimits() const
-{
-    return settings.limits;
-}
-
-
 void Context::setSettings(const Settings & settings_)
 {
     settings = settings_;

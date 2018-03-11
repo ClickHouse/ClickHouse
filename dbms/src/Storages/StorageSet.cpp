@@ -112,7 +112,7 @@ StorageSet::StorageSet(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
-    set(std::make_shared<Set>(Limits{}))
+    set(std::make_shared<Set>(SizeLimits()))
 {
     restore();
 }

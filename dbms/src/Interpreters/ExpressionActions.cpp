@@ -499,20 +499,19 @@ std::string ExpressionAction::toString() const
 
 void ExpressionActions::checkLimits(Block & block) const
 {
-    const Limits & limits = settings.limits;
-    if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
+    if (settings.max_temporary_columns && block.columns() > settings.max_temporary_columns)
         throw Exception("Too many temporary columns: " + block.dumpNames()
-            + ". Maximum: " + limits.max_temporary_columns.toString(),
+            + ". Maximum: " + settings.max_temporary_columns.toString(),
             ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
 
-    if (limits.max_temporary_non_const_columns)
+    if (settings.max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
         for (size_t i = 0, size = block.columns(); i < size; ++i)
             if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isColumnConst())
                 ++non_const_columns;
 
-        if (non_const_columns > limits.max_temporary_non_const_columns)
+        if (non_const_columns > settings.max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
@@ -520,7 +519,7 @@ void ExpressionActions::checkLimits(Block & block) const
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + limits.max_temporary_non_const_columns.toString(),
+                + ". Maximum: " + settings.max_temporary_non_const_columns.toString(),
                 ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }

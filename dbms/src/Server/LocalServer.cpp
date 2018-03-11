@@ -161,18 +161,8 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 #undef DECLARE_SETTING
     nullptr};
 
-    static const char * limits_names[] = {
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) #NAME,
-    APPLY_FOR_LIMITS(DECLARE_SETTING)
-#undef DECLARE_SETTING
-    nullptr};
-
     for (const char ** name = settings_names; *name; ++name)
         _options.addOption(Poco::Util::Option(*name, "", "Settings.h").required(false).argument("<value>")
-        .repeatable(false).binding(*name));
-
-    for (const char ** name = limits_names; *name; ++name)
-        _options.addOption(Poco::Util::Option(*name, "", "Limits.h").required(false).argument("<value>")
         .repeatable(false).binding(*name));
 }
 
@@ -187,12 +177,6 @@ void LocalServer::applyOptions()
             context->setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
-
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context->getSettingsRef().limits.NAME.changed) \
-            context->setSetting(#NAME, config().getString(#NAME));
-        APPLY_FOR_LIMITS(EXTRACT_LIMIT)
-#undef EXTRACT_LIMIT
 }
 
 

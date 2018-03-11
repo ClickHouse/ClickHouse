@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Interpreters/Limits.h>
 #include <Interpreters/SetVariants.h>
 
 namespace DB
@@ -18,7 +17,7 @@ class DistinctBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     /// Empty columns_ means all collumns.
-    DistinctBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns);
+    DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, size_t limit_hint_, const Names & columns);
 
     String getName() const override { return "Distinct"; }
 
@@ -28,8 +27,6 @@ protected:
     Block readImpl() override;
 
 private:
-    bool checkLimits() const;
-
     ColumnRawPtrs getKeyColumns(const Block & block) const;
 
     template <typename Method>
@@ -49,9 +46,7 @@ private:
     bool no_more_rows = false;
 
     /// Restrictions on the maximum size of the output data.
-    size_t max_rows;
-    size_t max_bytes;
-    OverflowMode overflow_mode;
+    SizeLimits set_size_limits;
 };
 
 }

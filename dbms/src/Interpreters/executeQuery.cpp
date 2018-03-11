@@ -41,12 +41,12 @@ namespace ErrorCodes
 }
 
 
-static void checkLimits(const IAST & ast, const Limits & limits)
+static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
-    if (limits.max_ast_depth)
-        ast.checkDepth(limits.max_ast_depth);
-    if (limits.max_ast_elements)
-        ast.checkSize(limits.max_ast_elements);
+    if (settings.max_ast_depth)
+        ast.checkDepth(settings.max_ast_depth);
+    if (settings.max_ast_elements)
+        ast.checkSize(settings.max_ast_elements);
 }
 
 
@@ -190,7 +190,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
 
         /// Check the limits.
-        checkLimits(*ast, settings.limits);
+        checkASTSizeLimits(*ast, settings);
 
         QuotaForIntervals & quota = context.getQuota();
 
@@ -233,9 +233,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     IProfilingBlockInputStream::LocalLimits limits;
                     limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
-                    limits.max_rows_to_read = settings.limits.max_result_rows;
-                    limits.max_bytes_to_read = settings.limits.max_result_bytes;
-                    limits.read_overflow_mode = settings.limits.result_overflow_mode;
+                    limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
 
                     stream->setLimits(limits);
                     stream->setQuota(quota);
