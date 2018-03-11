@@ -328,7 +328,7 @@ BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settin
 
 void StorageBuffer::startup()
 {
-    if (context.getSettingsRef().limits.readonly)
+    if (context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
             << " Set apropriate system_profile to fix this.");

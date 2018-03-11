@@ -115,25 +115,8 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
             rows_to_transfer += block.rows();
             bytes_to_transfer += block.bytes();
 
-            if ((max_rows_to_transfer && rows_to_transfer > max_rows_to_transfer)
-                || (max_bytes_to_transfer && bytes_to_transfer > max_bytes_to_transfer))
-            {
-                switch (transfer_overflow_mode)
-                {
-                    case OverflowMode::THROW:
-                        throw Exception("IN/JOIN external table size limit exceeded."
-                            " Rows: " + toString(rows_to_transfer)
-                            + ", limit: " + toString(max_rows_to_transfer)
-                            + ". Bytes: " + toString(bytes_to_transfer)
-                            + ", limit: " + toString(max_bytes_to_transfer) + ".",
-                            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-                    case OverflowMode::BREAK:
-                        done_with_table = true;
-                        break;
-                    default:
-                        throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-                }
-            }
+            if (!network_transfer_limits.check(rows_to_transfer, bytes_to_transfer, "IN/JOIN external table", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+                done_with_table = true;
         }
 
         if (done_with_set && done_with_join && done_with_table)

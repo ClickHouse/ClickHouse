@@ -1,6 +1,3 @@
-#include <iomanip>
-#include <random>
-
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -13,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
@@ -57,7 +55,7 @@ Block IProfilingBlockInputStream::read()
         if (enabled_extremes)
             updateExtremes(res);
 
-        if (!checkDataSizeLimits())
+        if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
         if (quota != nullptr)
@@ -192,30 +190,6 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
     }
 };
 
-bool IProfilingBlockInputStream::checkDataSizeLimits()
-{
-    if (limits.mode == LIMITS_CURRENT)
-    {
-        /// Check current stream limitations (i.e. max_result_{rows,bytes})
-
-        if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
-            return handleOverflowMode(limits.read_overflow_mode,
-                std::string("Limit for result rows")
-                    + " exceeded: read " + toString(info.rows)
-                    + " rows, maximum: " + toString(limits.max_rows_to_read),
-                ErrorCodes::TOO_MANY_ROWS);
-
-        if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
-            return handleOverflowMode(limits.read_overflow_mode,
-                std::string("Limit for result bytes (uncompressed)")
-                    + " exceeded: read " + toString(info.bytes)
-                    + " bytes, maximum: " + toString(limits.max_bytes_to_read),
-                ErrorCodes::TOO_MANY_BYTES);
-    }
-
-    return true;
-}
-
 
 bool IProfilingBlockInputStream::checkTimeLimits()
 {
@@ -276,29 +250,29 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
             */
 
         if (limits.mode == LIMITS_TOTAL
-            && ((limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
-                || (limits.max_bytes_to_read && progress.bytes > limits.max_bytes_to_read)))
+            && ((limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
+                || (limits.size_limits.max_bytes && progress.bytes > limits.size_limits.max_bytes)))
         {
-            switch (limits.read_overflow_mode)
+            switch (limits.size_limits.overflow_mode)
             {
                 case OverflowMode::THROW:
                 {
-                    if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+                    if (limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
                         throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
-                            + " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
+                            + " rows read (or to read), maximum: " + toString(limits.size_limits.max_rows),
                             ErrorCodes::TOO_MANY_ROWS);
                     else
                         throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(progress.bytes)
-                            + " bytes read, maximum: " + toString(limits.max_bytes_to_read),
+                            + " bytes read, maximum: " + toString(limits.size_limits.max_bytes),
                             ErrorCodes::TOO_MANY_BYTES);
                     break;
                 }
 
                 case OverflowMode::BREAK:
                 {
-                    /// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
-                    if ((limits.max_rows_to_read && progress.rows > limits.max_rows_to_read)
-                        || (limits.max_bytes_to_read && progress.bytes > limits.max_bytes_to_read))
+                    /// For `break`, we will stop only if so many rows were actually read, and not just supposed to be read.
+                    if ((limits.size_limits.max_rows && progress.rows > limits.size_limits.max_rows)
+                        || (limits.size_limits.max_bytes && progress.bytes > limits.size_limits.max_bytes))
                     {
                         cancel(false);
                     }

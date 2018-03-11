@@ -7,6 +7,8 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitors.h>
 
+#include <DataStreams/SizeLimits.h>
+
 #include <IO/CompressedStream.h>
 #include <IO/ReadHelpers.h>
 
@@ -466,15 +468,6 @@ struct SettingTotalsMode
     }
 };
 
-/// What to do if the limit is exceeded.
-enum class OverflowMode
-{
-    THROW     = 0,    /// Throw exception.
-    BREAK     = 1,    /// Abort query execution, return what is.
-    ANY       = 2,    /** Only for GROUP BY: do not add new rows to the set,
-                        * but continue to aggregate for keys that are already in the set.
-                        */
-};
 
 template <bool enable_mode_any>
 struct SettingOverflowMode

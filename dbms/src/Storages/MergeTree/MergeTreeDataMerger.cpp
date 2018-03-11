@@ -648,7 +648,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     }
 
     if (deduplicate && merged_stream->isGroupedOutput())
-        merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, Limits(), 0 /*limit_hint*/, Names());
+        merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
     auto compression_settings = data.context.chooseCompressionSettings(
             merge_entry->total_size_bytes_compressed,

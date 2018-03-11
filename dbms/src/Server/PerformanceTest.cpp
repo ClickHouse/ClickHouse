@@ -848,7 +848,6 @@ private:
         settings.set(#NAME, settings_to_apply[#NAME]);
 
             APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-            APPLY_FOR_LIMITS(EXTRACT_SETTING)
 
 #undef EXTRACT_SETTING
 
