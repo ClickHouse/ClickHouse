@@ -6,7 +6,7 @@
 
 # ClickHouse release 1.1.54342, 2018-01-22
 
-This release contains bug fixes for the previous release 1.1.54342:
+This release contains bug fixes for the previous release 1.1.54337:
 * Fixed a regression in 1.1.54337: if the default user has readonly access, then the server refuses to start up with the message `Cannot create database in readonly mode`.
 * Fixed a regression in 1.1.54337: on systems with `systemd`, logs are always written to syslog regardless of the configuration; the watchdog script still uses `init.d`.
 * Fixed a regression in 1.1.54337: wrong default configuration in the Docker image.
