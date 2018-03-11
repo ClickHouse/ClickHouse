@@ -13,10 +13,11 @@ Kafka(broker_list, topic_list, group_name, format[, schema])
 ```
 
 Параметры:
+
 - `broker_list` - Перечень брокеров, разделенный запятыми (`localhost:9092`).
 - `topic_list` - Перечень необходимых топиков Kafka (`my_topic`).
 - `group_name` - Группа потребителя Kafka (`group1`). Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
-- `format` - Формат сообщений. Имеет те же обозначения, что выдает SQL-выражение `FORMAT`, например, `JSONEachRow`.
+- `format` - Формат сообщений. Имеет те же обозначения, что выдает SQL-выражение `FORMAT`, например, `JSONEachRow`. Подробнее смотрите в разделе "Форматы".
 - `schema` - Опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap'n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
 
 Пример:
@@ -62,7 +63,7 @@ Kafka(broker_list, topic_list, group_name, format[, schema])
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;
 
-SELECT level, sum(total) FROM daily GROUP BY level;
+  SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
 Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../operations/settings/settings.md#settings-settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../operations/settings/settings.md#settings-settings_stream_flush_interval_ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
@@ -70,8 +71,8 @@ SELECT level, sum(total) FROM daily GROUP BY level;
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
 ```
-DETACH TABLE consumer;
-ATTACH MATERIALIZED VIEW consumer;
+  DETACH TABLE consumer;
+  ATTACH MATERIALIZED VIEW consumer;
 ```
 
 Если необходимо изменить целевую таблицу с помощью `ALTER`, то материализованное представление рекомендуется отключить, чтобы избежать несостыковки между целевой таблицей и данными от представления.
