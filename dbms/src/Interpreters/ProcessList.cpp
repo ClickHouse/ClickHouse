@@ -75,7 +75,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
         res = std::make_shared<Entry>(*this, cont.emplace(cont.end(),
             query_, client_info,
-            settings.limits.max_memory_usage, settings.memory_tracker_fault_probability,
+            settings.max_memory_usage, settings.memory_tracker_fault_probability,
             priorities.insert(settings.priority)));
 
         ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
@@ -88,7 +88,7 @@ ProcessList::EntryPtr ProcessList::insert(
             ///  setting from one query effectively sets values for all other queries.
 
             /// Track memory usage for all simultaneously running queries from single user.
-            user_process_list.user_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
+            user_process_list.user_memory_tracker.setOrRaiseLimit(settings.max_memory_usage_for_user);
             user_process_list.user_memory_tracker.setDescription("(for user)");
             current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
 
@@ -96,14 +96,14 @@ ProcessList::EntryPtr ProcessList::insert(
             /// You should specify this value in configuration for default profile,
             ///  not for specific users, sessions or queries,
             ///  because this setting is effectively global.
-            total_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
+            total_memory_tracker.setOrRaiseLimit(settings.max_memory_usage_for_all_queries);
             total_memory_tracker.setDescription("(total)");
             user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
         }
 
-        if (settings.limits.max_network_bandwidth_for_user && !user_process_list.user_throttler)
+        if (settings.max_network_bandwidth_for_user && !user_process_list.user_throttler)
         {
-            user_process_list.user_throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth_for_user, 0,
+            user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, 0,
                 "Network bandwidth limit for a user exceeded.");
         }
 

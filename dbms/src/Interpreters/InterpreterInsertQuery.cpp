@@ -144,7 +144,7 @@ BlockIO InterpreterInsertQuery::execute()
 void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
 {
     const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.limits.readonly;
+    auto readonly = settings.readonly;
 
     if (!readonly || (query.database.empty() && context.tryGetExternalTable(query.table) && readonly >= 2))
     {
