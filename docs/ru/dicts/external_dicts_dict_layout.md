@@ -27,7 +27,7 @@
     <dictionary>
         ...
         <layout>
-            <layout_type> 
+            <layout_type>
                 <!-- layout settings -->
             </layout_type>
         </layout>
@@ -87,7 +87,7 @@
 
 ### complex_key_hashed
 
-Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
 
 Пример конфигурации:
 
