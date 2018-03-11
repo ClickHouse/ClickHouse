@@ -107,6 +107,10 @@ private:
 
         UInt64 blocks_written = 0;
         UInt64 rows_written = 0;
+
+        UInt64 bloks_started = 0;
+        UInt64 elapsed_time_ms = 0;
+        UInt64 max_elapsed_time_for_block_ms = 0;
     };
 
     std::vector<std::list<JobInfo>> per_shard_jobs;

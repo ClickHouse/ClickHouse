@@ -104,7 +104,18 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
         {
             buffer << "Wrote " << job.blocks_written << " blocks and " << job.rows_written << " rows"
                    << " on shard " << job.shard_index << " replica " << job.replica_index
-                   << ", " << addresses[job.shard_index][job.replica_index].readableString() << "\n";
+                   << ", " << addresses[job.shard_index][job.replica_index].readableString();
+
+            /// Performance statistics
+            if (job.bloks_started > 0)
+            {
+                buffer << " (average " << job.elapsed_time_ms / job.bloks_started << " ms per block";
+                if (job.bloks_started > 1)
+                    buffer << ", the slowest block " << job.max_elapsed_time_for_block_ms << " ms";
+                buffer << ")";
+            }
+
+            buffer << "\n";
         }
 
     return buffer.str();
@@ -178,8 +189,15 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
     auto memory_tracker = current_memory_tracker;
     return [this, memory_tracker, &job]()
     {
+        SCOPE_EXIT({++finished_jobs_count;});
+
+        Stopwatch watch;
+        ++job.bloks_started;
+
         SCOPE_EXIT({
-            ++finished_jobs_count;
+            UInt64 elapsed_time_for_block_ms = watch.elapsedMilliseconds();
+            job.elapsed_time_ms += elapsed_time_for_block_ms;
+            job.max_elapsed_time_for_block_ms = std::max(job.max_elapsed_time_for_block_ms, elapsed_time_for_block_ms);
         });
 
         if (!current_memory_tracker)
@@ -250,7 +268,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 job.stream->write(block);
         }
 
-        ++job.blocks_written;
+        job.blocks_written += 1;
         job.rows_written += block.rows();
     };
 }
