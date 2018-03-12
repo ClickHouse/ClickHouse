@@ -246,7 +246,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
                 explicit_type = block.getByName(column_name).type;
 
             defaults.emplace(column_name, ColumnDefault{
-                columnDefaultTypeFromString(col_decl_ptr->default_specifier),
+                columnDefaultKindFromString(col_decl_ptr->default_specifier),
                 col_decl_ptr->default_expression
             });
         }
@@ -256,7 +256,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
 }
 
 
-static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultType type)
+static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultKind kind)
 {
     auto & columns = columns_and_defaults.first;
     auto & defaults = columns_and_defaults.second;
@@ -266,7 +266,7 @@ static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and
     for (auto it = std::begin(columns); it != std::end(columns);)
     {
         const auto jt = defaults.find(it->name);
-        if (jt != std::end(defaults) && jt->second.type == type)
+        if (jt != std::end(defaults) && jt->second.kind == kind)
         {
             removed.push_back(*it);
             it = columns.erase(it);
@@ -323,7 +323,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto it = columns.defaults.find(column.name);
         if (it != std::end(columns.defaults))
         {
-            column_declaration->default_specifier = toString(it->second.type);
+            column_declaration->default_specifier = toString(it->second.kind);
             column_declaration->default_expression = it->second.expression->clone();
         }
 
@@ -339,8 +339,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     ColumnsDescription res;
 
     auto && columns_and_defaults = parseColumns(columns, context);
-    res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
-    res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
+    res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Materialized);
+    res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Alias);
     res.ordinary = std::move(columns_and_defaults.first);
     res.defaults = std::move(columns_and_defaults.second);
 

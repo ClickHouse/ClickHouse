@@ -171,7 +171,7 @@ BlockInputStreams StorageSystemColumns::read(
                 }
                 else
                 {
-                    res_columns[i++]->insert(toString(it->second.type));
+                    res_columns[i++]->insert(toString(it->second.kind));
                     res_columns[i++]->insert(queryToString(it->second.expression));
                 }
             }

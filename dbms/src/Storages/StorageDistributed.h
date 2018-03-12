@@ -35,7 +35,7 @@ public:
 
     static StoragePtr createWithOwnCluster(
         const std::string & table_name_,
-        const NamesAndTypesList & columns_,
+        const ColumnsDescription & columns_,
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,

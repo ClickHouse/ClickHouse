@@ -110,7 +110,7 @@ void InterpreterAlterQuery::parseAlter(
             }
             if (ast_col_decl.default_expression)
             {
-                command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+                command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
                 command.default_expression = ast_col_decl.default_expression;
             }
 
@@ -157,7 +157,7 @@ void InterpreterAlterQuery::parseAlter(
 
             if (ast_col_decl.default_expression)
             {
-                command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+                command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
                 command.default_expression = ast_col_decl.default_expression;
             }
 

@@ -88,7 +88,7 @@ String ColumnsDescription::toString() const
             else
                 writeChar('\t', buf);
 
-            writeString(DB::toString(it->second.type), buf);
+            writeString(DB::toString(it->second.kind), buf);
             writeChar('\t', buf);
             writeString(queryToString(it->second.expression), buf);
             writeChar('\n', buf);
@@ -134,9 +134,9 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         }
         assertChar('\t', buf);
 
-        String default_type_str;
-        readString(default_type_str, buf);
-        const auto default_type = columnDefaultTypeFromString(default_type_str);
+        String default_kind_str;
+        readString(default_kind_str, buf);
+        const auto default_kind = columnDefaultKindFromString(default_kind_str);
         assertChar('\t', buf);
 
         String default_expr_str;
@@ -147,14 +147,14 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         const auto end = begin + default_expr_str.size();
         ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default expression");
 
-        if (ColumnDefaultType::Default == default_type)
+        if (ColumnDefaultKind::Default == default_kind)
             result.ordinary.emplace_back(column_name, std::move(type));
-        else if (ColumnDefaultType::Materialized == default_type)
+        else if (ColumnDefaultKind::Materialized == default_kind)
             result.materialized.emplace_back(column_name, std::move(type));
-        else if (ColumnDefaultType::Alias == default_type)
+        else if (ColumnDefaultKind::Alias == default_kind)
             result.aliases.emplace_back(column_name, std::move(type));
 
-        result.defaults.emplace(column_name, ColumnDefault{default_type, default_expr});
+        result.defaults.emplace(column_name, ColumnDefault{default_kind, default_expr});
     }
 
     assertEOF(buf);

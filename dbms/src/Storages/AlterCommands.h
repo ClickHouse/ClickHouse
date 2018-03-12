@@ -27,7 +27,7 @@ struct AlterCommand
     /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type;
 
-    ColumnDefaultType default_type{};
+    ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
 
     /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
@@ -47,9 +47,9 @@ struct AlterCommand
 
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
-                 const ColumnDefaultType default_type, const ASTPtr & default_expression,
+                 const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
                  const String & after_column = String{})
-        : type{type}, column_name{column_name}, data_type{data_type}, default_type{default_type},
+        : type{type}, column_name{column_name}, data_type{data_type}, default_kind{default_kind},
         default_expression{default_expression}, after_column{after_column}
     {}
 };
