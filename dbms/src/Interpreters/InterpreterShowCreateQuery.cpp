@@ -39,7 +39,7 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
-    const ASTShowCreateQuery & ast = typeid_cast<const ASTShowCreateQuery &>(*query_ptr);
+    const auto & ast = dynamic_cast<const ASTQueryWithTableAndOutput &>(*query_ptr);
 
     if (ast.temporary && !ast.database.empty())
         throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
