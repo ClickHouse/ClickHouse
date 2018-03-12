@@ -75,7 +75,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 
     const ColumnString & query_id_col = typeid_cast<const ColumnString &>(*processes_block.getByName("query_id").column);
     const ColumnString & user_col = typeid_cast<const ColumnString &>(*processes_block.getByName("user").column);
-    const ClientInfo & my_client = context.getProcessListElement()->client_info;
+    const ClientInfo & my_client = context.getProcessListElement()->getClientInfo();
 
     for (size_t i = 0; i < num_processes; ++i)
     {
@@ -85,7 +85,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
         if (my_client.current_query_id == query_id && my_client.current_user == user)
             continue;
 
-        if (context.getSettingsRef().limits.readonly && my_client.current_user != user)
+        if (context.getSettingsRef().readonly && my_client.current_user != user)
         {
             throw Exception("Readonly user " + my_client.current_user + " attempts to kill query created by " + user,
                     ErrorCodes::READONLY);

@@ -189,11 +189,6 @@ private:
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
-            context.setSetting(#NAME, config().getString(#NAME));
-        APPLY_FOR_LIMITS(EXTRACT_LIMIT)
-#undef EXTRACT_LIMIT
     }
 
 
@@ -1269,8 +1264,7 @@ public:
             }
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-#define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         boost::program_options::options_description main_description("Main options");
@@ -1298,10 +1292,8 @@ public:
             ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
-            APPLY_FOR_LIMITS(DECLARE_LIMIT)
         ;
 #undef DECLARE_SETTING
-#undef DECLARE_LIMIT
 
         /// Commandline options related to external tables.
         boost::program_options::options_description external_description("External tables options");
@@ -1365,7 +1357,6 @@ public:
         if (options.count(#NAME)) \
             context.setSetting(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-        APPLY_FOR_LIMITS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
         /// Save received data into the internal config.
