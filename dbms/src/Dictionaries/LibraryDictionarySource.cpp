@@ -140,9 +140,12 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , settings{other.settings}
 {
     auto fptr = library->tryGet<void * (*)(void *)>("ClickHouseDictionary_v2_libClone");
-    if (fptr) {
+    if (fptr)
+    {
         lib_data = fptr(other.lib_data);
-    } else {
+    }
+    else
+    {
         auto fptr = library->tryGet<void * (*)()>("ClickHouseDictionary_v2_libNew");
         if (fptr)
             lib_data = fptr();
