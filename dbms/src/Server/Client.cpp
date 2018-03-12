@@ -346,7 +346,7 @@ private:
 
         for (const String & key : keys)
         {
-            if (server_display_name.find(key) != std::string::npos) 
+            if (key != "default" && server_display_name.find(key) != std::string::npos) 
             {
                 prompt_by_server_display_name = config().getString("prompt_by_server_display_name." + key);
                 break;
@@ -494,11 +494,9 @@ private:
         return select(1, &fds, 0, 0, &timeout) == 1;
     }
 
-    const String prompt() const
+    inline const String prompt() const
     {
-        String pattern = prompt_by_server_display_name;
-        boost::replace_all(pattern, "{database}", config().getString("database", "default"));
-        return pattern;
+        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
 
     void loop()
