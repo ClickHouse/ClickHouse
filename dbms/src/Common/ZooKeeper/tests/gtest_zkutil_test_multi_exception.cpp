@@ -134,10 +134,13 @@ TEST(zkutil, multi_create_sequential)
     try
     {
         auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
+        zookeeper->createAncestors("/clickhouse_test/");
+
+        zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181", "", zkutil::DEFAULT_SESSION_TIMEOUT, "/clickhouse_test");
         auto acl = zookeeper->getDefaultACL();
         zkutil::Ops ops;
 
-        String base_path = "/clickhouse_test/zkutil/multi_create_sequential";
+        String base_path = "/zkutil/multi_create_sequential";
         zookeeper->tryRemoveRecursive(base_path);
         zookeeper->createAncestors(base_path + "/");
 
@@ -147,6 +150,10 @@ TEST(zkutil, multi_create_sequential)
         zkutil::OpResult & result = results->at(0);
 
         EXPECT_TRUE(result.value != nullptr);
+
+        String path = result.value;
+        std::cout << path << "\n";
+
         EXPECT_TRUE(startsWith(result.value, entry_path));
     }
     catch (...)
@@ -154,5 +161,6 @@ TEST(zkutil, multi_create_sequential)
         std::cerr << getCurrentExceptionMessage(false);
         throw;
     }
-
 }
+
+
