@@ -12,6 +12,8 @@ namespace zkutil
 
 using ACLPtr = const ACL_vector *;
 using Stat = ::Stat;
+class ZooKeeper;
+
 
 struct Op
 {
@@ -136,10 +138,15 @@ private:
     int32_t version;
 };
 
-struct OpResult : public zoo_op_result_t
+/// C++ version of zoo_op_result_t
+struct OpResult
 {
-    /// Pointers in this class point to fields of class Op.
-    /// Op instances have the same (or longer lifetime), therefore destructor is not required.
+    int err;
+    std::string value;
+    std::unique_ptr<Stat> stat;
+
+    /// ZooKeeper is required for correct chroot path prefixes handling
+    explicit OpResult(const zoo_op_result_t & op_result, const ZooKeeper * zookeeper = nullptr);
 };
 
 using OpPtr = std::unique_ptr<Op>;

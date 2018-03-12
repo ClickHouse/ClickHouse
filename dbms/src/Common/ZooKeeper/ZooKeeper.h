@@ -56,7 +56,7 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const std::string & hosts, const std::string & identity = "",
-              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT, bool check_root_exists = false);
+              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT, const std::string & chroot = "");
 
     /** Config of the form:
         <zookeeper>
@@ -366,9 +366,10 @@ public:
 private:
     friend struct WatchContext;
     friend class EphemeralNodeHolder;
+    friend class OpResult;
 
     void init(const std::string & hosts, const std::string & identity,
-              int32_t session_timeout_ms, bool check_root_exists);
+              int32_t session_timeout_ms, const std::string & chroot);
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
 
@@ -414,6 +415,7 @@ private:
     std::string hosts;
     std::string identity;
     int32_t session_timeout_ms;
+    std::string chroot;
 
     std::mutex mutex;
     ACLPtr default_acl;
