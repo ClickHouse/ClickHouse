@@ -16,8 +16,8 @@ def started_cluster():
 
         for node in (node1, node2):
             node.query('''
-CREATE TABLE local_table(id UInt32, val String) ENGINE = TinyLog;
-CREATE TABLE local_table_2(id UInt32, val String) ENGINE = TinyLog;
+CREATE TABLE local_table(id UInt32, val String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE local_table_2(id UInt32, val String) ENGINE = MergeTree ORDER BY id;
 ''')
 
         node1.query("INSERT INTO local_table VALUES (1, 'node1')")
@@ -50,6 +50,10 @@ def test_filtering(started_cluster):
     assert node1.query("SELECT id + 1, val FROM merge_table WHERE id = 1").rstrip() == '2\tnode1'
 
     assert node1.query("SELECT id + 1 FROM merge_table WHERE val = 'node1'").rstrip() == '2'
+
+    assert node1.query("SELECT id + 1, val FROM merge_table PREWHERE id = 1 WHERE _table != '_dummy'").rstrip() == '2\tnode1'
+
+    assert node1.query("SELECT count() FROM merge_table PREWHERE id = 1").rstrip() == '1'
 
 
 def test_select_table_name_from_merge_over_distributed(started_cluster):
