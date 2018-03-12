@@ -192,7 +192,7 @@ BlockIO InterpreterDropQuery::execute()
 void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
 {
     const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.limits.readonly;
+    auto readonly = settings.readonly;
 
     /// It's allowed to drop temporary tables.
     if (!readonly || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))

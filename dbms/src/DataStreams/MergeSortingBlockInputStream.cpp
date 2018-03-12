@@ -73,7 +73,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
     /** Algorithm:
       * - read to memory blocks from source stream;
-      * - if too much of them and if external sorting is enabled,
+      * - if too many of them and if external sorting is enabled,
       *   - merge all blocks to sorted stream and write it to temporary file;
       * - at the end, merge all sorted streams from temporary files and also from rest of blocks in memory.
       */
@@ -93,7 +93,7 @@ Block MergeSortingBlockInputStream::readImpl()
             blocks.push_back(block);
             sum_bytes_in_blocks += block.bytes();
 
-            /** If too much of them and if external sorting is enabled,
+            /** If too many of them and if external sorting is enabled,
               *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
               * NOTE. It's possible to check free space in filesystem.
               */

@@ -589,7 +589,7 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
         return;
 
     const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.limits.readonly;
+    auto readonly = settings.readonly;
 
     if (!readonly)
     {

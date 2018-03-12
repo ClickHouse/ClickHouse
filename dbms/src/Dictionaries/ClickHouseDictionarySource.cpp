@@ -46,7 +46,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
         db{config.getString(config_prefix + ".db", "")},
         table{config.getString(config_prefix + ".table")},
         where{config.getString(config_prefix + ".where", "")},
-        update_field{config.getString(config_prefix + ".update_field")},
+        update_field{config.getString(config_prefix + ".update_field", "")},
         query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
         sample_block{sample_block}, context(context),
         is_local{isLocalAddress({ host, port }, config.getInt("tcp_port", 0))},

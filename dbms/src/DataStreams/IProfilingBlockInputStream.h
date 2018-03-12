@@ -2,12 +2,14 @@
 
 #include <IO/Progress.h>
 
-#include <Interpreters/Limits.h>
-
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/SizeLimits.h>
+
+#include <Interpreters/SettingsCommon.h>
 
 #include <atomic>
+
 
 namespace DB
 {
@@ -18,7 +20,7 @@ namespace ErrorCodes
 }
 
 class QuotaForIntervals;
-struct ProcessListElement;
+class ProcessListElement;
 class IProfilingBlockInputStream;
 
 using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;
@@ -151,10 +153,7 @@ public:
     {
         LimitsMode mode = LIMITS_CURRENT;
 
-        /// If it is zero, corresponding limit check isn't performed.
-        size_t max_rows_to_read = 0;
-        size_t max_bytes_to_read = 0;
-        OverflowMode read_overflow_mode = OverflowMode::THROW;
+        SizeLimits size_limits;
 
         Poco::Timespan max_execution_time = 0;
         OverflowMode timeout_overflow_mode = OverflowMode::THROW;
@@ -238,7 +237,6 @@ private:
     /** Check constraints and quotas.
       * But only those that can be tested within each separate source.
       */
-    bool checkDataSizeLimits();
     bool checkTimeLimits();
     void checkQuota(Block & block);
 

@@ -276,9 +276,9 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         pool.emplace(remote_jobs_count + local_jobs_count);
         query_string = queryToString(query_ast);
 
-        if (!throttler && (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes))
+        if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
         {
-            throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth, settings.limits.max_network_bytes,
+            throttler = std::make_shared<Throttler>(settings.max_network_bandwidth, settings.max_network_bytes,
                                                     "Network bandwidth limit for a query exceeded.");
         }
     }

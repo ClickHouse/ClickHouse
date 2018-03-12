@@ -67,8 +67,6 @@ struct SystemLogs
 };
 
 
-
-
 template <typename LogElement>
 class SystemLog : private boost::noncopyable
 {
