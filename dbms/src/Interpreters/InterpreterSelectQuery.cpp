@@ -521,7 +521,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         for (const auto & column : required_columns)
         {
             const auto default_it = storage->columns.defaults.find(column);
-            if (default_it != std::end(storage->columns.defaults) && default_it->second.type == ColumnDefaultType::Alias)
+            if (default_it != std::end(storage->columns.defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
             {
                 alias_columns_required = true;
                 break;
@@ -536,7 +536,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             for (const auto & column : required_columns)
             {
                 const auto default_it = storage->columns.defaults.find(column);
-                if (default_it != std::end(storage->columns.defaults) && default_it->second.type == ColumnDefaultType::Alias)
+                if (default_it != std::end(storage->columns.defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
                     required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
                 else
                     required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));
@@ -711,6 +711,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
 
+    StackTrace st;
     /// Aliases in table declaration.
     if (from_stage == QueryProcessingStage::FetchColumns && alias_actions)
     {

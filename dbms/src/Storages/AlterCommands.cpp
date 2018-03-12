@@ -57,17 +57,17 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
             columns.emplace(insert_it, column_name, data_type);
         };
 
-        if (default_type == ColumnDefaultType::Default)
+        if (default_kind == ColumnDefaultKind::Default)
             add_column(columns_description.ordinary);
-        else if (default_type == ColumnDefaultType::Materialized)
+        else if (default_kind == ColumnDefaultKind::Materialized)
             add_column(columns_description.materialized);
-        else if (default_type == ColumnDefaultType::Alias)
+        else if (default_kind == ColumnDefaultKind::Alias)
             add_column(columns_description.aliases);
         else
-            throw Exception{"Unknown ColumnDefaultType value", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unknown ColumnDefaultKind value", ErrorCodes::LOGICAL_ERROR};
 
         if (default_expression)
-            columns_description.defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
+            columns_description.defaults.emplace(column_name, ColumnDefault{default_kind, default_expression});
 
         /// Slow, because each time a list is copied
         columns_description.ordinary = Nested::flatten(columns_description.ordinary);
@@ -103,12 +103,12 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     {
         const auto default_it = columns_description.defaults.find(column_name);
         const auto had_default_expr = default_it != std::end(columns_description.defaults);
-        const auto old_default_type = had_default_expr ? default_it->second.type : ColumnDefaultType{};
+        const auto old_default_kind = had_default_expr ? default_it->second.kind : ColumnDefaultKind{};
 
         /// target column list
         auto & new_columns =
-            default_type == ColumnDefaultType::Default ? columns_description.ordinary
-            : default_type == ColumnDefaultType::Materialized ? columns_description.materialized
+            default_kind == ColumnDefaultKind::Default ? columns_description.ordinary
+            : default_kind == ColumnDefaultKind::Materialized ? columns_description.materialized
             : columns_description.aliases;
 
         /// find column or throw exception
@@ -124,12 +124,12 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
         };
 
         /// if default types differ, remove column from the old list, then add to the new list
-        if (default_type != old_default_type)
+        if (default_kind != old_default_kind)
         {
             /// source column list
             auto & old_columns =
-                old_default_type == ColumnDefaultType::Default ? columns_description.ordinary
-                : old_default_type == ColumnDefaultType::Materialized ? columns_description.materialized
+                old_default_kind == ColumnDefaultKind::Default ? columns_description.ordinary
+                : old_default_kind == ColumnDefaultKind::Materialized ? columns_description.materialized
                 : columns_description.aliases;
 
             const auto old_column_it = find_column(old_columns);
@@ -138,7 +138,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
 
             /// do not forget to change the default type of old column
             if (had_default_expr)
-                columns_description.defaults[column_name].type = default_type;
+                columns_description.defaults[column_name].kind = default_kind;
         }
 
         /// find column in one of three column lists
@@ -150,7 +150,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
             columns_description.defaults.erase(column_name);
         else if (default_expression && !had_default_expr)
             /// new column has a default expression while the old one had not, add it it column_defaults
-            columns_description.defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
+            columns_description.defaults.emplace(column_name, ColumnDefault{default_kind, default_expression});
         else if (had_default_expr)
             /// both old and new columns have default expression, update it
             columns_description.defaults[column_name].expression = default_expression;
@@ -333,7 +333,7 @@ void AlterCommands::validate(IStorage * table, const Context & context)
                     /// add a new alter command to modify existing column
                     this->emplace_back(AlterCommand{
                         AlterCommand::MODIFY_COLUMN, column_name, explicit_type,
-                        default_it->second.type, default_it->second.expression
+                        default_it->second.kind, default_it->second.expression
                     });
 
                     command_ptr = &this->back();

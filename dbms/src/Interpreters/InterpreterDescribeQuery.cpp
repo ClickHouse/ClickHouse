@@ -119,7 +119,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
-            res_columns[2]->insert(toString(it->second.type));
+            res_columns[2]->insert(toString(it->second.kind));
             res_columns[3]->insert(queryToString(it->second.expression));
         }
     }

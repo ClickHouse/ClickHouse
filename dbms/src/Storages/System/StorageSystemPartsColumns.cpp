@@ -72,7 +72,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         const auto it = column_defaults.find(column.name);
         if (it != std::end(column_defaults))
         {
-            column_info.default_kind = toString(it->second.type);
+            column_info.default_kind = toString(it->second.kind);
             column_info.default_expression = queryToString(it->second.expression);
         }
 
