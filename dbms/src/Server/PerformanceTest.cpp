@@ -1485,7 +1485,7 @@ try
     Strings tests_names_regexp = options.count("names-regexp") ? options["names-regexp"].as<Strings>() : Strings({});
     Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
-    auto timeouts = DB::ConnectionTimeouts::getTCPTimeouts(DB::Settings());
+    auto timeouts = DB::ConnectionTimeouts::getTCPTimeoutsWithoutFailover(DB::Settings());
 
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),
