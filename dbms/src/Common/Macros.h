@@ -27,4 +27,6 @@ private:
     MacroMap macros;
 };
 
+using MacrosPtr = std::shared_ptr<Macros>;
+
 }
