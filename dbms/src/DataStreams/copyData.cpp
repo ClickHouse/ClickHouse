@@ -16,8 +16,8 @@ bool isAtomicSet(std::atomic<bool> * val)
 
 }
 
-template <typename Pred>
-void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, Pred && is_cancelled)
+template <typename TCancelCallback, typename TProgressCallback>
+void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCallback && is_cancelled, TProgressCallback && progress)
 {
     from.readPrefix();
     to.writePrefix();
@@ -28,6 +28,7 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, Pred && is_
             break;
 
         to.write(block);
+        progress(block);
     }
 
     if (is_cancelled())
@@ -51,6 +52,8 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, Pred && is_
 }
 
 
+inline void doNothing(const Block &) {}
+
 void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<bool> * is_cancelled)
 {
     auto is_cancelled_pred = [is_cancelled] ()
@@ -58,13 +61,19 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<boo
         return isAtomicSet(is_cancelled);
     };
 
-    copyDataImpl(from, to, is_cancelled_pred);
+    copyDataImpl(from, to, is_cancelled_pred, doNothing);
 }
 
 
 void copyData(IBlockInputStream & from, IBlockOutputStream & to, const std::function<bool()> & is_cancelled)
 {
-    copyDataImpl(from, to, is_cancelled);
+    copyDataImpl(from, to, is_cancelled, doNothing);
+}
+
+void copyData(IBlockInputStream & from, IBlockOutputStream & to, const std::function<bool()> & is_cancelled,
+              const std::function<void(const Block & block)> & progress)
+{
+    copyDataImpl(from, to, is_cancelled, progress);
 }
 
 }

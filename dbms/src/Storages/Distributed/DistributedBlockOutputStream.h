@@ -85,8 +85,8 @@ private:
     bool insert_sync;
 
     /// Sync-related stuff
-    UInt64 insert_timeout;
-    std::chrono::steady_clock::time_point deadline;
+    UInt64 insert_timeout; // in seconds
+    Stopwatch watch;
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
     String query_string;
@@ -107,6 +107,10 @@ private:
 
         UInt64 blocks_written = 0;
         UInt64 rows_written = 0;
+
+        UInt64 bloks_started = 0;
+        UInt64 elapsed_time_ms = 0;
+        UInt64 max_elapsed_time_for_block_ms = 0;
     };
 
     std::vector<std::list<JobInfo>> per_shard_jobs;
@@ -116,8 +120,8 @@ private:
     size_t local_jobs_count = 0;
 
     std::atomic<unsigned> finished_jobs_count{0};
-    std::mutex mutex;
-    std::condition_variable cond_var;
+
+    Poco::Logger * log;
 };
 
 }
