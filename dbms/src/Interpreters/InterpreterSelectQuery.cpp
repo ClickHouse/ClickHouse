@@ -71,12 +71,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Names & required_result_column_names_,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
-    const BlockInputStreamPtr & input)
+    const BlockInputStreamPtr & input,
+    bool only_analyze)
     : query_ptr(query_ptr_->clone())    /// Note: the query is cloned because it will be modified during analysis.
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
+    , only_analyze(only_analyze)
     , input(input)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -150,19 +152,22 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
         query_ptr, context, storage, source_columns, required_result_column_names, subquery_depth, !only_analyze);
 
-    if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
-        throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+    if (!only_analyze)
+    {
+        if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
+            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-    if (query.final() && (input || !storage || !storage->supportsFinal()))
-        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+        if (query.final() && (input || !storage || !storage->supportsFinal()))
+            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 
-    if (query.prewhere_expression && (input || !storage || !storage->supportsPrewhere()))
-        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+        if (query.prewhere_expression && (input || !storage || !storage->supportsPrewhere()))
+            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
-    /// Save the new temporary tables in the query context
-    for (const auto & it : query_analyzer->getExternalTables())
-        if (!context.tryGetExternalTable(it.first))
-            context.addExternalTable(it.first, it.second);
+        /// Save the new temporary tables in the query context
+        for (const auto & it : query_analyzer->getExternalTables())
+            if (!context.tryGetExternalTable(it.first))
+                context.addExternalTable(it.first, it.second);
+    }
 }
 
 
