@@ -63,7 +63,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
 
     NamesAndTypesList columns_list = info.storage->getColumnsList();
     columns_list.insert(std::end(columns_list), std::begin(info.storage->alias_columns), std::end(info.storage->alias_columns));
-    column_defaults = info.storage->column_defaults;
+    const auto & column_defaults = info.storage->column_defaults;
     std::unordered_map<String, ColumnInfo> columns_info;
 
     for (const auto & column : columns_list)
