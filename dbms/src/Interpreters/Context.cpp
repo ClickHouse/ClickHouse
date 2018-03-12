@@ -261,7 +261,6 @@ Context Context::createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime
     res.runtime_components_factory = runtime_components_factory;
     res.shared = std::make_shared<ContextShared>(runtime_components_factory);
     res.quota = std::make_shared<QuotaForIntervals>();
-    res.system_logs = std::make_shared<SystemLogs>();
     return res;
 }
 
@@ -822,12 +821,6 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
         throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     external_tables[table_name] = std::pair(storage, ast);
-
-    if (process_list_elem)
-    {
-        auto lock = getLock();
-        shared->process_list.addTemporaryTable(*process_list_elem, table_name, storage);
-    }
 }
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
@@ -940,12 +933,6 @@ ASTPtr Context::getCreateExternalQuery(const String & table_name) const
 Settings Context::getSettings() const
 {
     return settings;
-}
-
-
-Limits Context::getLimits() const
-{
-    return settings.limits;
 }
 
 
@@ -1455,12 +1442,19 @@ Compiler & Context::getCompiler()
 }
 
 
-QueryLog & Context::getQueryLog()
+void Context::initializeSystemLogs()
+{
+    auto lock = getLock();
+    system_logs = std::make_shared<SystemLogs>();
+}
+
+
+QueryLog * Context::getQueryLog()
 {
     auto lock = getLock();
 
     if (!system_logs)
-        throw Exception("Query log have been already shutdown", ErrorCodes::LOGICAL_ERROR);
+        return nullptr;
 
     if (!system_logs->query_log)
     {
@@ -1475,19 +1469,18 @@ QueryLog & Context::getQueryLog()
         String database     = config.getString("query_log.database",     "system");
         String table        = config.getString("query_log.table",        "query_log");
         String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
-        size_t flush_interval_milliseconds = config.getUInt64(
-                "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
+        size_t flush_interval_milliseconds = config.getUInt64("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
         String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
 
         system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
     }
 
-    return *system_logs->query_log;
+    return system_logs->query_log.get();
 }
 
 
-PartLog * Context::getPartLog(const String & database, const String & table)
+PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
@@ -1495,16 +1488,16 @@ PartLog * Context::getPartLog(const String & database, const String & table)
     if (!config.has("part_log"))
         return nullptr;
 
-    /// System logs are shutdown
+    /// System logs are shutting down.
     if (!system_logs)
         return nullptr;
 
-    String part_log_database = config.getString("part_log.database", "system");
-    String part_log_table = config.getString("part_log.table", "part_log");
+    String database = config.getString("part_log.database", "system");
 
-    /// Will not log system.part_log itself.
-    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing
-    if (database == part_log_database && table == part_log_table)
+    /// Will not log operations on system tables (including part_log itself).
+    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
+    /// and also make troubles on startup.
+    if (part_database == database)
         return nullptr;
 
     if (!system_logs->part_log)
@@ -1515,11 +1508,13 @@ PartLog * Context::getPartLog(const String & database, const String & table)
         if (!global_context)
             throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
 
-        size_t flush_interval_milliseconds = config.getUInt64(
-                "part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-        system_logs->part_log = std::make_unique<PartLog>(
-            *global_context, part_log_database, part_log_table,
-            "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        String table = config.getString("part_log.table", "part_log");
+        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
+        size_t flush_interval_milliseconds = config.getUInt64("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
+
+        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+
+        system_logs->part_log = std::make_unique<PartLog>(*global_context, database, table, engine, flush_interval_milliseconds);
     }
 
     return system_logs->part_log.get();

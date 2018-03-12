@@ -49,7 +49,7 @@ namespace ErrorCodes
 
 static void throwIfReadOnly(Context & context)
 {
-    if (context.getSettingsRef().limits.readonly)
+    if (context.getSettingsRef().readonly)
         throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
 }
 

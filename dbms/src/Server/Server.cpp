@@ -230,7 +230,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::move(main_config_zk_node_cache),
         [&](ConfigurationPtr config)
         {
-            buildLoggers(*config);
             global_context->setClustersConfig(config);
         },
         /* already_loaded = */ true);
@@ -279,6 +278,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     LOG_INFO(log, "Loading metadata.");
     loadMetadataSystem(*global_context);
+    /// After attaching system databases we can initialize system log.
+    global_context->initializeSystemLogs();
     /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
     attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
     /// Then, load remaining databases

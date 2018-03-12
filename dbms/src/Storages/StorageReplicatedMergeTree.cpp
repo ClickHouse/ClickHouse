@@ -81,7 +81,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
-    extern const int TOO_MUCH_RETRIES_TO_FETCH_PARTS;
+    extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int PARTITION_DOESNT_EXIST;
     extern const int CHECKSUM_DOESNT_MATCH;
@@ -91,7 +91,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int METADATA_MISMATCH;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
-    extern const int TOO_MUCH_FETCHES;
+    extern const int TOO_MANY_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int INCORRECT_FILE_NAME;
@@ -1152,7 +1152,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
     {
         try
         {
-            auto part_log = context.getPartLog(database_name, table_name);
+            auto part_log = context.getPartLog(database_name);
             if (!part_log)
                 return;
 
@@ -1271,7 +1271,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
     if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
     {
         throw Exception("Too many total fetches from replicas, maximum: " + data.settings.replicated_max_parallel_fetches.toString(),
-            ErrorCodes::TOO_MUCH_FETCHES);
+            ErrorCodes::TOO_MANY_FETCHES);
     }
 
     ++total_fetches;
@@ -1280,7 +1280,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
     if (data.settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
     {
         throw Exception("Too many fetches from replicas for table, maximum: " + data.settings.replicated_max_parallel_fetches_for_table.toString(),
-            ErrorCodes::TOO_MUCH_FETCHES);
+            ErrorCodes::TOO_MANY_FETCHES);
     }
 
     ++current_table_fetches;
@@ -2259,7 +2259,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         try
         {
-            auto part_log = context.getPartLog(database_name, table_name);
+            auto part_log = context.getPartLog(database_name);
             if (!part_log)
                 return;
 
@@ -3481,7 +3481,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
             LOG_INFO(log, "Some of parts (" << missing_parts.size() << ") are missing. Will try to fetch covering parts.");
 
         if (try_no >= 5)
-            throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MUCH_RETRIES_TO_FETCH_PARTS);
+            throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS);
 
         Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
         ActiveDataPartSet active_parts_set(data.format_version, parts);

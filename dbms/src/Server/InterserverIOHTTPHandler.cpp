@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
 void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
@@ -71,7 +71,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
     catch (Exception & e)
     {
 
-        if (e.code() == ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES)
+        if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
         {
             if (!response.sent())
                 response.send();

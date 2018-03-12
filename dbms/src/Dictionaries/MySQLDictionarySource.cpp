@@ -30,7 +30,7 @@ MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_st
     db{config.getString(config_prefix + ".db", "")},
     table{config.getString(config_prefix + ".table")},
     where{config.getString(config_prefix + ".where", "")},
-    update_field{config.getString(config_prefix + ".update_field")},
+    update_field{config.getString(config_prefix + ".update_field", "")},
     dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)},
     sample_block{sample_block},
     pool{config, config_prefix},

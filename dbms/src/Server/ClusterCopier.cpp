@@ -682,7 +682,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
 
     /// Override important settings
     settings_pull.load_balancing = LoadBalancing::NEAREST_HOSTNAME;
-    settings_pull.limits.readonly = 1;
+    settings_pull.readonly = 1;
     settings_pull.max_threads = 1;
     settings_pull.max_block_size = std::min(8192UL, settings_pull.max_block_size.value);
     settings_pull.preferred_block_size_bytes = 0;
