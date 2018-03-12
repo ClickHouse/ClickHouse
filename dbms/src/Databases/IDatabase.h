@@ -124,7 +124,8 @@ public:
         const Context & context,
         const String & name) = 0;
 
-    /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
+    /// Get the CREATE TABLE query for the table or CREATE DATABASE query for database if name is empty.
+    /// It can also provide information for detached tables for which there is metadata.
     virtual ASTPtr getCreateQuery(
         const Context & context,
         const String & name) const = 0;

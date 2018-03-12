@@ -45,6 +45,12 @@ namespace detail
     {
         return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
     }
+
+    String getDatabaseMetadataPath(const String & base_path)
+    {
+        return (endsWith(base_path, "/") ? base_path.substr(0, base_path.size() - 1) : base_path) + ".sql";
+    }
+
 }
 
 static void loadTable(
@@ -332,16 +338,21 @@ void DatabaseOrdinary::removeTable(
 
 static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 {
-    String table_metadata_path = detail::getTableMetadataPath(path, table_name);
+    String metadata_path;
+
+    if (table_name.empty())
+        metadata_path = detail::getDatabaseMetadataPath(path);
+    else
+        metadata_path = detail::getTableMetadataPath(path, table_name);
 
     String query;
     {
-        ReadBufferFromFile in(table_metadata_path, 4096);
+        ReadBufferFromFile in(metadata_path, 4096);
         readStringUntilEOF(query, in);
     }
 
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + table_metadata_path);
+    return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + metadata_path);
 }
 
 
