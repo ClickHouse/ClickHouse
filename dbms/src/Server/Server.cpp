@@ -231,6 +231,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config)
         {
             global_context->setClustersConfig(config);
+            global_context->setMacros(Macros(*config, "macros"));
         },
         /* already_loaded = */ true);
 

@@ -80,6 +80,7 @@ using Dependencies = std::vector<DatabaseAndTableName>;
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 
+using MacrosPtr = std::shared_ptr<Macros>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -206,7 +207,7 @@ public:
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 
-    const Macros & getMacros() const;
+    const MacrosPtr & getMacros() const;
     void setMacros(Macros && macros);
 
     Settings getSettings() const;
