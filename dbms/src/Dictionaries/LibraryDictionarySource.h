@@ -1,26 +1,25 @@
 #pragma once
 
-#include <Common/SharedLibrary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalResultDescription.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Common/SharedLibrary.h>
 #include <common/LocalDateTime.h>
 
 
 namespace Poco
 {
-    class Logger;
+class Logger;
 
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+namespace Util
+{
+    class AbstractConfiguration;
+}
 }
 
 
 namespace DB
 {
-
 class CStringsHolder;
 
 /// Allows loading dictionaries from dynamic libraries (.so)
@@ -55,7 +54,10 @@ public:
     bool supportsSelectiveLoad() const override;
 
     ///Not yet supported
-    bool hasUpdateField() const override { return false; }
+    bool hasUpdateField() const override
+    {
+        return false;
+    }
 
     DictionarySourcePtr clone() const override;
 
@@ -76,5 +78,4 @@ private:
     std::shared_ptr<CStringsHolder> settings;
     void * lib_data = nullptr;
 };
-
 }
