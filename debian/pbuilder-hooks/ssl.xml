@@ -1,0 +1,4 @@
+<yandex>
+    <https_port>8443</https_port>
+    <tcp_ssl_port>9440</tcp_ssl_port>
+</yandex>
