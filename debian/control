@@ -51,5 +51,5 @@ Description: debugging symbols for clickhouse-server-base
 Package: clickhouse-test
 Priority: extra
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl
 Description: Clickhouse tests
