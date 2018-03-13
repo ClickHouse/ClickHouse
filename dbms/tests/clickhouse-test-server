@@ -22,14 +22,18 @@ export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xm
 [ ! -d "$QUERIES_DIR" ] && QUERIES_DIR=${QUERIES_DIR=/usr/share/clickhouse-test/queries}
 
 rm -rf $DATA_DIR
-mkdir -p $LOG_DIR
+mkdir -p $LOG_DIR $DATA_DIR
 
+openssl dhparam -out `clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.dhParamsFile` 256
+openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout `clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile` -out `clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.certificateFile`
 
 # Start a local clickhouse server which will be used to run tests
 #PATH=$PATH:$BIN_DIR \
 ${BIN_DIR}clickhouse-server --config-file=${CLICKHOUSE_CONFIG} > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
+
+tail -n50 $LOG_DIR/*
 
 # Define needed stuff to kill test clickhouse server after tests completion
 function finish {
@@ -38,7 +42,7 @@ function finish {
   tail -n 50 $LOG_DIR/stdout
   rm -rf $DATA_DIR
 }
-trap finish EXIT
+trap finish EXIT SIGINT SIGQUIT SIGTERM
 
 # Do tests
 if [ -n "$*" ]; then
