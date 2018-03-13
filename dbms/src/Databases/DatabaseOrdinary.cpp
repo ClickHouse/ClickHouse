@@ -335,22 +335,13 @@ void DatabaseOrdinary::removeTable(
     }
 }
 
-
-ASTPtr DatabaseOrdinary::getCreateQueryImpl(const String & path, const String & table_name) const
+static ASTPtr getQueryFromMetadata(const String & metadata_path)
 {
-    String metadata_path;
+    if (!Poco::File(metadata_path).exists())
+        return nullptr;
+
     String query;
 
-    if (table_name.empty())
-    {
-        metadata_path = detail::getDatabaseMetadataPath(path);
-        if (!Poco::File(metadata_path).exists())
-            query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Ordinary";
-    }
-    else
-        metadata_path = detail::getTableMetadataPath(path, table_name);
-
-    if (query.empty())
     {
         ReadBufferFromFile in(metadata_path, 4096);
         readStringUntilEOF(query, in);
@@ -358,6 +349,20 @@ ASTPtr DatabaseOrdinary::getCreateQueryImpl(const String & path, const String & 
 
     ParserCreateQuery parser;
     return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + metadata_path);
+}
+
+static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database)
+{
+    ASTPtr ast = getQueryFromMetadata(metadata_path);
+
+    if (ast)
+    {
+        ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+        ast_create_query.attach = false;
+        ast_create_query.database = database;
+    }
+
+    return ast;
 }
 
 
@@ -394,7 +399,9 @@ void DatabaseOrdinary::renameTable(
         throw Exception{e};
     }
 
-    ASTPtr ast = getCreateQueryImpl(metadata_path, table_name);
+    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));
+    if (!ast)
+        throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.table = to_table_name;
 
@@ -422,27 +429,40 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
 }
 
 
-ASTPtr DatabaseOrdinary::getCreateQuery(
+ASTPtr DatabaseOrdinary::getCreateTableQuery(
     const Context & context,
     const String & table_name) const
 {
     ASTPtr ast;
-    try
-    {
-        ast = getCreateQueryImpl(metadata_path, table_name);
-    }
-    catch (const Exception & e)
-    {
-        /// Handle system.* tables for which there are no table.sql files
-        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST && tryGetTable(context, table_name) != nullptr)
-            throw Exception("There is no CREATE TABLE query for table " + table_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 
-        throw;
+    auto table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
+    ast = getCreateQueryFromMetadata(table_metadata_path, name);
+    if (!ast)
+    {
+        /// Handle system.* tables for which there are no table.sql files.
+        auto msg = tryGetTable(context, table_name)
+                   ? "There is no CREATE TABLE query for table "
+                   : "There is no metadata file for table ";
+
+        throw Exception(msg + table_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
     }
 
-    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
-    ast_create_query.attach = false;
-    ast_create_query.database = name;
+    return ast;
+}
+
+ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) const
+{
+    ASTPtr ast;
+
+    auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path);
+    ast = getCreateQueryFromMetadata(database_metadata_path, name);
+    if (!ast)
+    {
+        /// Handle databases (such as default) for which there are no database.sql files.
+        String query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Ordinary";
+        ParserCreateQuery parser;
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "");
+    }
 
     return ast;
 }

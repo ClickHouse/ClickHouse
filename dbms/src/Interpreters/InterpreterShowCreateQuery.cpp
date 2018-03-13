@@ -44,8 +44,13 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     if (ast.temporary && !ast.database.empty())
         throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
 
-    ASTPtr create_query = (ast.temporary ? context.getCreateExternalQuery(ast.table) :
-                          context.getCreateQuery(ast.database, ast.table));
+    ASTPtr create_query;
+    if (ast.temporary)
+        create_query = context.getCreateExternalTableQuery(ast.table);
+    else if (ast.table.empty())
+        create_query = context.getCreateDatabaseQuery(ast.database);
+    else
+        create_query = context.getCreateTableQuery(ast.database, ast.table);
 
     if (!create_query && ast.temporary)
         throw Exception("Unable to show the create query of " + ast.table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);

@@ -89,7 +89,6 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
     }
 }
 
-
 void registerStorageDictionary(StorageFactory & factory)
 {
     factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)

@@ -910,17 +910,17 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 }
 
 
-ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
+ASTPtr Context::getCreateTableQuery(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
     assertDatabaseExists(db);
 
-    return shared->databases[db]->getCreateQuery(*this, table_name);
+    return shared->databases[db]->getCreateTableQuery(*this, table_name);
 }
 
-ASTPtr Context::getCreateExternalQuery(const String & table_name) const
+ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
     TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
     if (external_tables.end() == jt)
@@ -929,6 +929,15 @@ ASTPtr Context::getCreateExternalQuery(const String & table_name) const
     return jt->second.second;
 }
 
+ASTPtr Context::getCreateDatabaseQuery(const String & database_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    assertDatabaseExists(db);
+
+    return shared->databases[db]->getCreateDatabaseQuery(*this);
+}
 
 Settings Context::getSettings() const
 {
