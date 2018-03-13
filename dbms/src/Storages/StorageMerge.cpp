@@ -181,7 +181,7 @@ BlockInputStreams StorageMerge::read(
 
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.size() == 0)
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumns().getPhysical()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumns().getAllPhysical()));
 
         /// Substitute virtual column for its value when querying tables.
         ASTPtr modified_query_ast = query->clone();

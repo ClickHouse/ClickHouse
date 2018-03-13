@@ -27,7 +27,7 @@ namespace ErrorCodes
 }
 
 
-NamesAndTypesList ColumnsDescription::getPhysical() const
+NamesAndTypesList ColumnsDescription::getAllPhysical() const
 {
     return ext::collection_cast<NamesAndTypesList>(boost::join(ordinary, materialized));
 }
@@ -39,13 +39,13 @@ NamesAndTypesList ColumnsDescription::getAll() const
 }
 
 
-Names ColumnsDescription::getNames() const
+Names ColumnsDescription::getNamesOfPhysical() const
 {
     return ext::map<Names>(boost::join(ordinary, materialized), [] (const auto & it) { return it.name; });
 }
 
 
-NameAndTypePair ColumnsDescription::get(const String & column_name) const
+NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
 {
     for (auto & it : boost::join(ordinary, materialized))
         if (it.name == column_name)
@@ -54,7 +54,7 @@ NameAndTypePair ColumnsDescription::get(const String & column_name) const
 }
 
 
-bool ColumnsDescription::has(const String & column_name) const
+bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     for (auto & it : boost::join(ordinary, materialized))
         if (it.name == column_name)

@@ -29,7 +29,7 @@ StorageJoin::StorageJoin(
     key_names(key_names_), kind(kind_), strictness(strictness_)
 {
     for (const auto & key : key_names)
-        if (!getColumns().has(key))
+        if (!getColumns().hasPhysical(key))
             throw Exception{
                 "Key column (" + key + ") does not exist in table declaration.",
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};

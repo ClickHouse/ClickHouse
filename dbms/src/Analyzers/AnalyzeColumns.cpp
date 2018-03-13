@@ -173,7 +173,7 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
 void createASTsForAllColumnsInTable(const CollectTables::TableInfo & table, ASTs & res)
 {
     if (table.storage)
-        for (const auto & name : table.storage->getColumns().getNames())
+        for (const auto & name : table.storage->getColumns().getNamesOfPhysical())
             res.emplace_back(createASTIdentifierForColumnInTable(name, table));
     else
         for (size_t i = 0, size = table.structure_of_subquery.columns(); i < size; ++i)

@@ -313,12 +313,12 @@ public:
         if (column_name == "_sample_factor")
             return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
-        return getColumns().get(column_name);
+        return getColumns().getPhysical(column_name);
     }
 
     bool hasColumn(const String & column_name) const override
     {
-        return getColumns().has(column_name)
+        return getColumns().hasPhysical(column_name)
             || column_name == "_part"
             || column_name == "_part_index"
             || column_name == "_sample_factor";

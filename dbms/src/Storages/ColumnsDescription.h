@@ -42,19 +42,16 @@ struct ColumnsDescription
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     /// ordinary + materialized.
-    NamesAndTypesList getPhysical() const;
+    NamesAndTypesList getAllPhysical() const;
 
     /// ordinary + materialized + aliases.
     NamesAndTypesList getAll() const;
 
-    /// Get names of physical columns.
-    Names getNames() const;
+    Names getNamesOfPhysical() const;
 
-    /// Get a physical column by name.
-    NameAndTypePair get(const String & column_name) const;
+    NameAndTypePair getPhysical(const String & column_name) const;
 
-    /// Is there a physical column with the given name.
-    bool has(const String & column_name) const;
+    bool hasPhysical(const String & column_name) const;
 
 
     String toString() const;

@@ -142,7 +142,7 @@ StorageDistributed::StorageDistributed(
     table_name(table_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(context.getMacros().expand(cluster_name_)), has_sharding_key(sharding_key_),
-      sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, getColumns().getPhysical()).getActions(false) : nullptr),
+      sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, getColumns().getAllPhysical()).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
@@ -287,13 +287,13 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
     if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
         return { column_name, type };
 
-    return getColumns().get(column_name);
+    return getColumns().getPhysical(column_name);
 }
 
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || getColumns().has(column_name);
+    return VirtualColumnFactory::hasColumn(column_name) || getColumns().hasPhysical(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitors()
@@ -386,7 +386,7 @@ void registerStorageDistributed(StorageFactory & factory)
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns.getPhysical()).getActions(true);
+            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns.getAllPhysical()).getActions(true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)
