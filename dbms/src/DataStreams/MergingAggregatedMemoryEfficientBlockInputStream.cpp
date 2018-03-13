@@ -104,7 +104,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::readPrefix()
 
 void MergingAggregatedMemoryEfficientBlockInputStream::readSuffix()
 {
-    if (!all_read && !is_cancelled.load(std::memory_order_seq_cst))
+    if (!all_read && !isCancelled())
         throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
 
     finalize();
@@ -114,8 +114,11 @@ void MergingAggregatedMemoryEfficientBlockInputStream::readSuffix()
 }
 
 
-void MergingAggregatedMemoryEfficientBlockInputStream::cancel()
+void MergingAggregatedMemoryEfficientBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
+
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true))
         return;
@@ -136,7 +139,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::cancel()
         {
             try
             {
-                child->cancel();
+                child->cancel(kill);
             }
             catch (...)
             {
@@ -265,7 +268,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEffici
     try
     {
         if (!all_read)
-            cancel();
+            cancel(false);
 
         finalize();
     }

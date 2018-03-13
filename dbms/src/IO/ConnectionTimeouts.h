@@ -38,9 +38,16 @@ struct ConnectionTimeouts
                                   saturate(receive_timeout, limit));
     }
 
-    static ConnectionTimeouts getTCPTimeouts(const Settings & settings)
+    /// Timeouts for the case when we have just single attempt to connect.
+    static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings)
     {
         return ConnectionTimeouts(settings.connect_timeout, settings.send_timeout, settings.receive_timeout);
+    }
+
+    /// Timeouts for the case when we will try many addresses in a loop.
+    static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings)
+    {
+        return ConnectionTimeouts(settings.connect_timeout_with_failover_ms, settings.send_timeout, settings.receive_timeout);
     }
 
     static ConnectionTimeouts getHTTPTimeouts(const Settings & settings)

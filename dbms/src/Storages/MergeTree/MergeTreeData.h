@@ -27,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_PARTITION_NAME;
-    extern const int TOO_MUCH_PARTS;
     extern const int NO_SUCH_DATA_PART;
     extern const int DUPLICATE_DATA_PART;
     extern const int DIRECTORY_ALREADY_EXISTS;

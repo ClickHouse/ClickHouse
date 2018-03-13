@@ -20,7 +20,7 @@ void Settings::set(const String & name, const Field & value)
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_SET)
-    else if (!limits.trySet(name, value))
+    else
         throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 
 #undef TRY_SET
@@ -34,7 +34,7 @@ void Settings::set(const String & name, ReadBuffer & buf)
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_SET)
-    else if (!limits.trySet(name, buf))
+    else
         throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 
 #undef TRY_SET
@@ -48,7 +48,7 @@ void Settings::ignore(const String & name, ReadBuffer & buf)
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_IGNORE)
-    else if (!limits.tryIgnore(name, buf))
+    else
         throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 
     #undef TRY_IGNORE
@@ -63,7 +63,7 @@ void Settings::set(const String & name, const String & value)
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_SET)
-    else if (!limits.trySet(name, value))
+    else
         throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 
 #undef TRY_SET
@@ -77,12 +77,7 @@ String Settings::get(const String & name) const
     if (false) {}
     APPLY_FOR_SETTINGS(GET)
     else
-    {
-        String value;
-        if (!limits.tryGet(name, value))
-            throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
-        return value;
-    }
+        throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 
 #undef GET
 }
@@ -95,7 +90,7 @@ bool Settings::tryGet(const String & name, String & value) const
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_GET)
     else
-        return limits.tryGet(name, value);
+        return false;
 
 #undef TRY_GET
 }
@@ -140,7 +135,7 @@ void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::Abs
 /// If the `check_readonly` flag is set, `readonly` is set in the preferences, but some changes have occurred - throw an exception.
 void Settings::deserialize(ReadBuffer & buf)
 {
-    auto before_readonly = limits.readonly;
+    auto before_readonly = readonly;
 
     while (true)
     {
@@ -170,8 +165,6 @@ void Settings::serialize(WriteBuffer & buf) const
     }
 
     APPLY_FOR_SETTINGS(WRITE)
-
-    limits.serialize(buf);
 
     /// An empty string is a marker for the end of the settings.
     writeStringBinary("", buf);

@@ -848,7 +848,6 @@ private:
         settings.set(#NAME, settings_to_apply[#NAME]);
 
             APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-            APPLY_FOR_LIMITS(EXTRACT_SETTING)
 
 #undef EXTRACT_SETTING
 
@@ -1118,14 +1117,14 @@ private:
         if (stop_conditions.areFulfilled())
         {
             statistics.last_query_was_cancelled = true;
-            stream.cancel();
+            stream.cancel(false);
         }
 
         if (interrupt_listener.check())
         {
             gotSIGINT = true;
             statistics.last_query_was_cancelled = true;
-            stream.cancel();
+            stream.cancel(false);
         }
     }
 
@@ -1486,7 +1485,7 @@ try
     Strings tests_names_regexp = options.count("names-regexp") ? options["names-regexp"].as<Strings>() : Strings({});
     Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
-    auto timeouts = DB::ConnectionTimeouts::getTCPTimeouts(DB::Settings());
+    auto timeouts = DB::ConnectionTimeouts::getTCPTimeoutsWithoutFailover(DB::Settings());
 
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),

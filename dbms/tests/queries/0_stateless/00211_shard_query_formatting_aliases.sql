@@ -3,6 +3,6 @@ SELECT toUInt64(1) IN (1234567890, 2345678901, 3456789012, 4567890123, 567890123
     x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x,
     x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x,
     x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x
-FROM remote('localhost', system, one) SETTINGS max_query_size = 10000;
+FROM remote('127.0.0.2', system, one) SETTINGS max_query_size = 10000;
 
-SELECT 1 AS x, x, (SELECT 2 AS x, x) FROM remote('127.0.0.{1,2}', system.one) WHERE (3, 4) IN (SELECT 3 AS x, toUInt8(x + 1));
+SELECT 1 AS x, x, (SELECT 2 AS x, x) FROM remote('127.0.0.{2,3}', system.one) WHERE (3, 4) IN (SELECT 3 AS x, toUInt8(x + 1));

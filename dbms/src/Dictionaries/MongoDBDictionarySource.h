@@ -42,6 +42,11 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override
+    {
+        throw Exception{"Method loadUpdatedAll is unsupported for MongoDBDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
+
     bool supportsSelectiveLoad() const override { return true; }
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
@@ -51,6 +56,9 @@ public:
 
     /// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
     bool isModified() const override { return true; }
+
+    ///Not yet supported
+    bool hasUpdateField() const override { return false; }
 
     DictionarySourcePtr clone() const override { return std::make_unique<MongoDBDictionarySource>(*this); }
 

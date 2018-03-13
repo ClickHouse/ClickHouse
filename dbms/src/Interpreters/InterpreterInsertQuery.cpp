@@ -103,11 +103,15 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), required_columns, table->column_defaults, context,
-        static_cast<bool>(context.getSettingsRef().strict_insert_defaults));
+        out, getSampleBlock(query, table), required_columns, table->column_defaults, context);
 
-    out = std::make_shared<SquashingBlockOutputStream>(
-        out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+    /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
+    /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
+    if (!(context.getSettingsRef().insert_distributed_sync && table->getName() == "Distributed"))
+    {
+        out = std::make_shared<SquashingBlockOutputStream>(
+            out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+    }
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -145,7 +149,7 @@ BlockIO InterpreterInsertQuery::execute()
 void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
 {
     const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.limits.readonly;
+    auto readonly = settings.readonly;
 
     if (!readonly || (query.database.empty() && context.tryGetExternalTable(query.table) && readonly >= 2))
     {

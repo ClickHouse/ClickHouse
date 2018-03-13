@@ -22,7 +22,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
                       {"name",                std::make_shared<DataTypeString>()},
                       {"active",              std::make_shared<DataTypeUInt8>()},
                       {"marks",               std::make_shared<DataTypeUInt64>()},
-                      {"marks_bytes_in_block",        std::make_shared<DataTypeUInt64>()},
+                      {"marks_bytes_in_block", std::make_shared<DataTypeUInt64>()},
                       {"rows",                std::make_shared<DataTypeUInt64>()},
                       {"bytes",               std::make_shared<DataTypeUInt64>()},
                       {"modification_time",   std::make_shared<DataTypeDateTime>()},
@@ -41,12 +41,12 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
                       {"engine",              std::make_shared<DataTypeString>()},
                       {"path",                std::make_shared<DataTypeString>()},
                       {"column",              std::make_shared<DataTypeString>()},
-                      { "type",               std::make_shared<DataTypeString>() },
-                      { "default_kind",       std::make_shared<DataTypeString>() },
-                      { "default_expression", std::make_shared<DataTypeString>() },
-                      { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
-                      { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
-                      { "marks_bytes_in_column",      std::make_shared<DataTypeUInt64>() },
+                      {"type",                std::make_shared<DataTypeString>() },
+                      {"default_kind",        std::make_shared<DataTypeString>() },
+                      {"default_expression",  std::make_shared<DataTypeString>() },
+                      {"data_compressed_bytes",   std::make_shared<DataTypeUInt64>() },
+                      {"data_uncompressed_bytes", std::make_shared<DataTypeUInt64>() },
+                      {"marks_bytes_in_column",   std::make_shared<DataTypeUInt64>() },
               }
         )
 {
@@ -63,7 +63,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
 
     NamesAndTypesList columns_list = info.storage->getColumnsList();
     columns_list.insert(std::end(columns_list), std::begin(info.storage->alias_columns), std::end(info.storage->alias_columns));
-    column_defaults = info.storage->column_defaults;
+    const auto & column_defaults = info.storage->column_defaults;
     std::unordered_map<String, ColumnInfo> columns_info;
 
     for (const auto & column : columns_list)
@@ -112,7 +112,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             columns[j++]->insert(static_cast<UInt64>(part->rows_count));
             columns[j++]->insert(static_cast<UInt64>(part->size_in_bytes));
             columns[j++]->insert(static_cast<UInt64>(part->modification_time));
-            columns[j++]->insert(static_cast<UInt64>(part->remove_time));
+            columns[j++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
 
             columns[j++]->insert(static_cast<UInt64>(use_count));
 

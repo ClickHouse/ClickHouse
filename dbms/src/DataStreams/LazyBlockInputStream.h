@@ -59,7 +59,7 @@ protected:
                 addChild(input);
 
                 if (isCancelled() && p_input)
-                    p_input->cancel();
+                    p_input->cancel(is_killed);
             }
         }
 

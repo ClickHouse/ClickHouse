@@ -16,13 +16,14 @@
 namespace DB
 {
 
+using BlockPtr = std::shared_ptr<Block>;
 
 class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
 public:
     ComplexKeyHashedDictionary(
         const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime, bool require_nonempty);
+        const DictionaryLifetime dict_lifetime, bool require_nonempty, BlockPtr saved_block = nullptr);
 
     ComplexKeyHashedDictionary(const ComplexKeyHashedDictionary & other);
 
@@ -155,6 +156,10 @@ private:
 
     void createAttributes();
 
+    void blockToAttributes(const Block & block);
+
+    void updateData();
+
     void loadData();
 
     template <typename T>
@@ -220,6 +225,8 @@ private:
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 
     std::exception_ptr creation_exception;
+
+    BlockPtr saved_block;
 };
 
 
