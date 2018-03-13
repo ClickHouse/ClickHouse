@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Implements `databases` system table, which allows you to get information about all databases.
+/** Information about macros for introspection.
   */
 class StorageSystemMacros : public ext::shared_ptr_helper<StorageSystemMacros>, public IStorage
 {
