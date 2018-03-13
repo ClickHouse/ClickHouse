@@ -70,11 +70,11 @@ namespace
     Block dataToBlock(const Block & sample_block, const void * data)
     {
         if (!data)
-            return sample_block.cloneEmpty();
+            throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
 
         auto columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
         if (columns_received->error_code)
-            throw Exception("Received error: " + std::to_string(columns_received->error_code) + " "
+            throw Exception("LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " "
                     + (columns_received->error_string ? columns_received->error_string : ""),
                 ErrorCodes::EXTERNAL_LIBRARY_ERROR);
 
@@ -85,7 +85,7 @@ namespace
         for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
         {
             if (columns.size() != columns_received->data[col_n].size)
-                throw Exception("Received unexpected number of columns: " + std::to_string(columns_received->data[col_n].size)
+                throw Exception("LibraryDictionarySource: Returned unexpected number of columns: " + std::to_string(columns_received->data[col_n].size)
                         + ", must be " + std::to_string(columns.size()),
                     ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
