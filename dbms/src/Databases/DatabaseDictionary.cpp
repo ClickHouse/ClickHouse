@@ -3,6 +3,11 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
 #include <common/logger_useful.h>
+#include <Parsers/IAST.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
 
 namespace DB
 {
@@ -158,11 +163,34 @@ time_t DatabaseDictionary::getTableMetadataModificationTime(
     return static_cast<time_t>(0);
 }
 
-ASTPtr DatabaseDictionary::getCreateQuery(
-    const Context &,
-    const String &) const
+ASTPtr DatabaseDictionary::getCreateTableQuery(
+    const Context & context,
+    const String & table_name) const
 {
-    throw Exception("There is no CREATE TABLE query for DatabaseDictionary tables", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+    String query;
+    {
+        WriteBufferFromString buffer(query);
+
+        auto dictionary = context.getExternalDictionaries().getDictionary(table_name);
+        auto names_and_types = StorageDictionary::getNamesAndTypes(dictionary->getStructure());
+        buffer << "CREATE TABLE " << backQuoteIfNeed(name) << '.' << backQuoteIfNeed(table_name) << " (";
+        buffer << StorageDictionary::generateNamesAndTypesDescription(names_and_types.begin(), names_and_types.end());
+        buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
+    }
+
+    ParserCreateQuery parser;
+    return parseQuery(parser, query.data(), query.data() + query.size(), "");
+}
+
+ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) const
+{
+    String query;
+    {
+        WriteBufferFromString buffer(query);
+        buffer << "CREATE DATABASE " << backQuoteIfNeed(name) << " ENGINE = Dictionary";
+    }
+    ParserCreateQuery parser;
+    return parseQuery(parser, query.data(), query.data() + query.size(), "");
 }
 
 void DatabaseDictionary::shutdown()

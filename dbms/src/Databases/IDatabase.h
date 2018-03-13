@@ -124,11 +124,13 @@ public:
         const Context & context,
         const String & name) = 0;
 
-    /// Get the CREATE TABLE query for the table or CREATE DATABASE query for database if name is empty.
-    /// It can also provide information for detached tables for which there is metadata.
-    virtual ASTPtr getCreateQuery(
+    /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
+    virtual ASTPtr getCreateTableQuery(
         const Context & context,
         const String & name) const = 0;
+
+    /// Get the CREATE DATABASE query for current database.
+    virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }

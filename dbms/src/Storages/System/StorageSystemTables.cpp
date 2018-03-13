@@ -204,7 +204,7 @@ BlockInputStreams StorageSystemTables::read(
 
                 try
                 {
-                    ast = database->getCreateQuery(context, table_name);
+                    ast = database->getCreateTableQuery(context, table_name);
                 }
                 catch (const Exception & e)
                 {
