@@ -68,6 +68,7 @@ public:
 
 private:
     void startupTables(ThreadPool * thread_pool);
+    ASTPtr getCreateQueryImpl(const String & path, const String & table_name) const;
 };
 
 }

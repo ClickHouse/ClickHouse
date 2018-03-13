@@ -336,16 +336,21 @@ void DatabaseOrdinary::removeTable(
 }
 
 
-static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
+ASTPtr DatabaseOrdinary::getCreateQueryImpl(const String & path, const String & table_name) const
 {
     String metadata_path;
+    String query;
 
     if (table_name.empty())
+    {
         metadata_path = detail::getDatabaseMetadataPath(path);
+        if (!Poco::File(metadata_path).exists())
+            query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Ordinary";
+    }
     else
         metadata_path = detail::getTableMetadataPath(path, table_name);
 
-    String query;
+    if (query.empty())
     {
         ReadBufferFromFile in(metadata_path, 4096);
         readStringUntilEOF(query, in);
