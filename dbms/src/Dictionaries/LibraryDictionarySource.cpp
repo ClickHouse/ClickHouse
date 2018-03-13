@@ -146,7 +146,7 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
 
 LibraryDictionarySource::~LibraryDictionarySource()
 {
-    if (auto libDelete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v2_libDelete")) 
+    if (auto libDelete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v2_libDelete"))
         libDelete(lib_data);
 }
 
@@ -192,8 +192,9 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_loadIds = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
-        "ClickHouseDictionary_v2_loadIds");
+    auto func_loadIds
+        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
+            "ClickHouseDictionary_v2_loadIds");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v2_dataNew")(lib_data);
     auto data = func_loadIds(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = dataToBlock(description.sample_block, data);
@@ -231,14 +232,16 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
 bool LibraryDictionarySource::isModified() const
 {
-    if (auto func_isModified = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v2_isModified"))
+    if (auto func_isModified
+        = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v2_isModified"))
         return func_isModified(lib_data, &settings->strings);
     return true;
 }
 
 bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
-    if (auto func_supportsSelectiveLoad = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v2_supportsSelectiveLoad"))
+    if (auto func_supportsSelectiveLoad
+        = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v2_supportsSelectiveLoad"))
         return func_supportsSelectiveLoad(lib_data, &settings->strings);
     return true;
 }
