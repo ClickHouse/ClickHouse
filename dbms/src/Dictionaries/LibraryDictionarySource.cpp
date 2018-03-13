@@ -6,6 +6,7 @@
 #include <common/logger_useful.h>
 #include <ext/bit_cast.h>
 #include <ext/range.h>
+#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -171,7 +172,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v2_dataNew")(lib_data);
     auto data = func_loadAll(data_ptr, &settings->strings, &columns);
     auto block = dataToBlock(description.sample_block, data);
-    library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr);
+    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
 }
 
@@ -198,7 +199,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v2_dataNew")(lib_data);
     auto data = func_loadIds(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = dataToBlock(description.sample_block, data);
-    library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr);
+    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
 }
 
@@ -226,7 +227,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v2_dataNew")(lib_data);
     auto data = func_loadKeys(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
     auto block = dataToBlock(description.sample_block, data);
-    library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr);
+    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v2_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
 }
 
