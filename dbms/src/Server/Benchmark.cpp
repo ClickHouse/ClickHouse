@@ -470,7 +470,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
-            ConnectionTimeouts::getTCPTimeouts(settings),
+            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings),
             settings);
     }
     catch (...)
