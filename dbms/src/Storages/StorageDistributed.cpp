@@ -142,7 +142,7 @@ StorageDistributed::StorageDistributed(
     table_name(table_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(context.getMacros().expand(cluster_name_)), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns.getPhysical()).getActions(false) : nullptr),
+      sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, getColumns().getPhysical()).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
@@ -232,9 +232,11 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(columns);
 
-    context.getDatabase(database_name)->alterTable(context, table_name, columns, {});
+    ColumnsDescription new_columns = getColumns();
+    params.apply(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    setColumns(std::move(new_columns));
 }
 
 
@@ -285,13 +287,13 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
     if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
         return { column_name, type };
 
-    return columns.get(column_name);
+    return getColumns().get(column_name);
 }
 
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || columns.has(column_name);
+    return VirtualColumnFactory::hasColumn(column_name) || getColumns().has(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitors()

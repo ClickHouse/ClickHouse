@@ -280,7 +280,7 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
     : name(std::move(name_))
 {
-    columns = ColumnsDescription(std::move(columns_));
+    setColumns(ColumnsDescription(std::move(columns_)));
 }
 
 }

@@ -24,14 +24,22 @@ namespace ErrorCodes
 }
 
 
+void ITableDeclaration::setColumns(ColumnsDescription columns_)
+{
+    if (columns_.ordinary.empty())
+        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    columns = std::move(columns_);
+}
+
+
 bool ITableDeclaration::hasColumn(const String & column_name) const
 {
-    return columns.has(column_name); /// By default, we assume that there are no virtual columns in the storage.
+    return getColumns().has(column_name); /// By default, we assume that there are no virtual columns in the storage.
 }
 
 NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 {
-    return columns.get(column_name); /// By default, we assume that there are no virtual columns in the storage.
+    return getColumns().get(column_name); /// By default, we assume that there are no virtual columns in the storage.
 }
 
 
@@ -39,7 +47,7 @@ Block ITableDeclaration::getSampleBlock() const
 {
     Block res;
 
-    for (const auto & col : boost::join(columns.ordinary, columns.materialized))
+    for (const auto & col : boost::join(getColumns().ordinary, getColumns().materialized))
         res.insert({ col.type->createColumn(), col.type, col.name });
 
     return res;
@@ -50,7 +58,7 @@ Block ITableDeclaration::getSampleBlockNonMaterialized() const
 {
     Block res;
 
-    for (const auto & col : columns.ordinary)
+    for (const auto & col : getColumns().ordinary)
         res.insert({ col.type->createColumn(), col.type, col.name });
 
     return res;
@@ -111,7 +119,7 @@ static NamesAndTypesMap getColumnsMap(const Args &... args)
 
 void ITableDeclaration::check(const Names & column_names) const
 {
-    const NamesAndTypesList & available_columns = columns.getPhysical();
+    const NamesAndTypesList & available_columns = getColumns().getPhysical();
 
     if (column_names.empty())
         throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
@@ -139,7 +147,7 @@ void ITableDeclaration::check(const Names & column_names) const
 
 void ITableDeclaration::check(const NamesAndTypesList & provided_columns) const
 {
-    const NamesAndTypesList & available_columns = columns.getPhysical();
+    const NamesAndTypesList & available_columns = getColumns().getPhysical();
     const auto columns_map = getColumnsMap(available_columns);
 
     using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
@@ -167,7 +175,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns) const
 
 void ITableDeclaration::check(const NamesAndTypesList & provided_columns, const Names & column_names) const
 {
-    const NamesAndTypesList & available_columns = columns.getPhysical();
+    const NamesAndTypesList & available_columns = getColumns().getPhysical();
     const auto available_columns_map = getColumnsMap(available_columns);
     const NamesAndTypesMap & provided_columns_map = getColumnsMap(provided_columns);
 
@@ -204,7 +212,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns, const 
 
 void ITableDeclaration::check(const Block & block, bool need_all) const
 {
-    const NamesAndTypesList & available_columns = columns.getPhysical();
+    const NamesAndTypesList & available_columns = getColumns().getPhysical();
     const auto columns_map = getColumnsMap(available_columns);
 
     using NameSet = std::unordered_set<String>;
@@ -242,10 +250,8 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 
 
 ITableDeclaration::ITableDeclaration(ColumnsDescription columns_)
-    : columns{std::move(columns_)}
 {
-    if (columns.ordinary.empty())
-        throw Exception("Empty list of columns passed to storage constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    setColumns(std::move(columns_));
 }
 
 }

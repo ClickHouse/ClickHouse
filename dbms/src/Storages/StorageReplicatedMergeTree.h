@@ -84,6 +84,9 @@ public:
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
     bool supportsReplication() const override { return true; }
 
+    const ColumnsDescription & getColumns() const override { return data.getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
+
     NameAndTypePair getColumn(const String & column_name) const override
     {
         return data.getColumn(column_name);

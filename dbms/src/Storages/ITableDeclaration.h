@@ -12,12 +12,12 @@ namespace DB
 class ITableDeclaration
 {
 public:
-    /** Get a description of any column by its name.
-      */
-    virtual NameAndTypePair getColumn(const String & column_name) const;
+    virtual const ColumnsDescription & getColumns() const { return columns; }
+    virtual void setColumns(ColumnsDescription columns_);
 
-    /** Is there a column with that name.
-      */
+    /// NOTE: These methods should include virtual columns, but should NOT include ALIAS columns
+    /// (they are treated separately).
+    virtual NameAndTypePair getColumn(const String & column_name) const;
     virtual bool hasColumn(const String & column_name) const;
 
     Block getSampleBlock() const;
@@ -48,6 +48,7 @@ public:
     explicit ITableDeclaration(ColumnsDescription columns_);
     virtual ~ITableDeclaration() = default;
 
+private:
     ColumnsDescription columns;
 };
 

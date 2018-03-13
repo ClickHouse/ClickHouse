@@ -362,7 +362,7 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
     }
     else if (!create.as_table.empty())
     {
-        res = as_storage->columns;
+        res = as_storage->getColumns();
     }
     else if (create.select)
     {

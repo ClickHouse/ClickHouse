@@ -220,6 +220,7 @@ void StorageCatBoostPool::parseColumnDescription()
 
 void StorageCatBoostPool::createSampleBlockAndColumns()
 {
+    ColumnsDescription columns;
     NamesAndTypesList cat_columns;
     NamesAndTypesList num_columns;
     sample_block.clear();
@@ -251,6 +252,8 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
     }
     columns.ordinary.insert(columns.ordinary.end(), num_columns.begin(), num_columns.end());
     columns.ordinary.insert(columns.ordinary.end(), cat_columns.begin(), cat_columns.end());
+
+    setColumns(columns);
 }
 
 BlockInputStreams StorageCatBoostPool::read(const Names & column_names,

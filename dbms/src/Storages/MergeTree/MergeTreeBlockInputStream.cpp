@@ -141,8 +141,9 @@ try
         if (!column_names.empty())
             storage.check(data_part->columns, column_names);
 
-        pre_columns = storage.columns.getPhysical().addTypes(pre_column_names);
-        columns = storage.columns.getPhysical().addTypes(column_names);
+        const NamesAndTypesList & physical_columns = storage.getColumns().getPhysical();
+        pre_columns = physical_columns.addTypes(pre_column_names);
+        columns = physical_columns.addTypes(column_names);
     }
     else
     {

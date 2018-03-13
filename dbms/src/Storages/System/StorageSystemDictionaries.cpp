@@ -21,7 +21,7 @@ namespace DB
 StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
     : name{name}
 {
-    columns = ColumnsDescription({
+    setColumns(ColumnsDescription({
         { "name", std::make_shared<DataTypeString>() },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
@@ -36,7 +36,7 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
         { "creation_time", std::make_shared<DataTypeDateTime>() },
         { "source", std::make_shared<DataTypeString>() },
         { "last_exception", std::make_shared<DataTypeString>() },
-    });
+    }));
 }
 
 

@@ -46,8 +46,7 @@ StorageMergeTree::StorageMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{columns_},
-    path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
+    : path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
@@ -153,8 +152,7 @@ void StorageMergeTree::alter(
 
     data.checkAlter(params);
 
-    auto new_columns = data.columns;
-
+    auto new_columns = data.getColumns();
     params.apply(new_columns);
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
@@ -203,9 +201,7 @@ void StorageMergeTree::alter(
     }
 
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
-
-    columns = new_columns;
-    data.columns = std::move(new_columns);
+    setColumns(std::move(new_columns));
 
     if (primary_key_is_modified)
     {
@@ -419,7 +415,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     alter_command.type = AlterCommand::DROP_COLUMN;
     alter_command.column_name = get<String>(column_name);
 
-    auto new_columns = data.columns;
+    auto new_columns = getColumns();
     alter_command.apply(new_columns);
 
     auto columns_for_parts = new_columns.getPhysical();

@@ -36,6 +36,9 @@ public:
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
 
+    const ColumnsDescription & getColumns() const override { return data.getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
+
     NameAndTypePair getColumn(const String & column_name) const override
     {
         return data.getColumn(column_name);
