@@ -1,4 +1,5 @@
 <!-- Config for connecting to test server -->
 <yandex>
     <tcp_port>59000</tcp_port>
+    <tcp_ssl_port>59440</tcp_ssl_port>
 </yandex>

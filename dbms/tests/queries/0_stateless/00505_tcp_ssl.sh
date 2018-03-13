@@ -13,4 +13,6 @@ else
     # Auto port detect
     ${CLICKHOUSE_CLIENT} --ssl -q "SELECT 1";
     ${CLICKHOUSE_CLIENT} --ssl --port=${CLICKHOUSE_PORT_TCP_SSL} -q "SELECT 2";
+
+    ${CLICKHOUSE_CURL} -sS --insecure ${CLICKHOUSE_URL_HTTPS}?query=SELECT%203
 fi

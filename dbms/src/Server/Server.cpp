@@ -387,7 +387,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     http_socket.setSendTimeout(settings.http_send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
-                        new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                        new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
                         http_socket,
                         http_params));
@@ -425,7 +425,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     tcp_socket.setReceiveTimeout(settings.receive_timeout);
                     tcp_socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this),
+                        new TCPHandlerFactory(*this, /* secure= */ true ),
                                                                   server_pool,
                                                                   tcp_socket,
                                                                   new Poco::Net::TCPServerParams));
