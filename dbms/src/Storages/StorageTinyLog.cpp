@@ -296,7 +296,7 @@ StorageTinyLog::StorageTinyLog(
             throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
     }
 
-    for (const auto & col : getColumns().getPhysical())
+    for (const auto & col : getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
 }
 
@@ -348,7 +348,7 @@ BlockInputStreams StorageTinyLog::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
     return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
-        max_block_size, Nested::collect(getColumns().getPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 }
 
 

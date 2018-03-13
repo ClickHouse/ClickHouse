@@ -371,7 +371,7 @@ StorageLog::StorageLog(
      /// create files if they do not exist
     Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
-    for (const auto & column : getColumns().getPhysical())
+    for (const auto & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
@@ -499,7 +499,7 @@ BlockInputStreams StorageLog::read(
     processed_stage = QueryProcessingStage::FetchColumns;
     loadMarks();
 
-    NamesAndTypesList all_columns = Nested::collect(getColumns().getPhysical().addTypes(column_names));
+    NamesAndTypesList all_columns = Nested::collect(getColumns().getAllPhysical().addTypes(column_names));
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 

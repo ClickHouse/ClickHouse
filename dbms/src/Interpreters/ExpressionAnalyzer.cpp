@@ -190,7 +190,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     }
 
     if (storage && source_columns.empty())
-        source_columns = storage->getColumns().getPhysical();
+        source_columns = storage->getColumns().getAllPhysical();
     else
         removeDuplicateColumns(source_columns);
 

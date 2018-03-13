@@ -1511,7 +1511,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     size_t modified_parts = 0;
     auto parts = data.getDataParts();
-    auto columns_for_parts = new_columns.getPhysical();
+    auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
     {
         if (!entry_part_info.contains(part->info))

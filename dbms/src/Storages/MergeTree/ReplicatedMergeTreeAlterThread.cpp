@@ -124,7 +124,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     if (!changed_version)
                         parts = storage.data.getDataParts();
 
-                    const auto columns_for_parts = storage.getColumns().getPhysical();
+                    const auto columns_for_parts = storage.getColumns().getAllPhysical();
 
                     for (const MergeTreeData::DataPartPtr & part : parts)
                     {
