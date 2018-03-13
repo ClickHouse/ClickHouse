@@ -219,7 +219,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                     settings.distributed_connections_pool_size,
                     address.host_name, address.port, address.resolved_address,
                     address.default_database, address.user, address.password,
-                    ConnectionTimeouts::getTCPTimeouts(settings).getSaturated(settings.max_execution_time),
+                    ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings).getSaturated(settings.max_execution_time),
                     "server", Protocol::Compression::Enable, Protocol::Encryption::Disable);
 
                 info.pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -302,7 +302,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port, replica.resolved_address,
                         replica.default_database, replica.user, replica.password,
-                        ConnectionTimeouts::getTCPTimeouts(settings).getSaturated(settings.max_execution_time),
+                        ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings.max_execution_time),
                         "server", Protocol::Compression::Enable, Protocol::Encryption::Disable);
 
                     remote_replicas_pools.emplace_back(replica_pool);
@@ -366,7 +366,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port, replica.resolved_address,
                         replica.default_database, replica.user, replica.password,
-                        ConnectionTimeouts::getHTTPTimeouts(settings).getSaturated(settings.max_execution_time),
+                        ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings.max_execution_time),
                         "server", Protocol::Compression::Enable, Protocol::Encryption::Disable);
                 all_replicas.emplace_back(replica_pool);
                 remote_replicas.emplace_back(replica_pool);
