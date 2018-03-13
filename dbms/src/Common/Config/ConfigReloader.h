@@ -78,7 +78,7 @@ private:
     std::atomic<bool> quit{false};
     std::thread thread;
 
-    /// Is taken after entering into reloadIfNewer.
+    /// Locked inside reloadIfNewer.
     std::mutex reload_mutex;
 };
 
