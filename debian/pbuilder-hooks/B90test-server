@@ -16,6 +16,11 @@ ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime
 echo 'Europe/Moscow' > /etc/timezone
 dpkg-reconfigure -f noninteractive tzdata
 
+pwd
+mkdir -p /etc/clickhouse-server/config.d
+cp ssl.xml /etc/clickhouse-server/config.d
+openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
+openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
 
 service clickhouse-server start
 sleep 3
