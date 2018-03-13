@@ -85,7 +85,7 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
                      int32_t session_timeout_ms_, const std::string & chroot_)
 {
     log = &Logger::get("ZooKeeper");
-    zoo_set_debug_level(ZOO_LOG_LEVEL_DEBUG);
+    zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
     hosts = hosts_;
     identity = identity_;
     session_timeout_ms = session_timeout_ms_;
@@ -567,19 +567,19 @@ int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
     return code;
 }
 
-
-static void convertOpResults(const std::vector<zoo_op_result_t> & out_results_native, OpResultsPtr & out_results,
+/// Makes deep copy of zoo_op_result_t and removes chroot prefix from paths
+static void convertOpResults(const std::vector<zoo_op_result_t> & op_results_native, OpResultsPtr & out_op_results,
                              const ZooKeeper * zookeeper = nullptr)
 {
-    if (!out_results)
-        out_results = std::make_shared<OpResults>();
+    if (!out_op_results)
+        out_op_results = std::make_shared<OpResults>();
 
-    out_results->reserve(out_results_native.size());
-    for (const zoo_op_result_t & res_native : out_results_native)
-            out_results->emplace_back(res_native, zookeeper);
+    out_op_results->reserve(op_results_native.size());
+    for (const zoo_op_result_t & res_native : op_results_native)
+        out_op_results->emplace_back(res_native, zookeeper);
 }
 
-int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
+int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_op_results, MultiTransactionInfo * out_info)
 {
     if (ops_.empty())
         return ZOK;
@@ -606,30 +606,27 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
-    if (out_results_)
-        convertOpResults(out_results_native, *out_results_, this);
+    if (out_op_results || out_info)
+    {
+        OpResultsPtr op_results;
+        convertOpResults(out_results_native, op_results, this);
+
+        if (out_op_results)
+            *out_op_results = op_results;
+
+        if (out_info)
+            *out_info = MultiTransactionInfo(code, ops_, op_results);
+    }
 
     return code;
 }
 
 OpResultsPtr ZooKeeper::multi(const Ops & ops)
 {
-    OpResultsPtr results;
-    int code = tryMulti(ops, &results);
-    if (code != ZOK)
-    {
-        if (results && results->size() == ops.size())
-        {
-            for (size_t i = 0; i < ops.size(); ++i)
-            {
-                if (results->at(i).err == code)
-                    throw KeeperException("Transaction failed at op #" + std::to_string(i) + ": " + ops[i]->describe(), code);
-            }
-        }
-
-        throw KeeperException(code);
-    }
-    return results;
+    OpResultsPtr op_results;
+    int code = multiImpl(ops, &op_results);
+    KeeperMultiException::check(code, ops, op_results);
+    return op_results;
 }
 
 int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
@@ -646,17 +643,9 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
     return code;
 }
 
-int32_t ZooKeeper::tryMultiUnsafe(const Ops & ops, MultiTransactionInfo & info)
-{
-    info.code = multiImpl(ops, &info.op_results);
-    for (const OpPtr & op : ops)
-        info.ops.emplace_back(op->clone());
-    return info.code;
-}
-
 int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results, size_t * attempt)
 {
-    int32_t code = retry(std::bind(&ZooKeeper::multiImpl, this, std::ref(ops), out_results), attempt);
+    int32_t code = retry(std::bind(&ZooKeeper::multiImpl, this, std::ref(ops), out_results, nullptr), attempt);
     if (!(code == ZOK ||
         code == ZNONODE ||
         code == ZNODEEXISTS ||
@@ -1099,4 +1088,36 @@ OpResult::OpResult(const zoo_op_result_t & op_result, const ZooKeeper * zookeepe
     if (op_result.stat)
         stat = std::make_unique<Stat>(*op_result.stat);
 }
+
+
+KeeperMultiException::KeeperMultiException(const MultiTransactionInfo & info_, size_t failed_op_index_)
+    :KeeperException(
+        "Transaction failed at op #" + std::to_string(failed_op_index_) + ": " + info_.ops.at(failed_op_index_)->describe(),
+        info_.code),
+    info(info_) {}
+
+void KeeperMultiException::check(int code, const Ops & ops, const OpResultsPtr & op_results)
+{
+    if (code == ZOK) {}
+    else if (zkutil::isUserError(code))
+        throw KeeperMultiException(MultiTransactionInfo(code, ops, op_results), getFailedOpIndex(op_results, code));
+    else
+        throw KeeperException(code);
+}
+
+void KeeperMultiException::check(const MultiTransactionInfo & info)
+{
+    if (info.code == ZOK) {}
+    else if (zkutil::isUserError(info.code))
+        throw KeeperMultiException(info, getFailedOpIndex(info.op_results, info.code));
+    else
+        throw KeeperException(info.code);
+}
+
+
+const Op & MultiTransactionInfo::getFailedOp() const
+{
+    return *ops.at(getFailedOpIndex(op_results, code));
+}
+
 }
