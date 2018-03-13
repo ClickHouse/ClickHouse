@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <map>
+#include <memory>
 
 
 namespace DB
