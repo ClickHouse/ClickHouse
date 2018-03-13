@@ -186,6 +186,8 @@ struct ContextShared
 
     pcg64 rng{randomSeed()};
 
+    Context::ConfigReloadCallback config_reload_callback;
+
     ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
         : runtime_components_factory(std::move(runtime_components_factory_))
     {
@@ -1621,6 +1623,22 @@ time_t Context::getUptimeSeconds() const
 {
     auto lock = getLock();
     return shared->uptime_watch.elapsedSeconds();
+}
+
+
+void Context::setConfigReloadCallback(ConfigReloadCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->config_reload_callback = std::move(callback);
+}
+
+void Context::reloadConfig() const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->config_reload_callback)
+        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->config_reload_callback();
 }
 
 

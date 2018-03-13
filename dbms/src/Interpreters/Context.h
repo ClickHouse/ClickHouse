@@ -361,6 +361,10 @@ public:
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
 
+    using ConfigReloadCallback = std::function<void()>;
+    void setConfigReloadCallback(ConfigReloadCallback && callback);
+    void reloadConfig() const;
+
     void shutdown();
 
     enum class ApplicationType

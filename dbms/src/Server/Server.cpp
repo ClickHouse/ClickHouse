@@ -251,6 +251,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
 
+    /// Reload config in SYSTEM RELOAD CONFIG query.
+    global_context->setConfigReloadCallback([&]() {
+        main_config_reloader->reload();
+        users_config_reloader->reload();
+    });
+
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 

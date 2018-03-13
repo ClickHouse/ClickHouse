@@ -73,6 +73,8 @@ void ConfigReloader::run()
 
 void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
+    std::lock_guard<std::mutex> lock(reload_mutex);
+
     FilesChangesTracker new_files = getNewFileList();
     if (force || new_files.isDifferOrNewerThan(files))
     {
