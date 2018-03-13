@@ -181,7 +181,7 @@ BlockInputStreams StorageMerge::read(
 
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.size() == 0)
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->columns.getPhysical()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumns().getPhysical()));
 
         /// Substitute virtual column for its value when querying tables.
         ASTPtr modified_query_ast = query->clone();
@@ -334,8 +334,10 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
-    params.apply(columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, columns, {});
+    ColumnsDescription new_columns = getColumns();
+    params.apply(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    setColumns(new_columns);
 }
 
 

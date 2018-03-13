@@ -43,7 +43,7 @@ BlockInputStreams StorageMySQL::read(
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
-    String query = transformQueryForExternalDatabase(*query_info.query, columns.ordinary, remote_database_name, remote_table_name, context);
+    String query = transformQueryForExternalDatabase(*query_info.query, getColumns().ordinary, remote_database_name, remote_table_name, context);
 
     Block sample_block;
     for (const String & name : column_names)

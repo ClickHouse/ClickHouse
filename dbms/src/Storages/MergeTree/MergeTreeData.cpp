@@ -110,7 +110,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
     /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(columns.getPhysical());
+    merging_params.check(getColumns().getPhysical());
 
     if (!primary_expr_ast)
         throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -222,11 +222,11 @@ void MergeTreeData::initPrimaryKey()
     primary_sort_descr.clear();
     addSortDescription(primary_sort_descr, primary_expr_ast);
 
-    primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, columns.getPhysical()).getActions(false);
+    primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getPhysical()).getActions(false);
 
     {
         ExpressionActionsPtr projected_expr =
-                ExpressionAnalyzer(primary_expr_ast, context, nullptr, columns.getPhysical()).getActions(true);
+            ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getPhysical()).getActions(true);
         primary_key_sample = projected_expr->getSampleBlock();
     }
 
@@ -241,10 +241,10 @@ void MergeTreeData::initPrimaryKey()
     if (secondary_sort_expr_ast)
     {
         addSortDescription(sort_descr, secondary_sort_expr_ast);
-        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, columns.getPhysical()).getActions(false);
+        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getPhysical()).getActions(false);
 
         ExpressionActionsPtr projected_expr =
-                ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, columns.getPhysical()).getActions(true);
+            ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getPhysical()).getActions(true);
         auto secondary_key_sample = projected_expr->getSampleBlock();
 
         checkKeyExpression(*secondary_sort_expr, secondary_key_sample, "Secondary");
@@ -257,7 +257,7 @@ void MergeTreeData::initPartitionKey()
     if (!partition_expr_ast || partition_expr_ast->children.empty())
         return;
 
-    partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, columns.getPhysical()).getActions(false);
+    partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumns().getPhysical()).getActions(false);
     for (const ASTPtr & ast : partition_expr_ast->children)
     {
         String col_name = ast->getColumnName();
@@ -861,7 +861,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    auto new_columns = columns;
+    auto new_columns = getColumns();
     commands.apply(new_columns);
 
     /// Set of columns that shouldn't be altered.
@@ -903,7 +903,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
-    for (const auto & column : columns.getPhysical())
+    for (const auto & column : getColumns().getPhysical())
         old_types.emplace(column.name, column.type.get());
 
     for (const AlterCommand & command : commands)
@@ -931,7 +931,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     NameToNameMap unused_map;
     bool unused_bool;
 
-    createConvertExpression(nullptr, columns.getPhysical(), new_columns.getPhysical(), unused_expression, unused_map, unused_bool);
+    createConvertExpression(nullptr, getColumns().getPhysical(), new_columns.getPhysical(), unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -1835,7 +1835,7 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : columns.getPhysical())
+    for (const auto & column : getColumns().getPhysical())
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";
@@ -1868,7 +1868,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : columns.getPhysical())
+    for (const auto & column : getColumns().getPhysical())
     {
         const auto escaped_name = escapeForFileName(column.name);
         const auto bin_file_name = escaped_name + ".bin";

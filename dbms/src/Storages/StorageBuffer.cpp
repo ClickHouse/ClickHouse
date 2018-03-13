@@ -595,8 +595,10 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    params.apply(columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, columns, {});
+    ColumnsDescription new_columns = getColumns();
+    params.apply(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    setColumns(std::move(new_columns));
 }
 
 

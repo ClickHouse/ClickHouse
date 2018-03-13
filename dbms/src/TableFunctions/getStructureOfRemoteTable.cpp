@@ -28,7 +28,7 @@ ColumnsDescription getStructureOfRemoteTable(
     const auto & shard_info = cluster.getAnyShardInfo();
 
     if (shard_info.isLocal())
-        return context.getTable(database, table)->columns;
+        return context.getTable(database, table)->getColumns();
 
     /// Request for a table description
     String query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);

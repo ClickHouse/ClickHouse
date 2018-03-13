@@ -184,7 +184,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{columns_}, context(context_),
+    : context(context_),
     current_zookeeper(context.getZooKeeper()), database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros().expand(zookeeper_path_)),
@@ -484,7 +484,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
         acl, zkutil::CreateMode::Persistent));
     ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/metadata", metadata,
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/columns", data.columns.toString(),
+    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/columns", getColumns().toString(),
         acl, zkutil::CreateMode::Persistent));
     ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/log", "",
         acl, zkutil::CreateMode::Persistent));
@@ -519,23 +519,22 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 
     zkutil::Stat stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &stat));
-
     columns_version = stat.version;
 
-    if (columns_from_zk != data.columns)
+    const ColumnsDescription & old_columns = getColumns();
+    if (columns_from_zk != old_columns)
     {
         if (allow_alter &&
             (skip_sanity_checks ||
-             data.columns.ordinary.sizeOfDifference(columns_from_zk.ordinary) +
-             data.columns.materialized.sizeOfDifference(columns_from_zk.materialized) <= 2))
+             old_columns.ordinary.sizeOfDifference(columns_from_zk.ordinary) +
+             old_columns.materialized.sizeOfDifference(columns_from_zk.materialized) <= 2))
         {
             LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
             /// Without any locks, because table has not been created yet.
             context.getDatabase(database_name)->alterTable(context, table_name, columns_from_zk, {});
 
-            columns = columns_from_zk;
-            data.columns = std::move(columns_from_zk);
+            setColumns(std::move(columns_from_zk));
         }
         else
         {
@@ -697,7 +696,7 @@ void StorageReplicatedMergeTree::createReplica()
         LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
     }
 
-    zookeeper->create(replica_path + "/columns", data.columns.toString(), zkutil::CreateMode::Persistent);
+    zookeeper->create(replica_path + "/columns", getColumns().toString(), zkutil::CreateMode::Persistent);
 }
 
 
@@ -1507,7 +1506,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     alter_command.type = AlterCommand::DROP_COLUMN;
     alter_command.column_name = entry.column_name;
 
-    auto new_columns = data.columns;
+    auto new_columns = getColumns();
     alter_command.apply(new_columns);
 
     size_t modified_parts = 0;
@@ -2544,7 +2543,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
                 throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
 
-        ColumnsDescription new_columns = data.columns;
+        ColumnsDescription new_columns = data.getColumns();
         params.apply(new_columns);
 
         new_columns_str = new_columns.toString();

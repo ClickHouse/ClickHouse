@@ -99,8 +99,8 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
 
         auto table_lock = table->lockStructure(false, __PRETTY_FUNCTION__);
-        columns = table->columns.getAll();
-        column_defaults = table->columns.defaults;
+        columns = table->getColumns().getAll();
+        column_defaults = table->getColumns().defaults;
     }
 
     Block sample_block = getSampleBlock();

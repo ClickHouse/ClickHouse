@@ -87,15 +87,13 @@ void ReplicatedMergeTreeAlterThread::run()
 
                     auto table_lock = storage.lockStructureForAlter(__PRETTY_FUNCTION__);
 
-                    if (columns_in_zk != storage.data.columns)
+                    if (columns_in_zk != storage.getColumns())
                     {
                         LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 
                         storage.context.getDatabase(storage.database_name)->alterTable(
                             storage.context, storage.table_name, columns_in_zk, {});
-
-                        storage.columns = columns_in_zk;
-                        storage.data.columns = std::move(columns_in_zk);
+                        storage.setColumns(std::move(columns_in_zk));
 
                         /// Reinitialize primary key because primary key column types might have changed.
                         storage.data.initPrimaryKey();
@@ -126,7 +124,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     if (!changed_version)
                         parts = storage.data.getDataParts();
 
-                    const auto columns_for_parts = storage.data.columns.getPhysical();
+                    const auto columns_for_parts = storage.getColumns().getPhysical();
 
                     for (const MergeTreeData::DataPartPtr & part : parts)
                     {
