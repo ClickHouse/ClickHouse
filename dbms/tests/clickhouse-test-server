@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -x
 set -o errexit
 set -o pipefail
 
@@ -24,8 +25,8 @@ export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xm
 rm -rf $DATA_DIR
 mkdir -p $LOG_DIR $DATA_DIR
 
-openssl dhparam -out `clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.dhParamsFile` 256
-openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout `clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile` -out `clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.certificateFile`
+openssl dhparam -out `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.dhParamsFile` 256
+openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile` -out `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.certificateFile`
 
 # Start a local clickhouse server which will be used to run tests
 #PATH=$PATH:$BIN_DIR \
