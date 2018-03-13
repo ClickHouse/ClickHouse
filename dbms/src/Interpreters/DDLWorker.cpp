@@ -523,6 +523,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     try
     {
         Context local_context(context);
+        local_context.setCurrentQueryId(""); // generate random query_id
         executeQuery(istr, ostr, false, local_context, nullptr);
     }
     catch (...)
