@@ -221,7 +221,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     if (config().has("macros"))
-        global_context->setMacros(Macros(config(), "macros"));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -231,7 +231,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config)
         {
             global_context->setClustersConfig(config);
-            global_context->setMacros(Macros(*config, "macros"));
+            global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
         /* already_loaded = */ true);
 

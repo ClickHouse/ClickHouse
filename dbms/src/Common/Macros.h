@@ -1,9 +1,16 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <map>
-#include <memory>
+
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
 
 
 namespace DB
@@ -29,6 +36,5 @@ private:
     MacroMap macros;
 };
 
-using MacrosPtr = std::shared_ptr<Macros>;
 
 }
