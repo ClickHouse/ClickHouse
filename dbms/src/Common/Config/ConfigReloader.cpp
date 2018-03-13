@@ -24,7 +24,11 @@ ConfigReloader::ConfigReloader(
 {
     if (!already_loaded)
         reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true);
+}
 
+
+void ConfigReloader::start()
+{
     thread = std::thread(&ConfigReloader::run, this);
 }
 
@@ -35,7 +39,9 @@ ConfigReloader::~ConfigReloader()
     {
         quit = true;
         zk_node_cache.getChangedEvent().set();
-        thread.join();
+
+        if (thread.joinable())
+            thread.join();
     }
     catch (...)
     {

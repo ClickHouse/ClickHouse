@@ -230,7 +230,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::move(main_config_zk_node_cache),
         [&](ConfigurationPtr config)
         {
-            buildLoggers(*config);
             global_context->setClustersConfig(config);
         },
         /* already_loaded = */ true);
@@ -279,6 +278,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     LOG_INFO(log, "Loading metadata.");
     loadMetadataSystem(*global_context);
+    /// After attaching system databases we can initialize system log.
+    global_context->initializeSystemLogs();
     /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
     attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
     /// Then, load remaining databases
@@ -334,14 +335,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::DNSException & e)
             {
-                if (e.code() == EAI_FAMILY
+                const auto code = e.code();
+                if (code == EAI_FAMILY
 #if defined(EAI_ADDRFAMILY)
-                    || e.code() == EAI_ADDRFAMILY
+                    || code == EAI_ADDRFAMILY
 #endif
                     )
                 {
                     LOG_ERROR(log,
-                        "Cannot resolve listen_host (" << host << "), error: " << e.message() << ". "
+                        "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message() << ". "
                         "If it is an IPv6 address and your host has disabled IPv6, then consider to "
                         "specify IPv4 address to listen in <listen_host> element of configuration "
                         "file. Example: <listen_host>0.0.0.0</listen_host>");
@@ -456,8 +458,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (listen_try && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
+                const auto code = e.code();
+                if (listen_try && (code == POCO_EPROTONOSUPPORT || code == POCO_EADDRNOTAVAIL || code == EAI_FAMILY
+#if defined(EAI_ADDRFAMILY)
+                    || code == EAI_ADDRFAMILY
+#endif
+                ))
+                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.code() << ": " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                         "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
@@ -472,6 +479,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        main_config_reloader->start();
+        users_config_reloader->start();
 
         {
             std::stringstream message;

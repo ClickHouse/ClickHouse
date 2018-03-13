@@ -33,6 +33,7 @@ public:
 
     void start()                        { start_ns = nanoseconds(); is_running = true; }
     void stop()                         { stop_ns = nanoseconds(); is_running = false; }
+    void reset()                        { start_ns = 0; stop_ns = 0; is_running = false; }
     void restart()                      { start(); }
     UInt64 elapsed() const              { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
     UInt64 elapsedMilliseconds() const  { return elapsed() / 1000000UL; }

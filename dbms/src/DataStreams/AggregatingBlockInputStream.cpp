@@ -68,7 +68,7 @@ Block AggregatingBlockInputStream::readImpl()
         }
     }
 
-    if (isCancelled() || !impl)
+    if (isCancelledOrThrowIfKilled() || !impl)
         return {};
 
     return impl->read();

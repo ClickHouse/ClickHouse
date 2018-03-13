@@ -74,6 +74,7 @@ namespace ErrorCodes
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int TOO_MANY_PARTS;
 }
 
 
@@ -111,7 +112,8 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    merging_params.check(columns);
+    /// NOTE: using the same columns list as is read when performing actual merges.
+    merging_params.check(getColumnsList());
 
     if (!primary_expr_ast)
         throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -355,10 +357,11 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
         {
             if (column.name == version_column)
             {
-                if (!column.type->isUnsignedInteger() && !column.type->isDateOrDateTime())
-                    throw Exception("Version column (" + version_column + ")"
-                            " for storage " + storage + " must have type of UInt family or Date or DateTime."
-                            " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                if (!column.type->canBeUsedAsVersion())
+                    throw Exception("The column " + version_column +
+                        " cannot be used as a version column for storage " + storage +
+                        " because it is of type " + column.type->getName() +
+                        " (must be of an integer type or of type Date or DateTime)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
@@ -561,7 +564,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
         {
-            (*it)->remove_time = (*it)->modification_time;
+            (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
         };
 
@@ -677,9 +680,11 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
         {
             const DataPartPtr & part = *it;
 
+            auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
+
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
-                part->remove_time < now &&
-                now - part->remove_time > settings.old_parts_lifetime.totalSeconds())
+                part_remove_time < now &&
+                now - part_remove_time > settings.old_parts_lifetime.totalSeconds())
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -731,7 +736,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
-    if (auto part_log = context.getPartLog(database_name, table_name))
+    if (auto part_log = context.getPartLog(database_name))
     {
         PartLogElement part_log_elem;
 
@@ -1519,7 +1524,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         auto current_time = time(nullptr);
         for (const DataPartPtr & covered_part : covered_parts)
         {
-            covered_part->remove_time = current_time;
+            covered_part->remove_time.store(current_time, std::memory_order_relaxed);
             modifyPartState(covered_part, DataPartState::Outdated);
             removePartContributionToColumnSizes(covered_part);
         }
@@ -1550,7 +1555,7 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
             removePartContributionToColumnSizes(part);
 
         modifyPartState(part, DataPartState::Outdated);
-        part->remove_time = remove_time;
+        part->remove_time.store(remove_time, std::memory_order_relaxed);
     }
 }
 
@@ -1722,7 +1727,7 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
     if (parts_count >= settings.parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
+        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
 
     const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
@@ -2175,7 +2180,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
                 LOG_WARNING(data->log, "Tried to commit obsolete part " << part->name
                     << " covered by " << covering_part->getNameWithState());
 
-                part->remove_time = 0; /// The part will be removed without waiting for old_parts_lifetime seconds.
+                part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
                 data->modifyPartState(part, DataPartState::Outdated);
             }
             else
@@ -2183,7 +2188,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
                 total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
                 for (const DataPartPtr & covered_part : covered_parts)
                 {
-                    covered_part->remove_time = current_time;
+                    covered_part->remove_time.store(current_time, std::memory_order_relaxed);
                     data->modifyPartState(covered_part, DataPartState::Outdated);
                     data->removePartContributionToColumnSizes(covered_part);
                 }

@@ -50,13 +50,18 @@ struct ProcessInfo
     size_t written_rows;
     size_t written_bytes;
     Int64 memory_usage;
+    Int64 peak_memory_usage;
     ClientInfo client_info;
+    bool is_cancelled;
 };
 
 
 /// Query and information about its execution.
-struct ProcessListElement
+class ProcessListElement
 {
+    friend class ProcessList;
+
+private:
     String query;
     ClientInfo client_info;
 
@@ -73,15 +78,10 @@ struct ProcessListElement
 
     CurrentMetrics::Increment num_queries {CurrentMetrics::Query};
 
-    bool is_cancelled = false;
-
-    /// Temporary tables could be registered here. Modify under mutex.
-    Tables temporary_tables;
+    std::atomic<bool> is_cancelled { false };
 
     /// Be careful using it. For example, queries field could be modified concurrently.
     const ProcessListForUser * user_process_list = nullptr;
-
-protected:
 
     mutable std::mutex query_streams_mutex;
 
@@ -95,7 +95,6 @@ protected:
     bool query_streams_released{false};
 
 public:
-
     ProcessListElement(
         const String & query_,
         const ClientInfo & client_info_,
@@ -117,6 +116,23 @@ public:
         current_memory_tracker = nullptr;
     }
 
+    const ClientInfo & getClientInfo() const
+    {
+        return client_info;
+    }
+
+    ProgressValues getProgressIn() const
+    {
+        return progress_in.getValues();
+    }
+
+    ProgressValues getProgressOut() const
+    {
+        return progress_out.getValues();
+    }
+
+    ThrottlerPtr getUserNetworkThrottler();
+
     bool updateProgressIn(const Progress & value)
     {
         progress_in.incrementPiecewiseAtomically(value);
@@ -124,13 +140,13 @@ public:
         if (priority_handle)
             priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
 
-        return !is_cancelled;
+        return !is_cancelled.load(std::memory_order_relaxed);
     }
 
     bool updateProgressOut(const Progress & value)
     {
         progress_out.incrementPiecewiseAtomically(value);
-        return !is_cancelled;
+        return !is_cancelled.load(std::memory_order_relaxed);
     }
 
 
@@ -141,12 +157,14 @@ public:
         res.query             = query;
         res.client_info       = client_info;
         res.elapsed_seconds   = watch.elapsedSeconds();
+        res.is_cancelled      = is_cancelled.load(std::memory_order_relaxed);
         res.read_rows         = progress_in.rows;
         res.read_bytes        = progress_in.bytes;
         res.total_rows        = progress_in.total_rows;
         res.written_rows      = progress_out.rows;
         res.written_bytes     = progress_out.bytes;
         res.memory_usage      = memory_tracker.get();
+        res.peak_memory_usage = memory_tracker.getPeak();
 
         return res;
     }
@@ -168,8 +186,8 @@ public:
 /// Data about queries for one user.
 struct ProcessListForUser
 {
-    /// Query_id -> ProcessListElement *
-    using QueryToElement = std::unordered_map<String, ProcessListElement *>;
+    /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
+    using QueryToElement = std::unordered_multimap<String, ProcessListElement *>;
     QueryToElement queries;
 
     /// Limit and counter for memory of all simultaneously running queries of single user.
@@ -177,6 +195,17 @@ struct ProcessListForUser
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
+
+    /// Clears MemoryTracker for the user.
+    /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
+    ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
+    /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
+    void reset()
+    {
+        user_memory_tracker.reset();
+        if (user_throttler)
+            user_throttler->reset();
+    }
 };
 
 
@@ -273,9 +302,6 @@ public:
         max_size = max_size_;
     }
 
-    /// Register temporary table. Then it is accessible by query_id and name.
-    void addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage);
-
     enum class CancellationCode
     {
         NotFound = 0,                     /// already cancelled
@@ -286,7 +312,7 @@ public:
     };
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
 };
 
 }

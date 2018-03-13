@@ -15,6 +15,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
+    bool temporary{false};
 
 protected:
     void formatHelper(const FormatSettings & settings, const char * name) const

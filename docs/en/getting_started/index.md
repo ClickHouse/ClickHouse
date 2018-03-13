@@ -21,7 +21,7 @@ For testing and development, the system can be installed on a single server or o
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
 ```text
-deb http://repo.yandex.ru/clickhouse/trusty stable main
+deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
 On other versions of Ubuntu, replace `trusty` with `xenial` or `precise`.
@@ -35,7 +35,7 @@ sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server-common
 ```
 
-You can also download and install packages manually from here:<http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/><http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/><http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/>
+You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/deb/stable/main/>
 
 ClickHouse contains access restriction settings. They are located in the 'users.xml' file (next to 'config.xml').
 By default, access is allowed from anywhere for the 'default' user, without a password. See 'user/default/networks'.

@@ -1,11 +1,10 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Join.h>
-#include <Interpreters/Limits.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
-#include <Poco/String.h>
+#include <Poco/String.h>    /// toLower
 
 
 namespace DB
@@ -49,7 +48,7 @@ StorageJoin::StorageJoin(
 
     /// NOTE StorageJoin doesn't use join_use_nulls setting.
 
-    join = std::make_shared<Join>(key_names, key_names, false /* use_nulls */, Limits(), kind, strictness);
+    join = std::make_shared<Join>(key_names, key_names, false /* use_nulls */, SizeLimits(), kind, strictness);
     join->setSampleBlock(getSampleBlock().sortColumns());
     restore();
 }

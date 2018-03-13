@@ -20,11 +20,9 @@ public:
     CreatingSetsBlockInputStream(
         const BlockInputStreamPtr & input,
         const SubqueriesForSets & subqueries_for_sets_,
-        const Limits & limits)
+        const SizeLimits & network_transfer_limits)
         : subqueries_for_sets(subqueries_for_sets_),
-        max_rows_to_transfer(limits.max_rows_to_transfer),
-        max_bytes_to_transfer(limits.max_bytes_to_transfer),
-        transfer_overflow_mode(limits.transfer_overflow_mode)
+        network_transfer_limits(network_transfer_limits)
     {
         for (auto & elem : subqueries_for_sets)
             if (elem.second.source)
@@ -48,9 +46,7 @@ private:
     SubqueriesForSets subqueries_for_sets;
     bool created = false;
 
-    size_t max_rows_to_transfer;
-    size_t max_bytes_to_transfer;
-    OverflowMode transfer_overflow_mode;
+    SizeLimits network_transfer_limits;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;

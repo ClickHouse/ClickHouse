@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int FUNCTION_IS_SPECIAL;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_SLOW;
+    extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
 /** Helper functions
@@ -1140,7 +1141,9 @@ public:
     {
         const auto in = block.getByPosition(arguments.front()).column.get();
 
-        if (!execute<UInt8>(block, in, result) && !execute<UInt16>(block, in, result) && !execute<UInt32>(block, in, result)
+        if (   !execute<UInt8>(block, in, result)
+            && !execute<UInt16>(block, in, result)
+            && !execute<UInt32>(block, in, result)
             && !execute<UInt64>(block, in, result)
             && !execute<Int8>(block, in, result)
             && !execute<Int16>(block, in, result)
@@ -1746,7 +1749,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     else
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
-        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort());
+        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort(), false);
         auto names_and_types_list = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
         const auto & names = names_and_types_list.getNames();
         has_column = std::find(names.begin(), names.end(), column_name) != names.end();
@@ -1754,6 +1757,72 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 
     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(has_column));
 }
+
+
+/// Throw an exception if the argument is non zero.
+class FunctionThrowIf : public IFunction
+{
+public:
+    static constexpr auto name = "throwIf";
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionThrowIf>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!arguments.front()->isNumber())
+            throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    {
+        const auto in = block.getByPosition(arguments.front()).column.get();
+
+        if (   !execute<UInt8>(block, in, result)
+            && !execute<UInt16>(block, in, result)
+            && !execute<UInt32>(block, in, result)
+            && !execute<UInt64>(block, in, result)
+            && !execute<Int8>(block, in, result)
+            && !execute<Int16>(block, in, result)
+            && !execute<Int32>(block, in, result)
+            && !execute<Int64>(block, in, result)
+            && !execute<Float32>(block, in, result)
+            && !execute<Float64>(block, in, result))
+            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+    }
+
+    template <typename T>
+    bool execute(Block & block, const IColumn * in_untyped, const size_t result)
+    {
+        if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
+        {
+            const auto & in_data = in->getData();
+            if (!memoryIsZero(in_data.data(), in_data.size() * sizeof(in_data[0])))
+                throw Exception("Value passed to 'throwIf' function is non zero", ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO);
+
+            /// We return non constant to avoid constant folding.
+            block.getByPosition(result).column = ColumnUInt8::create(in_data.size(), 0);
+            return true;
+        }
+
+        return false;
+    }
+};
 
 
 std::string FunctionVersion::getVersion() const
@@ -1797,6 +1866,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionIsFinite>();
     factory.registerFunction<FunctionIsInfinite>();
     factory.registerFunction<FunctionIsNaN>();
+    factory.registerFunction<FunctionThrowIf>();
 
     factory.registerFunction<FunctionVersion>();
     factory.registerFunction<FunctionUptime>();

@@ -233,7 +233,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
             context.setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context.getSettingsRef().limits.readonly)
+    if (context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries"
             << " Set apropriate system_profile or distributed_ddl.profile to fix this.");
@@ -372,7 +372,7 @@ void DDLWorker::processTasks()
             String reason;
             if (!initAndCheckTask(entry_name, reason))
             {
-                LOG_DEBUG(log, "Will not execute task " << entry_name << " : " << reason);
+                LOG_DEBUG(log, "Will not execute task " << entry_name << ": " << reason);
                 last_processed_task_name = entry_name;
                 continue;
             }
@@ -978,7 +978,7 @@ public:
 
         while(res.rows() == 0)
         {
-            if (is_cancelled)
+            if (isCancelled())
                 return res;
 
             if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)

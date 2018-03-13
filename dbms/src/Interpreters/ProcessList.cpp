@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/typeid_cast.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -12,8 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -23,12 +25,15 @@ ProcessList::EntryPtr ProcessList::insert(
     EntryPtr res;
     bool is_kill_query = ast && typeid_cast<const ASTKillQueryQuery *>(ast);
 
+    if (client_info.current_query_id.empty())
+        throw Exception("Query id cannot be empty", ErrorCodes::LOGICAL_ERROR);
+
     {
         std::lock_guard<std::mutex> lock(mutex);
 
         if (!is_kill_query && max_size && cur_size >= max_size
             && (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
-            throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
+            throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
 
         /** Why we use current user?
           * Because initial one is passed by client and credentials for it is not verified,
@@ -50,22 +55,18 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception("Too many simultaneous queries for user " + client_info.current_user
                         + ". Current: " + toString(user_process_list->second.queries.size())
                         + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
-                        ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
+                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
 
-                if (!client_info.current_query_id.empty())
+                auto range = user_process_list->second.queries.equal_range(client_info.current_query_id);
+                if (range.first != range.second)
                 {
-                    auto element = user_process_list->second.queries.find(client_info.current_query_id);
-                    if (element != user_process_list->second.queries.end())
-                    {
-                        if (!settings.replace_running_query)
-                            throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
-                                ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                    if (!settings.replace_running_query)
+                        throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
+                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
-                        /// Kill query could be replaced since system.processes is continuously updated
-                        element->second->is_cancelled = true;
-                        /// If the request is canceled, the data about it is deleted from the map at the time of cancellation.
-                        user_process_list->second.queries.erase(element);
-                    }
+                    /// Ask queries to cancel. They will check this flag.
+                    for (auto it = range.first; it != range.second; ++it)
+                        it->second->is_cancelled.store(true, std::memory_order_relaxed);
                 }
             }
         }
@@ -74,42 +75,39 @@ ProcessList::EntryPtr ProcessList::insert(
 
         res = std::make_shared<Entry>(*this, cont.emplace(cont.end(),
             query_, client_info,
-            settings.limits.max_memory_usage, settings.memory_tracker_fault_probability,
+            settings.max_memory_usage, settings.memory_tracker_fault_probability,
             priorities.insert(settings.priority)));
 
-        if (!client_info.current_query_id.empty())
+        ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
+        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+
+        if (current_memory_tracker)
         {
-            ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
-            user_process_list.queries[client_info.current_query_id] = &res->get();
+            /// Limits are only raised (to be more relaxed) or set to something instead of zero,
+            ///  because settings for different queries will interfere each other:
+            ///  setting from one query effectively sets values for all other queries.
 
-            if (current_memory_tracker)
-            {
-                /// Limits are only raised (to be more relaxed) or set to something instead of zero,
-                ///  because settings for different queries will interfere each other:
-                ///  setting from one query effectively sets values for all other queries.
+            /// Track memory usage for all simultaneously running queries from single user.
+            user_process_list.user_memory_tracker.setOrRaiseLimit(settings.max_memory_usage_for_user);
+            user_process_list.user_memory_tracker.setDescription("(for user)");
+            current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
 
-                /// Track memory usage for all simultaneously running queries from single user.
-                user_process_list.user_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
-                user_process_list.user_memory_tracker.setDescription("(for user)");
-                current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
-
-                /// Track memory usage for all simultaneously running queries.
-                /// You should specify this value in configuration for default profile,
-                ///  not for specific users, sessions or queries,
-                ///  because this setting is effectively global.
-                total_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
-                total_memory_tracker.setDescription("(total)");
-                user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
-            }
-
-            if (settings.limits.max_network_bandwidth_for_user && !user_process_list.user_throttler)
-            {
-                user_process_list.user_throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth_for_user, 0,
-                    "Network bandwidth limit for a user exceeded.");
-            }
-
-            res->get().user_process_list = &user_process_list;
+            /// Track memory usage for all simultaneously running queries.
+            /// You should specify this value in configuration for default profile,
+            ///  not for specific users, sessions or queries,
+            ///  because this setting is effectively global.
+            total_memory_tracker.setOrRaiseLimit(settings.max_memory_usage_for_all_queries);
+            total_memory_tracker.setDescription("(total)");
+            user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
         }
+
+        if (settings.max_network_bandwidth_for_user && !user_process_list.user_throttler)
+        {
+            user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, 0,
+                "Network bandwidth limit for a user exceeded.");
+        }
+
+        res->get().user_process_list = &user_process_list;
     }
 
     return res;
@@ -123,36 +121,48 @@ ProcessListEntry::~ProcessListEntry()
 
     std::lock_guard<std::mutex> lock(parent.mutex);
 
-    /// The order of removing memory_trackers is important.
+    String user = it->getClientInfo().current_user;
+    String query_id = it->getClientInfo().current_query_id;
 
-    String user = it->client_info.current_user;
-    String query_id = it->client_info.current_query_id;
-    bool is_cancelled = it->is_cancelled;
+    const ProcessListElement * process_list_element_ptr = &*it;
 
-    /// This removes the memory_tracker of one request.
+    /// This removes the memory_tracker of one query.
     parent.cont.erase(it);
 
-    auto user_process_list = parent.user_to_queries.find(user);
-    if (user_process_list != parent.user_to_queries.end())
+    auto user_process_list_it = parent.user_to_queries.find(user);
+    if (user_process_list_it == parent.user_to_queries.end())
     {
-        /// In case the request is canceled, the data about it is deleted from the map at the time of cancellation, and not here.
-        if (!is_cancelled && !query_id.empty())
-        {
-            auto element = user_process_list->second.queries.find(query_id);
-            if (element != user_process_list->second.queries.end())
-                user_process_list->second.queries.erase(element);
-        }
-
-        /// This removes the memory_tracker from the user. At this time, the memory_tracker that references it does not live.
-
-        /// If there are no more queries for the user, then we delete the entry.
-        /// This also clears the MemoryTracker for the user, and a message about the memory consumption is output to the log.
-        /// This also clears network bandwidth Throttler, so it will not count periods of inactivity.
-        /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
-        ///  due to the fact that there are cases when memory can be allocated while processing the request, but released later.
-        if (user_process_list->second.queries.empty())
-            parent.user_to_queries.erase(user_process_list);
+        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
+        std::terminate();
     }
+
+    ProcessListForUser & user_process_list = user_process_list_it->second;
+
+    bool found = false;
+
+    auto range = user_process_list.queries.equal_range(query_id);
+    if (range.first != range.second)
+    {
+        for (auto it = range.first; it != range.second; ++it)
+        {
+            if (it->second == process_list_element_ptr)
+            {
+                user_process_list.queries.erase(it);
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found)
+    {
+        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        std::terminate();
+    }
+
+    /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
+    if (user_process_list.queries.empty())
+        user_process_list.reset();
 
     --parent.cur_size;
     parent.have_space.signal();
@@ -206,11 +216,11 @@ bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutpu
 }
 
 
-void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage)
+ThrottlerPtr ProcessListElement::getUserNetworkThrottler()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-
-    elem.temporary_tables[table_name] = storage;
+    if (!user_process_list)
+        return {};
+    return user_process_list->user_throttler;
 }
 
 
@@ -230,7 +240,7 @@ ProcessListElement * ProcessList::tryGetProcessListElement(const String & curren
 }
 
 
-ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -251,7 +261,7 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
         IProfilingBlockInputStream * input_stream_casted;
         if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
         {
-            input_stream_casted->cancel();
+            input_stream_casted->cancel(kill);
             return CancellationCode::CancelSent;
         }
         return CancellationCode::CancelCannotBeSent;

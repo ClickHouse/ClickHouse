@@ -321,7 +321,7 @@ void TCPHandler::processOrdinaryQuery()
                 if (isQueryCancelled())
                 {
                     /// A packet was received requesting to stop execution of the request.
-                    async_in.cancel();
+                    async_in.cancel(false);
                     break;
                 }
                 else
@@ -752,7 +752,7 @@ void TCPHandler::updateProgress(const Progress & value)
 void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
-    Progress increment = state.progress.fetchAndResetPiecewiseAtomically();
+    auto increment = state.progress.fetchAndResetPiecewiseAtomically();
     increment.write(*out, client_revision);
     out->next();
 }
