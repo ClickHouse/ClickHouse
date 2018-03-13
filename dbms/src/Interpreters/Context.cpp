@@ -130,8 +130,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
-    MacrosPtr macros;                                       /// Substitutions extracted from config.
-    mutable std::mutex macros_mutex;
+    MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -1045,16 +1044,14 @@ void Context::setDefaultFormat(const String & name)
     default_format = name;
 }
 
-const MacrosPtr & Context::getMacros() const
+MultiVersion<Macros>::Version Context::getMacros() const
 {
-    std::unique_lock<std::mutex> lock(shared->macros_mutex);
-    return shared->macros;
+    return shared->macros.get();
 }
 
-void Context::setMacros(Macros && macros)
+void Context::setMacros(std::unique_ptr<Macros> && macros)
 {
-    std::unique_lock<std::mutex> lock(shared->macros_mutex);
-    shared->macros = std::make_shared<Macros>(std::move(macros));
+    shared->macros.set(std::move(macros));
 }
 
 const Context & Context::getQueryContext() const
