@@ -129,6 +129,11 @@ public:
         const Context & context,
         const String & name) const = 0;
 
+    /// Like getCreateTableQuery, but don't throw for existing tables without metadata.
+    virtual ASTPtr tryGetCreateTableQuery(
+        const Context & context,
+        const String & name) const = 0;
+
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
 
