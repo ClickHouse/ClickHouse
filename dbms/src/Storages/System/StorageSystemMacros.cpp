@@ -13,10 +13,10 @@ namespace DB
 StorageSystemMacros::StorageSystemMacros(const std::string & name_)
         : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
             {"macro", std::make_shared<DataTypeString>()},
             {"substitution", std::make_shared<DataTypeString>()},
-    };
+    }));
 }
 
 
