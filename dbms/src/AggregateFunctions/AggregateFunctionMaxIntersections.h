@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/NaNUtils.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -90,8 +91,11 @@ public:
         PointType left = static_cast<const ColumnVector<PointType> &>(*columns[0]).getData()[row_num];
         PointType right = static_cast<const ColumnVector<PointType> &>(*columns[1]).getData()[row_num];
 
-        this->data(place).value.push_back(std::make_pair(left, Int64(1)), arena);
-        this->data(place).value.push_back(std::make_pair(right, Int64(-1)), arena);
+        if (!isNaN(left))
+            this->data(place).value.push_back(std::make_pair(left, Int64(1)), arena);
+
+        if (!isNaN(right))
+            this->data(place).value.push_back(std::make_pair(right, Int64(-1)), arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -133,7 +137,6 @@ public:
         /// const_cast because we will sort the array
         auto & array = const_cast<typename MaxIntersectionsData<PointType>::Array &>(this->data(place).value);
 
-        /// TODO NaNs?
         std::sort(array.begin(), array.end(), [](const auto & a, const auto & b) { return a.first < b.first; });
 
         for (const auto & point_weight : array)
