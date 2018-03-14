@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
@@ -181,6 +182,61 @@ void StorageMaterializedView::drop()
 bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
+}
+
+void StorageMaterializedView::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
+{
+    if (!has_inner_table)
+    {
+        throw Exception(
+            "Can't clear the MATERIALIZED VIEW column. Try to execute the query for a target table `" + target_database_name + "`.`" + target_table_name + "`",
+            ErrorCodes::ABORTED);
+    }
+    getTargetTable()->clearColumnInPartition(partition, column_name, context);
+}
+
+void StorageMaterializedView::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+{
+    if (!has_inner_table)
+    {
+        throw Exception(
+            "Can't drop the MATERIALIZED VIEW partition. Try to execute the query for a target table `" + target_database_name + "`.`" + target_table_name + "`",
+            ErrorCodes::ABORTED);
+    }
+    getTargetTable()->dropPartition(query, partition, detach, context);
+}
+
+void StorageMaterializedView::attachPartition(const ASTPtr & partition, bool part, const Context & context)
+{
+    if (!has_inner_table)
+    {
+        throw Exception(
+            "Can't attach the MATERIALIZED VIEW partition. Try to execute the query for a target table `" + target_database_name + "`.`" + target_table_name + "`",
+            ErrorCodes::ABORTED);
+    }
+    getTargetTable()->attachPartition(partition, part, context);
+}
+
+void StorageMaterializedView::fetchPartition(const ASTPtr & partition, const String & from, const Context & context)
+{
+    if (!has_inner_table)
+    {
+        throw Exception(
+            "Can't fetch the MATERIALIZED VIEW partition. Try to execute the query for a target table `" + target_database_name + "`.`" + target_table_name + "`",
+            ErrorCodes::ABORTED);
+    }
+    getTargetTable()->fetchPartition(partition, from, context);
+}
+
+void StorageMaterializedView::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
+{
+    if (!has_inner_table)
+    {
+        throw Exception(
+            "Can't freeze the MATERIALIZED VIEW partition. Try to exequte query for a target table `" + target_database_name + "`.`" + target_table_name + "`",
+            ErrorCodes::ABORTED);
+    }
+    getTargetTable()->freezePartition(partition, with_name, context);  
 }
 
 void StorageMaterializedView::shutdown()
