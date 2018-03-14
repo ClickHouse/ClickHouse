@@ -93,6 +93,10 @@ public:
         const Context & context,
         const String & table_name) const override;
 
+    ASTPtr tryGetCreateTableQuery(
+        const Context & context,
+        const String & table_name) const override;
+
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     void shutdown() override;
