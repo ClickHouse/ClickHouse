@@ -712,7 +712,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
 
-    StackTrace st;
     /// Aliases in table declaration.
     if (from_stage == QueryProcessingStage::FetchColumns && alias_actions)
     {
