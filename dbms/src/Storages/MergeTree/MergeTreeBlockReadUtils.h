@@ -1,7 +1,10 @@
 #pragma once
+
+#include <optional>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+
 
 namespace DB
 {
