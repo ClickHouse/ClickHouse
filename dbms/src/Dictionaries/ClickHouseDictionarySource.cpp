@@ -24,7 +24,7 @@ static ConnectionPoolWithFailoverPtr createPool(
         const std::string & host, UInt16 port, const std::string & db,
         const std::string & user, const std::string & password, const Context & context)
 {
-    auto timeouts = ConnectionTimeouts::getTCPTimeouts(context.getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(context.getSettingsRef());
     ConnectionPoolPtrs pools;
     pools.emplace_back(std::make_shared<ConnectionPool>(
             MAX_CONNECTIONS, host, port, db, user, password, timeouts, "ClickHouseDictionarySource"));

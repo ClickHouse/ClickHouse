@@ -523,6 +523,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     try
     {
         Context local_context(context);
+        local_context.setCurrentQueryId(""); // generate random query_id
         executeQuery(istr, ostr, false, local_context, nullptr);
     }
     catch (...)
@@ -1131,7 +1132,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
-    query->cluster = context.getMacros().expand(query->cluster);
+    query->cluster = context.getMacros()->expand(query->cluster);
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 

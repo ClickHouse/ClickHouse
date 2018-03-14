@@ -187,8 +187,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     : context(context_),
     current_zookeeper(context.getZooKeeper()), database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
-    zookeeper_path(context.getMacros().expand(zookeeper_path_)),
-    replica_name(context.getMacros().expand(replica_name_)),
+    zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
+    replica_name(context.getMacros()->expand(replica_name_)),
     data(database_name, table_name,
         full_path, columns_,
         context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
@@ -3223,7 +3223,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
 
-    auto timeouts = ConnectionTimeouts::getTCPTimeouts(context.getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,

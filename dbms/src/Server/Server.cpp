@@ -221,7 +221,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     if (config().has("macros"))
-        global_context->setMacros(Macros(config(), "macros"));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -231,6 +231,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config)
         {
             global_context->setClustersConfig(config);
+            global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
         /* already_loaded = */ true);
 
@@ -249,6 +250,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
+
+    /// Reload config in SYSTEM RELOAD CONFIG query.
+    global_context->setConfigReloadCallback([&]() {
+        main_config_reloader->reload();
+        users_config_reloader->reload();
+    });
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -387,7 +394,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     http_socket.setSendTimeout(settings.http_send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
-                        new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                        new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
                         http_socket,
                         http_params));
@@ -425,7 +432,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     tcp_socket.setReceiveTimeout(settings.receive_timeout);
                     tcp_socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this),
+                        new TCPHandlerFactory(*this, /* secure= */ true ),
                                                                   server_pool,
                                                                   tcp_socket,
                                                                   new Poco::Net::TCPServerParams));
