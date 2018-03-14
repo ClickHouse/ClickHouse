@@ -19,8 +19,8 @@ namespace ErrorCodes
 StorageView::StorageView(
     const String & table_name_,
     const ASTCreateQuery & query,
-    const NamesAndTypesList & columns_)
-    : IStorage{columns_, {}, {}, {}}, table_name(table_name_)
+    const ColumnsDescription & columns_)
+    : IStorage{columns_}, table_name(table_name_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -38,7 +38,7 @@ BlockInputStreams StorageView::read(
     const unsigned /*num_streams*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-    BlockInputStreams res = InterpreterSelectWithUnionQuery(inner_query->clone(), context, column_names).executeWithMultipleStreams();
+    BlockInputStreams res = InterpreterSelectWithUnionQuery(inner_query, context, column_names).executeWithMultipleStreams();
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.

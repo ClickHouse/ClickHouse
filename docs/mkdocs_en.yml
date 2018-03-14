@@ -3,7 +3,7 @@ copyright: ©2016–2018 Yandex LLC
 
 docs_dir: en
 site_dir: build/docs/en
-use_directory_urls: false
+use_directory_urls: true
 
 repo_name: 'yandex/ClickHouse'
 repo_url: 'https://github.com/yandex/ClickHouse/'
@@ -122,6 +122,7 @@ pages:
   - 'Introduction': 'table_functions/index.md'
   - 'remote': 'table_functions/remote.md'
   - 'merge': 'table_functions/merge.md'
+  - 'numbers': 'table_functions/numbers.md'
 
 - 'Formats':
   - 'Introduction': 'formats/index.md'
@@ -133,6 +134,7 @@ pages:
   - 'CSVWithNames': 'formats/csvwithnames.md'
   - 'Values': 'formats/values.md'
   - 'Vertical': 'formats/vertical.md'
+  - 'VerticalRaw': 'formats/verticalraw.md'
   - 'JSON': 'formats/json.md'
   - 'JSONCompact': 'formats/jsoncompact.md'
   - 'JSONEachRow': 'formats/jsoneachrow.md'

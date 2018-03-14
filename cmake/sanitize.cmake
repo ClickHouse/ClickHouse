@@ -1,4 +1,4 @@
-set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer")
+set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 if (SAN_DEBUG)
     set (SAN_FLAGS "${SAN_FLAGS} -O0")
 else ()

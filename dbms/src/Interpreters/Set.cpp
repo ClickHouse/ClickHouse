@@ -37,15 +37,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
-bool Set::checkSetSizeLimits() const
-{
-    if (max_rows && data.getTotalRowCount() > max_rows)
-        return false;
-    if (max_bytes && data.getTotalByteCount() > max_bytes)
-        return false;
-    return true;
-}
-
 
 template <typename Method>
 void NO_INLINE Set::insertFromBlockImpl(
@@ -189,27 +180,7 @@ bool Set::insertFromBlock(const Block & block, bool fill_set_elements)
         }
     }
 
-    if (!checkSetSizeLimits())
-    {
-        switch (overflow_mode)
-        {
-            case OverflowMode::THROW:
-                throw Exception("IN-set size exceeded."
-                    " Rows: " + toString(data.getTotalRowCount()) +
-                    ", limit: " + toString(max_rows) +
-                    ". Bytes: " + toString(data.getTotalByteCount()) +
-                    ", limit: " + toString(max_bytes) + ".",
-                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-
-            case OverflowMode::BREAK:
-                return false;
-
-            default:
-                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-        }
-    }
-
-    return true;
+    return limits.check(getTotalRowCount(), getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)

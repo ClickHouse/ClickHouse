@@ -2,11 +2,11 @@
 
 # Storing dictionaries in memory
 
-There are [many different ways](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
+There are [many different ways](external_dicts_dict_layout#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
 
-We recommend [flat](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-hashed), and [complex_key_hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
+We recommend [flat](external_dicts_dict_layout#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout#dicts-external_dicts_dict_layout-hashed), and [complex_key_hashed](external_dicts_dict_layout#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more about this in the "[cache](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-cache)" section.
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more about this in the "[cache](external_dicts_dict_layout#dicts-external_dicts_dict_layout-cache)" section.
 
 There are several ways to improve dictionary performance:
 
@@ -27,7 +27,7 @@ The configuration looks like this:
     <dictionary>
         ...
         <layout>
-            <layout_type> 
+            <layout_type>
                 <!-- layout settings -->
             </layout_type>
         </layout>
@@ -46,6 +46,7 @@ The configuration looks like this:
 - [range_hashed](#dicts-external_dicts_dict_layout-range_hashed)
 - [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed)
 - [complex_key_cache](#dicts-external_dicts_dict_layout-complex_key_cache)
+- [ip_trie](#dicts-external_dicts_dict_layout-ip_trie)
 
 <a name="dicts-external_dicts_dict_layout-flat"></a>
 
@@ -87,7 +88,7 @@ Configuration example:
 
 ### complex_key_hashed
 
-This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). It is similar to hashed.
+This type of storage is designed for use with compound [keys](external_dicts_dict_structure#dicts-external_dicts_dict_structure). It is similar to hashed.
 
 Configuration example:
 
@@ -108,10 +109,18 @@ This storage method works the same way as hashed and allows using date/time rang
 Example: The table contains discounts for each advertiser in the format:
 
 ```
-+------------------+-----------------------------+------------+----------+  | advertiser id | discount start date | discount end date | amount |  +==================+=============================+============+==========+  | 123              | 2015-01-01                  | 2015-01-15 | 0.15     |  +------------------+-----------------------------+------------+----------+  | 123              | 2015-01-16                  | 2015-01-31 | 0.25     |  +------------------+-----------------------------+------------+----------+  | 456              | 2015-01-01                  | 2015-01-15 | 0.05     |  +------------------+-----------------------------+------------+----------+
+  +---------------+---------------------+-------------------+--------+
+  | advertiser id | discount start date | discount end date | amount |
+  +===============+=====================+===================+========+
+  | 123           | 2015-01-01          | 2015-01-15        | 0.15   |
+  +---------------+---------------------+-------------------+--------+
+  | 123           | 2015-01-16          | 2015-01-31        | 0.25   |
+  +---------------+---------------------+-------------------+--------+
+  | 456           | 2015-01-01          | 2015-01-15        | 0.05   |
+  +---------------+---------------------+-------------------+--------+
 ```
 
-To use a sample for date ranges, define `range_min` and `range_max` in [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure).
+To use a sample for date ranges, define `range_min` and `range_max` in [structure](external_dicts_dict_structure#dicts-external_dicts_dict_structure).
 
 Example:
 
@@ -188,14 +197,14 @@ This is the least effective of all the ways to store dictionaries. The speed of 
 
 To improve cache performance, use a subquery with ` LIMIT`, and call the function with the dictionary externally.
 
-Supported [sources](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
+Supported [sources](external_dicts_dict_sources#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
 
 Example of settings:
 
 ```xml
 <layout>
     <cache>
-        <!-- The size of the cache, in number of cells. Rounded up to a power of two. --> 
+        <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
                <size_in_cells>1000000000</size_in_cells>
     </cache>
 </layout>
@@ -218,5 +227,66 @@ Do not use ClickHouse as a source, because it is slow to process queries with ra
 
 ### complex_key_cache
 
-This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.
+This type of storage is designed for use with compound [keys](external_dicts_dict_structure#dicts-external_dicts_dict_structure). Similar to `cache`.
 
+<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
+
+### ip_trie
+
+
+The table stores IP prefixes for each key (IP address), which makes it possible to map IP addresses to metadata such as ASN or threat score.
+
+Example: in the table there are prefixes matches to AS number and country:
+
+```
+  +-----------------+-------+--------+
+  | prefix          | asn   | cca2   |
+  +=================+=======+========+
+  | 202.79.32.0/20  | 17501 | NP     |
+  +-----------------+-------+--------+
+  | 2620:0:870::/48 | 3856  | US     |
+  +-----------------+-------+--------+
+  | 2a02:6b8:1::/48 | 13238 | RU     |
+  +-----------------+-------+--------+
+  | 2001:db8::/32   | 65536 | ZZ     |
+  +-----------------+-------+--------+
+```
+
+When using such a layout, the structure should have the "key" element.
+
+Example:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>prefix</name>
+            <type>String</type>
+        </attribute>
+    </key>
+    <attribute>
+            <name>asn</name>
+            <type>UInt32</type>
+            <null_value />
+    </attribute>
+    <attribute>
+            <name>cca2</name>
+            <type>String</type>
+            <null_value>??</null_value>
+    </attribute>
+    ...
+```
+
+These key must have only one attribute of type String, containing a valid IP prefix. Other types are not yet supported.
+
+For querying, same functions (dictGetT with tuple) as for complex key dictionaries have to be used:
+
+    dictGetT('dict_name', 'attr_name', tuple(ip))
+
+The function accepts either UInt32 for IPv4 address or FixedString(16) for IPv6 address in wire format:
+
+    dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+
+No other type is supported. The function returns attribute for a prefix matching the given IP address. If there are overlapping prefixes, the most specific one is returned.
+
+The data is stored currently in a bitwise trie, it has to fit in memory.

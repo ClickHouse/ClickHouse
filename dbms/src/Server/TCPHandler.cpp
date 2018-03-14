@@ -321,7 +321,7 @@ void TCPHandler::processOrdinaryQuery()
                 if (isQueryCancelled())
                 {
                     /// A packet was received requesting to stop execution of the request.
-                    async_in.cancel();
+                    async_in.cancel(false);
                     break;
                 }
                 else
@@ -630,7 +630,8 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context.tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+                storage = StorageMemory::create(external_table_name,
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }
@@ -752,7 +753,7 @@ void TCPHandler::updateProgress(const Progress & value)
 void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
-    Progress increment = state.progress.fetchAndResetPiecewiseAtomically();
+    auto increment = state.progress.fetchAndResetPiecewiseAtomically();
     increment.write(*out, client_revision);
     out->next();
 }

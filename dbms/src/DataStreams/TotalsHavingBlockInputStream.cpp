@@ -1,21 +1,13 @@
 #include <DataStreams/TotalsHavingBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/AggregateDescription.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-}
 
 
 TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
@@ -27,6 +19,36 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
     auto_include_threshold(auto_include_threshold_)
 {
     children.push_back(input_);
+
+    /// Initialize current totals with initial state.
+
+    arena = std::make_shared<Arena>();
+    Block source_header = children.at(0)->getHeader();
+
+    current_totals.reserve(source_header.columns());
+    for (const auto & elem : source_header)
+    {
+        if (const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
+        {
+            /// Create ColumnAggregateFunction with initial aggregate function state.
+
+            IAggregateFunction * function = column->getAggregateFunction().get();
+            auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
+            AggregateDataPtr data = arena->alloc(function->sizeOfData());
+            function->create(data);
+            target->getData().push_back(data);
+            current_totals.emplace_back(std::move(target));
+        }
+        else
+        {
+
+            /// Not an aggregate function state. Just create a column with default value.
+
+            MutableColumnPtr new_column = elem.type->createColumn();
+            elem.type->insertDefaultInto(*new_column);
+            current_totals.emplace_back(std::move(new_column));
+        }
+    }
 }
 
 
@@ -34,7 +56,7 @@ static void finalize(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        ColumnWithTypeAndName & current = block.safeGetByPosition(i);
+        ColumnWithTypeAndName & current = block.getByPosition(i);
         const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
 
         if (unfinalized_type)
@@ -157,65 +179,32 @@ Block TotalsHavingBlockInputStream::readImpl()
 
 void TotalsHavingBlockInputStream::addToTotals(const Block & block, const IColumn::Filter * filter)
 {
-    bool need_init = !arena;
-
-    if (need_init)
-        arena = std::make_shared<Arena>();
-
     for (size_t i = 0, num_columns = block.columns(); i < num_columns; ++i)
     {
-        const ColumnWithTypeAndName & current = block.safeGetByPosition(i);
-        const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(current.column.get());
+        const ColumnWithTypeAndName & current = block.getByPosition(i);
 
-        if (!column)
-        {
-            if (need_init)
-            {
-                MutableColumnPtr new_column = current.type->createColumn();
-                current.type->insertDefaultInto(*new_column);
-                current_totals.emplace_back(std::move(new_column));
-            }
-            continue;
-        }
-
-        IAggregateFunction * function;
-        AggregateDataPtr data;
-
-        /// Create ColumnAggregateFunction with one value.
-
-        if (need_init)
-        {
-            function = column->getAggregateFunction().get();
-            auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
-
-            data = arena->alloc(function->sizeOfData());
-            function->create(data);
-            target->getData().push_back(data);
-
-            current_totals.emplace_back(std::move(target));
-        }
-        else
+        if (const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(current.column.get()))
         {
             auto & target = typeid_cast<ColumnAggregateFunction &>(*current_totals[i]);
-            function = target.getAggregateFunction().get();
-            data = target.getData()[0];
-        }
+            IAggregateFunction * function = target.getAggregateFunction().get();
+            AggregateDataPtr data = target.getData()[0];
 
-        /// Accumulate all aggregate states into that value.
+            /// Accumulate all aggregate states into that value.
 
-        const ColumnAggregateFunction::Container & vec = column->getData();
-        size_t size = vec.size();
+            const ColumnAggregateFunction::Container & vec = column->getData();
+            size_t size = vec.size();
 
-        if (filter)
-        {
-            for (size_t j = 0; j < size; ++j)
-                if ((*filter)[j])
+            if (filter)
+            {
+                for (size_t j = 0; j < size; ++j)
+                    if ((*filter)[j])
+                        function->merge(data, vec[j], arena.get());
+            }
+            else
+            {
+                for (size_t j = 0; j < size; ++j)
                     function->merge(data, vec[j], arena.get());
-        }
-        else
-        {
-            for (size_t j = 0; j < size; ++j)
-                function->merge(data, vec[j], arena.get());
+            }
         }
     }
 }

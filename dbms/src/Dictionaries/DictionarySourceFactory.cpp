@@ -155,7 +155,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     else if ("odbc" == source_type)
     {
 #if Poco_DataODBC_FOUND
-        return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block);
+        return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context);
 #else
         throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
             ErrorCodes::SUPPORT_IS_DISABLED};

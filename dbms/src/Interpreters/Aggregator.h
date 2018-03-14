@@ -15,10 +15,10 @@
 #include <common/ThreadPool.h>
 
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/SizeLimits.h>
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Interpreters/Limits.h>
 #include <Interpreters/Compiler.h>
 
 #include <Columns/ColumnString.h>
