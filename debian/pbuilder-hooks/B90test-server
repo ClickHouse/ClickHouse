@@ -17,18 +17,16 @@ echo 'Europe/Moscow' > /etc/timezone
 dpkg-reconfigure -f noninteractive tzdata
 
 mkdir -p /etc/clickhouse-server/config.d /etc/clickhouse-client/config.d
-echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
-echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
 
-openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
-openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
+TEST_SSL=${TEST_SSL=1}
+if  [ "${TEST_SSL}" ]; then
+    echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+    echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
 
-# check
-openssl version
-openssl x509 -in /etc/clickhouse-server/server.crt -text -noout
-openssl rsa -in /etc/clickhouse-server/server.key -check
-
-ls -lR /etc/clickhouse-server
+    openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
+    openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
+    CLIENT_ADD="--ssl"
+fi
 
 service clickhouse-server start
 sleep 3
@@ -37,7 +35,7 @@ sleep 3
 tail -n100 /var/log/clickhouse-server/*
 
 clickhouse-client -q "SELECT * from system.build_options;"
-clickhouse-client --ssl -q "SELECT toDateTime(1);"
+clickhouse-client ${CLIENT_ADD} -q "SELECT toDateTime(1);"
 
 
 ( [ "${TEST_RUN}" ] && clickhouse-test --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ ${TEST_OPT} ) || ${TEST_TRUE:=true}
