@@ -180,6 +180,20 @@ public:
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /** Without executing a query determine,
+      *  what structure of result and what query processed stage
+      *  we will get if we will call 'read' method.
+      */
+    virtual Block analyze(
+        const Names & column_names,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum & processed_stage)
+    {
+        processed_stage = QueryProcessingStage::FetchColumns;
+        return getSampleBlockForColumns(column_names);
+    }
+
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.
