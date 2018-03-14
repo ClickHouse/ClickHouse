@@ -501,7 +501,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
     }
 }
 
-UInt64 MergeTreeDataPart::calculateTotalSize(const String & from)
+UInt64 MergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
 {
     Poco::File cur(from);
     if (cur.isFile())
@@ -510,7 +510,7 @@ UInt64 MergeTreeDataPart::calculateTotalSize(const String & from)
     cur.list(files);
     UInt64 res = 0;
     for (const auto & file : files)
-        res += calculateTotalSize(from + file);
+        res += calculateTotalSizeOnDisk(from + file);
     return res;
 }
 
@@ -670,7 +670,7 @@ void MergeTreeDataPart::loadIndex()
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 
-    size_in_bytes = calculateTotalSize(getFullPath());
+    bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
 }
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()

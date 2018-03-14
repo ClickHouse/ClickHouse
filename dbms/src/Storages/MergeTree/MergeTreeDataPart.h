@@ -114,7 +114,7 @@ struct MergeTreeDataPart
             data_uncompressed += other.data_uncompressed;
         }
 
-        size_t getTotalCompressedSize() const
+        size_t getSizeOnDisk() const
         {
             return marks + data_compressed;
         }
@@ -150,8 +150,8 @@ struct MergeTreeDataPart
 
     size_t rows_count = 0;
     size_t marks_count = 0;
-    std::atomic<UInt64> size_in_bytes {0};  /// size in bytes, 0 - if not counted;
-                                            ///  is used from several threads without locks (it is changed with ALTER).
+    std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
+                                            /// Is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() }; /// When the part is removed from the working set. Changes once.
 
@@ -289,7 +289,7 @@ struct MergeTreeDataPart
     ~MergeTreeDataPart();
 
     /// Calculate the total size of the entire directory with all the files
-    static UInt64 calculateTotalSize(const String & from);
+    static UInt64 calculateTotalSizeOnDisk(const String & from);
 
     void remove() const;
 

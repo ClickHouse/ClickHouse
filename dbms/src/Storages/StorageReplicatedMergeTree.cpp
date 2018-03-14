@@ -1082,11 +1082,11 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         /// If entry is old enough, and have enough size, and part are exists in any replica,
         ///  then prefer fetching of merged part from replica.
 
-        size_t sum_parts_size_in_bytes = 0;
+        size_t sum_parts_bytes_on_disk = 0;
         for (const auto & part : parts)
-            sum_parts_size_in_bytes += part->size_in_bytes;
+            sum_parts_bytes_on_disk += part->bytes_on_disk;
 
-        if (sum_parts_size_in_bytes >= data.settings.prefer_fetch_merged_part_size_threshold)
+        if (sum_parts_bytes_on_disk >= data.settings.prefer_fetch_merged_part_size_threshold)
         {
             String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
             if (!replica.empty())
@@ -1145,7 +1145,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
             part_log_elem.part_name = entry.new_part_name;
 
             if (part)
-                part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+                part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
 
             part_log_elem.source_part_names.reserve(parts.size());
             for (const auto & source_part : parts)
@@ -2246,7 +2246,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
             if (part)
             {
-                part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+                part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
                 part_log_elem.rows = part->rows_count; /// Could be approximate (?)
             }
 
@@ -2908,7 +2908,7 @@ bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
     /// Consider only synchronized data
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
+    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalSizeOfColumnsOnDisk());
     return true;
 }
 

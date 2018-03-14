@@ -65,7 +65,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(static_cast<UInt64>(part->marks_count));
         columns[i++]->insert(static_cast<UInt64>(columns_size.marks));
         columns[i++]->insert(static_cast<UInt64>(part->rows_count));
-        columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
+        columns[i++]->insert(static_cast<UInt64>(part->bytes_on_disk));
         columns[i++]->insert(static_cast<UInt64>(part->modification_time));
         columns[i++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
 

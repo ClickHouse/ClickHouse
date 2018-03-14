@@ -747,7 +747,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         for (auto & part : parts)
         {
             part_log_elem.part_name = part->name;
-            part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+            part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
             part_log_elem.rows = part->rows_count;
 
             part_log->add(part_log_elem);
@@ -1211,8 +1211,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
-            part->size_in_bytes,
-            static_cast<double>(part->size_in_bytes) / this->getTotalActiveSizeInBytes());
+            part->bytes_on_disk,
+            static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
 
         /** Don't write offsets for arrays, because ALTER never change them
@@ -1314,7 +1314,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
                 file.remove();
         }
 
-        mutable_part.size_in_bytes = MergeTreeData::DataPart::calculateTotalSize(path);
+        mutable_part.bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(path);
 
         /// TODO: we can skip resetting caches when the column is added.
         data_part->storage.context.dropCaches();
@@ -1674,7 +1674,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
         std::lock_guard<std::mutex> lock(data_parts_mutex);
 
         for (auto & part : getDataPartsStateRange(DataPartState::Committed))
-            res += part->size_in_bytes;
+            res += part->bytes_on_disk;
     }
 
     return res;

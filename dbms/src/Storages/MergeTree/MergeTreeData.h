@@ -467,14 +467,13 @@ public:
         return column_sizes;
     }
 
-    /// NOTE Could be off after DROPped and MODIFYed columns in ALTER. Doesn't include primary.idx.
-    size_t getTotalCompressedSize() const
+    size_t getTotalSizeOfColumnsOnDisk() const
     {
         std::lock_guard<std::mutex> lock{data_parts_mutex};
         size_t total_size = 0;
 
         for (const auto & col : column_sizes)
-            total_size += col.second.getTotalCompressedSize();
+            total_size += col.second.getSizeOnDisk();
 
         return total_size;
     }
