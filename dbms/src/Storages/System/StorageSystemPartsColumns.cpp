@@ -25,6 +25,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
                       {"marks_bytes_in_block", std::make_shared<DataTypeUInt64>()},
                       {"rows",                std::make_shared<DataTypeUInt64>()},
                       {"bytes",               std::make_shared<DataTypeUInt64>()},
+                      {"bytes_uncompressed",  std::make_shared<DataTypeUInt64>()},
                       {"modification_time",   std::make_shared<DataTypeDateTime>()},
                       {"remove_time",         std::make_shared<DataTypeDateTime>()},
                       {"refcount",            std::make_shared<DataTypeUInt32>()},
@@ -110,6 +111,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
 
             columns[j++]->insert(static_cast<UInt64>(part->rows_count));
             columns[j++]->insert(static_cast<UInt64>(part->bytes_on_disk));
+            columns[j++]->insert(static_cast<UInt64>(columns_size.data_uncompressed));
             columns[j++]->insert(static_cast<UInt64>(part->modification_time));
             columns[j++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
 
