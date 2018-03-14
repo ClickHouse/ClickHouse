@@ -24,6 +24,7 @@ openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
 openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
 
 # check
+openssl version
 openssl x509 -in /etc/clickhouse-server/server.crt -text -noout
 openssl rsa -in /etc/clickhouse-server/server.key -check
 
