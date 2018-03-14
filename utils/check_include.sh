@@ -26,7 +26,8 @@ inc="-I. \
 -I./contrib/poco/Net/include \
 -I./contrib/poco/Util/include \
 -I./contrib/poco/Foundation/include \
--I./contrib/libboost/boost_1_62_0 \
+-I./contrib/boost/libs/*/include \
+-I./contrib/boost \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./libs/libmysqlxx/include \

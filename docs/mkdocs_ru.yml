@@ -3,7 +3,7 @@ copyright: ©2016–2018 Yandex LLC
 
 docs_dir: ru
 site_dir: build/docs/ru
-use_directory_urls: false
+use_directory_urls: true
 
 repo_name: 'yandex/ClickHouse'
 repo_url: 'https://github.com/yandex/ClickHouse/'
@@ -96,6 +96,7 @@ pages:
   - 'View': 'table_engines/view.md'
   - 'MaterializedView': 'table_engines/materializedview.md'
   - 'Kafka': 'table_engines/kafka.md'
+  - 'MySQL': 'table_engines/mysql.md'
   - 'Внешние данные для обработки запроса': 'table_engines/external_data.md'
 
 - 'Системные таблицы':
@@ -123,6 +124,7 @@ pages:
   - 'Введение': 'table_functions/index.md'
   - 'remote': 'table_functions/remote.md'
   - 'merge': 'table_functions/merge.md'
+  - 'numbers': 'table_functions/numbers.md'
 
 - 'Форматы':
   - 'Введение': 'formats/index.md'
@@ -134,6 +136,7 @@ pages:
   - 'CSVWithNames': 'formats/csvwithnames.md'
   - 'Values': 'formats/values.md'
   - 'Vertical': 'formats/vertical.md'
+  - 'VerticalRaw': 'formats/verticalraw.md'
   - 'JSON': 'formats/json.md'
   - 'JSONCompact': 'formats/jsoncompact.md'
   - 'JSONEachRow': 'formats/jsoneachrow.md'

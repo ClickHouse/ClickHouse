@@ -13,7 +13,35 @@
     <listen_try>1</listen_try>
     <http_port>58123</http_port>
     <tcp_port>59000</tcp_port>
+    <https_port>58443</https_port>
+    <tcp_ssl_port>59440</tcp_ssl_port>
     <interserver_http_port>59009</interserver_http_port>
+    <openSSL>
+        <server> <!-- Used for https server AND secure tcp port -->
+            <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
+            <certificateFile>/tmp/clickhouse/server.crt</certificateFile>
+            <privateKeyFile>/tmp/clickhouse/server.key</privateKeyFile>
+            <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
+            <dhParamsFile>/tmp/clickhouse/dhparam.pem</dhParamsFile>
+            <verificationMode>none</verificationMode>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+
+        <client> <!-- Used for connecting to https dictionary source -->
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+
     <keep_alive_timeout>3</keep_alive_timeout>
     <path>/tmp/clickhouse/data/</path>
     <tmp_path>/tmp/clickhouse/tmp/</tmp_path>

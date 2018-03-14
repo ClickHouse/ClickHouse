@@ -64,7 +64,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     {
         cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
 
-        start_of_day = std::chrono::system_clock::to_time_t(lookup.pre);    /// Ambiguouty is possible.
+        start_of_day = std::chrono::system_clock::to_time_t(lookup.pre);    /// Ambiguity is possible.
 
         Values & values = lut[i];
         values.year = date.year();

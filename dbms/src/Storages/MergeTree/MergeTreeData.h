@@ -4,7 +4,8 @@
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/IStorage.h>
+#include <Storages/ITableDeclaration.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -27,7 +28,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_PARTITION_NAME;
-    extern const int TOO_MUCH_PARTS;
     extern const int NO_SUCH_DATA_PART;
     extern const int DUPLICATE_DATA_PART;
     extern const int DIRECTORY_ALREADY_EXISTS;
@@ -271,10 +271,8 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & full_path_, const NamesAndTypesList & columns_,
-                  const NamesAndTypesList & materialized_columns_,
-                  const NamesAndTypesList & alias_columns_,
-                  const ColumnDefaults & column_defaults_,
+                  const String & full_path_,
+                  const ColumnsDescription & columns_,
                   Context & context_,
                   const ASTPtr & primary_expr_ast_,
                   const ASTPtr & secondary_sort_expr_ast_,
@@ -306,8 +304,6 @@ public:
 
     Int64 getMaxDataPartIndex();
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     NameAndTypePair getColumn(const String & column_name) const override
     {
         if (column_name == "_part")
@@ -317,12 +313,12 @@ public:
         if (column_name == "_sample_factor")
             return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
-        return ITableDeclaration::getColumn(column_name);
+        return getColumns().getPhysical(column_name);
     }
 
     bool hasColumn(const String & column_name) const override
     {
-        return ITableDeclaration::hasColumn(column_name)
+        return getColumns().hasPhysical(column_name)
             || column_name == "_part"
             || column_name == "_part_index"
             || column_name == "_sample_factor";
@@ -330,7 +326,7 @@ public:
 
     String getDatabaseName() const { return database_name; }
 
-    String getTableName() const override { return table_name; }
+    String getTableName() const { return table_name; }
 
     String getFullPath() const { return full_path; }
 
@@ -432,9 +428,6 @@ public:
         const ASTPtr & new_primary_key,
         bool skip_sanity_checks);
 
-    /// Must be called with locked lockStructureForAlter().
-    void setColumnsList(const NamesAndTypesList & new_columns) { columns = new_columns; }
-
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name)
     {
@@ -507,6 +500,7 @@ public:
 
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
+
 
     MergeTreeDataFormatVersion format_version;
 

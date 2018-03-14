@@ -184,7 +184,6 @@ private:
 
     /// Last row with maximum version for current primary key (time bucket).
     RowRef current_subgroup_newest_row;
-    UInt64 current_subgroup_max_version = 0;
 
     /// Time of last read row
     time_t current_time = 0;

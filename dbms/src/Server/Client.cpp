@@ -28,6 +28,7 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -175,14 +176,22 @@ private:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
+        std::string config_path;
         if (config().has("config-file"))
-            loadConfiguration(config().getString("config-file"));
+            config_path = config().getString("config-file");
         else if (Poco::File("./clickhouse-client.xml").exists())
-            loadConfiguration("./clickhouse-client.xml");
+            config_path = "./clickhouse-client.xml";
         else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
-            loadConfiguration(home_path + "/.clickhouse-client/config.xml");
+            config_path = home_path + "/.clickhouse-client/config.xml";
         else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
-            loadConfiguration("/etc/clickhouse-client/config.xml");
+            config_path = "/etc/clickhouse-client/config.xml";
+
+        if (!config_path.empty())
+        {
+            ConfigProcessor config_processor(config_path);
+            auto loaded_config = config_processor.loadConfig();
+            config().add(loaded_config.configuration);
+        }
 
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
@@ -193,11 +202,6 @@ private:
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
-            context.setSetting(#NAME, config().getString(#NAME));
-        APPLY_FOR_LIMITS(EXTRACT_LIMIT)
-#undef EXTRACT_LIMIT
     }
 
 
@@ -1273,8 +1277,7 @@ public:
             }
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-#define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         boost::program_options::options_description main_description("Main options");
@@ -1302,10 +1305,8 @@ public:
             ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
-            APPLY_FOR_LIMITS(DECLARE_LIMIT)
         ;
 #undef DECLARE_SETTING
-#undef DECLARE_LIMIT
 
         /// Commandline options related to external tables.
         boost::program_options::options_description external_description("External tables options");
@@ -1369,7 +1370,6 @@ public:
         if (options.count(#NAME)) \
             context.setSetting(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-        APPLY_FOR_LIMITS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
         /// Save received data into the internal config.

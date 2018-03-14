@@ -130,39 +130,35 @@ StorageDistributed::~StorageDistributed() = default;
 
 
 StorageDistributed::StorageDistributed(
-    const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const std::string & table_name_,
+    const ColumnsDescription & columns_,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
-    name(name_),
+    : IStorage{columns_},
+    table_name(table_name_),
     remote_database(remote_database_), remote_table(remote_table_),
-    context(context_), cluster_name(context.getMacros().expand(cluster_name_)), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, columns).getActions(false) : nullptr),
+    context(context_), cluster_name(context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
+      sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, getColumns().getAllPhysical()).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-    path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
+    path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
 }
 
 
 StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
-    const NamesAndTypesList & columns_,
+    const ColumnsDescription & columns_,
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
     auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        name_, columns_, NamesAndTypesList(), NamesAndTypesList(), ColumnDefaults(),
-        remote_database_, remote_table_, String{}, context_, ASTPtr(), String());
+        name_, columns_, remote_database_, remote_table_, String{}, context_, ASTPtr(), String());
 
     res->owned_cluster = owned_cluster_;
 
@@ -236,11 +232,11 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
-    context.getDatabase(database_name)->alterTable(
-        context, table_name,
-        columns, materialized_columns, alias_columns, column_defaults, {});
+    ColumnsDescription new_columns = getColumns();
+    params.apply(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    setColumns(std::move(new_columns));
 }
 
 
@@ -291,13 +287,13 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
     if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
         return { column_name, type };
 
-    return getRealColumn(column_name);
+    return getColumns().getPhysical(column_name);
 }
 
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
+    return VirtualColumnFactory::hasColumn(column_name) || getColumns().hasPhysical(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitors()
@@ -390,7 +386,7 @@ void registerStorageDistributed(StorageFactory & factory)
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns).getActions(true);
+            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns.getAllPhysical()).getActions(true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)
@@ -405,7 +401,6 @@ void registerStorageDistributed(StorageFactory & factory)
 
         return StorageDistributed::create(
             args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             remote_database, remote_table, cluster_name,
             args.context, sharding_key, args.data_path);
     });

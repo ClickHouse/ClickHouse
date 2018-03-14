@@ -233,7 +233,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
             context.setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context.getSettingsRef().limits.readonly)
+    if (context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries"
             << " Set apropriate system_profile or distributed_ddl.profile to fix this.");
@@ -372,7 +372,7 @@ void DDLWorker::processTasks()
             String reason;
             if (!initAndCheckTask(entry_name, reason))
             {
-                LOG_DEBUG(log, "Will not execute task " << entry_name << " : " << reason);
+                LOG_DEBUG(log, "Will not execute task " << entry_name << ": " << reason);
                 last_processed_task_name = entry_name;
                 continue;
             }
@@ -523,6 +523,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     try
     {
         Context local_context(context);
+        local_context.setCurrentQueryId(""); // generate random query_id
         executeQuery(istr, ostr, false, local_context, nullptr);
     }
     catch (...)
@@ -599,8 +600,8 @@ void DDLWorker::processTask(DDLTask & task)
 
     /// Delete active flag and create finish flag
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(active_node_path, -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(finished_node_path, task.execution_status.serializeText(),
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(active_node_path, -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(finished_node_path, task.execution_status.serializeText(),
                                                           zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
 }
@@ -779,8 +780,8 @@ void DDLWorker::cleanupQueue()
 
                 /// Remove the lock node and its parent atomically
                 zkutil::Ops ops;
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(lock_path, -1));
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(node_path, -1));
+                ops.emplace_back(std::make_shared<zkutil::Op::Remove>(lock_path, -1));
+                ops.emplace_back(std::make_shared<zkutil::Op::Remove>(node_path, -1));
                 zookeeper->multi(ops);
 
                 lock->unlockAssumeLockNodeRemovedManually();
@@ -799,8 +800,8 @@ void DDLWorker::createStatusDirs(const std::string & node_path)
 {
     zkutil::Ops ops;
     auto acl = zookeeper->getDefaultACL();
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(node_path + "/active", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(node_path + "/finished", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(node_path + "/active", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(node_path + "/finished", "", acl, zkutil::CreateMode::Persistent));
 
     int code = zookeeper->tryMulti(ops);
     if (code != ZOK && code != ZNODEEXISTS)
@@ -978,7 +979,7 @@ public:
 
         while(res.rows() == 0)
         {
-            if (is_cancelled)
+            if (isCancelled())
                 return res;
 
             if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
@@ -1131,7 +1132,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
-    query->cluster = context.getMacros().expand(query->cluster);
+    query->cluster = context.getMacros()->expand(query->cluster);
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 

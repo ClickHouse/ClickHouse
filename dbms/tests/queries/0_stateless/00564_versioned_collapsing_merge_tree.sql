@@ -200,4 +200,4 @@ optimize table test.mult_tab;
 select 'table with 2 blocks optimized';
 select * from test.mult_tab;
 
-
+DROP TABLE test.mult_tab;
