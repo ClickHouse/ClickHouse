@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/CompressedStream.h>
