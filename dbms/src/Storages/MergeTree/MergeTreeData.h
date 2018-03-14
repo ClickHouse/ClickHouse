@@ -467,17 +467,6 @@ public:
         return column_sizes;
     }
 
-    size_t getTotalSizeOfColumnsOnDisk() const
-    {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
-        size_t total_size = 0;
-
-        for (const auto & col : column_sizes)
-            total_size += col.second.getSizeOnDisk();
-
-        return total_size;
-    }
-
     /// Calculates column sizes in compressed form for the current state of data_parts.
     void recalculateColumnSizes()
     {

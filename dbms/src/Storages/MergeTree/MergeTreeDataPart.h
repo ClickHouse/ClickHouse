@@ -113,11 +113,6 @@ struct MergeTreeDataPart
             data_compressed += other.data_uncompressed;
             data_uncompressed += other.data_uncompressed;
         }
-
-        size_t getSizeOnDisk() const
-        {
-            return marks + data_compressed;
-        }
     };
 
     /// NOTE: Returns zeros if column files are not found in checksums.
