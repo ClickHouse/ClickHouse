@@ -16,7 +16,7 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 В целях тестирования и разработки, система может быть установлена на один сервер или на рабочий компьютер.
 
-### Установка из пакетов
+### Установка из пакетов для Debian/Ubuntu 
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
 
@@ -24,7 +24,6 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
-На других версиях Ubuntu, замените `trusty` на `xenial` или `precise`.
 Если вы хотите использовать наиболее свежую тестовую версию, замените stable на testing.
 
 Затем выполните:
