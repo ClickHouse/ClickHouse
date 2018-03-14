@@ -140,8 +140,7 @@ struct MergeTreeDataPart
                                             ///  is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
-    /// Use DATE_LUT_MAX which is almost 2^32 to produce correct time_t to String conversions using DateLUT
-    mutable std::atomic<time_t> remove_time { DATE_LUT_MAX };
+    mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
