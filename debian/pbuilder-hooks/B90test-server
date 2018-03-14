@@ -16,9 +16,9 @@ ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime
 echo 'Europe/Moscow' > /etc/timezone
 dpkg-reconfigure -f noninteractive tzdata
 
-pwd
 mkdir -p /etc/clickhouse-server/config.d
-cp ssl.xml /etc/clickhouse-server/config.d
+echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+
 openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
 openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
 
