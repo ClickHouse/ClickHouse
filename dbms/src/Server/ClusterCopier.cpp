@@ -760,6 +760,7 @@ public:
 
         /// Do not initialize tables, will make deferred initialization in process()
 
+        getZooKeeper()->createAncestors(getWorkersPathVersion() + "/");
         getZooKeeper()->createAncestors(getWorkersPath() + "/");
     }
 
@@ -1012,32 +1013,65 @@ protected:
         return task_cluster->task_zookeeper_path + "/task_active_workers";
     }
 
+    String getWorkersPathVersion() const
+    {
+        return getWorkersPath() + "_version";
+    }
+
     String getCurrentWorkerNodePath() const
     {
         return getWorkersPath() + "/" + host_id;
     }
 
     zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(const zkutil::ZooKeeperPtr & zookeeper,
-                                                                       const String & description)
+                                                                       const String & description, bool unprioritized)
     {
+        std::chrono::milliseconds current_sleep_time = default_sleep_time;
+        static constexpr std::chrono::milliseconds max_sleep_time(30000); // 30 sec
+
+        if (unprioritized)
+            std::this_thread::sleep_for(current_sleep_time);
+
+        String workers_version_path = getWorkersPathVersion();
+        String workers_path = getWorkersPath();
+        String current_worker_path = getCurrentWorkerNodePath();
+
         while (true)
         {
             zkutil::Stat stat;
-            zookeeper->get(getWorkersPath(), &stat);
+            zookeeper->get(workers_version_path, &stat);
+            auto version = stat.version;
+            zookeeper->get(workers_path, &stat);
 
             if (static_cast<size_t>(stat.numChildren) >= task_cluster->max_workers)
             {
                 LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")"
                     << ". Postpone processing " << description);
-
-                std::this_thread::sleep_for(default_sleep_time);
-
-                updateConfigIfNeeded();
             }
             else
             {
-                return std::make_shared<zkutil::EphemeralNodeHolder>(getCurrentWorkerNodePath(), *zookeeper, true, false, description);
+                zkutil::Ops ops;
+                ops.emplace_back(new zkutil::Op::SetData(workers_version_path, description, version));
+                ops.emplace_back(new zkutil::Op::Create(current_worker_path, description, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
+                auto code = zookeeper->tryMulti(ops);
+
+                if (code == ZOK || code == ZNODEEXISTS)
+                    return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
+
+                if (code == ZBADVERSION)
+                {
+                    LOG_DEBUG(log, "A concurrent worker has just been added, will check free worker slots again");
+                }
+                else
+                    throw zkutil::KeeperException(code);
             }
+
+            if (unprioritized)
+                current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
+
+            std::this_thread::sleep_for(current_sleep_time);
+
+            updateConfigIfNeeded();
         }
     }
 
@@ -1445,9 +1479,8 @@ protected:
             return parseQuery(p_query, query);
         };
 
-
         /// Load balancing
-        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path);
+        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, task_shard.priority.is_remote);
 
         LOG_DEBUG(log, "Processing " << current_task_status_path);
 
