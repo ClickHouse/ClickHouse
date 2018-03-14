@@ -97,6 +97,9 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(status.message, status.code);
             break;
         }
+        case Type::RELOAD_CONFIG:
+            context.reloadConfig();
+            break;
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
         case Type::RESTART_REPLICAS:

@@ -124,6 +124,7 @@ pages:
   - 'Введение': 'table_functions/index.md'
   - 'remote': 'table_functions/remote.md'
   - 'merge': 'table_functions/merge.md'
+  - 'numbers': 'table_functions/numbers.md'
 
 - 'Форматы':
   - 'Введение': 'formats/index.md'
@@ -135,6 +136,7 @@ pages:
   - 'CSVWithNames': 'formats/csvwithnames.md'
   - 'Values': 'formats/values.md'
   - 'Vertical': 'formats/vertical.md'
+  - 'VerticalRaw': 'formats/verticalraw.md'
   - 'JSON': 'formats/json.md'
   - 'JSONCompact': 'formats/jsoncompact.md'
   - 'JSONEachRow': 'formats/jsoneachrow.md'
