@@ -17,7 +17,8 @@ echo 'Europe/Moscow' > /etc/timezone
 dpkg-reconfigure -f noninteractive tzdata
 
 mkdir -p /etc/clickhouse-server/config.d
-echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
 
 ls -lR /etc/clickhouse-server
 
