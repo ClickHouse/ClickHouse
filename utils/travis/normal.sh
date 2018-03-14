@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Manual run:
 # env CXX=g++-7 CC=gcc-7 utils/travis/normal.sh
