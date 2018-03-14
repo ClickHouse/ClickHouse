@@ -480,25 +480,25 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     auto acl = zookeeper->getDefaultACL();
 
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path, "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path, "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/metadata", metadata,
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/metadata", metadata,
         acl, zkutil::CreateMode::Persistent));
     ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/columns", getColumns().toString(),
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/log", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/log", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/blocks", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/blocks", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/block_numbers", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/block_numbers", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/nonincrement_block_numbers", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/nonincrement_block_numbers", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/leader_election", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/leader_election", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/temp", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/temp", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/replicas", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/replicas", "",
         acl, zkutil::CreateMode::Persistent));
 
     auto code = zookeeper->tryMulti(ops);
@@ -573,12 +573,12 @@ void StorageReplicatedMergeTree::createReplica()
     /// Create an empty replica. We'll create `columns` node at the end - we'll use it as a sign that replica creation is complete.
     auto acl = zookeeper->getDefaultACL();
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path, "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/host", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/log_pointer", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/queue", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/parts", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/flags", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path, "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/host", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/log_pointer", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/queue", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/parts", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/flags", "", acl, zkutil::CreateMode::Persistent));
 
     try
     {
@@ -864,7 +864,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         /// We assume that this occurs before the queue is loaded (queue.initialize).
         zkutil::Ops ops;
         removePartFromZooKeeper(name, ops);
-        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
             replica_path + "/queue/queue-", log_entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
         zookeeper->multi(ops);
     }
@@ -929,20 +929,20 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
 
     auto acl = zookeeper->getDefaultACL();
 
-    ops.emplace_back(std::make_unique<zkutil::Op::Check>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Check>(
         zookeeper_path + "/columns",
         expected_columns_version));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/parts/" + part_name,
         "",
         acl,
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/parts/" + part_name + "/columns",
         part->columns.toString(),
         acl,
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/parts/" + part_name + "/checksums",
         part->checksums.toString(),
         acl,
@@ -1305,7 +1305,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
                     Stat stat;
                     String path = zookeeper_path + "/replicas/" + replicas[i] + "/host";
                     zookeeper->get(path, &stat);
-                    ops.emplace_back(std::make_unique<zkutil::Op::Check>(path, stat.version));
+                    ops.emplace_back(std::make_shared<zkutil::Op::Check>(path, stat.version));
                 }
 
                 /// We verify that while we were collecting versions, the replica with the necessary part did not come alive.
@@ -1324,7 +1324,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                     if (quorum_entry.part_name == entry.new_part_name)
                     {
-                        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(quorum_path, quorum_stat.version));
+                        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(quorum_path, quorum_stat.version));
 
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
 
@@ -1336,13 +1336,13 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                         auto acl = zookeeper->getDefaultACL();
 
-                        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+                        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
                             zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id + "/block-" + padIndex(part_info.min_block),
                             "",
                             acl,
                             zkutil::CreateMode::Persistent));
 
-                        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+                        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
                             zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name,
                             "",
                             acl,
@@ -1350,7 +1350,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                         /// Deleting from `blocks`.
                         if (!entry.block_id.empty() && zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
-                            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id, -1));
+                            ops.emplace_back(std::make_shared<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id, -1));
 
                         auto code = zookeeper->tryMulti(ops);
 
@@ -1523,9 +1523,9 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         /// Update part metadata in ZooKeeper.
         zkutil::Ops ops;
-        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
+        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
             replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
+        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
             replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
 
         zookeeper->multi(ops);
@@ -1968,9 +1968,9 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
 {
     String part_path = replica_path + "/parts/" + part_name;
 
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/checksums", -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/columns", -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path, -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(part_path + "/checksums", -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(part_path + "/columns", -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(part_path, -1));
 }
 
 
@@ -1987,7 +1987,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     log_entry->new_part_name = part_name;
 
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/queue/queue-", log_entry->toString(), zookeeper->getDefaultACL(),
         zkutil::CreateMode::PersistentSequential));
 
@@ -2137,8 +2137,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
 
             zkutil::Ops ops;
-            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(quorum_status_path, stat.version));
-            ops.emplace_back(std::make_unique<zkutil::Op::SetData>(quorum_last_part_path, part_name, -1));
+            ops.emplace_back(std::make_shared<zkutil::Op::Remove>(quorum_status_path, stat.version));
+            ops.emplace_back(std::make_shared<zkutil::Op::SetData>(quorum_last_part_path, part_name, -1));
             auto code = zookeeper->tryMulti(ops);
 
             if (code == ZOK)

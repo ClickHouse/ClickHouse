@@ -102,4 +102,19 @@ private:
 
 };
 
+
+class KeeperMultiException : public KeeperException
+{
+public:
+    MultiTransactionInfo info;
+
+    /// If it is user error throws KeeperMultiException else throws ordinary KeeperException
+    /// If it is ZOK does nothing
+    static void check(const MultiTransactionInfo & info);
+    static void check(int code, const Ops & ops, const OpResultsPtr & op_results);
+
+protected:
+    KeeperMultiException(const MultiTransactionInfo & info, size_t failed_op_index);
+};
+
 };

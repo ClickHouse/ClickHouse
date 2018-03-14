@@ -16,7 +16,7 @@ The terminal must use UTF-8 encoding (the default in Ubuntu).
 
 For testing and development, the system can be installed on a single server or on a desktop computer.
 
-### Installing from packages
+### Installing from packages Debian/Ubuntu
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
@@ -24,7 +24,6 @@ In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
-On other versions of Ubuntu, replace `trusty` with `xenial` or `precise`.
 If you want to use the most recent test version, replace 'stable' with 'testing'.
 
 Then run:

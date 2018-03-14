@@ -322,9 +322,9 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
     /// Simultaneously declare that this replica is active, and update the host.
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(is_active_path,
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(is_active_path,
         active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(std::make_unique<zkutil::Op::SetData>(storage.replica_path + "/host", address.toString(), -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::SetData>(storage.replica_path + "/host", address.toString(), -1));
 
     try
     {

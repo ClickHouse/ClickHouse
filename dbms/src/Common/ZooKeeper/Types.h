@@ -12,6 +12,8 @@ namespace zkutil
 
 using ACLPtr = const ACL_vector *;
 using Stat = ::Stat;
+class ZooKeeper;
+
 
 struct Op
 {
@@ -19,7 +21,7 @@ public:
     Op() : data(new zoo_op_t) {}
     virtual ~Op() {}
 
-    virtual std::unique_ptr<Op> clone() const = 0;
+    virtual std::shared_ptr<Op> clone() const = 0;
 
     virtual std::string getPath() const = 0;
 
@@ -33,6 +35,9 @@ public:
     struct Check;
 };
 
+using OpPtr = std::shared_ptr<Op>;
+
+
 struct Op::Remove : public Op
 {
     Remove(const std::string & path_, int32_t version_) :
@@ -41,9 +46,9 @@ struct Op::Remove : public Op
         zoo_delete_op_init(data.get(), path.c_str(), version);
     }
 
-    std::unique_ptr<Op> clone() const override
+    OpPtr clone() const override
     {
-        return std::unique_ptr<zkutil::Op>(new Remove(path, version));
+        return std::make_shared<Remove>(path, version);
     }
 
     std::string getPath() const override { return path; }
@@ -59,9 +64,9 @@ struct Op::Create : public Op
 {
     Create(const std::string & path_pattern_, const std::string & value_, ACLPtr acl_, int32_t flags_);
 
-    std::unique_ptr<Op> clone() const override
+    OpPtr clone() const override
     {
-        return std::unique_ptr<zkutil::Op>(new Create(path_pattern, value, acl, flags));
+        return std::make_shared<Create>(path_pattern, value, acl, flags);
     }
 
     std::string getPathCreated() { return created_path.data(); }
@@ -91,9 +96,9 @@ struct Op::SetData : public Op
         zoo_set_op_init(data.get(), path.c_str(), value.c_str(), value.size(), version, &stat);
     }
 
-    std::unique_ptr<Op> clone() const override
+    OpPtr clone() const override
     {
-        return std::unique_ptr<zkutil::Op>(new SetData(path, value, version));
+        return std::make_shared<SetData>(path, value, version);
     }
 
     std::string getPath() const override { return path; }
@@ -122,9 +127,9 @@ struct Op::Check : public Op
         zoo_check_op_init(data.get(), path.c_str(), version);
     }
 
-    std::unique_ptr<Op> clone() const override
+    OpPtr clone() const override
     {
-        return std::unique_ptr<zkutil::Op>(new Check(path, version));
+        return std::make_shared<Check>(path, version);
     }
 
     std::string getPath() const override { return path; }
@@ -136,17 +141,45 @@ private:
     int32_t version;
 };
 
-struct OpResult : public zoo_op_result_t
-{
-    /// Pointers in this class point to fields of class Op.
-    /// Op instances have the same (or longer lifetime), therefore destructor is not required.
-};
-
-using OpPtr = std::unique_ptr<Op>;
 using Ops = std::vector<OpPtr>;
+
+
+/// C++ version of zoo_op_result_t
+struct OpResult
+{
+    int err;
+    std::string value;
+    std::unique_ptr<Stat> stat;
+
+    /// ZooKeeper is required for correct chroot path prefixes handling
+    explicit OpResult(const zoo_op_result_t & op_result, const ZooKeeper * zookeeper = nullptr);
+};
 using OpResults = std::vector<OpResult>;
 using OpResultsPtr = std::shared_ptr<OpResults>;
 using Strings = std::vector<std::string>;
+
+
+/// Simple structure to handle transaction execution results
+struct MultiTransactionInfo
+{
+    Ops ops;
+    int32_t code = ZOK;
+    OpResultsPtr op_results;
+
+    MultiTransactionInfo() = default;
+
+    MultiTransactionInfo(int32_t code_, const Ops & ops_, const OpResultsPtr & op_results_)
+        : ops(ops_), code(code_), op_results(op_results_) {}
+
+    bool empty() const
+    {
+        return ops.empty();
+    }
+
+    /// Returns failed op if zkutil::isUserError(code) is true
+    const Op & getFailedOp() const;
+};
+
 
 namespace CreateMode
 {
