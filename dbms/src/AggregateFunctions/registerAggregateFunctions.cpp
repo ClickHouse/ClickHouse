@@ -23,7 +23,7 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory &);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory &);
 void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
-void registerAggregateFunctionIntersectionsMax(AggregateFunctionFactory &);
+void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -54,7 +54,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
-        registerAggregateFunctionIntersectionsMax(factory);
+        registerAggregateFunctionsMaxIntersections(factory);
     }
 
     {
