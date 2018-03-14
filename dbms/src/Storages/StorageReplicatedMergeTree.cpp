@@ -773,7 +773,6 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         unexpected_parts_rows += part->rows_count;
     }
 
-
     /// Additional helpful statistics
     auto get_blocks_count_in_data_part = [&] (const String & part_name) -> UInt64
     {
@@ -792,7 +791,6 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     UInt64 expected_parts_blocks = 0;
     for (const String & name : expected_parts)
         expected_parts_blocks += get_blocks_count_in_data_part(name);
-
 
     std::stringstream sanity_report;
     sanity_report << "There are "
