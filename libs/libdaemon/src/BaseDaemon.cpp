@@ -63,6 +63,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
+
 using Poco::Logger;
 using Poco::AutoPtr;
 using Poco::Observer;

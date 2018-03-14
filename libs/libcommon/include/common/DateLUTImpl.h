@@ -70,6 +70,7 @@ private:
     std::string time_zone;
 
 
+    /// We can correctly process only timestamps that less DATE_LUT_MAX (i.e. up to 2105 year inclusively)
     inline size_t findIndex(time_t t) const
     {
         /// First guess.
@@ -242,8 +243,10 @@ public:
     {
         size_t index = findIndex(t);
 
+        /// If it is not 1970 year (findIndex found nothing appropriate),
+        ///  than limit number of hours to avoid insane results like 1970-01-01 89:28:15
         if (unlikely(index == 0))
-            return (t + offset_at_start_of_epoch) / 3600;
+            return static_cast<unsigned>((t + offset_at_start_of_epoch) / 3600) % 24;
 
         time_t res = t - lut[index].date;
 

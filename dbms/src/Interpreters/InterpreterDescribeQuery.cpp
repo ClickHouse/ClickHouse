@@ -99,9 +99,8 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
 
         auto table_lock = table->lockStructure(false, __PRETTY_FUNCTION__);
-        columns = table->getColumnsList();
-        columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
-        column_defaults = table->column_defaults;
+        columns = table->getColumns().getAll();
+        column_defaults = table->getColumns().defaults;
     }
 
     Block sample_block = getSampleBlock();
@@ -120,7 +119,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
-            res_columns[2]->insert(toString(it->second.type));
+            res_columns[2]->insert(toString(it->second.kind));
             res_columns[3]->insert(queryToString(it->second.expression));
         }
     }

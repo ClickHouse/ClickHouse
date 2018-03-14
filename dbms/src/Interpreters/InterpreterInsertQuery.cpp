@@ -95,7 +95,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
 
-    NamesAndTypesList required_columns = table->getColumnsList();
+    NamesAndTypesList required_columns = table->getColumns().getAllPhysical();
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
@@ -103,10 +103,15 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), required_columns, table->column_defaults, context);
+        out, getSampleBlock(query, table), required_columns, table->getColumns().defaults, context);
 
-    out = std::make_shared<SquashingBlockOutputStream>(
-        out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+    /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
+    /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
+    if (!(context.getSettingsRef().insert_distributed_sync && table->getName() == "Distributed"))
+    {
+        out = std::make_shared<SquashingBlockOutputStream>(
+            out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+    }
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -131,7 +136,7 @@ BlockIO InterpreterInsertQuery::execute()
         if (!allow_materialized)
         {
             Block in_header = res.in->getHeader();
-            for (const auto & name_type : table->materialized_columns)
+            for (const auto & name_type : table->getColumns().materialized)
                 if (in_header.has(name_type.name))
                     throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
