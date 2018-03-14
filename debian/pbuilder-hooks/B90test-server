@@ -28,8 +28,8 @@ sleep 3
 # TODO: remove me or make only on error:
 tail -n100 /var/log/clickhouse-server/*
 
-clickhouse-client -q "SELECT * from system.build_options;"
-clickhouse-client -q "SELECT toDateTime(1);"
+clickhouse-client --ssl -q "SELECT * from system.build_options;"
+clickhouse-client --ssl -q "SELECT toDateTime(1);"
 
 
 ( [ "${TEST_RUN}" ] && clickhouse-test --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ ${TEST_OPT} ) || ${TEST_TRUE:=true}
