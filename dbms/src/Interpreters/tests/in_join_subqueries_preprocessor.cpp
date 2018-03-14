@@ -38,7 +38,6 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
 
     std::string getTableName() const override { return ""; }
-    const DB::NamesAndTypesList & getColumnsListImpl() const override { return names_and_types; }
 
 protected:
     StorageDistributedFake(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
@@ -50,7 +49,6 @@ private:
     const std::string remote_database;
     const std::string remote_table;
     size_t shard_count;
-    DB::NamesAndTypesList names_and_types;
 };
 
 

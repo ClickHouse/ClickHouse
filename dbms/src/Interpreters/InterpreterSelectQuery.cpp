@@ -516,12 +516,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     /// Are ALIAS columns required for query execution?
     auto alias_columns_required = false;
 
-    if (storage && !storage->alias_columns.empty())
+    if (storage && !storage->getColumns().aliases.empty())
     {
+        const auto & column_defaults = storage->getColumns().defaults;
         for (const auto & column : required_columns)
         {
-            const auto default_it = storage->column_defaults.find(column);
-            if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+            const auto default_it = column_defaults.find(column);
+            if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
             {
                 alias_columns_required = true;
                 break;
@@ -535,8 +536,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
             for (const auto & column : required_columns)
             {
-                const auto default_it = storage->column_defaults.find(column);
-                if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+                const auto default_it = column_defaults.find(column);
+                if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
                     required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
                 else
                     required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));

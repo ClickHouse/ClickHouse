@@ -1120,8 +1120,8 @@ protected:
 
             if (!column.default_specifier.empty())
             {
-                ColumnDefaultType type = columnDefaultTypeFromString(column.default_specifier);
-                if (type == ColumnDefaultType::Materialized || type == ColumnDefaultType::Alias)
+                ColumnDefaultKind kind = columnDefaultKindFromString(column.default_specifier);
+                if (kind == ColumnDefaultKind::Materialized || kind == ColumnDefaultKind::Alias)
                     continue;
             }
 

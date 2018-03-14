@@ -52,10 +52,7 @@ protected:
     StorageLog(
         const std::string & path_,
         const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         size_t max_compress_block_size_);
 
 private:
