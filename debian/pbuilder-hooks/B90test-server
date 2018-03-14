@@ -3,8 +3,8 @@ set -e
 set -x
 
 for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
-    apt-get install -y --force-yes "$PKG" || true 
-    apt-get remove -y "$PKG" || true 
+    apt-get install -y --force-yes "$PKG" || true
+    apt-get remove -y "$PKG" || true
 done
 
 dpkg -i /tmp/buildd/*.deb || true
@@ -18,9 +18,6 @@ dpkg-reconfigure -f noninteractive tzdata
 
 pwd
 mkdir -p /etc/clickhouse-server/config.d
-cp ssl.xml /etc/clickhouse-server/config.d
-openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
-openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
 
 service clickhouse-server start
 sleep 3
