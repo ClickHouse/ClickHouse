@@ -61,6 +61,8 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -2438,6 +2440,9 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
 
     initChain(chain, source_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
+
+    DUMP(only_types);
+    DUMP(StackTrace().toString());
 
     step.required_output.push_back(select_query->where_expression->getColumnName());
     getRootActions(select_query->where_expression, only_types, false, step.actions);
