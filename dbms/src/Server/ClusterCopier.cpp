@@ -20,6 +20,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/isLocalAddress.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -37,7 +38,7 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Storages/StorageDistributed.h>
+#include <DataTypes/DataTypeString.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -46,20 +47,20 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Databases/DatabaseMemory.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <Common/isLocalAddress.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/copyData.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Server/StatusFile.h>
 #include <Storages/registerStorages.h>
+#include <Storages/StorageDistributed.h>
+#include <Databases/DatabaseMemory.h>
+#include <Server/StatusFile.h>
 #include <Common/formatReadable.h>
 #include <daemon/OwnPatternFormatter.h>
 
@@ -697,7 +698,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     settings_pull.load_balancing = LoadBalancing::NEAREST_HOSTNAME;
     settings_pull.readonly = 1;
     settings_pull.max_threads = 1;
-    settings_pull.max_block_size = std::min(8192UL, settings_pull.max_block_size.value);
+    settings_pull.max_block_size = settings_pull.max_block_size.changed ? settings_pull.max_block_size.value : 8192UL;
     settings_pull.preferred_block_size_bytes = 0;
 
     settings_push.insert_distributed_timeout = 0;
@@ -1609,8 +1610,15 @@ protected:
                 Context context_insert = context;
                 context_insert.getSettingsRef() = task_cluster->settings_push;
 
-                BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
-                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
+                BlockInputStreamPtr input;
+                BlockOutputStreamPtr output;
+                {
+                    BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
+                    BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
+
+                    input = std::make_shared<AsynchronousBlockInputStream>(io_select.in);
+                    output = io_insert.out;
+                }
 
                 using ExistsFuture = zkutil::ZooKeeper::ExistsFuture;
                 auto future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
@@ -1665,7 +1673,7 @@ protected:
                 };
 
                 /// Main work is here
-                copyData(*io_select.in, *io_insert.out, cancel_check, update_stats);
+                copyData(*input, *output, cancel_check, update_stats);
 
                 // Just in case
                 if (future_is_dirty_checker != nullptr)
