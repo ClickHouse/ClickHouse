@@ -600,8 +600,8 @@ void DDLWorker::processTask(DDLTask & task)
 
     /// Delete active flag and create finish flag
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(active_node_path, -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(finished_node_path, task.execution_status.serializeText(),
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(active_node_path, -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(finished_node_path, task.execution_status.serializeText(),
                                                           zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
 }
@@ -780,8 +780,8 @@ void DDLWorker::cleanupQueue()
 
                 /// Remove the lock node and its parent atomically
                 zkutil::Ops ops;
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(lock_path, -1));
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(node_path, -1));
+                ops.emplace_back(std::make_shared<zkutil::Op::Remove>(lock_path, -1));
+                ops.emplace_back(std::make_shared<zkutil::Op::Remove>(node_path, -1));
                 zookeeper->multi(ops);
 
                 lock->unlockAssumeLockNodeRemovedManually();
@@ -800,8 +800,8 @@ void DDLWorker::createStatusDirs(const std::string & node_path)
 {
     zkutil::Ops ops;
     auto acl = zookeeper->getDefaultACL();
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(node_path + "/active", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(node_path + "/finished", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(node_path + "/active", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(node_path + "/finished", "", acl, zkutil::CreateMode::Persistent));
 
     int code = zookeeper->tryMulti(ops);
     if (code != ZOK && code != ZNODEEXISTS)

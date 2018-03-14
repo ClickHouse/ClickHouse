@@ -28,6 +28,7 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -175,14 +176,22 @@ private:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
+        std::string config_path;
         if (config().has("config-file"))
-            loadConfiguration(config().getString("config-file"));
+            config_path = config().getString("config-file");
         else if (Poco::File("./clickhouse-client.xml").exists())
-            loadConfiguration("./clickhouse-client.xml");
+            config_path = "./clickhouse-client.xml";
         else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
-            loadConfiguration(home_path + "/.clickhouse-client/config.xml");
+            config_path = home_path + "/.clickhouse-client/config.xml";
         else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
-            loadConfiguration("/etc/clickhouse-client/config.xml");
+            config_path = "/etc/clickhouse-client/config.xml";
+
+        if (!config_path.empty())
+        {
+            ConfigProcessor config_processor(config_path);
+            auto loaded_config = config_processor.loadConfig();
+            config().add(loaded_config.configuration);
+        }
 
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
