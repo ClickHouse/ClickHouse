@@ -19,20 +19,20 @@ INSERT INTO FUNCTION remote('127.0.0.2', test.t2) VALUES (2, 2);
 --INSERT INTO FUNCTION remote('127.0.0.2', test.t3) VALUES (2);
 INSERT INTO FUNCTION remote('127.0.0.2', test.t4) VALUES (2);
 
-SELECT * FROM remote('127.0.0.2', test.t1);
+SELECT * FROM remote('127.0.0.2', test.t1) ORDER BY x;
 
 SELECT '*** With a DEFAULT column ***';
-SELECT * FROM remote('127.0.0.2', test.t2);
+SELECT * FROM remote('127.0.0.2', test.t2) ORDER BY x;
 
 SELECT '*** With a MATERIALIZED column ***';
-SELECT * FROM remote('127.0.0.2', test.t3);
-SELECT x, y FROM remote('127.0.0.2', test.t3);
+SELECT * FROM remote('127.0.0.2', test.t3) ORDER BY x;
+SELECT x, y FROM remote('127.0.0.2', test.t3) ORDER BY x;
 
 SELECT '*** With an ALIAS column ***';
-SELECT * FROM remote('127.0.0.2', test.t4);
-SELECT x, y FROM remote('127.0.0.2', test.t4);
+SELECT * FROM remote('127.0.0.2', test.t4) ORDER BY x;
+SELECT x, y FROM remote('127.0.0.2', test.t4) ORDER BY x;
 
-DROP TABLE IF EXISTS test.t1;
-DROP TABLE IF EXISTS test.t2;
-DROP TABLE IF EXISTS test.t3;
-DROP TABLE IF EXISTS test.t4;
+DROP TABLE test.t1;
+DROP TABLE test.t2;
+DROP TABLE test.t3;
+DROP TABLE test.t4;
