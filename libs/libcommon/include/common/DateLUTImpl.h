@@ -70,7 +70,7 @@ private:
     std::string time_zone;
 
 
-    /// We can correctly process only timestamps that less DATE_LUT_MAX (i.e. up to 2015 year inclusively)
+    /// We can correctly process only timestamps that less DATE_LUT_MAX (i.e. up to 2105 year inclusively)
     inline size_t findIndex(time_t t) const
     {
         /// First guess.
