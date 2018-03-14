@@ -355,20 +355,23 @@ struct TaskCluster
 
 /// Atomically checks that is_dirty node is not exists, and made the remaining op
 /// Returns relative number of failed operation in the second field (the passed op has 0 index)
-static void checkNoNodeAndCommit(
+static zkutil::MultiTransactionInfo checkNoNodeAndCommit(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & checking_node_path,
-    zkutil::OpPtr && op,
-    zkutil::MultiTransactionInfo & info)
+    zkutil::OpPtr && op)
 {
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(checking_node_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(checking_node_path, -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(checking_node_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(checking_node_path, -1));
     ops.emplace_back(std::move(op));
 
-    zookeeper->tryMultiUnsafe(ops, info);
+    zkutil::MultiTransactionInfo info;
+    zookeeper->tryMultiNoThrow(ops, nullptr, &info);
+
     if (info.code != ZOK && !zkutil::isUserError(info.code))
-        throw info.getException();
+        throw zkutil::KeeperException(info.code);
+
+    return info;
 }
 
 
@@ -1542,10 +1545,8 @@ protected:
         /// Try start processing, create node about it
         {
             String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
-            auto op_create = std::make_unique<zkutil::Op::Create>(current_task_status_path, start_state, acl, zkutil::CreateMode::Persistent);
-
-            zkutil::MultiTransactionInfo info;
-            checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create), info);
+            auto op_create = std::make_shared<zkutil::Op::Create>(current_task_status_path, start_state, acl, zkutil::CreateMode::Persistent);
+            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create));
 
             if (info.code != ZOK)
             {
@@ -1683,9 +1684,8 @@ protected:
         /// Finalize the processing, change state of current partition task (and also check is_dirty flag)
         {
             String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-            auto op_set = std::make_unique<zkutil::Op::SetData>(current_task_status_path, state_finished, 0);
-            zkutil::MultiTransactionInfo info;
-            checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set), info);
+            auto op_set = std::make_shared<zkutil::Op::SetData>(current_task_status_path, state_finished, 0);
+            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set));
 
             if (info.code != ZOK)
             {
