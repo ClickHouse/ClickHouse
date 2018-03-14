@@ -978,26 +978,27 @@ ZooKeeper::TryRemoveFuture ZooKeeper::asyncTryRemove(const std::string & path, i
 
 ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception)
 {
-    size_t count = ops_.size();
-    auto results_native = std::make_shared<std::vector<zoo_op_result_t>>(count);
-
     /// We need to hold all references to ops data until the end of multi callback
     struct OpsHolder
     {
-        std::shared_ptr<zkutil::Ops> ops_ptr = std::make_shared<zkutil::Ops>();
-        std::shared_ptr<std::vector<zoo_op_t>> ops_raw_ptr = std::make_shared<std::vector<zoo_op_t>>();
+        std::shared_ptr<zkutil::Ops> ops_ptr;
+        std::shared_ptr<std::vector<zoo_op_t>> ops_native;
+        std::shared_ptr<std::vector<zoo_op_result_t>> op_results_native;
     } holder;
 
-    for (const auto & op : ops_)
-    {
-        holder.ops_ptr->emplace_back(op->clone());
-        holder.ops_raw_ptr->push_back(*holder.ops_ptr->back()->data);
-    }
+    /// Copy ops (swallow copy)
+    holder.ops_ptr = std::make_shared<zkutil::Ops>(ops_);
+    /// Copy native ops to contiguous vector
+    holder.ops_native = std::make_shared<std::vector<zoo_op_t>>();
+    for (const OpPtr & op : *holder.ops_ptr)
+        holder.ops_native->push_back(*op->data);
+    /// Allocate native result holders
+    holder.op_results_native = std::make_shared<std::vector<zoo_op_result_t>>(holder.ops_ptr->size());
 
-    MultiFuture future{ [throw_exception, results_native, holder, zookeeper=this] (int rc) {
+    MultiFuture future{ [throw_exception, holder, zookeeper=this] (int rc) {
         OpResultsAndCode res;
         res.code = rc;
-        convertOpResults(*results_native, res.results, zookeeper);
+        convertOpResults(*holder.op_results_native, res.results, zookeeper);
         res.ops_ptr = holder.ops_ptr;
         if (throw_exception && rc != ZOK)
             throw zkutil::KeeperException(rc);
@@ -1015,9 +1016,9 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool 
     if (expired())
         throw KeeperException(ZINVALIDSTATE);
 
-    auto & ops = *holder.ops_raw_ptr;
-
-    int32_t code = zoo_amulti(impl, static_cast<int>(ops.size()), ops.data(), results_native->data(),
+    int32_t code = zoo_amulti(impl, static_cast<int>(holder.ops_native->size()),
+                              holder.ops_native->data(),
+                              holder.op_results_native->data(),
                               [] (int rc, const void * data)
                               {
                                   MultiFuture::TaskPtr owned_task =
