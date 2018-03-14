@@ -133,10 +133,10 @@ AggregateFunctionPtr createAggregateFunctionIntersectionsMaxPos(const std::strin
 
 void registerAggregateFunctionIntersectionsMax(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("IntersectionsMax",
+    factory.registerFunction("intersectionsMax",
         createAggregateFunctionIntersectionsMax,
         AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("IntersectionsMaxPos",
+    factory.registerFunction("intersectionsMaxPos",
         createAggregateFunctionIntersectionsMaxPos,
         AggregateFunctionFactory::CaseInsensitive);
 }
