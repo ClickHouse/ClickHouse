@@ -368,7 +368,7 @@ public:
 private:
     friend struct WatchContext;
     friend class EphemeralNodeHolder;
-    friend class OpResult;
+    friend struct OpResult;
 
     void init(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms, const std::string & chroot);
 
