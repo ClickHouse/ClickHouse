@@ -3,8 +3,8 @@ set -e
 set -x
 
 for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
-    apt-get install -y --force-yes "$PKG" || true 
-    apt-get remove -y "$PKG" || true 
+    apt-get install -y --force-yes "$PKG" || true
+    apt-get remove -y "$PKG" || true
 done
 
 dpkg -i /tmp/buildd/*.deb || true
