@@ -275,28 +275,6 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
     return res;
 }
 
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetChecksum(const String & name, const String & ext) const
-{
-    if (checksums.empty())
-        return nullptr;
-
-    const auto & files = checksums.files;
-    const auto file_name = escapeForFileName(name) + ext;
-    auto it = files.find(file_name);
-
-    return (it == files.end()) ? nullptr : &it->second;
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksum(const String & name) const
-{
-    return tryGetChecksum(name, ".bin");
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetMrkChecksum(const String & name) const
-{
-    return tryGetChecksum(name, ".mrk");
-}
-
 static ReadBufferFromFile openForReading(const String & path)
 {
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
@@ -392,26 +370,40 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-/// Returns the size of .bin file for column `name` if found, zero otherwise.
-UInt64 MergeTreeDataPart::getColumnCompressedSize(const String & name) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSize(const String & name, const IDataType & type) const
 {
-    const Checksum * checksum = tryGetBinChecksum(name);
+    ColumnSize size;
+    if (checksums.empty())
+        return size;
 
-    /// Probably a logic error, not sure if this can ever happen if checksums are not empty
-    return checksum ? checksum->file_size : 0;
+    type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        String file_name = IDataType::getFileNameForStream(name, substream_path);
+
+        auto bin_checksum = checksums.files.find(file_name + ".bin");
+        if (bin_checksum != checksums.files.end())
+        {
+            size.data_compressed += bin_checksum->second.file_size;
+            size.data_uncompressed += bin_checksum->second.uncompressed_size;
+        }
+
+        auto mrk_checksum = checksums.files.find(file_name + ".mrk");
+        if (mrk_checksum != checksums.files.end())
+            size.marks += mrk_checksum->second.file_size;
+    }, {});
+
+    return size;
 }
 
-UInt64 MergeTreeDataPart::getColumnUncompressedSize(const String & name) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
 {
-    const Checksum * checksum = tryGetBinChecksum(name);
-    return checksum ? checksum->uncompressed_size : 0;
-}
-
-
-UInt64 MergeTreeDataPart::getColumnMrkSize(const String & name) const
-{
-    const Checksum * checksum = tryGetMrkChecksum(name);
-    return checksum ? checksum->file_size : 0;
+    ColumnSize totals;
+    for (const NameAndTypePair & column : columns)
+    {
+        ColumnSize size = getColumnSize(column.name, *column.type);
+        totals.add(size);
+    }
+    return totals;
 }
 
 
@@ -429,7 +421,7 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
         if (!hasColumnFiles(column.name))
             continue;
 
-        const auto size = getColumnCompressedSize(column.name);
+        const auto size = getColumnSize(column.name, *column.type).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -742,20 +734,21 @@ void MergeTreeDataPart::loadRowsCount()
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
-            const auto checksum = tryGetBinChecksum(column.name);
+            if (!column_col->isFixedAndContiguous())
+                continue;
 
-            /// Should be fixed non-nullable column
-            if (!checksum || !column_col->isFixedAndContiguous())
+            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
+            if (!column_size)
                 continue;
 
             size_t sizeof_field = column_col->sizeOfValueIfFixed();
-            rows_count = checksum->uncompressed_size / sizeof_field;
+            rows_count = column_size / sizeof_field;
 
-            if (checksum->uncompressed_size % sizeof_field != 0)
+            if (column_size % sizeof_field != 0)
             {
                 throw Exception(
-                    "Column " + column.name + " has indivisible uncompressed size " + toString(checksum->uncompressed_size)
-                    + ", sizeof " + toString(sizeof_field),
+                    "Uncompressed size of column " + column.name + "(" + toString(column_size)
+                    + ") is not divisible by the size of value (" + toString(sizeof_field) + ")",
                     ErrorCodes::LOGICAL_ERROR);
             }
 
@@ -941,18 +934,6 @@ UInt64 MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     UInt64 res = 0;
     for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
-    return res;
-}
-
-UInt64 MergeTreeDataPart::getTotalMrkSizeInBytes() const
-{
-    UInt64 res = 0;
-    for (const NameAndTypePair & it : columns)
-    {
-        const Checksum * checksum = tryGetMrkChecksum(it.name);
-        if (checksum)
-            res += checksum->file_size;
-    }
     return res;
 }
 

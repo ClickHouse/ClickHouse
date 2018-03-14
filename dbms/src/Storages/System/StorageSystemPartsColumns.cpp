@@ -84,8 +84,8 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
     {
         const auto & part = info.all_parts[part_number];
         auto part_state = info.all_parts_state[part_number];
+        auto columns_size = part->getTotalColumnsSize();
 
-        auto total_mrk_size_in_bytes = part->getTotalMrkSizeInBytes();
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
         auto use_count = part.use_count() - 1;
         auto min_date = part->getMinDate();
@@ -106,7 +106,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             columns[j++]->insert(part->name);
             columns[j++]->insert(static_cast<UInt64>(part_state == State::Committed));
             columns[j++]->insert(static_cast<UInt64>(part->marks_count));
-            columns[j++]->insert(static_cast<UInt64>(total_mrk_size_in_bytes));
+            columns[j++]->insert(static_cast<UInt64>(columns_size.marks));
 
             columns[j++]->insert(static_cast<UInt64>(part->rows_count));
             columns[j++]->insert(static_cast<UInt64>(part->size_in_bytes));
@@ -142,9 +142,10 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
                 columns[j++]->insertDefault();
             }
 
-            columns[j++]->insert(static_cast<UInt64>(part->getColumnCompressedSize(column.name)));
-            columns[j++]->insert(static_cast<UInt64>(part->getColumnUncompressedSize(column.name)));
-            columns[j++]->insert(static_cast<UInt64>(part->getColumnMrkSize(column.name)));
+            MergeTreeDataPart::ColumnSize column_size = part->getColumnSize(column.name, *column.type);
+            columns[j++]->insert(static_cast<UInt64>(column_size.data_compressed));
+            columns[j++]->insert(static_cast<UInt64>(column_size.data_uncompressed));
+            columns[j++]->insert(static_cast<UInt64>(column_size.marks));
 
             if (has_state_column)
                 columns[j++]->insert(part->stateString());

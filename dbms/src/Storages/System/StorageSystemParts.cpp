@@ -52,6 +52,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
     {
         const auto & part = info.all_parts[part_number];
         auto part_state = info.all_parts_state[part_number];
+        MergeTreeDataPart::ColumnSize columns_size = part->getTotalColumnsSize();
 
         size_t i = 0;
         {
@@ -62,7 +63,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(part->name);
         columns[i++]->insert(static_cast<UInt64>(part_state == State::Committed));
         columns[i++]->insert(static_cast<UInt64>(part->marks_count));
-        columns[i++]->insert(static_cast<UInt64>(part->getTotalMrkSizeInBytes()));
+        columns[i++]->insert(static_cast<UInt64>(columns_size.marks));
         columns[i++]->insert(static_cast<UInt64>(part->rows_count));
         columns[i++]->insert(static_cast<UInt64>(part->size_in_bytes));
         columns[i++]->insert(static_cast<UInt64>(part->modification_time));

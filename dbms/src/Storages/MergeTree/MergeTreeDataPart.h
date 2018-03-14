@@ -97,21 +97,35 @@ struct MergeTreeDataPart
 
     MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
 
-    const Checksum * tryGetChecksum(const String & name, const String & ext) const;
-    /// Returns checksum of column's binary file.
-    const Checksum * tryGetBinChecksum(const String & name) const;
-    /// Returns checksum of column's mrk file.
-    const Checksum * tryGetMrkChecksum(const String & name) const;
-
-    /// Returns the size of .bin file for column `name` if found, zero otherwise
-    UInt64 getColumnCompressedSize(const String & name) const;
-    UInt64 getColumnUncompressedSize(const String & name) const;
-    /// Returns the size of .mrk file for column `name` if found, zero otherwise
-    UInt64 getColumnMrkSize(const String & name) const;
-
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
+
+    struct ColumnSize
+    {
+        size_t marks = 0;
+        size_t data_compressed = 0;
+        size_t data_uncompressed = 0;
+
+        void add(const ColumnSize & other)
+        {
+            marks += other.marks;
+            data_compressed += other.data_uncompressed;
+            data_uncompressed += other.data_uncompressed;
+        }
+
+        size_t getTotalCompressedSize() const
+        {
+            return marks + data_compressed;
+        }
+    };
+
+    /// NOTE: Returns zeros if column files are not found in checksums.
+    /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
+    ///   (either by locking columns_lock, or by locking table structure).
+    ColumnSize getColumnSize(const String & name, const IDataType & type) const;
+
+    ColumnSize getTotalColumnsSize() const;
 
     /// Returns full path to part dir
     String getFullPath() const;
@@ -299,8 +313,6 @@ struct MergeTreeDataPart
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
-    /// Total size of *.mrk files
-    UInt64 getTotalMrkSizeInBytes() const;
 
 private:
     /// Reads columns names and types from columns.txt

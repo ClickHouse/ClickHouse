@@ -1832,59 +1832,37 @@ void MergeTreeData::calculateColumnSizesImpl()
 void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
     std::shared_lock<std::shared_mutex> lock(part->columns_lock);
-    const auto & files = part->checksums.files;
 
-    /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : getColumns().getAllPhysical())
+    for (const auto & column : part->columns)
     {
-        const auto escaped_name = escapeForFileName(column.name);
-        const auto bin_file_name = escaped_name + ".bin";
-        const auto mrk_file_name = escaped_name + ".mrk";
-
-        ColumnSize & column_size = column_sizes[column.name];
-
-        if (files.count(bin_file_name))
-        {
-            const auto & bin_file_checksums = files.at(bin_file_name);
-            column_size.data_compressed += bin_file_checksums.file_size;
-            column_size.data_uncompressed += bin_file_checksums.uncompressed_size;
-        }
-
-        if (files.count(mrk_file_name))
-            column_size.marks += files.at(mrk_file_name).file_size;
+        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
+        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        total_column_size.add(part_column_size);
     }
-}
-
-static inline void logSubtract(size_t & from, size_t value, Logger * log, const String & variable)
-{
-    if (value > from)
-        LOG_ERROR(log, "Possibly incorrect subtraction: " << from << " - " << value << " = " << from - value << ", variable " << variable);
-
-    from -= value;
 }
 
 void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
 {
-    const auto & files = part->checksums.files;
+    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
 
-    /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : getColumns().getAllPhysical())
+    for (const auto & column : part->columns)
     {
-        const auto escaped_name = escapeForFileName(column.name);
-        const auto bin_file_name = escaped_name + ".bin";
-        const auto mrk_file_name = escaped_name + ".mrk";
+        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
+        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
 
-        auto & column_size = column_sizes[column.name];
-
-        if (files.count(bin_file_name))
+        auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
-            const auto & bin_file_checksums = files.at(bin_file_name);
-            logSubtract(column_size.data_compressed, bin_file_checksums.file_size, log, bin_file_name + ".file_size");
-            logSubtract(column_size.data_uncompressed, bin_file_checksums.uncompressed_size, log, bin_file_name + ".uncompressed_size");
-        }
+            if (value > from)
+                LOG_ERROR(log, "Possibly incorrect column size subtraction: "
+                    << from << " - " << value << " = " << from - value
+                    << ", column: " << column.name << ", field: " << field);
 
-        if (files.count(mrk_file_name))
-            logSubtract(column_size.marks, files.at(mrk_file_name).file_size, log, mrk_file_name + ".file_size");
+            from -= value;
+        };
+
+        log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
+        log_subtract(total_column_size.data_uncompressed, part_column_size.data_uncompressed, ".data_uncompressed");
+        log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 }
 
