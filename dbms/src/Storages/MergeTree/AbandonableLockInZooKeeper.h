@@ -108,6 +108,13 @@ public:
         ops.emplace_back(std::make_shared<zkutil::Op::Remove>(holder_path, -1));
     }
 
+    /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
+    ///  because the nodes will be already deleted.
+    void assumeUnlocked()
+    {
+        holder_path.clear();
+    }
+
     void checkCreated() const
     {
         if (!isCreated())
