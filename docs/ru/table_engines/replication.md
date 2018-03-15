@@ -4,12 +4,12 @@
 
 Репликация поддерживается только для таблиц семейства MergeTree:
 
+- ReplicatedMergeTree
+- ReplicatedSummingMergeTree
+- ReplicatedReplacingMergeTree
 - ReplicatedAggregatingMergeTree
 - ReplicatedCollapsingMergeTree
 - ReplicatedGraphiteMergeTree
-- ReplicatedMergeTree
-- ReplicatedReplacingMergeTree
-- ReplicatedSummingMergeTree
 
 Репликация работает на уровне отдельных таблиц, а не всего сервера. То есть, на сервере могут быть расположены одновременно реплицируемые и не реплицируемые таблицы.
 
