@@ -372,7 +372,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         storage.merge_selecting_event.set();
 
         /// Lock nodes have been already deleted, do not delete them in destructor
-        block_number_lock.setIsUnlocked();
+        block_number_lock.assumeUnlocked();
     }
     else if (zkutil::isUserError(info.code))
     {
