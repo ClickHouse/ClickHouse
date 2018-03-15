@@ -150,6 +150,15 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_shard_localhost_secure>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9440</port>
+                    <encryption>1</encryption>
+                </replica>
+            </shard>
+        </test_shard_localhost_secure>
     </remote_servers>
 
 

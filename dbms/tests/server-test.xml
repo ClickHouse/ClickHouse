@@ -7,6 +7,7 @@
         <errorlog>/tmp/clickhouse/log/clickhouse-server.err.log</errorlog>
         <size>10M</size>
         <count>1</count>
+        <compress>0</compress>
     </logger>
     <listen_host>0.0.0.0</listen_host>
     <listen_host>::</listen_host>
@@ -60,6 +61,15 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_shard_localhost_secure>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>59440</port>
+                    <encryption>1</encryption>
+                </replica>
+            </shard>
+        </test_shard_localhost_secure>
     </remote_servers>
     <zookeeper incl="zookeeper-servers" optional="true" />
     <macros incl="macros" optional="true" />
