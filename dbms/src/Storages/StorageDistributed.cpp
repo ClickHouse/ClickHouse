@@ -167,7 +167,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 
 
 BlockInputStreams StorageDistributed::read(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
@@ -187,7 +187,8 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage, 0,
+        std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
         header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());

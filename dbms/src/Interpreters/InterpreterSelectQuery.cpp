@@ -154,14 +154,19 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
 
     if (!only_analyze)
     {
-        if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
-            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+        /// Prepared input is used when we do "dry run" of SELECT to evaluate header (result structure),
+        ///  or when we process data for MATERIALIZED VIEW (in that case it's guaranteed that query doesn't have options listed below).
+        if (!input)
+        {
+            if (query.sample_size() && (!storage || !storage->supportsSampling()))
+                throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-        if (query.final() && (input || !storage || !storage->supportsFinal()))
-            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+            if (query.final() && (!storage || !storage->supportsFinal()))
+                throw Exception(storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 
-        if (query.prewhere_expression && (input || !storage || !storage->supportsPrewhere()))
-            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+            if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
+                throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+        }
 
         /// Save the new temporary tables in the query context
         for (const auto & it : query_analyzer->getExternalTables())
