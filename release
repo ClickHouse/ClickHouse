@@ -35,6 +35,9 @@ do
     elif [[ $1 == '--head' ]]; then
         REVISION=`git rev-parse HEAD`
         shift
+    elif [[ $1 == '--pbuilder' ]]; then
+        # Default
+        shift
     elif [[ $1 == '--no-pbuilder' ]]; then
         USE_PBUILDER=
         shift
