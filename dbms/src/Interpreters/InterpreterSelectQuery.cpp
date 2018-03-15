@@ -676,8 +676,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         if (pipeline.streams.empty())
-            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(
-                storage->analyze(required_columns, query_info, context, from_stage)));
+            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
 
         pipeline.transform([&](auto & stream)
         {
