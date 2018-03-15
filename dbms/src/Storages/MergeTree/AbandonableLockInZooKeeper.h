@@ -108,6 +108,12 @@ public:
         ops.emplace_back(std::make_shared<zkutil::Op::Remove>(holder_path, -1));
     }
 
+    /// Do not delete nodes in destructor
+    void setIsUnlocked()
+    {
+        holder_path = "";
+    }
+
     void checkCreated() const
     {
         if (!isCreated())
