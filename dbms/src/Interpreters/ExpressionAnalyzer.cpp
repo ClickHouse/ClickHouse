@@ -980,7 +980,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
         if (functionIsInOrGlobalInOperator(func_node->name))
             if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
-                right->kind = ASTIdentifier::Table;
+                if (!aliases.count(right->name))
+                    right->kind = ASTIdentifier::Table;
 
         /// Special cases for count function.
         String func_name_lowercase = Poco::toLower(func_node->name);
