@@ -197,26 +197,6 @@ BlockInputStreams StorageDistributed::read(
 }
 
 
-Block StorageDistributed::analyze(
-    const Names & /*column_names*/,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage)
-{
-    auto cluster = getCluster();
-
-    const Settings & settings = context.getSettingsRef();
-
-    size_t result_size = (cluster->getRemoteShardCount() * settings.max_parallel_replicas) + cluster->getLocalShardCount();
-
-    processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
-        ? QueryProcessingStage::Complete
-        : QueryProcessingStage::WithMergeableState;
-
-    return materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
-}
-
-
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
     auto cluster = (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
