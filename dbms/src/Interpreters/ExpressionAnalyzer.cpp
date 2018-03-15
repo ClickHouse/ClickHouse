@@ -2943,4 +2943,30 @@ void ExpressionAnalyzer::removeUnneededColumnsFromSelectClause()
     }), elements.end());
 }
 
+
+Block ExpressionAnalyzer::getSelectSampleBlock()
+{
+    assertSelect();
+
+    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(aggregated_columns, settings);
+    NamesWithAliases result_columns;
+
+    ASTs asts = select_query->select_expression_list->children;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        result_columns.emplace_back(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName());
+        getRootActions(asts[i], true, false, temp_actions);
+    }
+
+    temp_actions->add(ExpressionAction::project(result_columns));
+
+    Block res = temp_actions->getSampleBlock();
+
+    for (auto & elem : res)
+        if (!elem.column)
+            elem.column = elem.type->createColumn();
+
+    return res;
+}
+
 }

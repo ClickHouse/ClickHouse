@@ -343,7 +343,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
 
-    if (!dry_run)
+//    if (!dry_run)
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
     AnalysisResult expressions = analyzeExpressions(from_stage);

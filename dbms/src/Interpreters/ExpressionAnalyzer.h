@@ -140,6 +140,9 @@ public:
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
+    /// If ast is a SELECT query, it gets the aliases and column types from the SELECT section.
+    Block getSelectSampleBlock();
+
 private:
     ASTPtr ast;
     ASTSelectQuery * select_query;

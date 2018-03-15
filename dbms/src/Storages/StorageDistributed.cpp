@@ -199,7 +199,7 @@ BlockInputStreams StorageDistributed::read(
 
 
 Block StorageDistributed::analyze(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage)
@@ -214,7 +214,10 @@ Block StorageDistributed::analyze(
         ? QueryProcessingStage::Complete
         : QueryProcessingStage::WithMergeableState;
 
-    return materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage, 0,
+        std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
+
+    return header;
 }
 
 
