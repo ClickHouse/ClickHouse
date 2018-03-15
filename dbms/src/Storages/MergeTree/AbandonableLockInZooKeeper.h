@@ -112,7 +112,7 @@ public:
     ///  because the nodes will be already deleted.
     void assumeUnlocked()
     {
-        holder_path = "";
+        holder_path.clear();
     }
 
     void checkCreated() const
