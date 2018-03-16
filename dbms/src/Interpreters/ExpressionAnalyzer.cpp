@@ -1458,8 +1458,13 @@ void ExpressionAnalyzer::optimizeLimitBy()
 
 void ExpressionAnalyzer::makeSetsForIndex()
 {
-    if (storage && ast && storage->supportsIndexForIn())
-        makeSetsForIndexImpl(ast, storage->getSampleBlock());
+    if (storage && select_query && storage->supportsIndexForIn())
+    {
+        if (select_query->where_expression)
+            makeSetsForIndexImpl(select_query->where_expression, storage->getSampleBlock());
+        if (select_query->prewhere_expression)
+            makeSetsForIndexImpl(select_query->prewhere_expression, storage->getSampleBlock());
+    }
 }
 
 
@@ -1485,8 +1490,15 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
     for (auto & child : node->children)
     {
         /// Process expression only in current subquery
-        if (!typeid_cast<ASTSubquery *>(child.get()))
-            makeSetsForIndexImpl(child, sample_block);
+        if (typeid_cast<ASTSubquery *>(child.get()))
+            continue;
+
+        /// Don't dive into lambda functions
+        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        if (func && func->name == "lambda")
+            continue;
+
+        makeSetsForIndexImpl(child, sample_block);
     }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
