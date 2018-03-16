@@ -76,6 +76,9 @@ public:
 private:
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isString())
@@ -135,15 +138,6 @@ private:
             dict->has(ids, out->getData());
             block.getByPosition(result).column = std::move(out);
         }
-        else if (const auto id_col = checkAndGetColumnConst<ColumnVector<UInt64>>(id_col_untyped))
-        {
-            const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
-            PaddedPODArray<UInt8> out(1);
-
-            dict->has(ids, out);
-
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(id_col->size(), toField(out.front()));
-        }
         else
             throw Exception{
                 "Second argument of function " + getName() + " must be UInt64",
@@ -161,11 +155,7 @@ private:
             return false;
 
         const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[1]);
-        ColumnPtr key_col = key_col_with_type.column;
-
-        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
-            key_col = key_col_materialized;
+        const ColumnPtr & key_col = key_col_with_type.column;
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
