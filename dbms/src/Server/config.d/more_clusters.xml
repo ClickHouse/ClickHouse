@@ -1,6 +1,11 @@
 <yandex>
     <remote_servers>
 
+        <![CDATA[
+            You can run additional servers simply as
+             ./clickhouse-server -- --path=9001 --tcp_port=9001
+        ]]>
+
         <single_remote_shard_at_port_9001>
             <shard>
                 <replica>
