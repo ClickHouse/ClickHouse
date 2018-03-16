@@ -1,11 +1,17 @@
+## Add 2 partitions
 201802
 201803
+## Drop partition 201802
 201803
+## Drop partition 201803
+## Add 3 partitions
 201801
 201802
 201803
+## Detach partition 201803
 201801
 201802
+## Attach partition 201803
 201801
 201802
 201803
