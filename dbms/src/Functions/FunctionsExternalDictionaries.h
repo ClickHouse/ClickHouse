@@ -101,6 +101,20 @@ private:
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
+        /** Do not require existence of the dictionary if the function is called for empty block.
+          * This is needed to allow successful query analysis on a server,
+          *  that is the initiator of a distributed query,
+          *  in the case when the function will be invoked for real data only at the remote servers.
+          * This feature is controversial and implemented specially
+          *  for backward compatibility with the case in Yandex Banner System.
+          */
+        if (block.rows() == 0)
+        {
+            auto & elem = block.getByPosition(result);
+            elem.column = elem.type->createColumn();
+            return;
+        }
+
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
@@ -251,6 +265,13 @@ private:
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+        if (block.rows() == 0)
+        {
+            auto & elem = block.getByPosition(result);
+            elem.column = elem.type->createColumn();
+            return;
+        }
 
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
@@ -474,6 +495,13 @@ private:
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+        if (block.rows() == 0)
+        {
+            auto & elem = block.getByPosition(result);
+            elem.column = elem.type->createColumn();
+            return;
+        }
 
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
@@ -733,6 +761,13 @@ private:
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+        if (block.rows() == 0)
+        {
+            auto & elem = block.getByPosition(result);
+            elem.column = elem.type->createColumn();
+            return;
+        }
 
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
@@ -1002,6 +1037,13 @@ private:
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
+        if (block.rows() == 0)
+        {
+            auto & elem = block.getByPosition(result);
+            elem.column = elem.type->createColumn();
+            return;
+        }
+
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
@@ -1228,6 +1270,13 @@ private:
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
+        if (block.rows() == 0)
+        {
+            auto & elem = block.getByPosition(result);
+            elem.column = elem.type->createColumn();
+            return;
+        }
+
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
@@ -1380,6 +1429,13 @@ private:
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+        if (block.rows() == 0)
+        {
+            auto & elem = block.getByPosition(result);
+            elem.column = elem.type->createColumn();
+            return;
+        }
 
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
