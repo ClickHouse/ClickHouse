@@ -1489,7 +1489,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
 {
     for (auto & child : node->children)
     {
-        /// Process expression only in current subquery
+        /// Don't descent into subqueries.
         if (typeid_cast<ASTSubquery *>(child.get()))
             continue;
 
