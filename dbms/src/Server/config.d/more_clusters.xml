@@ -1,0 +1,44 @@
+<yandex>
+    <remote_servers>
+
+        <single_remote_shard_at_port_9001>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9001</port>
+                </replica>
+            </shard>
+        </single_remote_shard_at_port_9001>
+
+        <two_remote_shards_at_port_9001_9002>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9001</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9002</port>
+                </replica>
+            </shard>
+        </two_remote_shards_at_port_9001_9002>
+
+        <two_shards_one_local_one_remote_at_port_9001>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9001</port>
+                </replica>
+            </shard>
+        </two_shards_one_local_one_remote_at_port_9001>
+
+    </remote_servers>
+</yandex>
