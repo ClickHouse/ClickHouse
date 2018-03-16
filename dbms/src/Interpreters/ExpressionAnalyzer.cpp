@@ -1505,23 +1505,27 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
     if (func && functionIsInOperator(func->name))
     {
         const IAST & args = *func->arguments;
-        const ASTPtr & arg = args.children.at(1);
 
-        if (!prepared_sets.count(arg.get())) /// Not already prepared.
+        if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0)))
         {
-            if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
-            {
-                if (settings.use_index_for_in_with_subqueries && storage->mayBenefitFromIndexForIn(args.children.at(0)))
-                    tryMakeSetFromSubquery(arg);
-            }
-            else
-            {
-                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
-                getRootActions(func->arguments->children.at(0), true, false, temp_actions);
+            const ASTPtr & arg = args.children.at(1);
 
-                Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
-                if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
-                    makeExplicitSet(func, sample_block_with_calculated_columns, true);
+            if (!prepared_sets.count(arg.get())) /// Not already prepared.
+            {
+                if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
+                {
+                    if (settings.use_index_for_in_with_subqueries)
+                        tryMakeSetFromSubquery(arg);
+                }
+                else
+                {
+                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
+                    getRootActions(func->arguments->children.at(0), true, false, temp_actions);
+
+                    Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
+                    if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
+                        makeExplicitSet(func, sample_block_with_calculated_columns, true);
+                }
             }
         }
     }
