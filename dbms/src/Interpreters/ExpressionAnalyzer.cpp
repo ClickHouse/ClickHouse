@@ -1504,12 +1504,10 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
             }
             else
             {
-                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
+                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(aggregated_columns, settings);
                 getRootActions(func->arguments->children.at(0), true, false, temp_actions);
-
                 Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
-                if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
-                    makeExplicitSet(func, sample_block_with_calculated_columns, true);
+                makeExplicitSet(func, sample_block_with_calculated_columns, true);
             }
         }
     }
