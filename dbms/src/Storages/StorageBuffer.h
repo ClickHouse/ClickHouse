@@ -75,6 +75,8 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override;
+
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 

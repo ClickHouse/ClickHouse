@@ -44,6 +44,8 @@ public:
     /// the structure of sub-tables is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override;
+
 private:
     String name;
     String source_database;
