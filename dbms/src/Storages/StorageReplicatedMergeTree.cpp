@@ -81,7 +81,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
-    extern const int TOO_MUCH_RETRIES_TO_FETCH_PARTS;
+    extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int PARTITION_DOESNT_EXIST;
     extern const int CHECKSUM_DOESNT_MATCH;
@@ -91,7 +91,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
     extern const int METADATA_MISMATCH;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
-    extern const int TOO_MUCH_FETCHES;
+    extern const int TOO_MANY_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int INCORRECT_FILE_NAME;
@@ -140,6 +140,14 @@ static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
 
 
+/** For randomized selection of replicas. */
+/// avoid error: non-local variable 'DB::rng' declared '__thread' needs dynamic initialization
+#ifndef __APPLE__
+thread_local
+#endif
+    pcg64 rng{randomSeed()};
+
+
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
@@ -166,10 +174,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & replica_name_,
     bool attach,
     const String & path_, const String & database_name_, const String & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
     const ASTPtr & secondary_sorting_expr_list_,
@@ -179,14 +184,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, context(context_),
+    : context(context_),
     current_zookeeper(context.getZooKeeper()), database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
-    zookeeper_path(context.getMacros().expand(zookeeper_path_)),
-    replica_name(context.getMacros().expand(replica_name_)),
+    zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
+    replica_name(context.getMacros()->expand(replica_name_)),
     data(database_name, table_name,
         full_path, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
         context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
         sampling_expression_, merging_params_,
         settings_, true, attach,
@@ -476,27 +480,25 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     auto acl = zookeeper->getDefaultACL();
 
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path, "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path, "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/metadata", metadata,
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/metadata", metadata,
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/columns", ColumnsDescription<false>{
-        data.getColumnsListNonMaterialized(), data.materialized_columns,
-        data.alias_columns, data.column_defaults}.toString(),
+    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/columns", getColumns().toString(),
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/log", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/log", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/blocks", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/blocks", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/block_numbers", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/block_numbers", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/nonincrement_block_numbers", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/nonincrement_block_numbers", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/leader_election", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/leader_election", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/temp", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/temp", "",
         acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(zookeeper_path + "/replicas", "",
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(zookeeper_path + "/replicas", "",
         acl, zkutil::CreateMode::Persistent));
 
     auto code = zookeeper->tryMulti(ops);
@@ -516,39 +518,27 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
     TableMetadata(data).check(metadata_str);
 
     zkutil::Stat stat;
-    auto columns_desc = ColumnsDescription<true>::parse(zookeeper->get(zookeeper_path + "/columns", &stat));
-
-    auto & columns = columns_desc.columns;
-    auto & materialized_columns = columns_desc.materialized;
-    auto & alias_columns = columns_desc.alias;
-    auto & column_defaults = columns_desc.defaults;
+    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &stat));
     columns_version = stat.version;
 
-    if (columns != data.getColumnsListNonMaterialized() ||
-        materialized_columns != data.materialized_columns ||
-        alias_columns != data.alias_columns ||
-        column_defaults != data.column_defaults)
+    const ColumnsDescription & old_columns = getColumns();
+    if (columns_from_zk != old_columns)
     {
         if (allow_alter &&
             (skip_sanity_checks ||
-             data.getColumnsListNonMaterialized().sizeOfDifference(columns) +
-             data.materialized_columns.sizeOfDifference(materialized_columns) <= 2))
+             old_columns.ordinary.sizeOfDifference(columns_from_zk.ordinary) +
+             old_columns.materialized.sizeOfDifference(columns_from_zk.materialized) <= 2))
         {
             LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
             /// Without any locks, because table has not been created yet.
-            context.getDatabase(database_name)->alterTable(
-                context, table_name,
-                columns, materialized_columns, alias_columns, column_defaults, {});
+            context.getDatabase(database_name)->alterTable(context, table_name, columns_from_zk, {});
 
-            data.setColumnsList(columns);
-            data.materialized_columns = std::move(materialized_columns);
-            data.alias_columns = std::move(alias_columns);
-            data.column_defaults = std::move(column_defaults);
+            setColumns(std::move(columns_from_zk));
         }
         else
         {
-            throw Exception("Table structure in ZooKeeper is too much different from local table structure.",
+            throw Exception("Table structure in ZooKeeper is too different from local table structure",
                             ErrorCodes::INCOMPATIBLE_COLUMNS);
         }
     }
@@ -583,12 +573,12 @@ void StorageReplicatedMergeTree::createReplica()
     /// Create an empty replica. We'll create `columns` node at the end - we'll use it as a sign that replica creation is complete.
     auto acl = zookeeper->getDefaultACL();
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path, "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/host", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/log_pointer", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/queue", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/parts", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(replica_path + "/flags", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path, "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/host", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/log_pointer", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/queue", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/parts", "", acl, zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(replica_path + "/flags", "", acl, zkutil::CreateMode::Persistent));
 
     try
     {
@@ -706,12 +696,7 @@ void StorageReplicatedMergeTree::createReplica()
         LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
     }
 
-    zookeeper->create(replica_path + "/columns", ColumnsDescription<false>{
-            data.getColumnsListNonMaterialized(),
-            data.materialized_columns,
-            data.alias_columns,
-            data.column_defaults
-        }.toString(), zkutil::CreateMode::Persistent);
+    zookeeper->create(replica_path + "/columns", getColumns().toString(), zkutil::CreateMode::Persistent);
 }
 
 
@@ -788,7 +773,6 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         unexpected_parts_rows += part->rows_count;
     }
 
-
     /// Additional helpful statistics
     auto get_blocks_count_in_data_part = [&] (const String & part_name) -> UInt64
     {
@@ -807,7 +791,6 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     UInt64 expected_parts_blocks = 0;
     for (const String & name : expected_parts)
         expected_parts_blocks += get_blocks_count_in_data_part(name);
-
 
     std::stringstream sanity_report;
     sanity_report << "There are "
@@ -881,7 +864,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         /// We assume that this occurs before the queue is loaded (queue.initialize).
         zkutil::Ops ops;
         removePartFromZooKeeper(name, ops);
-        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
             replica_path + "/queue/queue-", log_entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
         zookeeper->multi(ops);
     }
@@ -946,20 +929,20 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
 
     auto acl = zookeeper->getDefaultACL();
 
-    ops.emplace_back(std::make_unique<zkutil::Op::Check>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Check>(
         zookeeper_path + "/columns",
         expected_columns_version));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/parts/" + part_name,
         "",
         acl,
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/parts/" + part_name + "/columns",
         part->columns.toString(),
         acl,
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/parts/" + part_name + "/checksums",
         part->checksums.toString(),
         acl,
@@ -1144,7 +1127,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
     {
         try
         {
-            auto part_log = context.getPartLog(database_name, table_name);
+            auto part_log = context.getPartLog(database_name);
             if (!part_log)
                 return;
 
@@ -1263,7 +1246,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
     if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
     {
         throw Exception("Too many total fetches from replicas, maximum: " + data.settings.replicated_max_parallel_fetches.toString(),
-            ErrorCodes::TOO_MUCH_FETCHES);
+            ErrorCodes::TOO_MANY_FETCHES);
     }
 
     ++total_fetches;
@@ -1272,7 +1255,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
     if (data.settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
     {
         throw Exception("Too many fetches from replicas for table, maximum: " + data.settings.replicated_max_parallel_fetches_for_table.toString(),
-            ErrorCodes::TOO_MUCH_FETCHES);
+            ErrorCodes::TOO_MANY_FETCHES);
     }
 
     ++current_table_fetches;
@@ -1322,7 +1305,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
                     Stat stat;
                     String path = zookeeper_path + "/replicas/" + replicas[i] + "/host";
                     zookeeper->get(path, &stat);
-                    ops.emplace_back(std::make_unique<zkutil::Op::Check>(path, stat.version));
+                    ops.emplace_back(std::make_shared<zkutil::Op::Check>(path, stat.version));
                 }
 
                 /// We verify that while we were collecting versions, the replica with the necessary part did not come alive.
@@ -1341,7 +1324,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                     if (quorum_entry.part_name == entry.new_part_name)
                     {
-                        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(quorum_path, quorum_stat.version));
+                        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(quorum_path, quorum_stat.version));
 
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
 
@@ -1353,13 +1336,13 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                         auto acl = zookeeper->getDefaultACL();
 
-                        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+                        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
                             zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id + "/block-" + padIndex(part_info.min_block),
                             "",
                             acl,
                             zkutil::CreateMode::Persistent));
 
-                        ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+                        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
                             zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name,
                             "",
                             acl,
@@ -1367,7 +1350,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                         /// Deleting from `blocks`.
                         if (!entry.block_id.empty() && zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
-                            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id, -1));
+                            ops.emplace_back(std::make_shared<zkutil::Op::Remove>(zookeeper_path + "/blocks/" + entry.block_id, -1));
 
                         auto code = zookeeper->tryMulti(ops);
 
@@ -1521,19 +1504,12 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     alter_command.type = AlterCommand::DROP_COLUMN;
     alter_command.column_name = entry.column_name;
 
-    auto new_columns = data.getColumnsListNonMaterialized();
-    auto new_materialized_columns = data.materialized_columns;
-    auto new_alias_columns = data.alias_columns;
-    auto new_column_defaults = data.column_defaults;
-
-    alter_command.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
-
-    auto columns_for_parts = new_columns;
-    columns_for_parts.insert(std::end(columns_for_parts),
-        std::begin(new_materialized_columns), std::end(new_materialized_columns));
+    auto new_columns = getColumns();
+    alter_command.apply(new_columns);
 
     size_t modified_parts = 0;
     auto parts = data.getDataParts();
+    auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
     {
         if (!entry_part_info.contains(part->info))
@@ -1547,9 +1523,9 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         /// Update part metadata in ZooKeeper.
         zkutil::Ops ops;
-        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
+        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
             replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
+        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
             replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
 
         zookeeper->multi(ops);
@@ -1992,9 +1968,9 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
 {
     String part_path = replica_path + "/parts/" + part_name;
 
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/checksums", -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path + "/columns", -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(part_path, -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(part_path + "/checksums", -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(part_path + "/columns", -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(part_path, -1));
 }
 
 
@@ -2011,7 +1987,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     log_entry->new_part_name = part_name;
 
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         replica_path + "/queue/queue-", log_entry->toString(), zookeeper->getDefaultACL(),
         zkutil::CreateMode::PersistentSequential));
 
@@ -2161,8 +2137,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
 
             zkutil::Ops ops;
-            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(quorum_status_path, stat.version));
-            ops.emplace_back(std::make_unique<zkutil::Op::SetData>(quorum_last_part_path, part_name, -1));
+            ops.emplace_back(std::make_shared<zkutil::Op::Remove>(quorum_status_path, stat.version));
+            ops.emplace_back(std::make_shared<zkutil::Op::SetData>(quorum_last_part_path, part_name, -1));
             auto code = zookeeper->tryMulti(ops);
 
             if (code == ZOK)
@@ -2251,7 +2227,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         try
         {
-            auto part_log = context.getPartLog(database_name, table_name);
+            auto part_log = context.getPartLog(database_name);
             if (!part_log)
                 return;
 
@@ -2565,15 +2541,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
                 throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
 
-        NamesAndTypesList new_columns = data.getColumnsListNonMaterialized();
-        NamesAndTypesList new_materialized_columns = data.materialized_columns;
-        NamesAndTypesList new_alias_columns = data.alias_columns;
-        ColumnDefaults new_column_defaults = data.column_defaults;
-        params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+        ColumnsDescription new_columns = data.getColumns();
+        params.apply(new_columns);
 
-        new_columns_str = ColumnsDescription<false>{
-            new_columns, new_materialized_columns,
-            new_alias_columns, new_column_defaults}.toString();
+        new_columns_str = new_columns.toString();
 
         /// Do ALTER.
         getZooKeeper()->set(zookeeper_path + "/columns", new_columns_str, -1, &stat);
@@ -3250,7 +3221,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
 
-    auto timeouts = ConnectionTimeouts::getTCPTimeouts(context.getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
@@ -3473,7 +3444,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
             LOG_INFO(log, "Some of parts (" << missing_parts.size() << ") are missing. Will try to fetch covering parts.");
 
         if (try_no >= 5)
-            throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MUCH_RETRIES_TO_FETCH_PARTS);
+            throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS);
 
         Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
         ActiveDataPartSet active_parts_set(data.format_version, parts);

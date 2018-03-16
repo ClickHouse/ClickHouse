@@ -83,6 +83,10 @@ public:
     /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
+    /** The name of the table.
+      */
+    virtual std::string getTableName() const = 0;
+
     /** Returns true if the storage receives data from a remote server or servers. */
     virtual bool isRemote() const { return false; }
 

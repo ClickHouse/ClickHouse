@@ -21,8 +21,8 @@ StorageODBC::StorageODBC(
     const std::string & connection_string,
     const std::string & remote_database_name,
     const std::string & remote_table_name,
-    const NamesAndTypesList & columns_)
-    : IStorage{columns_, {}, {}, {}}
+    const ColumnsDescription & columns_)
+    : IStorage{columns_}
     , name(name)
     , remote_database_name(remote_database_name)
     , remote_table_name(remote_table_name)
@@ -43,7 +43,8 @@ BlockInputStreams StorageODBC::read(
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
-    String query = transformQueryForExternalDatabase(*query_info.query, columns, remote_database_name, remote_table_name, context);
+    String query = transformQueryForExternalDatabase(
+        *query_info.query, getColumns().ordinary, remote_database_name, remote_table_name, context);
 
     Block sample_block;
     for (const String & name : column_names)

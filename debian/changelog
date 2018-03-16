@@ -1,5 +1,5 @@
-clickhouse (1.1.54355) unstable; urgency=low
+clickhouse (1.1.54370) unstable; urgency=low
 
   * Modified source code
 
- --  <robot-metrika-test@yandex-team.ru>  Wed, 21 Feb 2018 10:35:08 +0300
+ --  <robot-metrika-test@yandex-team.ru>  Fri, 16 Mar 2018 12:01:50 +0300

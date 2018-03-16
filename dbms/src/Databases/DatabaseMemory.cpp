@@ -105,10 +105,7 @@ void DatabaseMemory::renameTable(
 void DatabaseMemory::alterTable(
     const Context &,
     const String &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
-    const ColumnDefaults &,
+    const ColumnsDescription &,
     const ASTModifier &)
 {
     throw Exception("DatabaseMemory: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);

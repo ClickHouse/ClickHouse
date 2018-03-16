@@ -50,7 +50,7 @@ struct MergeListElement : boost::noncopyable
     const std::string table;
     const std::string result_part_name;
     Stopwatch watch;
-    Float64 progress{};
+    std::atomic<Float64> progress{};
     UInt64 num_parts{};
     Names source_part_names;
     UInt64 total_size_bytes_compressed{};

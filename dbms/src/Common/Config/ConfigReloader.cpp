@@ -24,7 +24,11 @@ ConfigReloader::ConfigReloader(
 {
     if (!already_loaded)
         reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true);
+}
 
+
+void ConfigReloader::start()
+{
     thread = std::thread(&ConfigReloader::run, this);
 }
 
@@ -35,7 +39,9 @@ ConfigReloader::~ConfigReloader()
     {
         quit = true;
         zk_node_cache.getChangedEvent().set();
-        thread.join();
+
+        if (thread.joinable())
+            thread.join();
     }
     catch (...)
     {
@@ -67,6 +73,8 @@ void ConfigReloader::run()
 
 void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
+    std::lock_guard<std::mutex> lock(reload_mutex);
+
     FilesChangesTracker new_files = getNewFileList();
     if (force || new_files.isDifferOrNewerThan(files))
     {
