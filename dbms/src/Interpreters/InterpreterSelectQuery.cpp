@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -337,6 +338,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
     /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
+
+    if (from_stage == QueryProcessingStage::WithMergeableState && to_stage == QueryProcessingStage::WithMergeableState)
+        throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
     if (!dry_run)
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
