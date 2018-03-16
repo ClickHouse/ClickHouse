@@ -466,7 +466,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             catch (const Poco::Net::NetException & e)
             {
                 const auto code = e.code();
-                if (listen_try && (code == POCO_EPROTONOSUPPORT || code == POCO_EADDRNOTAVAIL || code == EAI_FAMILY
+                if (listen_try && (code == POCO_EPROTONOSUPPORT || code == POCO_EADDRNOTAVAIL || code == EAI_FAMILY || e.what() == std::string("Host not found")
 #if defined(EAI_ADDRFAMILY)
                     || code == EAI_ADDRFAMILY
 #endif
