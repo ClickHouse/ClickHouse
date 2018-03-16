@@ -387,8 +387,8 @@ private:
     void connect()
     {
         auto encryption = config().getBool("ssl", false)
-        ? Protocol::Encryption::Enable
-        : Protocol::Encryption::Disable;
+            ? Protocol::Encryption::Enable
+            : Protocol::Encryption::Disable;
 
         String host = config().getString("host", "localhost");
         UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
