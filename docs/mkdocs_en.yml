@@ -220,7 +220,7 @@ pages:
   - 'Internal dictionaries': 'dicts/internal_dicts.md'
 
 - 'Operation':
-  - 'Operation': 'operations/index.md'
+#  - 'Operation': 'operations/index.md'
   - 'Access rights': 'operations/access_rights.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
