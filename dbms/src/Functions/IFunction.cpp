@@ -15,7 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -127,7 +128,7 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 {
     for (auto arg : args)
-        if (!typeid_cast<const ColumnConst *>(block.getByPosition(arg).column.get()))
+        if (!block.getByPosition(arg).column->isColumnConst())
             return false;
     return true;
 }
@@ -135,10 +136,15 @@ bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 
 bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result)
 {
+    ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
+
+    /// Check that these arguments are really constant.
+    for (auto arg_num : arguments_to_remain_constants)
+        if (arg_num < args.size() && !block.getByPosition(args[arg_num]).column->isColumnConst())
+            throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
         return false;
-
-    ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
 
     Block temporary_block;
     bool have_converted_columns = false;
@@ -162,7 +168,7 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
       */
     if (!have_converted_columns)
         throw Exception("Number of arguments for function " + getName() + " doesn't match: the function requires more arguments",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     temporary_block.insert(block.getByPosition(result));
 

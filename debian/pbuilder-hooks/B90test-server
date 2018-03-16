@@ -25,7 +25,6 @@ if  [ "${TEST_SSL}" ]; then
 
     openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
     openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
-    CLIENT_ADD="--ssl"
 fi
 
 service clickhouse-server start
