@@ -516,7 +516,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                     throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
             }
         }
-
+        else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
+             return {};
+             
         res = StorageFactory::instance().get(create,
             data_path,
             table_name,
