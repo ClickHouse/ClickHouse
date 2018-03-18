@@ -174,7 +174,7 @@ public:
     struct RemoveRequest final : Request
     {
         String path;
-        int32_t version;
+        int32_t version = -1;
 
         OpNum getOpNum() const override { return 2; }
         void writeImpl(WriteBuffer &) const override;
@@ -235,7 +235,7 @@ public:
     {
         String path;
         String data;
-        int32_t version;
+        int32_t version = -1;
 
         OpNum getOpNum() const override { return 5; }
         void writeImpl(WriteBuffer &) const override;
@@ -277,7 +277,7 @@ public:
     struct CheckRequest final : Request
     {
         String path;
-        int32_t version;
+        int32_t version = -1;
 
         OpNum getOpNum() const override { return 13; }
         void writeImpl(WriteBuffer &) const override;
