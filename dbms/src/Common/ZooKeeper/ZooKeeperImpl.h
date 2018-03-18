@@ -25,6 +25,7 @@ namespace ZooKeeperImpl
 
 using namespace DB;
 
+
 /** Usage scenario:
   * - create an object and issue commands;
   * - you provide callbacks for your commands; callbacks are invoked in internal thread and must be cheap:
@@ -57,8 +58,6 @@ public:
     };
     using ACLs = std::vector<ACL>;
 
-    using WatchCallback = std::function<void()>;
-
     struct Stat
     {
         int64_t czxid;
@@ -84,6 +83,8 @@ public:
         int32_t error = 0;
         virtual ~Response() {}
         virtual void readImpl(ReadBuffer &) = 0;
+
+        virtual void removeRootPath(const String & /* root_path */) {}
     };
 
     using ResponsePtr = std::shared_ptr<Response>;
@@ -101,6 +102,9 @@ public:
         virtual void writeImpl(WriteBuffer &) const = 0;
 
         virtual ResponsePtr makeResponse() const = 0;
+
+        virtual void addRootPath(const String & /* root_path */) {};
+        virtual String getPath() const = 0;
     };
 
     using RequestPtr = std::shared_ptr<Request>;
@@ -111,6 +115,7 @@ public:
         OpNum getOpNum() const override { return 11; }
         void writeImpl(WriteBuffer &) const override {}
         ResponsePtr makeResponse() const override;
+        String getPath() const override { return {}; }
     };
 
     struct HeartbeatResponse final : Response
@@ -118,11 +123,24 @@ public:
         void readImpl(ReadBuffer &) override {}
     };
 
+    struct WatchResponse final : Response
+    {
+        int32_t type;
+        int32_t state;
+        String path;
+
+        void readImpl(ReadBuffer &) override;
+        void removeRootPath(const String & root_path) override;
+    };
+
+    using WatchCallback = std::function<void(const WatchResponse &)>;
+
     struct CloseRequest final : Request
     {
         OpNum getOpNum() const override { return -11; }
         void writeImpl(WriteBuffer &) const override {}
         ResponsePtr makeResponse() const override;
+        String getPath() const override { return {}; }
     };
 
     struct CreateRequest final : Request
@@ -136,6 +154,8 @@ public:
         OpNum getOpNum() const override { return 1; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return path; }
     };
 
     struct CreateResponse final : Response
@@ -143,6 +163,7 @@ public:
         String path_created;
 
         void readImpl(ReadBuffer &) override;
+        void removeRootPath(const String & root_path) override;
     };
 
     using CreateCallback = std::function<void(const CreateResponse &)>;
@@ -150,10 +171,13 @@ public:
     struct RemoveRequest final : Request
     {
         String path;
+        int32_t version;
 
         OpNum getOpNum() const override { return 2; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return path; }
     };
 
     struct RemoveResponse final : Response
@@ -170,6 +194,8 @@ public:
         OpNum getOpNum() const override { return 3; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return path; }
     };
 
     struct ExistsResponse final : Response
@@ -188,6 +214,8 @@ public:
         OpNum getOpNum() const override { return 4; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return path; }
     };
 
     struct GetResponse final : Response
@@ -199,6 +227,49 @@ public:
     };
 
     using GetCallback = std::function<void(const GetResponse &)>;
+
+    struct SetRequest final : Request
+    {
+        String path;
+        String data;
+        int32_t version;
+
+        OpNum getOpNum() const override { return 5; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return path; }
+    };
+
+    struct SetResponse final : Response
+    {
+        Stat stat;
+
+        void readImpl(ReadBuffer &) override;
+    };
+
+    using SetCallback = std::function<void(const SetResponse &)>;
+
+    struct ListRequest final : Request
+    {
+        String path;
+
+        OpNum getOpNum() const override { return 12; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return path; }
+    };
+
+    struct ListResponse final : Response
+    {
+        Stat stat;
+        std::vector<String> names;
+
+        void readImpl(ReadBuffer &) override;
+    };
+
+    using ListCallback = std::function<void(const ListResponse &)>;
 
     /// Connection to addresses is performed in order. If you want, shuffle them manually.
     ZooKeeper(
@@ -223,23 +294,30 @@ public:
         CreateCallback callback);
 
     void remove(
-        const String & path);
+        const String & path,
+        int32_t version,
+        RemoveCallback callback);
 
     void exists(
-        const String & path);
+        const String & path,
+        ExistsCallback callback,
+        WatchCallback watch);
 
     void get(
-        const String & path);
+        const String & path,
+        GetCallback callback,
+        WatchCallback watch);
 
     void set(
         const String & path,
-        const String & data);
+        const String & data,
+        int32_t version,
+        SetCallback callback);
 
     void list(
-        const String & path);
-
-    void check(
-        const String & path);
+        const String & path,
+        ListCallback callback,
+        WatchCallback watch);
 
     void multi();
 
@@ -248,42 +326,44 @@ public:
 
     enum ZOO_ERRORS
     {
-        ZOK = 0, /*!< Everything is OK */
+        ZOK = 0,
 
         /** System and server-side errors.
-        * This is never thrown by the server, it shouldn't be used other than
-        * to indicate a range. Specifically error codes greater than this
-        * value, but lesser than {@link #ZAPIERROR}, are system errors. */
+          * This is never thrown by the server, it shouldn't be used other than
+          * to indicate a range. Specifically error codes greater than this
+          * value, but lesser than ZAPIERROR, are system errors.
+          */
         ZSYSTEMERROR = -1,
-        ZRUNTIMEINCONSISTENCY = -2, /*!< A runtime inconsistency was found */
-        ZDATAINCONSISTENCY = -3, /*!< A data inconsistency was found */
-        ZCONNECTIONLOSS = -4, /*!< Connection to the server has been lost */
-        ZMARSHALLINGERROR = -5, /*!< Error while marshalling or unmarshalling data */
-        ZUNIMPLEMENTED = -6, /*!< Operation is unimplemented */
-        ZOPERATIONTIMEOUT = -7, /*!< Operation timeout */
-        ZBADARGUMENTS = -8, /*!< Invalid arguments */
-        ZINVALIDSTATE = -9, /*!< Invliad zhandle state */
+
+        ZRUNTIMEINCONSISTENCY = -2, /// A runtime inconsistency was found
+        ZDATAINCONSISTENCY = -3,    /// A data inconsistency was found
+        ZCONNECTIONLOSS = -4,       /// Connection to the server has been lost
+        ZMARSHALLINGERROR = -5,     /// Error while marshalling or unmarshalling data
+        ZUNIMPLEMENTED = -6,        /// Operation is unimplemented
+        ZOPERATIONTIMEOUT = -7,     /// Operation timeout
+        ZBADARGUMENTS = -8,         /// Invalid arguments
+        ZINVALIDSTATE = -9,         /// Invliad zhandle state
 
         /** API errors.
-        * This is never thrown by the server, it shouldn't be used other than
-        * to indicate a range. Specifically error codes greater than this
-        * value are API errors (while values less than this indicate a
-        * {@link #ZSYSTEMERROR}).
-        */
+          * This is never thrown by the server, it shouldn't be used other than
+          * to indicate a range. Specifically error codes greater than this
+          * value are API errors.
+          */
         ZAPIERROR = -100,
-        ZNONODE = -101, /*!< Node does not exist */
-        ZNOAUTH = -102, /*!< Not authenticated */
-        ZBADVERSION = -103, /*!< Version conflict */
-        ZNOCHILDRENFOREPHEMERALS = -108, /*!< Ephemeral nodes may not have children */
-        ZNODEEXISTS = -110, /*!< The node already exists */
-        ZNOTEMPTY = -111, /*!< The node has children */
-        ZSESSIONEXPIRED = -112, /*!< The session has been expired by the server */
-        ZINVALIDCALLBACK = -113, /*!< Invalid callback specified */
-        ZINVALIDACL = -114, /*!< Invalid ACL specified */
-        ZAUTHFAILED = -115, /*!< Client authentication failed */
-        ZCLOSING = -116, /*!< ZooKeeper is closing */
-        ZNOTHING = -117, /*!< (not error) no server responses to process */
-        ZSESSIONMOVED = -118 /*!<session moved to another server, so operation is ignored */
+
+        ZNONODE = -101,                     /// Node does not exist
+        ZNOAUTH = -102,                     /// Not authenticated
+        ZBADVERSION = -103,                 /// Version conflict
+        ZNOCHILDRENFOREPHEMERALS = -108,    /// Ephemeral nodes may not have children
+        ZNODEEXISTS = -110,                 /// The node already exists
+        ZNOTEMPTY = -111,                   /// The node has children
+        ZSESSIONEXPIRED = -112,             /// The session has been expired by the server
+        ZINVALIDCALLBACK = -113,            /// Invalid callback specified
+        ZINVALIDACL = -114,                 /// Invalid ACL specified
+        ZAUTHFAILED = -115,                 /// Client authentication failed
+        ZCLOSING = -116,                    /// ZooKeeper is closing
+        ZNOTHING = -117,                    /// (not error) no server responses to process
+        ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
     };
 
     static const char * errorMessage(int32_t code);
@@ -302,25 +382,30 @@ private:
     {
         RequestPtr request;
         ResponseCallback callback;
+        WatchCallback watch;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests{1};
+    void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
 
     Operations operations;
     std::mutex operations_mutex;
 
+    using WatchCallbacks = std::vector<WatchCallback>;
+    using Watches = std::map<String /* path */, WatchCallbacks>;
+
+    Watches watches;
+    std::mutex watches_mutex;
+
     std::thread send_thread;
     std::thread receive_thread;
 
     std::atomic<bool> stop {false};
     std::atomic<bool> expired {false};
-
-    String addRootPath(const String &);
-    String removeRootPath(const String &);
 
     void connect(
         const Addresses & addresses,
@@ -329,7 +414,7 @@ private:
     void sendHandshake();
     void receiveHandshake();
 
-    void sendAuth(XID xid, const String & auth_scheme, const String & auth_data);
+    void sendAuth(const String & auth_scheme, const String & auth_data);
 
     void receiveEvent();
 
