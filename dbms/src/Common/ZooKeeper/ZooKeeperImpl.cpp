@@ -259,7 +259,6 @@ void write(const String & s, WriteBuffer & out)
 
 template <size_t N> void write(std::array<char, N> s, WriteBuffer & out)
 {
-    std::cerr << __PRETTY_FUNCTION__ << "\n";
     write(int32_t(N), out);
     out.write(s.data(), N);
 }
@@ -361,7 +360,6 @@ template <typename T> void read(std::vector<T> & arr, ReadBuffer & in)
 template <typename T>
 void ZooKeeper::write(const T & x)
 {
-    std::cerr << __PRETTY_FUNCTION__ << "\n";
     ZooKeeperImpl::write(x, *out);
 }
 
@@ -746,25 +744,6 @@ void ZooKeeper::receiveEvent()
     read(zxid);
     read(err);
 
-    if (xid == ping_xid)
-    {
-        if (err)
-            throw Exception("Received error in heartbeat response: " + String(errorMessage(err)));
-        return;
-    }
-
-    if (xid == watch_xid)
-    {
-        WatchResponse response;
-        if (err)
-            response.error = err;
-        else
-        {
-            response.readImpl(*in);
-            response.removeRootPath(root_path);
-        }
-    }
-
     RequestInfo request_info;
     ResponsePtr response;
 
@@ -774,6 +753,8 @@ void ZooKeeper::receiveEvent()
             throw Exception("Received error in heartbeat response: " + String(errorMessage(err)));
 
         response = std::make_shared<HeartbeatResponse>();
+
+        std::cerr << "Received heartbeat\n";
     }
     else if (xid == watch_xid)
     {
@@ -794,6 +775,8 @@ void ZooKeeper::receiveEvent()
 
             watches.erase(it);
         };
+
+        std::cerr << "Received watch\n";
     }
     else
     {
@@ -808,6 +791,8 @@ void ZooKeeper::receiveEvent()
             operations.erase(it);
         }
 
+        std::cerr << "Received response: " << request_info.request->getOpNum() << "\n";
+
         response = request_info.request->makeResponse();
     }
 
@@ -821,7 +806,7 @@ void ZooKeeper::receiveEvent()
 
     int32_t actual_length = in->count() - count_before_event;
     if (length != actual_length)
-        throw Exception("Response length doesn't match");
+        throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length));
 
     if (request_info.callback)
         request_info.callback(*response);
@@ -886,7 +871,7 @@ void ZooKeeper::MultiRequest::writeImpl(WriteBuffer & out) const
     for (const auto & request : requests)
     {
         bool done = false;
-        int32_t error = 0;
+        int32_t error = -1;
 
         ZooKeeperImpl::write(request->getOpNum(), out);
         ZooKeeperImpl::write(done, out);
@@ -958,6 +943,8 @@ void ZooKeeper::MultiResponse::readImpl(ReadBuffer & in)
         ZooKeeperImpl::read(op_num, in);
         ZooKeeperImpl::read(done, in);
         ZooKeeperImpl::read(error, in);
+
+        std::cerr << "Received result for multi: " << op_num << "\n";
 
         if (done)
             throw Exception("Not enough results received for multi transaction");
@@ -1125,6 +1112,11 @@ void ZooKeeper::multi(
 {
     MultiRequest request;
     request.requests = requests;
+
+    for (auto & elem : request.requests)
+        if (CreateRequest * create = typeid_cast<CreateRequest *>(elem.get()))
+            if (create->acls.empty())
+                create->acls = default_acls;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<MultiRequest>(std::move(request));
