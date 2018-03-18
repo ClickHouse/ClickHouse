@@ -10,7 +10,7 @@ try
     zookeeper.create("/test", "hello", false, false, {}, [](const ZooKeeperImpl::ZooKeeper::CreateResponse & response)
     {
         if (response.error)
-            std::cerr << "Error: " << response.error << "\n";
+            std::cerr << "Error " << response.error << ": " << ZooKeeperImpl::ZooKeeper::errorMessage(response.error) << "\n";
         else
             std::cerr << "Path created: " << response.path_created << "\n";
     });

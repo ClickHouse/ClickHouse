@@ -232,6 +232,41 @@ static constexpr ZooKeeper::XID ping_xid = -2;
 static constexpr ZooKeeper::XID close_xid = -3;
 
 
+const char * ZooKeeper::errorMessage(int32_t code)
+{
+    switch (code)
+    {
+        case ZOK:                       return "Ok";
+        case ZSYSTEMERROR:              return "System error";
+        case ZRUNTIMEINCONSISTENCY:     return "Run time inconsistency";
+        case ZDATAINCONSISTENCY:        return "Data inconsistency";
+        case ZCONNECTIONLOSS:           return "Connection loss";
+        case ZMARSHALLINGERROR:         return "Marshalling error";
+        case ZUNIMPLEMENTED:            return "Unimplemented";
+        case ZOPERATIONTIMEOUT:         return "Operation timeout";
+        case ZBADARGUMENTS:             return "Bad arguments";
+        case ZINVALIDSTATE:             return "Invalid zhandle state";
+        case ZAPIERROR:                 return "API error";
+        case ZNONODE:                   return "No node";
+        case ZNOAUTH:                   return "Not authenticated";
+        case ZBADVERSION:               return "Bad version";
+        case ZNOCHILDRENFOREPHEMERALS:  return "No children for ephemerals";
+        case ZNODEEXISTS:               return "Node exists";
+        case ZNOTEMPTY:                 return "Not empty";
+        case ZSESSIONEXPIRED:           return "Session expired";
+        case ZINVALIDCALLBACK:          return "Invalid callback";
+        case ZINVALIDACL:               return "Invalid ACL";
+        case ZAUTHFAILED:               return "Authentication failed";
+        case ZCLOSING:                  return "ZooKeeper is closing";
+        case ZNOTHING:                  return "(not error) no server responses to process";
+        case ZSESSIONMOVED:             return "Session moved to another server, so operation is ignored";
+    }
+    if (code > 0)
+        return strerror(code);
+
+    return "unknown error";
+}
+
 
 ZooKeeper::~ZooKeeper()
 {
@@ -262,6 +297,23 @@ ZooKeeper::ZooKeeper(
     {
         if (root_path.back() == '/')
             root_path.pop_back();
+    }
+
+    if (auth_scheme.empty())
+    {
+        ACL acl;
+        acl.permissions = ACL::All;
+        acl.scheme = "world";
+        acl.id = "anyone";
+        default_acls.emplace_back(std::move(acl));
+    }
+    else
+    {
+        ACL acl;
+        acl.permissions = ACL::All;
+        acl.scheme = "auth";
+        acl.id = "";
+        default_acls.emplace_back(std::move(acl));
     }
 
     connect(addresses, connection_timeout);
@@ -581,7 +633,7 @@ void ZooKeeper::create(
     request.data = data;
     request.is_ephemeral = is_ephemeral;
     request.is_sequential = is_sequential;
-    request.acls = acls;
+    request.acls = acls.empty() ? default_acls : acls;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<CreateRequest>(std::move(request));
