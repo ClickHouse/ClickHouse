@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/Types.h>
+#include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
 #include <IO/ReadBuffer.h>
@@ -13,6 +13,7 @@
 
 #include <map>
 #include <vector>
+#include <memory>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -45,7 +46,7 @@ public:
         String scheme;
         String id;
 
-        void write(WriteBuffer & out);
+        void write(WriteBuffer & out) const;
     };
     using ACLs = std::vector<ACL>;
 
@@ -68,36 +69,56 @@ public:
         void read(ReadBuffer & in);
     };
 
-    struct Request
-    {
-        virtual ~Request() {};
-        virtual int32_t op_num() const = 0;
-        virtual void write(WriteBuffer & out) const = 0;
-    };
-
-    using RequestPtr = std::unique_ptr<Request>;
-    using Requests = std::vector<RequestPtr>;
+    using XID = int32_t;
+    using OpNum = int32_t;
 
     struct Response
     {
+        int32_t error = 0;
         virtual ~Response() {}
-        virtual void read(ReadBuffer & in) = 0;
+        virtual void readImpl(ReadBuffer &) = 0;
     };
 
-    using ResponsePtr = std::unique_ptr<Response>;
+    using ResponsePtr = std::shared_ptr<Response>;
     using ResponseCallback = std::function<void(const Response &)>;
 
-    struct HeartbeatRequest : Request
+    struct Request
     {
-        void write(WriteBuffer & out) const override;
+        XID xid;
+
+        virtual ~Request() {};
+        virtual OpNum getOpNum() const = 0;
+
+        /// Writes length, xid, op_num, then the rest.
+        void write(WriteBuffer & out) const;
+        virtual void writeImpl(WriteBuffer &) const = 0;
+
+        virtual ResponsePtr makeResponse() const = 0;
     };
 
-    struct HeartbeatResponse : Response
+    using RequestPtr = std::shared_ptr<Request>;
+    using Requests = std::vector<RequestPtr>;
+
+    struct HeartbeatRequest final : Request
     {
-        void read(ReadBuffer & in) override;
+        OpNum getOpNum() const override { return 11; }
+        void writeImpl(WriteBuffer &) const override {}
+        ResponsePtr makeResponse() const override;
     };
 
-    struct CreateRequest : Request
+    struct HeartbeatResponse final : Response
+    {
+        void readImpl(ReadBuffer &) override {}
+    };
+
+    struct CloseRequest final : Request
+    {
+        OpNum getOpNum() const override { return -11; }
+        void writeImpl(WriteBuffer &) const override {}
+        ResponsePtr makeResponse() const override;
+    };
+
+    struct CreateRequest final : Request
     {
         String path;
         String data;
@@ -105,64 +126,72 @@ public:
         bool is_sequential;
         ACLs acls;
 
-        void write(WriteBuffer & out) const override;
+        OpNum getOpNum() const override { return 1; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
     };
 
-    struct CreateResponse : Response
+    struct CreateResponse final : Response
     {
         String path_created;
 
-        void read(ReadBuffer & in) override;
+        void readImpl(ReadBuffer &) override;
     };
 
     using CreateCallback = std::function<void(const CreateResponse &)>;
 
-    struct RemoveRequest : Request
+    struct RemoveRequest final : Request
     {
         String path;
 
-        void write(WriteBuffer & out) const override;
+        OpNum getOpNum() const override { return 2; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
     };
 
-    struct RemoveResponse : Response
+    struct RemoveResponse final : Response
     {
-        void read(ReadBuffer & in) override {}
+        void readImpl(ReadBuffer &) override {}
     };
 
-    struct ExistsRequest : Request
-    {
-        static constexpr int32_t op_num = 3;
+    using RemoveCallback = std::function<void(const RemoveResponse &)>;
 
+    struct ExistsRequest final : Request
+    {
         String path;
 
-        void write(WriteBuffer & out) const override;
+        OpNum getOpNum() const override { return 3; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
     };
 
-    struct ExistsResponse : Response
+    struct ExistsResponse final : Response
     {
         Stat stat;
 
-        void read(ReadBuffer & in) override;
+        void readImpl(ReadBuffer &) override;
     };
 
-    struct GetRequest : Request
-    {
-        static constexpr int32_t op_num = 4;
+    using ExistsCallback = std::function<void(const ExistsResponse &)>;
 
+    struct GetRequest final : Request
+    {
         String path;
 
-        void write(WriteBuffer & out) const override;
+        OpNum getOpNum() const override { return 4; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
     };
 
-    struct GetResponse : Response
+    struct GetResponse final : Response
     {
         String data;
         Stat stat;
 
-        void read(ReadBuffer & in) override;
+        void readImpl(ReadBuffer &) override;
     };
 
-    using RemoveCallback = std::function<void(const RemoveResponse &)>;
+    using GetCallback = std::function<void(const GetResponse &)>;
 
     /// Connection to addresses is performed in order. If you want, shuffle them manually.
     ZooKeeper(
@@ -217,13 +246,20 @@ private:
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
-    ConcurrentBoundedQueue<RequestPtr> requests(1);
+    struct RequestInfo
+    {
+        RequestPtr request;
+        ResponseCallback callback;
+    };
 
-    using XID = uint32_t;
-    using ResponseCallbacks = std::map<XID, ResponseCallback>;
+    using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    ResponseCallbacks response_callbacks;
-    std::mutex response_callbacks_mutex;
+    RequestsQueue requests{1};
+
+    using Operations = std::map<XID, RequestInfo>;
+
+    Operations operations;
+    std::mutex operations_mutex;
 
     std::thread send_thread;
     std::thread receive_thread;
@@ -231,15 +267,22 @@ private:
     std::atomic<bool> stop {false};
     std::atomic<bool> expired {false};
 
-    void connect();
+    String addRootPath(const String &);
+    String removeRootPath(const String &);
+
+    void connect(
+        const Addresses & addresses,
+        Poco::Timespan connection_timeout);
+
     void sendHandshake();
     void receiveHandshake();
+
     void sendAuth(XID xid, const String & auth_scheme, const String & auth_data);
-    void sendRequest(XID xid, const Request & request);
+
     void receiveEvent();
 
-    void sendThread(ReadBuffer & in);
-    void receiveThread(ReadBuffer & in);
+    void sendThread();
+    void receiveThread();
 
     template <typename T>
     void write(const T &);

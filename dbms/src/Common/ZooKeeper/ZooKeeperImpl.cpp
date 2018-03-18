@@ -1,20 +1,24 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBuferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 
 #include <chrono>
+#include <array>
+
+#include <iostream>
 
 
 /** ZooKeeper wire protocol.
 
 Debugging example:
-strace -f -e trace=network -s1000 -x ./clickhouse-zookeeper-cli localhost:2181
+strace -t -f -e trace=network -s1000 -x ./clickhouse-zookeeper-cli localhost:2181
 
 All numbers are in network byte order (big endian). Sizes are 32 bit. Numbers are signed.
 
@@ -104,6 +108,7 @@ namespace ZooKeeperImpl
 
 using namespace DB;
 
+
 /// Assuming we are at little endian.
 
 void write(int64_t x, WriteBuffer & out)
@@ -120,26 +125,34 @@ void write(int32_t x, WriteBuffer & out)
 
 void write(const String & s, WriteBuffer & out)
 {
-    write(int32_t(s.size()));
+    write(int32_t(s.size()), out);
     out.write(s.data(), s.size());
 }
 
-template <size_t N> void write(char s[N], WriteBuffer & out)
+template <size_t N> void write(std::array<char, N> s, WriteBuffer & out)
 {
-    write(int32_t(N));
-    out.write(s, N);
+    std::cerr << __PRETTY_FUNCTION__ << "\n";
+    write(int32_t(N), out);
+    out.write(s.data(), N);
 }
 
 template <typename T> void write(const std::vector<T> & arr, WriteBuffer & out)
 {
-    write(int32_t(arr.size()));
+    write(int32_t(arr.size()), out);
     for (const auto & elem : arr)
-        write(elem);
+        write(elem, out);
 }
 
 void write(const ZooKeeper::ACL & acl, WriteBuffer & out)
 {
     acl.write(out);
+}
+
+void ZooKeeper::ACL::write(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(permissions, out);
+    ZooKeeperImpl::write(scheme, out);
+    ZooKeeperImpl::write(id, out);
 }
 
 
@@ -159,20 +172,20 @@ void read(String & s, ReadBuffer & in)
 {
     static constexpr int32_t max_string_size = 1 << 20;
     int32_t size = 0;
-    read(size);
+    read(size, in);
     if (size > max_string_size)
         throw Exception("Too large string size");   /// TODO error code
     s.resize(size);
     in.read(&s[0], size);
 }
 
-template <size_t N> void read(char(&arr)[N], ReadBuffer & in)
+template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
 {
     int32_t size = 0;
-    read(size);
+    read(size, in);
     if (size != N)
         throw Exception("Unexpected array size");   /// TODO error code
-    in.read(arr, N);
+    in.read(&s[0], N);
 }
 
 void read(ZooKeeper::Stat & stat, ReadBuffer & in)
@@ -180,18 +193,43 @@ void read(ZooKeeper::Stat & stat, ReadBuffer & in)
     stat.read(in);
 }
 
+void ZooKeeper::Stat::read(ReadBuffer & in)
+{
+    ZooKeeperImpl::read(czxid, in);
+    ZooKeeperImpl::read(mzxid, in);
+    ZooKeeperImpl::read(ctime, in);
+    ZooKeeperImpl::read(mtime, in);
+    ZooKeeperImpl::read(version, in);
+    ZooKeeperImpl::read(cversion, in);
+    ZooKeeperImpl::read(aversion, in);
+    ZooKeeperImpl::read(ephemeralOwner, in);
+    ZooKeeperImpl::read(dataLength, in);
+    ZooKeeperImpl::read(numChildren, in);
+    ZooKeeperImpl::read(pzxid, in);
+}
+
 
 template <typename T>
 void ZooKeeper::write(const T & x)
 {
-    write(x, out);
+    std::cerr << __PRETTY_FUNCTION__ << "\n";
+    ZooKeeperImpl::write(x, *out);
 }
 
 template <typename T>
 void ZooKeeper::read(T & x)
 {
-    read(x, in);
+    ZooKeeperImpl::read(x, *in);
 }
+
+
+static constexpr int32_t protocol_version = 0;
+
+//static constexpr ZooKeeper::XID watch_xid = -1;
+static constexpr ZooKeeper::XID ping_xid = -2;
+//static constexpr ZooKeeper::XID auth_xid = -4;
+
+static constexpr ZooKeeper::XID close_xid = -3;
 
 
 
@@ -204,20 +242,29 @@ ZooKeeper::~ZooKeeper()
 
     if (receive_thread.joinable())
         receive_thread.join();
+
+    if (!expired)
+        close();
 }
 
 
 ZooKeeper::ZooKeeper(
     const Addresses & addresses,
-    const String & root_path,
+    const String & root_path_,
     const String & auth_scheme,
     const String & auth_data,
     Poco::Timespan session_timeout,
     Poco::Timespan connection_timeout)
-    : root_path(root_path),
+    : root_path(root_path_),
     session_timeout(session_timeout)
 {
-    connect();
+    if (!root_path.empty())
+    {
+        if (root_path.back() == '/')
+            root_path.pop_back();
+    }
+
+    connect(addresses, connection_timeout);
 
     sendHandshake();
     receiveHandshake();
@@ -231,7 +278,8 @@ ZooKeeper::ZooKeeper(
 
 
 void ZooKeeper::connect(
-    const Addresses & addresses)
+    const Addresses & addresses,
+    Poco::Timespan connection_timeout)
 {
     static constexpr size_t num_tries = 3;
     bool connected = false;
@@ -262,9 +310,9 @@ void ZooKeeper::connect(
     if (!connected)
         throw Exception("All connection tries failed"); /// TODO more info; error code
 
-    socket->setReceiveTimeout(session_timeout);
-    socket->setSendTimeout(session_timeout);
-    socket->setNoDelay(true);
+    socket.setReceiveTimeout(session_timeout);
+    socket.setSendTimeout(session_timeout);
+    socket.setNoDelay(true);
 
     in.emplace(socket);
     out.emplace(socket);
@@ -274,12 +322,11 @@ void ZooKeeper::connect(
 void ZooKeeper::sendHandshake()
 {
     int32_t handshake_length = 44;
-    int32_t protocol_version = 0;
     int64_t last_zxid_seen = 0;
     int32_t timeout = session_timeout.totalMilliseconds();
     int64_t session_id = 0;
     constexpr int32_t passwd_len = 16;
-    char passwd[passwd_len] {};
+    std::array<char, passwd_len> passwd {};
 
     write(handshake_length);
     write(protocol_version);
@@ -288,26 +335,26 @@ void ZooKeeper::sendHandshake()
     write(session_id);
     write(passwd);
 
-    out.next();
+    out->next();
 }
 
 
 void ZooKeeper::receiveHandshake()
 {
     int32_t handshake_length;
-    int32_t protocol_version;
+    int32_t protocol_version_read;
     int32_t timeout;
     int64_t session_id;
     constexpr int32_t passwd_len = 16;
-    char passwd[passwd_len] {};
+    std::array<char, passwd_len> passwd;
 
     read(handshake_length);
     if (handshake_length != 36)
         throw Exception("Unexpected handshake length received: " + toString(handshake_length));
 
-    read(protocol_version);
-    if (protocol_version != 0)
-        throw Exception("Unexpected protocol version: " + toString(protocol_version));
+    read(protocol_version_read);
+    if (protocol_version_read != protocol_version)
+        throw Exception("Unexpected protocol version: " + toString(protocol_version_read));
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
@@ -318,9 +365,18 @@ void ZooKeeper::receiveHandshake()
 }
 
 
-void ZooKeeper::sendAuth(XID xid, const String & auth_scheme, const String & auth_data)
+/*void ZooKeeper::sendAuth(XID xid, const String & auth_scheme, const String & auth_data)
 {
     // TODO
+}*/
+
+
+void ZooKeeper::close()
+{
+    CloseRequest request;
+    request.xid = close_xid;
+    request.write(*out);
+    expired = true;
 }
 
 
@@ -336,20 +392,30 @@ void ZooKeeper::sendThread()
             ++xid;
 
             auto now =  std::chrono::steady_clock::now();
-            auto next_heartbeat_time = prev_heartbeat_time + std::chrono::duration<std::chrono::milliseconds>(session_timeout.totalMilliseconds());
-            auto max_wait = next_heartbeat_time > now
-                ? std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now)
-                : 0;
+            auto next_heartbeat_time = prev_heartbeat_time + std::chrono::milliseconds(session_timeout.totalMilliseconds() / 3);
+            UInt64 max_wait = 0;
+            if (next_heartbeat_time > now)
+                max_wait = std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count();
 
-            RequestPtr request;
-            if (requests.tryPop(request, max_wait))
+            RequestInfo request_info;
+            if (requests.tryPop(request_info, max_wait))
             {
-                sendRequest(xid, *request);
+                request_info.request->xid = xid;
+
+                {
+                    std::lock_guard lock(operations_mutex);
+                    operations[xid] = request_info;
+                }
+
+                request_info.request->write(*out);
             }
             else
             {
                 prev_heartbeat_time = std::chrono::steady_clock::now();
-                sendRequest(xid, HeartbeatRequest());
+
+                HeartbeatRequest request;
+                request.xid = ping_xid;
+                request.write(*out);
             }
         }
     }
@@ -366,24 +432,168 @@ void ZooKeeper::sendThread()
 
 void ZooKeeper::receiveThread()
 {
+    try
+    {
+        while (!stop)
+        {
+            if (!in->poll(session_timeout.totalMicroseconds()))
+                throw Exception("Nothing is received in session timeout");
 
+            receiveEvent();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        expired = true;
+        stop = true;
+    }
 }
 
 
-void ZooKeeper::sendRequest(XID xid, const Request & request)
+void ZooKeeper::Request::write(WriteBuffer & out) const
 {
     /// Excessive copy to calculate length.
     WriteBufferFromOwnString buf;
-    write(xid, buf);
-    request.write(buf);
-    write(buf.str());
+    ZooKeeperImpl::write(xid, buf);
+    ZooKeeperImpl::write(getOpNum(), buf);
+    writeImpl(buf);
+    ZooKeeperImpl::write(buf.str(), out);
+    out.next();
 }
 
 
-void ZooKeeper::HeartbeatRequest::write(WriteBuffer & out) const
+ZooKeeper::ResponsePtr ZooKeeper::HeartbeatRequest::makeResponse() const { return std::make_shared<HeartbeatResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::CreateRequest::makeResponse() const { return std::make_shared<CreateResponse>(); }
+//ZooKeeper::ResponsePtr ZooKeeper::RemoveRequest::makeResponse() const { return std::make_shared<RemoveResponse>(); }
+//ZooKeeper::ResponsePtr ZooKeeper::ExistsRequest::makeResponse() const { return std::make_shared<ExistsResponse>(); }
+//ZooKeeper::ResponsePtr ZooKeeper::GetRequest::makeResponse() const { return std::make_shared<GetResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { throw Exception("Received response for close request"); }
+
+
+void ZooKeeper::receiveEvent()
 {
-    int32_t op_num = 11;
-    write(op_num);
+    int32_t length;
+    int32_t xid;
+    int64_t zxid;
+    int32_t err;
+
+    read(length);
+    size_t count_before_event = in->count();
+    read(xid);
+    read(zxid);
+    read(err);
+
+    if (xid == ping_xid)
+    {
+        /// TODO process err
+        return;
+    }
+
+    RequestInfo request_info;
+
+    {
+        std::lock_guard lock(operations_mutex);
+
+        auto it = operations.find(xid);
+        if (it == operations.end())
+            throw Exception("Received response for unknown xid");
+
+        request_info = std::move(it->second);
+        operations.erase(it);
+    }
+
+    ResponsePtr response = request_info.request->makeResponse();
+
+    if (err)
+        response->error = err;
+    else
+        response->readImpl(*in);
+
+    int32_t actual_length = in->count() - count_before_event;
+    if (length != actual_length)
+        throw Exception("Response length doesn't match");
+
+    if (request_info.callback)
+        request_info.callback(*response);
+}
+
+
+void ZooKeeper::CreateRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(path, out);
+    ZooKeeperImpl::write(data, out);
+    ZooKeeperImpl::write(acls, out);
+
+    int32_t flags = 0;
+
+    if (is_ephemeral)
+        flags |= 1;
+    if (is_sequential)
+        flags |= 2;
+
+    ZooKeeperImpl::write(flags, out);
+}
+
+
+void ZooKeeper::CreateResponse::readImpl(ReadBuffer & in)
+{
+    ZooKeeperImpl::read(path_created, in);
+}
+
+
+String ZooKeeper::addRootPath(const String & path)
+{
+    if (path.empty())
+        throw Exception("Path cannot be empty");
+
+    if (path[0] != '/')
+        throw Exception("Path must begin with /");
+
+    if (root_path.empty())
+        return path;
+
+    return root_path + path;
+}
+
+String ZooKeeper::removeRootPath(const String & path)
+{
+    if (root_path.empty())
+        return path;
+
+    if (path.size() <= root_path.size())
+        throw Exception("Received path is not longer than root_path");
+
+    return path.substr(root_path.size());
+}
+
+
+void ZooKeeper::create(
+    const String & path,
+    const String & data,
+    bool is_ephemeral,
+    bool is_sequential,
+    const ACLs & acls,
+    CreateCallback callback)
+{
+    CreateRequest request;
+    request.path = addRootPath(path);
+    request.data = data;
+    request.is_ephemeral = is_ephemeral;
+    request.is_sequential = is_sequential;
+    request.acls = acls;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<CreateRequest>(std::move(request));
+    request_info.callback = [callback, this](const Response & response)
+    {
+        auto concrete_response = typeid_cast<const CreateResponse &>(response);
+        concrete_response.path_created = removeRootPath(concrete_response.path_created);
+        callback(concrete_response);
+    };
+
+    if (!requests.tryPush(request_info, session_timeout.totalMilliseconds()))
+        throw Exception("Cannot push request to queue within session timeout");
 }
 
 
