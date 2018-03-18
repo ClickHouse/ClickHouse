@@ -78,6 +78,7 @@ public:
     using XID = int32_t;
     using OpNum = int32_t;
 
+
     struct Response
     {
         int32_t error = 0;
@@ -88,11 +89,13 @@ public:
     };
 
     using ResponsePtr = std::shared_ptr<Response>;
+    using Responses = std::vector<ResponsePtr>;
     using ResponseCallback = std::function<void(const Response &)>;
 
     struct Request
     {
         XID xid;
+        bool has_watch = false;
 
         virtual ~Request() {};
         virtual OpNum getOpNum() const = 0;
@@ -271,6 +274,49 @@ public:
 
     using ListCallback = std::function<void(const ListResponse &)>;
 
+    struct CheckRequest final : Request
+    {
+        String path;
+        int32_t version;
+
+        OpNum getOpNum() const override { return 13; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return path; }
+    };
+
+    struct CheckResponse final : Response
+    {
+        void readImpl(ReadBuffer &) override {};
+    };
+
+    using CheckCallback = std::function<void(const CheckResponse &)>;
+
+    struct MultiRequest final : Request
+    {
+        Requests requests;
+
+        OpNum getOpNum() const override { return 14; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
+        void addRootPath(const String & root_path) override;
+        String getPath() const override { return {}; }
+    };
+
+    struct MultiResponse final : Response
+    {
+        Responses responses;
+
+        MultiResponse(const Requests & requests);
+
+        void readImpl(ReadBuffer &) override;
+        void removeRootPath(const String & root_path) override;
+    };
+
+    using MultiCallback = std::function<void(const MultiResponse &)>;
+
+
     /// Connection to addresses is performed in order. If you want, shuffle them manually.
     ZooKeeper(
         const Addresses & addresses,
@@ -319,7 +365,14 @@ public:
         ListCallback callback,
         WatchCallback watch);
 
-    void multi();
+    void check(
+        const String & path,
+        int32_t version,
+        CheckCallback callback);
+
+    void multi(
+        const Requests & requests,
+        MultiCallback callback);
 
     void close();
 
