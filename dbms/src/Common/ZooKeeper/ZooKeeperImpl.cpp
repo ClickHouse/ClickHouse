@@ -77,7 +77,7 @@ Client sends requests. For example, create persistent node '/hello' with value '
 int32_t request_length \x00\x00\x00\x3a
 int32_t xid            \x5a\xad\x72\x3f      Arbitary number. Used for identification of requests/responses.
                                          libzookeeper uses unix timestamp for first xid and then autoincrement to that value.
-int32_t type           \x00\x00\x00\x01      ZOO_CREATE_OP 1
+int32_t op_num         \x00\x00\x00\x01      ZOO_CREATE_OP 1
 int32_t path_length    \x00\x00\x00\x06
 path                   \x2f\x68\x65\x6c\x6c\x6f  /hello
 int32_t data_length    \x00\x00\x00\x05
@@ -100,6 +100,38 @@ int64 zxid              \x00\x00\x00\x00\x00\x01\x87\x99
 int32_t err             \x00\x00\x00\x00
 string path_created     \x00\x00\x00\x06
                         \x2f\x68\x65\x6c\x6c\x6f  /hello - may differ to original path in case of sequential nodes.
+
+
+Client may place a watch in their request.
+
+For example, client sends "exists" request with watch:
+
+request length \x00\x00\x00\x12
+xid            \x5a\xae\xb2\x0d
+op_num         \x00\x00\x00\x03
+path           \x00\x00\x00\x05
+               \x2f\x74\x65\x73\x74     /test
+bool watch     \x01
+
+Server will send response as usual.
+And later, server may send special watch event.
+
+struct WatcherEvent
+{
+    int32_t type;
+    int32_t state;
+    char * path;
+};
+
+response length    \x00\x00\x00\x21
+special watch xid  \xff\xff\xff\xff
+special watch zxid \xff\xff\xff\xff\xff\xff\xff\xff
+err                \x00\x00\x00\x00
+type               \x00\x00\x00\x02     DELETED_EVENT_DEF 2
+state              \x00\x00\x00\x03     CONNECTED_STATE_DEF 3
+path               \x00\x00\x00\x05
+                   \x2f\x74\x65\x73\x74  /test
+
   */
 
 
@@ -173,6 +205,8 @@ void read(String & s, ReadBuffer & in)
     static constexpr int32_t max_string_size = 1 << 20;
     int32_t size = 0;
     read(size, in);
+    if (size < 0)
+        throw Exception("Negative size");
     if (size > max_string_size)
         throw Exception("Too large string size");   /// TODO error code
     s.resize(size);
@@ -208,6 +242,20 @@ void ZooKeeper::Stat::read(ReadBuffer & in)
     ZooKeeperImpl::read(pzxid, in);
 }
 
+template <typename T> void read(std::vector<T> & arr, ReadBuffer & in)
+{
+    static constexpr int32_t max_array_size = 1 << 20;
+    int32_t size = 0;
+    read(size, in);
+    if (size < 0)
+        throw Exception("Negative size");
+    if (size > max_array_size)
+        throw Exception("Too large array size");   /// TODO error code
+    arr.resize(size);
+    for (auto & elem : arr)
+        read(elem, in);
+}
+
 
 template <typename T>
 void ZooKeeper::write(const T & x)
@@ -225,7 +273,7 @@ void ZooKeeper::read(T & x)
 
 static constexpr int32_t protocol_version = 0;
 
-//static constexpr ZooKeeper::XID watch_xid = -1;
+static constexpr ZooKeeper::XID watch_xid = -1;
 static constexpr ZooKeeper::XID ping_xid = -2;
 //static constexpr ZooKeeper::XID auth_xid = -4;
 
@@ -322,7 +370,7 @@ ZooKeeper::ZooKeeper(
     receiveHandshake();
 
     if (!auth_scheme.empty())
-        sendAuth(-1, auth_scheme, auth_data);
+        sendAuth(auth_scheme, auth_data);
 
     send_thread = std::thread([this] { sendThread(); });
     receive_thread = std::thread([this] { receiveThread(); });
@@ -434,15 +482,13 @@ void ZooKeeper::close()
 
 void ZooKeeper::sendThread()
 {
-    XID xid = 0;    /// TODO deal with xid overflow
+    XID xid = 2;    /// TODO deal with xid overflow /// NOTE xid = 1 is reserved for auth request.
     auto prev_heartbeat_time = std::chrono::steady_clock::now();
 
     try
     {
         while (!stop)
         {
-            ++xid;
-
             auto now =  std::chrono::steady_clock::now();
             auto next_heartbeat_time = prev_heartbeat_time + std::chrono::milliseconds(session_timeout.totalMilliseconds() / 3);
             UInt64 max_wait = 0;
@@ -452,11 +498,18 @@ void ZooKeeper::sendThread()
             RequestInfo request_info;
             if (requests.tryPop(request_info, max_wait))
             {
+                request_info.request->addRootPath(root_path);
                 request_info.request->xid = xid;
 
                 {
                     std::lock_guard lock(operations_mutex);
                     operations[xid] = request_info;
+                }
+
+                if (request_info.watch)
+                {
+                    std::lock_guard lock(watches_mutex);
+                    watches[request_info.request->getPath()].emplace_back(std::move(request_info.watch));
                 }
 
                 request_info.request->write(*out);
@@ -469,6 +522,8 @@ void ZooKeeper::sendThread()
                 request.xid = ping_xid;
                 request.write(*out);
             }
+
+            ++xid;
         }
     }
     catch (...)
@@ -517,10 +572,49 @@ void ZooKeeper::Request::write(WriteBuffer & out) const
 
 ZooKeeper::ResponsePtr ZooKeeper::HeartbeatRequest::makeResponse() const { return std::make_shared<HeartbeatResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::CreateRequest::makeResponse() const { return std::make_shared<CreateResponse>(); }
-//ZooKeeper::ResponsePtr ZooKeeper::RemoveRequest::makeResponse() const { return std::make_shared<RemoveResponse>(); }
-//ZooKeeper::ResponsePtr ZooKeeper::ExistsRequest::makeResponse() const { return std::make_shared<ExistsResponse>(); }
-//ZooKeeper::ResponsePtr ZooKeeper::GetRequest::makeResponse() const { return std::make_shared<GetResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::RemoveRequest::makeResponse() const { return std::make_shared<RemoveResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::ExistsRequest::makeResponse() const { return std::make_shared<ExistsResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::GetRequest::makeResponse() const { return std::make_shared<GetResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::SetRequest::makeResponse() const { return std::make_shared<SetResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::ListRequest::makeResponse() const { return std::make_shared<ListResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { throw Exception("Received response for close request"); }
+
+void addRootPath(String & path, const String & root_path)
+{
+    if (path.empty())
+        throw Exception("Path cannot be empty");
+
+    if (path[0] != '/')
+        throw Exception("Path must begin with /");
+
+    if (root_path.empty())
+        return;
+
+    path = root_path + path;
+}
+
+void removeRootPath(String & path, const String & root_path)
+{
+    if (root_path.empty())
+        return;
+
+    if (path.size() <= root_path.size())
+        throw Exception("Received path is not longer than root_path");
+
+    path = path.substr(root_path.size());
+}
+
+
+void ZooKeeper::CreateRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
+void ZooKeeper::RemoveRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
+void ZooKeeper::ExistsRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
+void ZooKeeper::GetRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
+void ZooKeeper::SetRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
+void ZooKeeper::ListRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
+
+void ZooKeeper::CreateResponse::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path_created, root_path); }
+void ZooKeeper::WatchResponse::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+
 
 
 void ZooKeeper::receiveEvent()
@@ -538,29 +632,76 @@ void ZooKeeper::receiveEvent()
 
     if (xid == ping_xid)
     {
-        /// TODO process err
+        if (err)
+            throw Exception("Received error in heartbeat response: " + String(errorMessage(err)));
         return;
     }
 
-    RequestInfo request_info;
-
+    if (xid == watch_xid)
     {
-        std::lock_guard lock(operations_mutex);
-
-        auto it = operations.find(xid);
-        if (it == operations.end())
-            throw Exception("Received response for unknown xid");
-
-        request_info = std::move(it->second);
-        operations.erase(it);
+        WatchResponse response;
+        if (err)
+            response.error = err;
+        else
+        {
+            response.readImpl(*in);
+            response.removeRootPath(root_path);
+        }
     }
 
-    ResponsePtr response = request_info.request->makeResponse();
+    RequestInfo request_info;
+    ResponsePtr response;
+
+    if (xid == ping_xid)
+    {
+        if (err)
+            throw Exception("Received error in heartbeat response: " + String(errorMessage(err)));
+
+        response = std::make_shared<HeartbeatResponse>();
+    }
+    else if (xid == watch_xid)
+    {
+        response = std::make_shared<WatchResponse>();
+
+        request_info.callback = [this](const Response & response)
+        {
+            const WatchResponse & watch_response = static_cast<const WatchResponse &>(response);
+
+            std::lock_guard lock(watches_mutex);
+
+            auto it = watches.find(watch_response.path);
+            if (it == watches.end())
+                throw Exception("Received event for unknown watch");
+
+            for (auto & callback : it->second)
+                callback(watch_response);
+
+            watches.erase(it);
+        };
+    }
+    else
+    {
+        {
+            std::lock_guard lock(operations_mutex);
+
+            auto it = operations.find(xid);
+            if (it == operations.end())
+                throw Exception("Received response for unknown xid");
+
+            request_info = std::move(it->second);
+            operations.erase(it);
+        }
+
+        response = request_info.request->makeResponse();
+    }
 
     if (err)
         response->error = err;
     else
+    {
         response->readImpl(*in);
+        response->removeRootPath(root_path);
+    }
 
     int32_t actual_length = in->count() - count_before_event;
     if (length != actual_length)
@@ -587,36 +728,74 @@ void ZooKeeper::CreateRequest::writeImpl(WriteBuffer & out) const
     ZooKeeperImpl::write(flags, out);
 }
 
+void ZooKeeper::RemoveRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(path, out);
+    ZooKeeperImpl::write(version, out);
+}
+
+void ZooKeeper::ExistsRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(path, out);
+}
+
+void ZooKeeper::GetRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(path, out);
+}
+
+void ZooKeeper::SetRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(path, out);
+    ZooKeeperImpl::write(data, out);
+    ZooKeeperImpl::write(version, out);
+}
+
+void ZooKeeper::ListRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(path, out);
+}
+
+
+void ZooKeeper::WatchResponse::readImpl(ReadBuffer & in)
+{
+    ZooKeeperImpl::read(type, in);
+    ZooKeeperImpl::read(state, in);
+    ZooKeeperImpl::read(path, in);
+}
 
 void ZooKeeper::CreateResponse::readImpl(ReadBuffer & in)
 {
     ZooKeeperImpl::read(path_created, in);
 }
 
-
-String ZooKeeper::addRootPath(const String & path)
+void ZooKeeper::ExistsResponse::readImpl(ReadBuffer & in)
 {
-    if (path.empty())
-        throw Exception("Path cannot be empty");
-
-    if (path[0] != '/')
-        throw Exception("Path must begin with /");
-
-    if (root_path.empty())
-        return path;
-
-    return root_path + path;
+    ZooKeeperImpl::read(stat, in);
 }
 
-String ZooKeeper::removeRootPath(const String & path)
+void ZooKeeper::GetResponse::readImpl(ReadBuffer & in)
 {
-    if (root_path.empty())
-        return path;
+    ZooKeeperImpl::read(data, in);
+    ZooKeeperImpl::read(stat, in);
+}
 
-    if (path.size() <= root_path.size())
-        throw Exception("Received path is not longer than root_path");
+void ZooKeeper::SetResponse::readImpl(ReadBuffer & in)
+{
+    ZooKeeperImpl::read(stat, in);
+}
 
-    return path.substr(root_path.size());
+void ZooKeeper::ListResponse::readImpl(ReadBuffer & in)
+{
+    ZooKeeperImpl::read(stat, in);
+    ZooKeeperImpl::read(names, in);
+}
+
+
+void ZooKeeper::pushRequest(RequestInfo && info)
+{
+    if (!requests.tryPush(info, session_timeout.totalMilliseconds()))
+        throw Exception("Cannot push request to queue within session timeout");
 }
 
 
@@ -629,7 +808,7 @@ void ZooKeeper::create(
     CreateCallback callback)
 {
     CreateRequest request;
-    request.path = addRootPath(path);
+    request.path = path;
     request.data = data;
     request.is_ephemeral = is_ephemeral;
     request.is_sequential = is_sequential;
@@ -637,15 +816,96 @@ void ZooKeeper::create(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<CreateRequest>(std::move(request));
-    request_info.callback = [callback, this](const Response & response)
-    {
-        auto concrete_response = typeid_cast<const CreateResponse &>(response);
-        concrete_response.path_created = removeRootPath(concrete_response.path_created);
-        callback(concrete_response);
-    };
+    request_info.callback = [callback](const Response & response) { callback(typeid_cast<const CreateResponse &>(response)); };
 
-    if (!requests.tryPush(request_info, session_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within session timeout");
+    pushRequest(std::move(request_info));
+}
+
+
+void ZooKeeper::remove(
+    const String & path,
+    int32_t version,
+    RemoveCallback callback)
+{
+    RemoveRequest request;
+    request.path = path;
+    request.version = version;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<RemoveRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(typeid_cast<const RemoveResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+}
+
+
+void ZooKeeper::exists(
+    const String & path,
+    ExistsCallback callback,
+    WatchCallback watch)
+{
+    ExistsRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ExistsRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(typeid_cast<const ExistsResponse &>(response)); };
+    request_info.watch = watch;
+
+    pushRequest(std::move(request_info));
+}
+
+
+void ZooKeeper::get(
+    const String & path,
+    GetCallback callback,
+    WatchCallback watch)
+{
+    GetRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<GetRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(typeid_cast<const GetResponse &>(response)); };
+    request_info.watch = watch;
+
+    pushRequest(std::move(request_info));
+}
+
+
+void ZooKeeper::set(
+    const String & path,
+    const String & data,
+    int32_t version,
+    SetCallback callback)
+{
+    SetRequest request;
+    request.path = path;
+    request.data = data;
+    request.version = version;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<SetRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(typeid_cast<const SetResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+}
+
+
+void ZooKeeper::list(
+    const String & path,
+    ListCallback callback,
+    WatchCallback watch)
+{
+    ListRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ListRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(typeid_cast<const ListResponse &>(response)); };
+    request_info.watch = watch;
+
+    pushRequest(std::move(request_info));
 }
 
 
