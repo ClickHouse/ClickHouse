@@ -374,9 +374,9 @@ static constexpr int32_t protocol_version = 0;
 
 static constexpr ZooKeeper::XID watch_xid = -1;
 static constexpr ZooKeeper::XID ping_xid = -2;
-//static constexpr ZooKeeper::XID auth_xid = -4;
+static constexpr ZooKeeper::XID auth_xid = -4;
 
-static constexpr ZooKeeper::XID close_xid = -3;
+static constexpr ZooKeeper::XID close_xid = 0x7FFFFFFF;
 
 
 const char * ZooKeeper::errorMessage(int32_t code)
@@ -417,16 +417,25 @@ const char * ZooKeeper::errorMessage(int32_t code)
 
 ZooKeeper::~ZooKeeper()
 {
-    stop = true;
+    try
+    {
+        stop = true;
 
-    if (send_thread.joinable())
-        send_thread.join();
+        if (send_thread.joinable())
+            send_thread.join();
 
-    if (receive_thread.joinable())
-        receive_thread.join();
+        if (receive_thread.joinable())
+            receive_thread.join();
 
-    if (!expired)
-        close();
+        if (!expired)
+            close();
+
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -564,10 +573,35 @@ void ZooKeeper::receiveHandshake()
 }
 
 
-/*void ZooKeeper::sendAuth(XID xid, const String & auth_scheme, const String & auth_data)
+void ZooKeeper::sendAuth(const String & scheme, const String & data)
 {
-    // TODO
-}*/
+    AuthRequest request;
+    request.scheme = scheme;
+    request.data = data;
+    request.xid = auth_xid;
+    request.write(*out);
+
+    int32_t length;
+    int32_t xid;
+    int64_t zxid;
+    int32_t err;
+
+    read(length);
+    size_t count_before_event = in->count();
+    read(xid);
+    read(zxid);
+    read(err);
+
+    if (xid != auth_xid)
+        throw Exception("Unexpected event recievent in reply to auth request: " + toString(xid));
+
+    int32_t actual_length = in->count() - count_before_event;
+    if (length != actual_length)
+        throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length));
+
+    if (err)
+        throw Exception("Error received in reply to auth request. Code: " + toString(err) + ". Message: " + String(errorMessage(err)));
+}
 
 
 void ZooKeeper::close()
@@ -581,7 +615,6 @@ void ZooKeeper::close()
 
 void ZooKeeper::sendThread()
 {
-    XID xid = 2;    /// TODO deal with xid overflow /// NOTE xid = 1 is reserved for auth request.
     auto prev_heartbeat_time = std::chrono::steady_clock::now();
 
     try
@@ -594,25 +627,10 @@ void ZooKeeper::sendThread()
             if (next_heartbeat_time > now)
                 max_wait = std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count();
 
-            RequestInfo request_info;
-            if (requests.tryPop(request_info, max_wait))
+            RequestPtr request;
+            if (requests.tryPop(request, max_wait))
             {
-                request_info.request->addRootPath(root_path);
-                request_info.request->xid = xid;
-
-                {
-                    std::lock_guard lock(operations_mutex);
-                    operations[xid] = request_info;
-                }
-
-                if (request_info.watch)
-                {
-                    request_info.request->has_watch = true;
-                    std::lock_guard lock(watches_mutex);
-                    watches[request_info.request->getPath()].emplace_back(std::move(request_info.watch));
-                }
-
-                request_info.request->write(*out);
+                request->write(*out);
             }
             else
             {
@@ -622,8 +640,6 @@ void ZooKeeper::sendThread()
                 request.xid = ping_xid;
                 request.write(*out);
             }
-
-            ++xid;
         }
     }
     catch (...)
@@ -671,6 +687,7 @@ void ZooKeeper::Request::write(WriteBuffer & out) const
 
 
 ZooKeeper::ResponsePtr ZooKeeper::HeartbeatRequest::makeResponse() const { return std::make_shared<HeartbeatResponse>(); }
+ZooKeeper::ResponsePtr ZooKeeper::AuthRequest::makeResponse() const { return std::make_shared<AuthResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::CreateRequest::makeResponse() const { return std::make_shared<CreateResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::RemoveRequest::makeResponse() const { return std::make_shared<RemoveResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::ExistsRequest::makeResponse() const { return std::make_shared<ExistsResponse>(); }
@@ -771,7 +788,8 @@ void ZooKeeper::receiveEvent()
                 throw Exception("Received event for unknown watch");
 
             for (auto & callback : it->second)
-                callback(watch_response);
+                if (callback)
+                    callback(watch_response);
 
             watches.erase(it);
         };
@@ -812,6 +830,49 @@ void ZooKeeper::receiveEvent()
         request_info.callback(*response);
 }
 
+
+void ZooKeeper::finalize()
+{
+    {
+        std::lock_guard lock(operations_mutex);
+
+        for (auto & op : operations)
+        {
+            RequestInfo & request_info = op.second;
+            ResponsePtr response = request_info.request->makeResponse();
+            response->error = ZCONNECTIONLOSS;
+            if (request_info.callback)
+                request_info.callback(*response);
+        }
+
+        operations.clear();
+    }
+
+    {
+        std::lock_guard lock(watches_mutex);
+
+        for (auto & path_watches : watches)
+        {
+            WatchResponse response;
+            response.type = SESSION;
+            response.state = EXPIRED_SESSION;
+            response.error = ZCONNECTIONLOSS;
+
+            for (auto & callback : path_watches.second)
+                if (callback)
+                    callback(response);
+        }
+
+        watches.clear();
+    }
+}
+
+void ZooKeeper::AuthRequest::writeImpl(WriteBuffer & out) const
+{
+    ZooKeeperImpl::write(type, out);
+    ZooKeeperImpl::write(scheme, out);
+    ZooKeeperImpl::write(data, out);
+}
 
 void ZooKeeper::CreateRequest::writeImpl(WriteBuffer & out) const
 {
@@ -974,7 +1035,24 @@ void ZooKeeper::MultiResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
-    if (!requests.tryPush(info, session_timeout.totalMilliseconds()))
+    if (expired)
+        throw Exception("Session expired");
+
+    info.request->addRootPath(root_path);
+    info.request->xid = xid.fetch_add(1);
+    {
+        std::lock_guard lock(operations_mutex);
+        operations[info.request->xid] = info;
+    }
+
+    if (info.watch)
+    {
+        info.request->has_watch = true;
+        std::lock_guard lock(watches_mutex);
+        watches[info.request->getPath()].emplace_back(std::move(info.watch));
+    }
+
+    if (!requests.tryPush(info.request, session_timeout.totalMilliseconds()))
         throw Exception("Cannot push request to queue within session timeout");
 }
 
