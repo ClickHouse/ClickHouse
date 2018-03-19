@@ -434,7 +434,7 @@ void ColumnNullable::checkConsistency() const
 MutableColumnPtr makeNullable(MutableColumnPtr && column)
 {
     if (column->isColumnNullable())
-        return column;
+        return std::move(column);
 
     if (column->isColumnConst())
         return ColumnConst::create(makeNullable(static_cast<ColumnConst &>(*column).getDataColumnPtr()->assumeMutable())
