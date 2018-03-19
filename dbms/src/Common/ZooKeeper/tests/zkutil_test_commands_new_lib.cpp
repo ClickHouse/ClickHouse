@@ -1,5 +1,6 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
+#include <Poco/Event.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
@@ -114,13 +115,21 @@ try
 
     std::cout << "remove\n";
 
-    zk.remove("/test", -1, [](const ZooKeeper::RemoveResponse & response)
+    Poco::Event event(true);
+
+    zk.remove("/test", -1, [&](const ZooKeeper::RemoveResponse & response)
         {
             if (response.error)
                 std::cerr << "Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Removed\n";
+
+            event.set();
         });
+
+    event.wait();
+
+    /// Surprising enough, ZooKeeper can execute multi transaction out of order. So, we must to wait for "remove" to execute before sending "multi".
 
     std::cout << "multi\n";
 
@@ -146,7 +155,7 @@ try
         ops.emplace_back(std::make_shared<ZooKeeper::RemoveRequest>(std::move(remove_request)));
     }
 
-    zk.multi(ops, [](const ZooKeeper::MultiResponse & response)
+    zk.multi(ops, [&](const ZooKeeper::MultiResponse & response)
         {
             if (response.error)
                 std::cerr << "Error (multi) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
@@ -158,9 +167,11 @@ try
 
                 std::cerr << "Created path: " << typeid_cast<const ZooKeeper::CreateResponse &>(*response.responses[0]).path_created << '\n';
             }
+
+            event.set();
         });
 
-    sleep(5);
+    event.wait();
     return 0;
 }
 catch (...)

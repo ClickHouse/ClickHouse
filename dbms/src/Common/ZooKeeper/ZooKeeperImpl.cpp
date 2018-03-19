@@ -419,17 +419,20 @@ ZooKeeper::~ZooKeeper()
 {
     try
     {
-        stop = true;
+        /// Send close event. This also signals sending thread to wakeup and then stop.
+        if (!expired)
+            close();
 
         if (send_thread.joinable())
             send_thread.join();
 
+        /// This will also wakeup receiving event.
+        socket.shutdown();
+
         if (receive_thread.joinable())
             receive_thread.join();
 
-        if (!expired)
-            close();
-
+        /// Fire all remaining callbacks and watches.
         finalize();
     }
     catch (...)
@@ -604,22 +607,13 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 }
 
 
-void ZooKeeper::close()
-{
-    CloseRequest request;
-    request.xid = close_xid;
-    request.write(*out);
-    expired = true;
-}
-
-
 void ZooKeeper::sendThread()
 {
     auto prev_heartbeat_time = std::chrono::steady_clock::now();
 
     try
     {
-        while (!stop)
+        while (!expired)
         {
             auto now =  std::chrono::steady_clock::now();
             auto next_heartbeat_time = prev_heartbeat_time + std::chrono::milliseconds(session_timeout.totalMilliseconds() / 3);
@@ -631,6 +625,9 @@ void ZooKeeper::sendThread()
             if (requests.tryPop(request, max_wait))
             {
                 request->write(*out);
+
+                if (request->xid == close_xid)
+                    break;
             }
             else
             {
@@ -645,11 +642,14 @@ void ZooKeeper::sendThread()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        expired = true;
-        stop = true;
     }
 
-    /// TODO drain queue
+    expired = true;
+
+    /// Drain queue
+    RequestPtr request;
+    while (requests.tryPop(request))
+        ;
 }
 
 
@@ -657,10 +657,13 @@ void ZooKeeper::receiveThread()
 {
     try
     {
-        while (!stop)
+        while (!expired)
         {
             if (!in->poll(session_timeout.totalMicroseconds()))
                 throw Exception("Nothing is received in session timeout");
+
+            if (expired)
+                break;
 
             receiveEvent();
         }
@@ -668,9 +671,9 @@ void ZooKeeper::receiveThread()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        expired = true;
-        stop = true;
     }
+
+    expired = true;
 }
 
 
@@ -696,7 +699,7 @@ ZooKeeper::ResponsePtr ZooKeeper::SetRequest::makeResponse() const { return std:
 ZooKeeper::ResponsePtr ZooKeeper::ListRequest::makeResponse() const { return std::make_shared<ListResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::CheckRequest::makeResponse() const { return std::make_shared<CheckResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::MultiRequest::makeResponse() const { return std::make_shared<MultiResponse>(requests); }
-ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { throw Exception("Received response for close request"); }
+ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { return std::make_shared<CloseResponse>(); }
 
 void addRootPath(String & path, const String & root_path)
 {
@@ -996,6 +999,20 @@ void ZooKeeper::ListResponse::readImpl(ReadBuffer & in)
     ZooKeeperImpl::read(stat, in);
 }
 
+void ZooKeeper::ErrorResponse::readImpl(ReadBuffer & in)
+{
+    int32_t read_error;
+    ZooKeeperImpl::read(read_error, in);
+
+    if (read_error != error)
+        throw Exception("Error code in ErrorResponse (" + toString(read_error) + ") doesn't match error code in header (" + toString(error) + ")");
+}
+
+void ZooKeeper::CloseResponse::readImpl(ReadBuffer &)
+{
+    throw Exception("Received response for close request");
+}
+
 ZooKeeper::MultiResponse::MultiResponse(const Requests & requests)
 {
     responses.reserve(requests.size());
@@ -1006,7 +1023,43 @@ ZooKeeper::MultiResponse::MultiResponse(const Requests & requests)
 
 void ZooKeeper::MultiResponse::readImpl(ReadBuffer & in)
 {
-    for (const auto & response : responses)
+    for (auto & response : responses)
+    {
+        OpNum op_num;
+        bool done;
+        int32_t op_error;
+
+        ZooKeeperImpl::read(op_num, in);
+        ZooKeeperImpl::read(done, in);
+        ZooKeeperImpl::read(op_error, in);
+
+        std::cerr << "Received result for multi: " << op_num << "\n";
+
+        if (done)
+            throw Exception("Not enough results received for multi transaction");
+
+        /// op_num == -1 is special for multi transaction.
+        /// For unknown reason, error code is duplicated in header and in response body.
+
+        if (op_num == -1)
+            response = std::make_shared<ErrorResponse>();
+
+        if (op_error)
+        {
+            response->error = op_error;
+
+            /// Set error for whole transaction.
+            /// If some operations fail, ZK send global error as zero and then send details about each operation.
+            /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
+            if (!error && op_error != ZRUNTIMEINCONSISTENCY)
+                error = op_error;
+        }
+
+        if (!op_error || op_num == -1)
+            response->readImpl(in);
+    }
+
+    /// Footer.
     {
         OpNum op_num;
         bool done;
@@ -1016,31 +1069,13 @@ void ZooKeeper::MultiResponse::readImpl(ReadBuffer & in)
         ZooKeeperImpl::read(done, in);
         ZooKeeperImpl::read(error, in);
 
-        std::cerr << "Received result for multi: " << op_num << "\n";
-
-        if (done)
-            throw Exception("Not enough results received for multi transaction");
-
-        if (error)
-            response->error = error;
-        else
-            response->readImpl(in);
+        if (!done)
+            throw Exception("Too many results received for multi transaction");
+        if (op_num != -1)
+            throw Exception("Unexpected op_num received at the end of results for multi transaction");
+        if (error != -1)
+            throw Exception("Unexpected error value received at the end of results for multi transaction");
     }
-
-    OpNum op_num;
-    bool done;
-    int32_t error;
-
-    ZooKeeperImpl::read(op_num, in);
-    ZooKeeperImpl::read(done, in);
-    ZooKeeperImpl::read(error, in);
-
-    if (!done)
-        throw Exception("Too many results received for multi transaction");
-    if (op_num != -1)
-        throw Exception("Unexpected op_num received at the end of results for multi transaction");
-    if (error != -1)
-        throw Exception("Unexpected error value received at the end of results for multi transaction");
 }
 
 
@@ -1050,7 +1085,10 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         throw Exception("Session expired");
 
     info.request->addRootPath(root_path);
-    info.request->xid = xid.fetch_add(1);
+
+    if (!info.request->xid)
+        info.request->xid = xid.fetch_add(1);
+
     {
         std::lock_guard lock(operations_mutex);
         operations[info.request->xid] = info;
@@ -1210,6 +1248,18 @@ void ZooKeeper::multi(
     RequestInfo request_info;
     request_info.request = std::make_shared<MultiRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(typeid_cast<const MultiResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+}
+
+
+void ZooKeeper::close()
+{
+    CloseRequest request;
+    request.xid = close_xid;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<CloseRequest>(std::move(request));
 
     pushRequest(std::move(request_info));
 }
