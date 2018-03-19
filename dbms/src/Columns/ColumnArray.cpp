@@ -319,14 +319,14 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 
 MutableColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
-    ColumnPtr new_data;
+    MutableColumnPtr new_data;
 
-    if (ColumnPtr full_column = getData().convertToFullColumnIfConst())
-        new_data = full_column;
+    if (MutableColumnPtr full_column = getData().convertToFullColumnIfConst())
+        new_data = std::move(full_column);
     else
-        new_data = data;
+        new_data = data->assumeMutable();
 
-    return ColumnArray::create(new_data, offsets);
+    return ColumnArray::create(std::move(new_data), offsets);
 }
 
 
