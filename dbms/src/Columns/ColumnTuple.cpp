@@ -45,11 +45,11 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
 MutableColumnPtr ColumnTuple::cloneEmpty() const
 {
     const size_t tuple_size = columns.size();
-    Columns new_columns(tuple_size);
+    MutableColumns new_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->cloneEmpty();
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(std::move(new_columns));
 }
 
 Field ColumnTuple::operator[](size_t n) const

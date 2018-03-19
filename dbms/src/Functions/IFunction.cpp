@@ -26,20 +26,22 @@ namespace
 /** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
   */
-ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
+MutableColumnPtr wrapInNullable(MutableColumnPtr && src, Block & block, const ColumnNumbers & args, size_t result)
 {
-    ColumnPtr result_null_map_column;
+    MutableColumnPtr result_null_map_column;
 
     /// If result is already nullable.
-    ColumnPtr src_not_nullable = src;
+    MutableColumnPtr src_not_nullable;
 
     if (src->onlyNull())
-        return src;
+        return std::move(src_not_nullable);
     else if (src->isColumnNullable())
     {
-        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr();
-        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
+        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr()->assumeMutable();
+        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr()->assumeMutable();
     }
+    else
+        src_not_nullable = std::move(src);
 
     for (const auto & arg : args)
     {
@@ -49,7 +51,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
 
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
-            return block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+            return block.getByPosition(result).type->createColumnConst(block.rows(), Null())->assumeMutable();
 
         if (elem.column->isColumnConst())
             continue;
@@ -59,11 +61,11 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
             const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
             if (!result_null_map_column)
             {
-                result_null_map_column = null_map_column;
+                result_null_map_column = null_map_column->assumeMutable();
             }
             else
             {
-                MutableColumnPtr mutable_result_null_map_column = result_null_map_column->mutate();
+                MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
 
                 NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
@@ -78,7 +80,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
     }
 
     if (!result_null_map_column)
-        return makeNullable(src);
+        return makeNullable(std::move(src_not_nullable));
 
     if (src_not_nullable->isColumnConst())
         return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
@@ -200,7 +202,7 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
     {
         Block temporary_block = createBlockWithNestedColumns(block, args, result);
         execute(temporary_block, args, result);
-        block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args, result);
+        block.getByPosition(result).column = wrapInNullable((*std::move(temporary_block.getByPosition(result).column)).mutate(), block, args, result);
         return true;
     }
 
