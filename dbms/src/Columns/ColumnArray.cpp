@@ -540,7 +540,7 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
 MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
-        return ColumnArray::create(data);
+        return ColumnArray::create(data->cloneEmpty());
 
     const ColumnNullable & nullable_elems = static_cast<const ColumnNullable &>(*data);
 
@@ -563,7 +563,7 @@ MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result
 MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
-        return ColumnArray::create(data);
+        return ColumnArray::create(data->cloneEmpty());
 
     const ColumnTuple & tuple = static_cast<const ColumnTuple &>(*data);
 
@@ -601,7 +601,7 @@ MutableColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) co
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (limit == 0)
-        return ColumnArray::create(data);
+        return ColumnArray::create(data->cloneEmpty());
 
     Permutation nested_perm(getOffsets().back());
 
