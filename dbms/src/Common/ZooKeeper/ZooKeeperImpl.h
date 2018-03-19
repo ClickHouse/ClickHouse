@@ -17,6 +17,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <functional>
 
