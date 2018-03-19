@@ -1,6 +1,6 @@
 FROM ubuntu:16.04
 
-ARG repository="deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/binary-amd64/"
+ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
 ARG version=\*
 
 RUN apt-get update && \
