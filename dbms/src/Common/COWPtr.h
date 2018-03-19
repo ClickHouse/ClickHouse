@@ -94,7 +94,7 @@ protected:
     class mutable_ptr : public intrusive_ptr<T>
     {
     private:
-        using Base = boost::intrusive_ptr<T>;
+        using Base = intrusive_ptr<T>;
 
         template <typename> friend class COWPtr;
         template <typename, typename> friend class COWPtrHelper;
@@ -126,7 +126,7 @@ protected:
     class immutable_ptr : public intrusive_ptr<const T>
     {
     private:
-        using Base = boost::intrusive_ptr<const T>;
+        using Base = intrusive_ptr<const T>;
 
         template <typename> friend class COWPtr;
         template <typename, typename> friend class COWPtrHelper;
