@@ -31,8 +31,12 @@ std::string ColumnTuple::getName() const
     return res.str();
 }
 
-ColumnTuple::ColumnTuple(const Columns & columns) : columns(columns)
+ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
 {
+    columns.reserve(mutable_columns.size());
+    for (auto & column : mutable_columns)
+        columns.emplace_back(std::move(column));
+
     for (const auto & column : columns)
         if (column->isColumnConst())
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};

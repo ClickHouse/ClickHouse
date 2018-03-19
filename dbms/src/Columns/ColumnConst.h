@@ -25,7 +25,7 @@ private:
     ColumnPtr data;
     size_t s;
 
-    ColumnConst(const ColumnPtr & data, size_t s);
+    ColumnConst(MutableColumnPtr && data, size_t s);
     ColumnConst(const ColumnConst & src) = default;
 
 public:

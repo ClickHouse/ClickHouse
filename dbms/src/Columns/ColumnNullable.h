@@ -23,7 +23,7 @@ class ColumnNullable final : public COWPtrHelper<IColumn, ColumnNullable>
 private:
     friend class COWPtrHelper<IColumn, ColumnNullable>;
 
-    ColumnNullable(const ColumnPtr & nested_column_, const ColumnPtr & null_map_);
+    ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_);
     ColumnNullable(const ColumnNullable &) = default;
 
 public:

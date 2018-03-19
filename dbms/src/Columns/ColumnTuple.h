@@ -22,7 +22,7 @@ private:
     template <bool positive>
     struct Less;
 
-    ColumnTuple(const Columns & columns);
+    ColumnTuple(MutableColumns && mutable_columns);
     ColumnTuple(const ColumnTuple &) = default;
 
 public:
