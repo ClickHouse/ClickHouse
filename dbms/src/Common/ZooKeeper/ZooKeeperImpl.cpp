@@ -585,7 +585,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.write(*out);
 
     int32_t length;
-    int32_t xid;
+    XID xid;
     int64_t zxid;
     int32_t err;
 
@@ -701,6 +701,7 @@ ZooKeeper::ResponsePtr ZooKeeper::CheckRequest::makeResponse() const { return st
 ZooKeeper::ResponsePtr ZooKeeper::MultiRequest::makeResponse() const { return std::make_shared<MultiResponse>(requests); }
 ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { return std::make_shared<CloseResponse>(); }
 
+
 void addRootPath(String & path, const String & root_path)
 {
     if (path.empty())
@@ -754,7 +755,7 @@ void ZooKeeper::MultiResponse::removeRootPath(const String & root_path)
 void ZooKeeper::receiveEvent()
 {
     int32_t length;
-    int32_t xid;
+    XID xid;
     int64_t zxid;
     int32_t err;
 
