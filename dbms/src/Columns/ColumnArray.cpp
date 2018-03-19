@@ -431,7 +431,7 @@ MutableColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_s
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (0 == col_size)
-        return ColumnArray::create(data->assumeMutable());
+        return ColumnArray::create(data->cloneEmpty());
 
     auto res = ColumnArray::create(data->cloneEmpty());
 
@@ -499,7 +499,7 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (size == 0)
-        return ColumnArray::create(data);
+        return ColumnArray::create(data->cloneEmpty());
 
     Filter nested_filt(getOffsets().back());
     for (size_t i = 0; i < size; ++i)
