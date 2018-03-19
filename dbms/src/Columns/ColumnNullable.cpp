@@ -44,7 +44,7 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
-    ColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
+    MutableColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
     auto new_null_map = ColumnUInt8::create();
 
     if (new_size > 0)
@@ -59,7 +59,7 @@ MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
             memset(&new_null_map->getData()[count], 1, new_size - count);
     }
 
-    return ColumnNullable::create(new_nested_col, std::move(new_null_map));
+    return ColumnNullable::create(std::move(new_nested_col), std::move(new_null_map));
 }
 
 
