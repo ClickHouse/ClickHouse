@@ -227,12 +227,13 @@ private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
-    template<typename Class, typename... Args>
-    struct HasCreateImmutable<Args...> {
+    template<typename Class, typename Res, typename... Args>
+    struct HasCreateImmutable
+    {
     private:
         template<typename T>
         static constexpr auto check(T *) -> typename std::is_same<
-                decltype( std::declval<T>().createImmutable( std::declval<Args>()... ) ), Ptr
+                decltype( std::declval<T>().createImmutable( std::declval<Args>()... ) ), Res
         >::type;
 
         template<typename>
@@ -251,7 +252,7 @@ public:
     template <typename... Args>
     static auto create(Args &&... args)
     {
-        if constexpr (HasCreateImmutable<Derived, args ...>)
+        if constexpr (HasCreateImmutable<Derived, Ptr, Args ...>::value)
             return Derived::createImmutable(std::forward<Args>(args)...);
         else
             return MutablePtr(new Derived(std::forward<Args>(args)...));
