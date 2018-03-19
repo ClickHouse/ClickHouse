@@ -431,7 +431,7 @@ MutableColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_s
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (0 == col_size)
-        return ColumnArray::create(data);
+        return ColumnArray::create(data->assumeMutable());
 
     auto res = ColumnArray::create(data->cloneEmpty());
 
