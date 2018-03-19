@@ -26,6 +26,11 @@ private:
     ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_);
     ColumnNullable(const ColumnNullable &) = default;
 
+    static ColumnPtr createImmutable(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
+    {
+        return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
+    }
+
 public:
     const char * getFamilyName() const override { return "Nullable"; }
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
