@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr & null_map_)
+ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_)
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
