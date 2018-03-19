@@ -576,11 +576,11 @@ MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_si
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsPtr()).filter(filt, result_size_hint);
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()).filter(filt, result_size_hint);
 
-    Columns tuple_columns(tuple_size);
+    MutableColumns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_columns[i] = static_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr()->assumeMutable();
 
     return ColumnArray::create(
         ColumnTuple::create(tuple_columns),
@@ -867,13 +867,13 @@ MutableColumnPtr ColumnArray::replicateNullable(const Offsets & replicate_offset
     /// Make temporary arrays for each components of Nullable. Then replicate them independently and collect back to result.
     /// NOTE Offsets are calculated twice and it is redundant.
 
-    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr(), getOffsetsPtr()).replicate(replicate_offsets);
-    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr(), getOffsetsPtr()).replicate(replicate_offsets);
+    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr()->assumeMutable(), getOffsetsPtr()).replicate(replicate_offsets);
+    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr()->assumeMutable(), getOffsetsPtr()).replicate(replicate_offsets);
 
     return ColumnArray::create(
         ColumnNullable::create(
-            static_cast<ColumnArray &>(*array_of_nested).getDataPtr(),
-            static_cast<ColumnArray &>(*array_of_null_map).getDataPtr()),
+            static_cast<ColumnArray &>(*array_of_nested).getDataPtr()->assumeMutable(),
+            static_cast<ColumnArray &>(*array_of_null_map).getDataPtr()->assumeMutable()),
         static_cast<ColumnArray &>(*array_of_nested).getOffsetsPtr());
 }
 
