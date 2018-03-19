@@ -69,19 +69,19 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t tuple_size = arguments.size();
-        Columns tuple_columns(tuple_size);
+        MutableColumns tuple_columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tuple_columns[i] = block.getByPosition(arguments[i]).column;
+            tuple_columns[i] = block.getByPosition(arguments[i]).column->assumeMutable();
 
             /** If tuple is mixed of constant and not constant columns,
             *  convert all to non-constant columns,
             *  because many places in code expect all non-constant columns in non-constant tuple.
             */
-            if (ColumnPtr converted = tuple_columns[i]->convertToFullColumnIfConst())
-                tuple_columns[i] = converted;
+            if (MutableColumnPtr converted = tuple_columns[i]->convertToFullColumnIfConst())
+                tuple_columns[i] = std::move(converted);
         }
-        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
+        block.getByPosition(result).column = ColumnTuple::create(std::move(tuple_columns));
     }
 };
 
@@ -169,7 +169,7 @@ public:
 
         /// Wrap into Arrays
         for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
-            res = ColumnArray::create(res, *it);
+            res = ColumnArray::create(res->assumeMutable(), *it);
 
         block.getByPosition(result).column = res;
     }
