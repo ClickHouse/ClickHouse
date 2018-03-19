@@ -462,10 +462,7 @@ void DatabaseOrdinary::drop()
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & name,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
-    const ColumnDefaults & column_defaults,
+    const ColumnsDescription & columns,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -486,7 +483,7 @@ void DatabaseOrdinary::alterTable(
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ast_create_query.replace(ast_create_query.columns, new_columns);
 
     if (storage_modifier)

@@ -20,6 +20,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/isLocalAddress.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -37,7 +38,7 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Storages/StorageDistributed.h>
+#include <DataTypes/DataTypeString.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -46,20 +47,20 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Databases/DatabaseMemory.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <Common/isLocalAddress.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/copyData.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Server/StatusFile.h>
 #include <Storages/registerStorages.h>
+#include <Storages/StorageDistributed.h>
+#include <Databases/DatabaseMemory.h>
+#include <Server/StatusFile.h>
 #include <Common/formatReadable.h>
 #include <daemon/OwnPatternFormatter.h>
 
@@ -355,20 +356,23 @@ struct TaskCluster
 
 /// Atomically checks that is_dirty node is not exists, and made the remaining op
 /// Returns relative number of failed operation in the second field (the passed op has 0 index)
-static void checkNoNodeAndCommit(
+static zkutil::MultiTransactionInfo checkNoNodeAndCommit(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & checking_node_path,
-    zkutil::OpPtr && op,
-    zkutil::MultiTransactionInfo & info)
+    zkutil::OpPtr && op)
 {
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(checking_node_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(checking_node_path, -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(checking_node_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(checking_node_path, -1));
     ops.emplace_back(std::move(op));
 
-    zookeeper->tryMultiUnsafe(ops, info);
+    zkutil::MultiTransactionInfo info;
+    zookeeper->tryMultiNoThrow(ops, nullptr, &info);
+
     if (info.code != ZOK && !zkutil::isUserError(info.code))
-        throw info.getException();
+        throw zkutil::KeeperException(info.code);
+
+    return info;
 }
 
 
@@ -694,7 +698,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     settings_pull.load_balancing = LoadBalancing::NEAREST_HOSTNAME;
     settings_pull.readonly = 1;
     settings_pull.max_threads = 1;
-    settings_pull.max_block_size = std::min(8192UL, settings_pull.max_block_size.value);
+    settings_pull.max_block_size = settings_pull.max_block_size.changed ? settings_pull.max_block_size.value : 8192UL;
     settings_pull.preferred_block_size_bytes = 0;
 
     settings_push.insert_distributed_timeout = 0;
@@ -756,6 +760,7 @@ public:
 
         /// Do not initialize tables, will make deferred initialization in process()
 
+        getZooKeeper()->createAncestors(getWorkersPathVersion() + "/");
         getZooKeeper()->createAncestors(getWorkersPath() + "/");
     }
 
@@ -1008,32 +1013,65 @@ protected:
         return task_cluster->task_zookeeper_path + "/task_active_workers";
     }
 
+    String getWorkersPathVersion() const
+    {
+        return getWorkersPath() + "_version";
+    }
+
     String getCurrentWorkerNodePath() const
     {
         return getWorkersPath() + "/" + host_id;
     }
 
     zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(const zkutil::ZooKeeperPtr & zookeeper,
-                                                                       const String & description)
+                                                                       const String & description, bool unprioritized)
     {
+        std::chrono::milliseconds current_sleep_time = default_sleep_time;
+        static constexpr std::chrono::milliseconds max_sleep_time(30000); // 30 sec
+
+        if (unprioritized)
+            std::this_thread::sleep_for(current_sleep_time);
+
+        String workers_version_path = getWorkersPathVersion();
+        String workers_path = getWorkersPath();
+        String current_worker_path = getCurrentWorkerNodePath();
+
         while (true)
         {
             zkutil::Stat stat;
-            zookeeper->get(getWorkersPath(), &stat);
+            zookeeper->get(workers_version_path, &stat);
+            auto version = stat.version;
+            zookeeper->get(workers_path, &stat);
 
             if (static_cast<size_t>(stat.numChildren) >= task_cluster->max_workers)
             {
                 LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")"
                     << ". Postpone processing " << description);
-
-                std::this_thread::sleep_for(default_sleep_time);
-
-                updateConfigIfNeeded();
             }
             else
             {
-                return std::make_shared<zkutil::EphemeralNodeHolder>(getCurrentWorkerNodePath(), *zookeeper, true, false, description);
+                zkutil::Ops ops;
+                ops.emplace_back(new zkutil::Op::SetData(workers_version_path, description, version));
+                ops.emplace_back(new zkutil::Op::Create(current_worker_path, description, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
+                auto code = zookeeper->tryMulti(ops);
+
+                if (code == ZOK || code == ZNODEEXISTS)
+                    return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
+
+                if (code == ZBADVERSION)
+                {
+                    LOG_DEBUG(log, "A concurrent worker has just been added, will check free worker slots again");
+                }
+                else
+                    throw zkutil::KeeperException(code);
             }
+
+            if (unprioritized)
+                current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
+
+            std::this_thread::sleep_for(current_sleep_time);
+
+            updateConfigIfNeeded();
         }
     }
 
@@ -1120,8 +1158,8 @@ protected:
 
             if (!column.default_specifier.empty())
             {
-                ColumnDefaultType type = columnDefaultTypeFromString(column.default_specifier);
-                if (type == ColumnDefaultType::Materialized || type == ColumnDefaultType::Alias)
+                ColumnDefaultKind kind = columnDefaultKindFromString(column.default_specifier);
+                if (kind == ColumnDefaultKind::Materialized || kind == ColumnDefaultKind::Alias)
                     continue;
             }
 
@@ -1441,9 +1479,8 @@ protected:
             return parseQuery(p_query, query);
         };
 
-
         /// Load balancing
-        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path);
+        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, task_shard.priority.is_remote);
 
         LOG_DEBUG(log, "Processing " << current_task_status_path);
 
@@ -1542,10 +1579,8 @@ protected:
         /// Try start processing, create node about it
         {
             String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
-            auto op_create = std::make_unique<zkutil::Op::Create>(current_task_status_path, start_state, acl, zkutil::CreateMode::Persistent);
-
-            zkutil::MultiTransactionInfo info;
-            checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create), info);
+            auto op_create = std::make_shared<zkutil::Op::Create>(current_task_status_path, start_state, acl, zkutil::CreateMode::Persistent);
+            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create));
 
             if (info.code != ZOK)
             {
@@ -1608,8 +1643,15 @@ protected:
                 Context context_insert = context;
                 context_insert.getSettingsRef() = task_cluster->settings_push;
 
-                BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
-                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
+                BlockInputStreamPtr input;
+                BlockOutputStreamPtr output;
+                {
+                    BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
+                    BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
+
+                    input = std::make_shared<AsynchronousBlockInputStream>(io_select.in);
+                    output = io_insert.out;
+                }
 
                 using ExistsFuture = zkutil::ZooKeeper::ExistsFuture;
                 auto future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
@@ -1664,7 +1706,7 @@ protected:
                 };
 
                 /// Main work is here
-                copyData(*io_select.in, *io_insert.out, cancel_check, update_stats);
+                copyData(*input, *output, cancel_check, update_stats);
 
                 // Just in case
                 if (future_is_dirty_checker != nullptr)
@@ -1683,9 +1725,8 @@ protected:
         /// Finalize the processing, change state of current partition task (and also check is_dirty flag)
         {
             String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-            auto op_set = std::make_unique<zkutil::Op::SetData>(current_task_status_path, state_finished, 0);
-            zkutil::MultiTransactionInfo info;
-            checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set), info);
+            auto op_set = std::make_shared<zkutil::Op::SetData>(current_task_status_path, state_finished, 0);
+            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set));
 
             if (info.code != ZOK)
             {

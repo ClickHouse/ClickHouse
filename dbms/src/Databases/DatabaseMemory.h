@@ -70,10 +70,7 @@ public:
     void alterTable(
         const Context & context,
         const String & name,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
+        const ColumnsDescription & columns,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(

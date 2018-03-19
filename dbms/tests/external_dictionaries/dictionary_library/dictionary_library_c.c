@@ -39,7 +39,7 @@ void * ClickHouseDictionary_v2_loadKeys(
     return 0;
 }
 
-void * ClickHouseDictionary_v2_libNew()
+void * ClickHouseDictionary_v2_libNew(ClickHouseLibCStrings * settings)
 {
     int size = 101;
     void * lib_ptr = malloc(size);

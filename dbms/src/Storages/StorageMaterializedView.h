@@ -17,7 +17,6 @@ class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterialize
 public:
     std::string getName() const override { return "MaterializedView"; }
     std::string getTableName() const override { return table_name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); };
     StoragePtr getTargetTable() const;
 
@@ -28,6 +27,7 @@ public:
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand); }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
@@ -62,10 +62,7 @@ protected:
         const String & database_name_,
         Context & local_context,
         const ASTCreateQuery & query,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         bool attach_);
 };
 
