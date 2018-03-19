@@ -118,6 +118,6 @@ private:
 };
 
 
-ColumnPtr makeNullable(const ColumnPtr & column);
+MutableColumnPtr makeNullable(MutableColumnPtr && column);
 
 }

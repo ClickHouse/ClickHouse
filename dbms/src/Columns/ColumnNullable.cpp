@@ -154,16 +154,16 @@ void ColumnNullable::popBack(size_t n)
 
 MutableColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    ColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint);
-    ColumnPtr filtered_null_map = getNullMapColumn().filter(filt, result_size_hint);
-    return ColumnNullable::create(filtered_data, filtered_null_map);
+    MutableColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint);
+    MutableColumnPtr filtered_null_map = getNullMapColumn().filter(filt, result_size_hint);
+    return ColumnNullable::create(std::move(filtered_data), std::move(filtered_null_map));
 }
 
 MutableColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 {
-    ColumnPtr permuted_data = getNestedColumn().permute(perm, limit);
-    ColumnPtr permuted_null_map = getNullMapColumn().permute(perm, limit);
-    return ColumnNullable::create(permuted_data, permuted_null_map);
+    MutableColumnPtr permuted_data = getNestedColumn().permute(perm, limit);
+    MutableColumnPtr permuted_null_map = getNullMapColumn().permute(perm, limit);
+    return ColumnNullable::create(std::move(permuted_data), std:move(permuted_null_map));
 }
 
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
@@ -431,15 +431,16 @@ void ColumnNullable::checkConsistency() const
 }
 
 
-ColumnPtr makeNullable(const ColumnPtr & column)
+MutableColumnPtr makeNullable(MutableColumnPtr && column)
 {
     if (column->isColumnNullable())
         return column;
 
     if (column->isColumnConst())
-        return ColumnConst::create(makeNullable(static_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+        return ColumnConst::create(makeNullable(static_cast<ColumnConst &>(*column).getDataColumnPtr()->assumeMutable())
+                , column->size());
 
-    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+    return ColumnNullable::create(std::move(column), ColumnUInt8::create(column->size(), 0));
 }
 
 }
