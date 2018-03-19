@@ -1088,7 +1088,11 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     info.request->addRootPath(root_path);
 
     if (!info.request->xid)
+    {
         info.request->xid = xid.fetch_add(1);
+        if (info.request->xid < 0)
+            throw Exception("XID overflow");
+    }
 
     {
         std::lock_guard lock(operations_mutex);

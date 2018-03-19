@@ -476,7 +476,7 @@ private:
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
-    std::atomic<XID> xid {1};    /// TODO deal with xid overflow
+    std::atomic<XID> xid {1};
 
     struct RequestInfo
     {
