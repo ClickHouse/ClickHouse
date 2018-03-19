@@ -131,7 +131,7 @@ Block flatten(const Block & block)
                 for (size_t i = 0; i < tuple_size; ++i)
                 {
                     String nested_name = concatenateName(elem.name, names[i]);
-                    ColumnPtr column_array_of_element = ColumnArray::create(element_columns[i], column_offsets);
+                    ColumnPtr column_array_of_element = ColumnArray::create((*std::move(element_columns[i])).mutate(), column_offsets);
 
                     res.insert(ColumnWithTypeAndName(
                         is_const
