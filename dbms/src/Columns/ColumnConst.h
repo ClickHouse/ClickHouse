@@ -25,7 +25,7 @@ private:
     ColumnPtr data;
     size_t s;
 
-    ColumnConst(MutableColumnPtr && data, size_t s);
+    ColumnConst(const ColumnPtr & data, size_t s);
     ColumnConst(const ColumnConst & src) = default;
 
 public:
@@ -133,6 +133,7 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
+        data = (*std::move(data)).mutate();
         auto & mutable_data = data->assumeMutableRef();
         auto res = mutable_data.deserializeAndInsertFromArena(pos);
         mutable_data.popBack(1);
@@ -191,7 +192,7 @@ public:
 
     /// Not part of the common interface.
 
-    IColumn & getDataColumn() { return data->assumeMutableRef(); }
+    // IColumn & getDataColumn() { return data->assumeMutableRef(); }
     const IColumn & getDataColumn() const { return *data; }
     //MutableColumnPtr getDataColumnMutablePtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
