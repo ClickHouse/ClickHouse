@@ -96,7 +96,7 @@ public:
 
     struct Request
     {
-        XID xid;
+        XID xid = 0;
         bool has_watch = false;
 
         virtual ~Request() {};
@@ -163,6 +163,11 @@ public:
         void writeImpl(WriteBuffer &) const override {}
         ResponsePtr makeResponse() const override;
         String getPath() const override { return {}; }
+    };
+
+    struct CloseResponse final : Response
+    {
+        void readImpl(ReadBuffer &) override;
     };
 
     struct CreateRequest final : Request
@@ -317,6 +322,12 @@ public:
 
         void readImpl(ReadBuffer &) override;
         void removeRootPath(const String & root_path) override;
+    };
+
+    /// This response may be received only as an element of responses in MultiResponse.
+    struct ErrorResponse final : Response
+    {
+        void readImpl(ReadBuffer &) override;
     };
 
 
@@ -493,7 +504,6 @@ private:
     std::thread send_thread;
     std::thread receive_thread;
 
-    std::atomic<bool> stop {false};
     std::atomic<bool> expired {false};
 
     void connect(
