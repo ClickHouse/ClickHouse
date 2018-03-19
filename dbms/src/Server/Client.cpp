@@ -1,3 +1,4 @@
+#include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -48,7 +49,6 @@
 #include "InterruptListener.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <port/unistd.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code

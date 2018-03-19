@@ -1,10 +1,8 @@
+#include <port/unistd.h>
 #include <zstd.h>
 #include <vector>
 #include <stdexcept>
 #include <sys/types.h>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
 
 
 int main(int argc, char ** argv)

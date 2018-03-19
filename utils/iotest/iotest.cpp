@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <port/unistd.h>
 #include <stdlib.h>
 #include <time.h>
 #include <iostream>
@@ -17,9 +18,6 @@
 #include <cstdlib>
 #ifdef __APPLE__
 #include <common/apple_rt.h>
-#endif
-#if !_MSC_VER
-#include <unistd.h>
 #endif
 
 using DB::throwFromErrno;

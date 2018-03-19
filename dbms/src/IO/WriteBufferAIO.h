@@ -10,8 +10,8 @@
 #include <Common/CurrentMetrics.h>
 
 #include <string>
-#include <fcntl.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 
 namespace CurrentMetrics

@@ -1,10 +1,10 @@
 #include <sys/ioctl.h>
+#include <port/unistd.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/UTF8Helpers.h>
-#include <port/unistd.h>
 
 
 namespace DB

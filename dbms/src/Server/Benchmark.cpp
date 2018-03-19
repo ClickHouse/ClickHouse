@@ -1,3 +1,4 @@
+#include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -29,9 +30,6 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include "InterruptListener.h"
-#if !_MSC_VER
-#include <unistd.h>
-#endif
 
 
 /** A tool for evaluating ClickHouse performance.

@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <port/unistd.h>
 #include <stdlib.h>
 #include <time.h>
 #include <iostream>
@@ -24,9 +25,6 @@
 #include <linux/aio_abi.h>
 #endif
 #include <sys/syscall.h>
-#if !_MSC_VER
-#include <unistd.h>
-#endif
 
 
 using DB::throwFromErrno;

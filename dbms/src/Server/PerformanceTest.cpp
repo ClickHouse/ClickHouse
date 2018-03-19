@@ -3,6 +3,7 @@
 #include <limits>
 #include <regex>
 #include <thread>
+#include <port/unistd.h>
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <sys/stat.h>
@@ -29,7 +30,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
 #include "InterruptListener.h"
-#include <port/unistd.h>
 
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with

@@ -3,10 +3,6 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
-if (MSVC) # TODO: #include <basetsd.h> typedef SSIZE_T ssize_t;
-    add_definitions (-Dssize_t=signed)
-endif ()
-
 add_subdirectory (libcommon)
 add_subdirectory (libpocoext)
 add_subdirectory (libdaemon)
