@@ -163,7 +163,7 @@ MutableColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit)
 {
     MutableColumnPtr permuted_data = getNestedColumn().permute(perm, limit);
     MutableColumnPtr permuted_null_map = getNullMapColumn().permute(perm, limit);
-    return ColumnNullable::create(std::move(permuted_data), std:move(permuted_null_map));
+    return ColumnNullable::create(std::move(permuted_data), std::move(permuted_null_map));
 }
 
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
