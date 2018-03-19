@@ -84,7 +84,7 @@ private:
     class intrusive_ptr : public boost::intrusive_ptr<T>
     {
     public:
-        using boost::intrusive_ptr<T>::intrusive_ptr<T>;
+        using boost::intrusive_ptr<T>::intrusive_ptr;
 
         T & operator*() const & { return boost::intrusive_ptr<T>::operator*(); }
         T && operator*() const && { return const_cast<typename std::remove_const<T>::type &&>(*boost::intrusive_ptr<T>::get()); }
