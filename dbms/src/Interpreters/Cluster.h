@@ -60,6 +60,7 @@ public:
         String default_database;    /// this database is selected when no database is specified for Distributed table
         UInt32 replica_num;
         bool is_local;
+        Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Encryption encryption = Protocol::Encryption::Disable;
 
         Address() = default;

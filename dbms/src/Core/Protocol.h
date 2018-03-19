@@ -120,6 +120,7 @@ namespace Protocol
     {
         Disable = 0,
         Enable = 1,
+        Auto = 2, /// Try autodetect from port number (port == 9440 ? enable : disable)
     };
 
 }

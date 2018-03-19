@@ -51,11 +51,12 @@ public:
             const ConnectionTimeouts & timeouts,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Encryption encryption_ = Protocol::Encryption::Disable)
+            Protocol::Encryption encryption_ = Protocol::Encryption::Auto)
        : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(host_, port_),
-        client_name(client_name_), compression(compression_), encryption(encryption_),
+        client_name(client_name_), compression(compression_),
+        encryption{encryption_ == Protocol::Encryption::Auto ? (port_ == DBMS_DEFAULT_ENCRYPTED_PORT ? Protocol::Encryption::Enable : Protocol::Encryption::Disable) : encryption_},
         timeouts(timeouts)
     {
     }
@@ -67,11 +68,12 @@ public:
             const ConnectionTimeouts & timeouts,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Encryption encryption_ = Protocol::Encryption::Disable)
+            Protocol::Encryption encryption_ = Protocol::Encryption::Auto)
         : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(resolved_address_),
-        client_name(client_name_), compression(compression_), encryption(encryption_),
+        client_name(client_name_), compression(compression_),
+        encryption{encryption_ == Protocol::Encryption::Auto ? (port_ == DBMS_DEFAULT_ENCRYPTED_PORT ? Protocol::Encryption::Enable : Protocol::Encryption::Disable) : encryption_},
         timeouts(timeouts)
     {
     }

@@ -391,7 +391,7 @@ private:
             : Protocol::Encryption::Disable;
 
         String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_ENCRYPTED_PORT : DBMS_DEFAULT_PORT));
         String default_database = config().getString("database", "");
         String user = config().getString("user", "");
         String password = config().getString("password", "");
