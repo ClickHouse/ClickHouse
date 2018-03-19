@@ -31,8 +31,8 @@ namespace ErrorCodes
 }
 
 
-ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
-    : data(std::move(nested_column)), offsets(std::move(offsets_column))
+ColumnArray::ColumnArray(MutableColumnPtr && nested_column, const ColumnPtr & offsets_column)
+    : data(std::move(nested_column)), offsets(offsets_column)
 {
     if (!typeid_cast<const ColumnOffsets *>(offsets_column.get()))
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);

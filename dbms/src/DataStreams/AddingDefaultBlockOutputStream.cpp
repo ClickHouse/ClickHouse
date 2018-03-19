@@ -52,8 +52,8 @@ void AddingDefaultBlockOutputStream::write(const Block & block)
             DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
             UInt64 nested_rows = rows ? get<UInt64>((*offsets_column)[rows - 1]) : 0;
 
-            ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
-            column_to_add.column = ColumnArray::create(nested_column, offsets_column);
+            MutableColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
+            column_to_add.column = ColumnArray::create(std::move(nested_column), offsets_column);
         }
         else
         {

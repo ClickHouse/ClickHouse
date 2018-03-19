@@ -24,7 +24,7 @@ private:
     friend class COWPtrHelper<IColumn, ColumnArray>;
 
     /** Create an array column with specified values and offsets. */
-    ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column);
+    ColumnArray(MutableColumnPtr && nested_column, const ColumnPtr & offsets_column);
 
     /** Create an empty column of arrays with the type of values as in the column `nested_column` */
     ColumnArray(MutableColumnPtr && nested_column);
