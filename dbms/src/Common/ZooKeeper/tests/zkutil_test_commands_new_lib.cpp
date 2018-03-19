@@ -33,27 +33,34 @@ try
 
     ZooKeeper zk(addresses, {}, {}, {}, {5, 0}, {0, 50000});
 
-    Strings children;
+    Poco::Event event(true);
 
     std::cout << "create\n";
 
-    zk.create("/test", "old", false, false, {}, [](const ZooKeeper::CreateResponse & response)
+    zk.create("/test", "old", false, false, {},
+        [&](const ZooKeeper::CreateResponse & response)
         {
             if (response.error)
                 std::cerr << "Error (create) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Created path: " << response.path_created << '\n';
+
+            //event.set();
         });
+
+    //event.wait();
 
     std::cout << "get\n";
 
     zk.get("/test",
-        [](const ZooKeeper::GetResponse & response)
+        [&](const ZooKeeper::GetResponse & response)
         {
             if (response.error)
                 std::cerr << "Error (get) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Value: " << response.data << '\n';
+
+            //event.set();
         },
         [](const ZooKeeper::WatchResponse & response)
         {
@@ -63,20 +70,27 @@ try
                 std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
         });
 
+    //event.wait();
+
     std::cout << "set\n";
 
-    zk.set("/test", "new", -1, [](const ZooKeeper::SetResponse & response)
+    zk.set("/test", "new", -1,
+        [&](const ZooKeeper::SetResponse & response)
         {
             if (response.error)
                 std::cerr << "Error (set) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Set\n";
+
+            //event.set();
         });
+
+    //event.wait();
 
     std::cout << "list\n";
 
     zk.list("/",
-        [](const ZooKeeper::ListResponse & response)
+        [&](const ZooKeeper::ListResponse & response)
         {
             if (response.error)
                 std::cerr << "Error (list) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
@@ -86,6 +100,8 @@ try
                 for (const auto & name : response.names)
                     std::cerr << name << "\n";
             }
+
+            //event.set();
         },
         [](const ZooKeeper::WatchResponse & response)
         {
@@ -95,15 +111,19 @@ try
                 std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
         });
 
+    //event.wait();
+
     std::cout << "exists\n";
 
     zk.exists("/test",
-        [](const ZooKeeper::ExistsResponse & response)
+        [&](const ZooKeeper::ExistsResponse & response)
         {
             if (response.error)
                 std::cerr << "Error (exists) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Exists\n";
+
+            //event.set();
         },
         [](const ZooKeeper::WatchResponse & response)
         {
@@ -113,23 +133,21 @@ try
                 std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
         });
 
-    std::cout << "remove\n";
+    //event.wait();
 
-    Poco::Event event(true);
+    std::cout << "remove\n";
 
     zk.remove("/test", -1, [&](const ZooKeeper::RemoveResponse & response)
         {
             if (response.error)
-                std::cerr << "Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+                std::cerr << "Error (remove) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Removed\n";
 
-            event.set();
+            //event.set();
         });
 
-    event.wait();
-
-    /// Surprising enough, ZooKeeper can execute multi transaction out of order. So, we must to wait for "remove" to execute before sending "multi".
+    //event.wait();
 
     std::cout << "multi\n";
 

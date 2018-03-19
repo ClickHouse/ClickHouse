@@ -174,8 +174,8 @@ public:
     {
         String path;
         String data;
-        bool is_ephemeral;
-        bool is_sequential;
+        bool is_ephemeral = false;
+        bool is_sequential = false;
         ACLs acls;
 
         OpNum getOpNum() const override { return 1; }
