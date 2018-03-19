@@ -275,8 +275,8 @@ public:
 
     struct ListResponse final : Response
     {
-        Stat stat;
         std::vector<String> names;
+        Stat stat;
 
         void readImpl(ReadBuffer &) override;
     };
