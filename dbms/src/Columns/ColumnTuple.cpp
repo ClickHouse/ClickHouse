@@ -147,34 +147,34 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 MutableColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     const size_t tuple_size = columns.size();
-    Columns new_columns(tuple_size);
+    MutableColumns new_columns(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(std::move(new_columns));
 }
 
 MutableColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     const size_t tuple_size = columns.size();
-    Columns new_columns(tuple_size);
+    MutableColumns new_columns(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->permute(perm, limit);
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(std::move(new_columns));
 }
 
 MutableColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 {
     const size_t tuple_size = columns.size();
-    Columns new_columns(tuple_size);
+    MutableColumns new_columns(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->replicate(offsets);
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(std::move(new_columns));
 }
 
 MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
@@ -189,10 +189,10 @@ MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & se
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {
-        Columns new_columns(tuple_size);
+        MutableColumns new_columns(tuple_size);
         for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
             new_columns[tuple_element_idx] = std::move(scattered_tuple_elements[tuple_element_idx][scattered_idx]);
-        res[scattered_idx] = ColumnTuple::create(new_columns);
+        res[scattered_idx] = ColumnTuple::create(std::move(new_columns));
     }
 
     return res;
