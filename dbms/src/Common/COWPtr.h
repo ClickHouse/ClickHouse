@@ -227,21 +227,38 @@ private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
+    template<typename Class, typename... Args>
+    struct HasCreateImmutable<Args...> {
+    private:
+        template<typename T>
+        static constexpr auto check(T *) -> typename std::is_same<
+                decltype( std::declval<T>().createImmutable( std::declval<Args>()... ) ), Ptr
+        >::type;
+
+        template<typename>
+        static constexpr std::false_type check(...);
+
+        typedef decltype(check<Class>(0)) type;
+
+    public:
+        static constexpr bool value = type::value;
+    };
+
 public:
     using Ptr = typename Base::template immutable_ptr<Derived>;
     using MutablePtr = typename Base::template mutable_ptr<Derived>;
 
     template <typename... Args>
-    static MutablePtr create(Args &&... args) { return MutablePtr(new Derived(std::forward<Args>(args)...)); }
-
-    template <typename... Args>
-    static Ptr create(Args &&... args) { return Derived::createImmutable(std::forward<Args>(args)...); }
+    static auto create(Args &&... args)
+    {
+        if constexpr (HasCreateImmutable<Derived, args ...>)
+            return Derived::createImmutable(std::forward<Args>(args)...);
+        else
+            return MutablePtr(new Derived(std::forward<Args>(args)...));
+    }
 
     template <typename T>
-    static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
-
-    template <typename T>
-    static Ptr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
+    static auto create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
 
     typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
 };
