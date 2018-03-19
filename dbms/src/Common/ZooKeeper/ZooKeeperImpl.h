@@ -12,12 +12,13 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <map>
+#include <mutex>
 #include <vector>
 #include <memory>
 #include <thread>
 #include <atomic>
-#include <mutex>
 #include <optional>
+#include <functional>
 
 
 namespace ZooKeeperImpl
