@@ -2,7 +2,7 @@
 #include <boost/program_options.hpp>
 #include <Common/Exception.h>
 #include <Poco/Event.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
 
 
 /** Outputs paths of all ZK nodes in arbitrary order. Possibly only in specified directory.
@@ -106,7 +106,7 @@ try
         return 1;
     }
 
-    zkutil::ZooKeeper zookeeper_(options.at("address").as<std::string>());
+    ZooKeeperImpl::ZooKeeper zookeeper(options.at("address").as<std::string>());
     zookeeper = &zookeeper_;
 
     states.emplace_back();

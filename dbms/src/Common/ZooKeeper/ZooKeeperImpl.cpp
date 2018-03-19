@@ -306,7 +306,7 @@ void read(String & s, ReadBuffer & in)
     int32_t size = 0;
     read(size, in);
     if (size < 0)
-        throw Exception("Negative size");
+        throw Exception("Negative size");   /// TODO Actually it means that zookeeper node have NULL value. Maybe better to treat it like empty string.
     if (size > max_string_size)
         throw Exception("Too large string size");   /// TODO error code
     s.resize(size);
@@ -555,7 +555,6 @@ void ZooKeeper::receiveHandshake()
     int32_t handshake_length;
     int32_t protocol_version_read;
     int32_t timeout;
-    int64_t session_id;
     constexpr int32_t passwd_len = 16;
     std::array<char, passwd_len> passwd;
 

@@ -342,8 +342,13 @@ public:
 
     ~ZooKeeper();
 
-    /// If not valid, you can only destroy the object. All other methods will throw exception.
-    bool isValid() const { return !expired; }
+
+    /// If expired, you can only destroy the object. All other methods will throw exception.
+    bool isExpired() const { return !expired; }
+
+    /// Useful to check owner of ephemeral node.
+    int64_t getSessionID() const { return session_id; }
+
 
     using CreateCallback = std::function<void(const CreateResponse &)>;
     using RemoveCallback = std::function<void(const RemoveResponse &)>;
@@ -476,6 +481,7 @@ private:
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
+    int64_t session_id = 0;
     std::atomic<XID> xid {1};
 
     struct RequestInfo

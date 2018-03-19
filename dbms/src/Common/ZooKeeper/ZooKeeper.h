@@ -29,8 +29,6 @@ namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
-const UInt32 MEDIUM_SESSION_TIMEOUT = 120000;
-const UInt32 BIG_SESSION_TIMEOUT = 600000;
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -84,20 +82,10 @@ public:
     /// This object remains unchanged, and the new session is returned.
     Ptr startNewSession() const;
 
-    /// Returns true, if the session has expired forever.
-    /// This is possible only if the connection has been established, then lost and re-established
-    /// again, but too late.
-    /// In contrast, if, for instance, the server name or port is misconfigured, connection
-    /// attempts will continue indefinitely, expired() will return false and all method calls
-    /// will raise ConnectionLoss exception.
-    /// Also returns true if is_dirty flag is set - a request to close the session ASAP.
+    /// Returns true, if the session has expired.
     bool expired();
 
-    ACLPtr getDefaultACL();
-
-    void setDefaultACL(ACLPtr new_acl);
-
-    /// Create a znode. ACL set by setDefaultACL is used (full access to everybody by default).
+    /// Create a znode.
     /// Throw an exception if something went wrong.
     std::string create(const std::string & path, const std::string & data, int32_t mode);
 
@@ -108,12 +96,9 @@ public:
     /// In case of other errors throws an exception.
     int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
     int32_t tryCreate(const std::string & path, const std::string & data, int32_t mode);
-    int32_t tryCreateWithRetries(const std::string & path, const std::string & data, int32_t mode,
-                                 std::string & path_created, size_t * attempt = nullptr);
 
     /// Create a Persistent node.
     /// Does nothing if the node already exists.
-    /// Retries on ConnectionLoss or OperationTimeout.
     void createIfNotExists(const std::string & path, const std::string & data);
 
     /// Creates all non-existent ancestors of the given path with empty contents.
@@ -123,42 +108,11 @@ public:
     /// Remove the node if the version matches. (if version == -1, remove any version).
     void remove(const std::string & path, int32_t version = -1);
 
-    /// Removes the node. In case of network errors tries to remove again.
-    /// ZNONODE error for the second and the following tries is ignored.
-    void removeWithRetries(const std::string & path, int32_t version = -1);
-
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     /// * Versions don't match
     /// * The node has children.
     int32_t tryRemove(const std::string & path, int32_t version = -1);
-    /// Retries in case of network errors, returns ZNONODE if the node is already removed.
-    int32_t tryRemoveWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
-
-    /// The same, but sets is_dirty flag if all removal attempts were unsuccessful.
-    /// This is needed because the session might still exist after all retries,
-    /// even if more time than session_timeout has passed.
-    /// So we do not rely on the ephemeral node being deleted and set is_dirty to
-    /// try and close the session ASAP.
-    /**     Ridiculously Long Delay to Expire
-            When disconnects do happen, the common case should be a very* quick
-            reconnect to another server, but an extended network outage may
-            introduce a long delay before a client can reconnect to the ZooKeep‐
-            er service. Some developers wonder why the ZooKeeper client li‐
-            brary doesn’t simply decide at some point (perhaps twice the session
-            timeout) that enough is enough and kill the session itself.
-            There are two answers to this. First, ZooKeeper leaves this kind of
-            policy decision up to the developer. Developers can easily implement
-            such a policy by closing the handle themselves. Second, when a Zoo‐
-            Keeper ensemble goes down, time freezes. Thus, when the ensemble is
-            brought back up, session timeouts are restarted. If processes using
-            ZooKeeper hang in there, they may find out that the long timeout was
-            due to an extended ensemble failure that has recovered and pick right
-            up where they left off without any additional startup delay.
-
-            ZooKeeper: Distributed Process Coordination p118
-      */
-    int32_t tryRemoveEphemeralNodeWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
 
     bool exists(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
     bool existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
@@ -199,8 +153,6 @@ public:
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
     int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
-    /// Use only with read-only operations.
-    int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr, size_t * attempt = nullptr);
     /// Throws nothing, just alias of multiImpl
     int32_t tryMultiNoThrow(const Ops & ops, OpResultsPtr * out_op_results = nullptr, MultiTransactionInfo * out_info = nullptr)
     {
@@ -339,34 +291,15 @@ public:
     using TryRemoveFuture = Future<int32_t, int>;
     TryRemoveFuture asyncTryRemove(const std::string & path, int32_t version = -1);
 
-    struct OpResultsAndCode
-    {
-        OpResultsPtr results;
-        std::shared_ptr<Ops> ops_ptr;
-        int code;
-    };
 
     using MultiFuture = Future<OpResultsAndCode, int>;
     MultiFuture asyncMulti(const Ops & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     MultiFuture tryAsyncMulti(const Ops & ops);
 
-
     static std::string error2string(int32_t code);
 
-    /// Max size of node contents in bytes.
-    /// In 3.4.5 max node size is 1Mb.
-    static const size_t MAX_NODE_SIZE = 1048576;
-
-    /// Length of the suffix that ZooKeeper adds to sequential nodes.
-    /// In fact it is smaller, but round it up for convenience.
-    static const size_t SEQUENTIAL_SUFFIX_SIZE = 64;
-
-
-    zhandle_t * getHandle() { return impl; }
-
 private:
-    friend struct WatchContext;
     friend class EphemeralNodeHolder;
     friend struct OpResult;
 
@@ -374,34 +307,6 @@ private:
 
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
-
-    static WatchCallback callbackForEvent(const EventPtr & event);
-    WatchContext * createContext(WatchCallback && callback);
-    static void destroyContext(WatchContext * context);
-    static void processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx);
-
-    template <typename T>
-    int32_t retry(T && operation, size_t * attempt = nullptr)
-    {
-        int32_t code = operation();
-        if (attempt)
-            *attempt = 0;
-        for (size_t i = 0; (i < retry_num) && (code == ZOPERATIONTIMEOUT || code == ZCONNECTIONLOSS); ++i)
-        {
-            if (attempt)
-                *attempt = i;
-
-            /// If the connection has been lost, wait timeout/3 hoping for connection re-establishment.
-            static const int MAX_SLEEP_TIME = 10;
-            if (code == ZCONNECTIONLOSS)
-                usleep(std::min(session_timeout_ms * 1000u / 3, MAX_SLEEP_TIME * 1000u * 1000u));
-
-            LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
-            code = operation();
-        }
-
-        return code;
-    }
 
     /// The following methods don't throw exceptions but return error codes.
     int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -414,25 +319,16 @@ private:
 
     MultiFuture asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception);
 
+    ZooKeeperImpl::ZooKeeper impl;
+
     std::string hosts;
     std::string identity;
     int32_t session_timeout_ms;
     std::string chroot;
 
     std::mutex mutex;
-    ACLPtr default_acl;
-    zhandle_t * impl;
 
-    std::unordered_set<WatchContext *> watch_context_store;
-
-    /// Retries number in case of OperationTimeout or ConnectionLoss errors.
-    static constexpr size_t retry_num = 3;
     Logger * log = nullptr;
-
-    /// If true, there were unsuccessfull attempts to remove ephemeral nodes.
-    /// It is better to close the session to remove ephemeral nodes with certainty
-    /// instead of continuing to use re-established session.
-    bool is_dirty = false;
 };
 
 
@@ -476,11 +372,7 @@ public:
     {
         try
         {
-            /// Important: if the ZooKeeper is temporarily unavailable, repeated attempts to
-            /// delete the node are made.
-            /// Otherwise it is possible that EphemeralNodeHolder is destroyed,
-            /// but the session has recovered and the node in ZooKeeper remains for the long time.
-            zookeeper.tryRemoveEphemeralNodeWithRetries(path);
+            zookeeper.tryRemove(path);
         }
         catch (const KeeperException & e)
         {
