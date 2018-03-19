@@ -753,7 +753,7 @@ private:
                 else
                 {
                     block.getByPosition(result).column = ColumnNullable::create(
-                        materializeColumnIfConst(arg_else.column), arg_cond.column);
+                        materializeColumnIfConst(arg_else.column)->assumeMutable(), arg_cond.column->assumeMutable());
                 }
             }
             else if (cond_const_col)
@@ -794,7 +794,7 @@ private:
                 else
                 {
                     block.getByPosition(result).column = ColumnNullable::create(
-                        materializeColumnIfConst(arg_then.column), std::move(negated_null_map));
+                        materializeColumnIfConst(arg_then.column)->assumeMutable(), std::move(negated_null_map));
                 }
             }
             else if (cond_const_col)

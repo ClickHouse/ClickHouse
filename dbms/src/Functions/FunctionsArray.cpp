@@ -733,12 +733,12 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     block_of_temporary_results.insert(block.getByPosition(arguments[1]));
 
     /// results of taking elements by index for arrays from each element of the tuples;
-    Columns result_tuple_columns;
+    MutableColumns result_tuple_columns;
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
         ColumnWithTypeAndName array_of_tuple_section;
-        array_of_tuple_section.column = ColumnArray::create(tuple_columns[i], col_array->getOffsetsPtr());
+        array_of_tuple_section.column = ColumnArray::create(tuple_columns[i]->assumeMutable(), col_array->getOffsetsPtr());
         array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_types[i]);
         block_of_temporary_results.insert(array_of_tuple_section);
 
@@ -749,10 +749,10 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
 
         executeImpl(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2);
 
-        result_tuple_columns.emplace_back(std::move(block_of_temporary_results.getByPosition(i * 2 + 2).column));
+        result_tuple_columns.emplace_back(std::move(block_of_temporary_results.getByPosition(i * 2 + 2).column->assumeMutable()));
     }
 
-    block.getByPosition(result).column = ColumnTuple::create(result_tuple_columns);
+    block.getByPosition(result).column = ColumnTuple::create(std::move(result_tuple_columns));
 
     return true;
 }
@@ -861,7 +861,9 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         /// Store the result.
         const ColumnWithTypeAndName & source_col = source_block.getByPosition(2);
         ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-        dest_col.column = ColumnNullable::create(source_col.column, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+        dest_col.column = ColumnNullable::create(
+                source_col.column,
+                builder ? std::move(builder).getNullMapColumnPtr()->assumeMutable() : ColumnUInt8::create());
     }
 }
 
@@ -2996,7 +2998,8 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
         if (nullable_type)
         {
             auto casted_column = castRemoveNullable(nested, nullable_type->getNestedType());
-            return ColumnNullable::create(casted_column, column_nullable->getNullMapColumnPtr());
+            return ColumnNullable::create(casted_column->assumeMutable(),
+                                          column_nullable->getNullMapColumnPtr()->assumeMutable());
         }
         return castRemoveNullable(nested, data_type);
     }
@@ -3008,7 +3011,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
                             + data_type->getName() + " in function " + getName(), ErrorCodes::LOGICAL_ERROR};
 
         auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
-        return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
+        return ColumnArray::create(casted_column->assumeMutable(), column_array->getOffsetsPtr());
     }
     else if (auto column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
     {
