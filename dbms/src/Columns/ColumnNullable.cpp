@@ -386,9 +386,9 @@ void ColumnNullable::getExtremes(Field & min, Field & max) const
 
 MutableColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 {
-    ColumnPtr replicated_data = getNestedColumn().replicate(offsets);
-    ColumnPtr replicated_null_map = getNullMapColumn().replicate(offsets);
-    return ColumnNullable::create(replicated_data, replicated_null_map);
+    MutableColumnPtr replicated_data = getNestedColumn().replicate(offsets);
+    MutableColumnPtr replicated_null_map = getNullMapColumn().replicate(offsets);
+    return ColumnNullable::create(std::move(replicated_data), std::move(replicated_null_map));
 }
 
 
