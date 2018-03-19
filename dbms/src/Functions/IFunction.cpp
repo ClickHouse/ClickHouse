@@ -83,9 +83,9 @@ MutableColumnPtr wrapInNullable(MutableColumnPtr && src, Block & block, const Co
         return makeNullable(std::move(src_not_nullable));
 
     if (src_not_nullable->isColumnConst())
-        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), std::move(result_null_map_column));
     else
-        return ColumnNullable::create(src_not_nullable, result_null_map_column);
+        return ColumnNullable::create(src_not_nullable, std::move(result_null_map_column));
 }
 
 
