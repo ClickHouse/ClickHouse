@@ -14,7 +14,6 @@ try
     }
 
     ZooKeeper zk(argv[1], "", 5000);
-    Strings children;
 
     std::cout << "create path" << std::endl;
     zk.create("/test", "old", zkutil::CreateMode::Persistent);
@@ -28,6 +27,12 @@ try
     watch->wait();
     std::cout << "watch happened" << std::endl;
     std::cout << "remove path" << std::endl;
+
+    std::cout << "list path" << std::endl;
+    Strings children = zk.getChildren("/");
+    for (const auto & name : children)
+        std::cerr << "\t" << name << "\n";
+
     zk.remove("/test");
 
     Ops ops;

@@ -785,13 +785,24 @@ void ZooKeeper::receiveEvent()
 
             auto it = watches.find(watch_response.path);
             if (it == watches.end())
-                throw Exception("Received event for unknown watch");
+            {
+                /// This is Ok.
+                /// Because watches are identified by path.
+                /// And there may exist many watches for single path.
+                /// And watch is added to the list of watches on client side
+                ///  slightly before than it is registered by the server.
+                /// And that's why new watch may be already fired by old event,
+                ///  but then the server will actually register new watch
+                ///  and will send event again later.
+            }
+            else
+            {
+                for (auto & callback : it->second)
+                    if (callback)
+                        callback(watch_response);
 
-            for (auto & callback : it->second)
-                if (callback)
-                    callback(watch_response);
-
-            watches.erase(it);
+                watches.erase(it);
+            }
         };
 
         std::cerr << "Received watch\n";
@@ -981,8 +992,8 @@ void ZooKeeper::SetResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeper::ListResponse::readImpl(ReadBuffer & in)
 {
-    ZooKeeperImpl::read(stat, in);
     ZooKeeperImpl::read(names, in);
+    ZooKeeperImpl::read(stat, in);
 }
 
 ZooKeeper::MultiResponse::MultiResponse(const Requests & requests)

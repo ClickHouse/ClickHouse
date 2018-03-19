@@ -34,45 +34,85 @@ try
 
     Strings children;
 
-    std::cout << "create path" << '\n';
+    std::cout << "create\n";
 
     zk.create("/test", "old", false, false, {}, [](const ZooKeeper::CreateResponse & response)
         {
             if (response.error)
-                std::cerr << "Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+                std::cerr << "Error (create) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Created path: " << response.path_created << '\n';
         });
 
-    std::cout << "get path" << '\n';
+    std::cout << "get\n";
 
     zk.get("/test",
         [](const ZooKeeper::GetResponse & response)
         {
             if (response.error)
-                std::cerr << "Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+                std::cerr << "Error (get) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Value: " << response.data << '\n';
         },
-/*        [](const ZooKeeper::WatchResponse & response)
+        [](const ZooKeeper::WatchResponse & response)
         {
             if (response.error)
-                std::cerr << "Watch, Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+                std::cerr << "Watch (get) on /test, Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
-                std::cerr << "Watch, path: " << response.path << ", type: " << response.type << '\n';
-        }*/ {});
+                std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
+        });
 
-    std::cout << "set path" << '\n';
+    std::cout << "set\n";
 
     zk.set("/test", "new", -1, [](const ZooKeeper::SetResponse & response)
         {
             if (response.error)
-                std::cerr << "Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+                std::cerr << "Error (set) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
                 std::cerr << "Set\n";
         });
 
-    std::cout << "remove path" << '\n';
+    std::cout << "list\n";
+
+    zk.list("/",
+        [](const ZooKeeper::ListResponse & response)
+        {
+            if (response.error)
+                std::cerr << "Error (list) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+            else
+            {
+                std::cerr << "Children:\n";
+                for (const auto & name : response.names)
+                    std::cerr << name << "\n";
+            }
+        },
+        [](const ZooKeeper::WatchResponse & response)
+        {
+            if (response.error)
+                std::cerr << "Watch (list) on /, Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+            else
+                std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
+        });
+
+    std::cout << "exists\n";
+
+    zk.exists("/test",
+        [](const ZooKeeper::ExistsResponse & response)
+        {
+            if (response.error)
+                std::cerr << "Error (exists) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+            else
+                std::cerr << "Exists\n";
+        },
+        [](const ZooKeeper::WatchResponse & response)
+        {
+            if (response.error)
+                std::cerr << "Watch (exists) on /test, Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+            else
+                std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
+        });
+
+    std::cout << "remove\n";
 
     zk.remove("/test", -1, [](const ZooKeeper::RemoveResponse & response)
         {
@@ -82,7 +122,7 @@ try
                 std::cerr << "Removed\n";
         });
 
-    std::cout << "multi" << '\n';
+    std::cout << "multi\n";
 
     ZooKeeper::Requests ops;
 
@@ -109,7 +149,7 @@ try
     zk.multi(ops, [](const ZooKeeper::MultiResponse & response)
         {
             if (response.error)
-                std::cerr << "Error " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
+                std::cerr << "Error (multi) " << response.error << ": " << ZooKeeper::errorMessage(response.error) << '\n';
             else
             {
                 for (const auto & elem : response.responses)
