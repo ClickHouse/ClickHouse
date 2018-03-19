@@ -891,11 +891,11 @@ MutableColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) 
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsPtr()).replicate(replicate_offsets);
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()).replicate(replicate_offsets);
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_columns[i] = static_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr()->assumeMutable();
 
     return ColumnArray::create(
         ColumnTuple::create(tuple_columns),
