@@ -372,12 +372,19 @@ private:
                     case BUS_OBJERR:
                         LOG_ERROR(log, "Object specific hardware error.");
                         break;
+
+                    // Linux specific
+#if defined(BUS_MCEERR_AR)
                     case BUS_MCEERR_AR:
                         LOG_ERROR(log, "Hardware memory error: action required.");
                         break;
+#endif
+#if defined(BUS_MCEERR_AO)
                     case BUS_MCEERR_AO:
                         LOG_ERROR(log, "Hardware memory error: action optional.");
                         break;
+#endif
+
                     default:
                         LOG_ERROR(log, "Unknown si_code.");
                         break;
