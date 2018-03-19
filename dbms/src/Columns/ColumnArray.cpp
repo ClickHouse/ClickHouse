@@ -544,7 +544,7 @@ MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result
 
     const ColumnNullable & nullable_elems = static_cast<const ColumnNullable &>(*data);
 
-    auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
+    auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr()->assumeMutable(), offsets);
     auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
     auto & filtered_array_of_nested = static_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
     auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
