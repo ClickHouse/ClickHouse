@@ -138,6 +138,23 @@ public:
 
     using WatchCallback = std::function<void(const WatchResponse &)>;
 
+    struct AuthRequest final : Request
+    {
+        int32_t type = 0;   /// ignored by the server
+        String scheme;
+        String data;
+
+        OpNum getOpNum() const override { return 100; }
+        void writeImpl(WriteBuffer &) const override;
+        ResponsePtr makeResponse() const override;
+        String getPath() const override { return {}; }
+    };
+
+    struct AuthResponse final : Response
+    {
+        void readImpl(ReadBuffer &) override {};
+    };
+
     struct CloseRequest final : Request
     {
         OpNum getOpNum() const override { return -11; }
@@ -169,8 +186,6 @@ public:
         void removeRootPath(const String & root_path) override;
     };
 
-    using CreateCallback = std::function<void(const CreateResponse &)>;
-
     struct RemoveRequest final : Request
     {
         String path;
@@ -187,8 +202,6 @@ public:
     {
         void readImpl(ReadBuffer &) override {}
     };
-
-    using RemoveCallback = std::function<void(const RemoveResponse &)>;
 
     struct ExistsRequest final : Request
     {
@@ -208,8 +221,6 @@ public:
         void readImpl(ReadBuffer &) override;
     };
 
-    using ExistsCallback = std::function<void(const ExistsResponse &)>;
-
     struct GetRequest final : Request
     {
         String path;
@@ -228,8 +239,6 @@ public:
 
         void readImpl(ReadBuffer &) override;
     };
-
-    using GetCallback = std::function<void(const GetResponse &)>;
 
     struct SetRequest final : Request
     {
@@ -251,8 +260,6 @@ public:
         void readImpl(ReadBuffer &) override;
     };
 
-    using SetCallback = std::function<void(const SetResponse &)>;
-
     struct ListRequest final : Request
     {
         String path;
@@ -272,8 +279,6 @@ public:
         void readImpl(ReadBuffer &) override;
     };
 
-    using ListCallback = std::function<void(const ListResponse &)>;
-
     struct CheckRequest final : Request
     {
         String path;
@@ -290,8 +295,6 @@ public:
     {
         void readImpl(ReadBuffer &) override {};
     };
-
-    using CheckCallback = std::function<void(const CheckResponse &)>;
 
     struct MultiRequest final : Request
     {
@@ -314,8 +317,6 @@ public:
         void removeRootPath(const String & root_path) override;
     };
 
-    using MultiCallback = std::function<void(const MultiResponse &)>;
-
 
     /// Connection to addresses is performed in order. If you want, shuffle them manually.
     ZooKeeper(
@@ -330,6 +331,16 @@ public:
 
     /// If not valid, you can only destroy the object. All other methods will throw exception.
     bool isValid() const { return !expired; }
+
+    using CreateCallback = std::function<void(const CreateResponse &)>;
+    using RemoveCallback = std::function<void(const RemoveResponse &)>;
+    using ExistsCallback = std::function<void(const ExistsResponse &)>;
+    using GetCallback = std::function<void(const GetResponse &)>;
+    using SetCallback = std::function<void(const SetResponse &)>;
+    using ListCallback = std::function<void(const ListResponse &)>;
+    using CheckCallback = std::function<void(const CheckResponse &)>;
+    using MultiCallback = std::function<void(const MultiResponse &)>;
+
 
     void create(
         const String & path,
@@ -377,7 +388,7 @@ public:
     void close();
 
 
-    enum ZOO_ERRORS
+    enum Error
     {
         ZOK = 0,
 
@@ -421,6 +432,27 @@ public:
 
     static const char * errorMessage(int32_t code);
 
+    /// For watches.
+    enum State
+    {
+        EXPIRED_SESSION = -112,
+        AUTH_FAILED = -113,
+        CONNECTING = 1,
+        ASSOCIATING = 2,
+        CONNECTED = 3,
+        NOTCONNECTED = 999
+    };
+
+    enum Event
+    {
+        CREATED = 1,
+        DELETED = 2,
+        CHANGED = 3,
+        CHILD = 4,
+        SESSION = -1,
+        NOTWATCHING = -2
+    };
+
 private:
     String root_path;
     ACLs default_acls;
@@ -431,6 +463,8 @@ private:
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
 
+    std::atomic<XID> xid {1};    /// TODO deal with xid overflow
+
     struct RequestInfo
     {
         RequestPtr request;
@@ -438,10 +472,10 @@ private:
         WatchCallback watch;
     };
 
-    using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
+    using RequestsQueue = ConcurrentBoundedQueue<RequestPtr>;
 
     RequestsQueue requests{1};
-    void pushRequest(RequestInfo && info);
+    void pushRequest(RequestInfo && request);
 
     using Operations = std::map<XID, RequestInfo>;
 
@@ -467,12 +501,15 @@ private:
     void sendHandshake();
     void receiveHandshake();
 
-    void sendAuth(const String & auth_scheme, const String & auth_data);
+    void sendAuth(const String & scheme, const String & data);
 
     void receiveEvent();
 
     void sendThread();
     void receiveThread();
+
+    /// Call all remaining callbacks and watches, passing errors to them.
+    void finalize();
 
     template <typename T>
     void write(const T &);
