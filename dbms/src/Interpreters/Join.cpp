@@ -245,7 +245,7 @@ static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
     column.type = makeNullable(column.type);
     if (column.column)
-        column.column = makeNullable(column.column);
+        column.column = makeNullable(column.column->assumeMutable());
 }
 
 

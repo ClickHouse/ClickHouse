@@ -183,7 +183,7 @@ static void appendBlock(const Block & from, Block & to)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = col_to->mutate()->cut(0, old_rows);
+                    col_to = (*std::move(col_to)).mutate()->cut(0, old_rows);
             }
         }
         catch (...)

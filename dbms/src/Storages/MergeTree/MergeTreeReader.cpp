@@ -481,9 +481,9 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                     size_t nested_rows = offsets_column->empty() ? 0
                         : typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
-                    ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
+                    auto nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
 
-                    column_to_add.column = ColumnArray::create(nested_column, offsets_column);
+                    column_to_add.column = ColumnArray::create(std::move(nested_column), offsets_column);
                 }
                 else
                 {

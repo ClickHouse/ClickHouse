@@ -316,7 +316,7 @@ void FlatDictionary::updateData()
             for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
             {
                 const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
-                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->mutate();
+                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
@@ -327,7 +327,7 @@ void FlatDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
-        while (const auto block = stream->read())
+        while (auto block = stream->read())
         {
             const auto &saved_id_column = *saved_block->safeGetByPosition(0).column;
             const auto &update_id_column = *block.safeGetByPosition(0).column;
