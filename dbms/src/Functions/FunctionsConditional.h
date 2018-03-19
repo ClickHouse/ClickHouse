@@ -540,7 +540,7 @@ private:
         temporary_block.insert(block.getByPosition(arguments[0]));
 
         size_t tuple_size = type1.getElements().size();
-        Columns tuple_columns(tuple_size);
+        MutableColumns tuple_columns(tuple_size);
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -556,12 +556,12 @@ private:
             temporary_block.erase(i + 3);
             temporary_block.erase(i + 2);
 
-            tuple_columns[i] = temporary_block.getByPosition(i + 1).column;
+            tuple_columns[i] = temporary_block.getByPosition(i + 1).column->assumeMutable();
         }
 
         /// temporary_block is: cond, res_0, res_1, res_2...
 
-        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
+        block.getByPosition(result).column = ColumnTuple::create(std::move(tuple_columns));
         return true;
     }
 
@@ -605,7 +605,8 @@ private:
             else
             {
                 block.getByPosition(result).column = ColumnNullable::create(
-                    materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
+                    materializeColumnIfConst(result_column)->assumeMutable(),
+                    static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr()->assumeMutable());
                 return true;
             }
         }
@@ -626,7 +627,7 @@ private:
             return column;
 
         return ColumnNullable::create(
-            materializeColumnIfConst(column), ColumnUInt8::create(column->size(), 0));
+            materializeColumnIfConst(column)->assumeMutable(), ColumnUInt8::create(column->size(), 0));
     }
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)
@@ -712,7 +713,8 @@ private:
         }
 
         block.getByPosition(result).column = ColumnNullable::create(
-            materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
+            materializeColumnIfConst(result_nested_column)->assumeMutable(),
+            materializeColumnIfConst(result_null_mask)->assumeMutable());
         return true;
     }
 

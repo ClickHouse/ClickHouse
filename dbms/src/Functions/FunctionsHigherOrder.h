@@ -50,7 +50,7 @@ struct ArrayMapImpl
     {
         return mapped->isColumnConst()
             ? ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr())
-            : ColumnArray::create(mapped, array.getOffsetsPtr());
+            : ColumnArray::create(mapped->assumeMutable(), array.getOffsetsPtr());
     }
 };
 
@@ -104,7 +104,7 @@ struct ArrayFilterImpl
             out_offsets[i] = out_pos;
         }
 
-        return ColumnArray::create(filtered, std::move(column_offsets));
+        return ColumnArray::create(filtered->assumeMutable(), std::move(column_offsets));
     }
 };
 

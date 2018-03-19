@@ -1336,7 +1336,7 @@ private:
                 nested_function(nested_block, {0}, 1);
 
                 /// set converted nested column to result
-                block.getByPosition(result).column = ColumnArray::create(nested_block.getByPosition(1).column, col_array->getOffsetsPtr());
+                block.getByPosition(result).column = ColumnArray::create(nested_block.getByPosition(1).column->assumeMutable(), col_array->getOffsetsPtr());
             }
             else
                 throw Exception{"Illegal column " + array_arg.column->getName() + " for function CAST AS Array", ErrorCodes::LOGICAL_ERROR};
@@ -1399,11 +1399,11 @@ private:
                 idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
                     tuple_size + idx_element_wrapper.first);
 
-            Columns converted_columns(tuple_size);
+            MutableColumns converted_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
-                converted_columns[i] = element_block.getByPosition(tuple_size + i).column;
+                converted_columns[i] = element_block.getByPosition(tuple_size + i).column->assumeMutable();
 
-            block.getByPosition(result).column = ColumnTuple::create(converted_columns);
+            block.getByPosition(result).column = ColumnTuple::create(std::move(converted_columns));
         };
     }
 
@@ -1587,7 +1587,7 @@ private:
                 }
 
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
-                res.column = ColumnNullable::create(tmp_res.column, null_map);
+                res.column = ColumnNullable::create(tmp_res.column->assumeMutable(), null_map->assumeMutable());
             };
         }
         else if (nullable_conversion.source_is_nullable)
