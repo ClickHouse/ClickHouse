@@ -76,7 +76,12 @@ private:
     const String group;
     const String format_name;
     const String schema_name;
-    size_t num_consumers; /// Total number of created consumers
+     /// Total number of consumers
+    size_t num_consumers;
+    /// Number of actually created consumers.
+    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
+    /// In this case we still need to be able to shutdown() properly.
+    size_t num_created_consumers = 0;
     Poco::Logger * log;
 
     // Consumer list
