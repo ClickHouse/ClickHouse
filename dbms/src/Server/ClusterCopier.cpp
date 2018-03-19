@@ -1259,8 +1259,10 @@ protected:
         }
 
         /// Remove the locking node
-        cleaner_holder.reset();
-        zookeeper->remove(is_dirty_flag_path);
+        zkutil::Ops ops;
+        ops.emplace_back(new zkutil::Op::Remove(dirt_cleaner_path, -1));
+        ops.emplace_back(new zkutil::Op::Remove(is_dirty_flag_path, -1));
+        zookeeper->multi(ops);
 
         LOG_INFO(log, "Partition " << task_partition.name << " was dropped on cluster " << task_table.cluster_push_name);
         return true;
