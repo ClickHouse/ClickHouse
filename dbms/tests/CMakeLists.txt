@@ -25,12 +25,6 @@ add_subdirectory (external_dictionaries)
 if (ENABLE_TESTS)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CTestCustom.cmake ${CMAKE_BINARY_DIR})
 
-    if ($ENV{TEST_OPT})
-        set(TEST_OPT $ENV{TEST_OPT})
-    else ()
-        set(TEST_OPT "--skip compile")
-    endif ()
-
     # maybe add --no-long ?
-    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} TEST_OPT='${TEST_OPT}' ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
+    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} TEST_OPT0='--skip compile' ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
 endif ()
