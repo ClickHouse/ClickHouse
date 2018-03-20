@@ -247,10 +247,10 @@ public:
     virtual void forEachSubcolumn(ColumnCallback) {}
 
 
-    MutablePtr mutate() const
+    MutablePtr mutate() const &&
     {
         MutablePtr res = COWPtr<IColumn>::mutate();
-        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = subcolumn->mutate(); });
+        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = (*std::move(subcolumn)).mutate(); });
         return res;
     }
 

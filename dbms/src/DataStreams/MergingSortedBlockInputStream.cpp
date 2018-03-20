@@ -221,7 +221,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                     throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
                 for (size_t i = 0; i < num_columns; ++i)
-                    merged_columns[i] = source_blocks[source_num]->getByPosition(i).column->mutate();
+                    merged_columns[i] = (*std::move(source_blocks[source_num]->getByPosition(i).column)).mutate();
 
     //            std::cerr << "copied columns\n";
 
