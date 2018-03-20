@@ -51,14 +51,14 @@ void Connection::connect()
             disconnect();
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
-        << (static_cast<bool>(encryption) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed") );
+        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed") );
 
-        if (static_cast<bool>(encryption))
+        if (static_cast<bool>(secure))
         {
 #if Poco_NetSSL_FOUND
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
-            throw Exception{"tcp_ssl protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         }
         else

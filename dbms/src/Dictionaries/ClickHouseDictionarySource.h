@@ -53,7 +53,7 @@ private:
     const DictionaryStructure dict_struct;
     const std::string host;
     const UInt16 port;
-    const bool encryption;
+    const bool secure;
     const std::string user;
     const std::string password;
     const std::string db;

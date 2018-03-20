@@ -15,7 +15,7 @@
     <http_port>58123</http_port>
     <tcp_port>59000</tcp_port>
     <https_port>58443</https_port>
-    <tcp_ssl_port>59440</tcp_ssl_port>
+    <tcp_port_secure>59440</tcp_port_secure>
     <interserver_http_port>59009</interserver_http_port>
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
@@ -66,7 +66,7 @@
                 <replica>
                     <host>localhost</host>
                     <port>59440</port>
-                    <encryption>1</encryption>
+                    <secure>1</secure>
                 </replica>
             </shard>
         </test_shard_localhost_secure>

@@ -386,12 +386,12 @@ private:
 
     void connect()
     {
-        auto encryption = config().getBool("ssl", false)
-            ? Protocol::Encryption::Enable
-            : Protocol::Encryption::Disable;
+        auto secure = config().getBool("secure", false)
+            ? Protocol::Secure::Enable
+            : Protocol::Secure::Disable;
 
         String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_ENCRYPTED_PORT : DBMS_DEFAULT_PORT));
+        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(secure) ? "tcp_port_secure" : "tcp_port", static_cast<bool>(secure) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
         String default_database = config().getString("database", "");
         String user = config().getString("user", "");
         String password = config().getString("password", "");
@@ -413,7 +413,7 @@ private:
             Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
 
         connection = std::make_unique<Connection>(
-            host, port, default_database, user, password, timeouts, "client", compression, encryption);
+            host, port, default_database, user, password, timeouts, "client", compression, secure);
 
         String server_name;
         UInt64 server_version_major = 0;
@@ -1286,7 +1286,7 @@ public:
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
             ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
             ("port", boost::program_options::value<int>()->default_value(9000), "server port")
-            ("ssl,s", "ssl")
+            ("secure,s", "secure")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
             ("query,q", boost::program_options::value<std::string>(), "query")
@@ -1386,8 +1386,8 @@ public:
 
         if (options.count("port") && !options["port"].defaulted())
             config().setInt("port", options["port"].as<int>());
-        if (options.count("ssl"))
-            config().setBool("ssl", true);
+        if (options.count("secure"))
+            config().setBool("secure", true);
         if (options.count("user"))
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))

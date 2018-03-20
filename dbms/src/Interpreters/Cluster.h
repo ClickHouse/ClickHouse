@@ -48,7 +48,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>. <encryption> if needed -->
+        *         <!-- <user>, <password>, <default_database>. <secure> if needed -->
         *    </replica>
         * </shard>
         */
@@ -61,7 +61,7 @@ public:
         UInt32 replica_num;
         bool is_local;
         Protocol::Compression compression = Protocol::Compression::Enable;
-        Protocol::Encryption encryption = Protocol::Encryption::Disable;
+        Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
