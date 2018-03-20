@@ -32,12 +32,10 @@ if  [ "${TEST_SSL}" ]; then
 fi
 
 function finish {
-    kill $CH_PID || true
-    wait
     service clickhouse-server stop
     tail -n 100 /var/log/clickhouse-server/*
     sleep 1
-    killall -9 clickhouse-server
+    killall -9 clickhouse-server || true
 }
 trap finish EXIT SIGINT SIGQUIT SIGTERM
 
