@@ -744,7 +744,8 @@ private:
             {
                 if (arg_else.column->isColumnNullable())
                 {
-                    auto result_column = (*std::move(arg_else.column)).mutate();
+                    auto arg_else_column = arg_else.column;
+                    auto result_column = (*std::move(arg_else_column)).mutate();
                     static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
