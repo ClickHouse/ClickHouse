@@ -43,7 +43,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
         dict_struct{dict_struct_},
         host{config.getString(config_prefix + ".host")},
         port(config.getInt(config_prefix + ".port")),
-        encryption(config.getBool(config_prefix + ".encryption")),
+        encryption(config.getBool(config_prefix + ".encryption", false)),
         user{config.getString(config_prefix + ".user", "")},
         password{config.getString(config_prefix + ".password", "")},
         db{config.getString(config_prefix + ".db", "")},
