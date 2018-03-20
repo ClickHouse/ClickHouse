@@ -29,9 +29,9 @@ private:
     ColumnConst(const ColumnConst & src) = default;
 
 public:
-    MutableColumnPtr convertToFullColumn() const;
+    ColumnPtr convertToFullColumn() const;
 
-    MutableColumnPtr convertToFullColumnIfConst() const override
+    ColumnPtr convertToFullColumnIfConst() const override
     {
         return convertToFullColumn();
     }
@@ -133,6 +133,7 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
+        data = (*std::move(data)).mutate();
         auto & mutable_data = data->assumeMutableRef();
         auto res = mutable_data.deserializeAndInsertFromArena(pos);
         mutable_data.popBack(1);
@@ -145,9 +146,9 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    MutableColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     size_t byteSize() const override
