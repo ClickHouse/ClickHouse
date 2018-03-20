@@ -204,9 +204,42 @@ void StorageMaterializedView::drop()
     }
 }
 
+void StorageMaterializedView::checkStatementCanBeForwarded() const
+{
+    if (!has_inner_table)
+        throw Exception(
+            "MATERIALIZED VIEW targets existing table " + target_database_name + "." + target_table_name + ". "
+            + "Execute the statement directly on it.", ErrorCodes::INCORRECT_QUERY);
+}
+
 bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
+    checkStatementCanBeForwarded();
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
+}
+
+void StorageMaterializedView::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->dropPartition(query, partition, detach, context);
+}
+
+void StorageMaterializedView::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->clearColumnInPartition(partition, column_name, context);
+}
+
+void StorageMaterializedView::attachPartition(const ASTPtr & partition, bool part, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->attachPartition(partition, part, context);
+}
+
+void StorageMaterializedView::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->freezePartition(partition, with_name, context);
 }
 
 void StorageMaterializedView::shutdown()
