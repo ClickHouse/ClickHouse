@@ -18,6 +18,9 @@ dpkg-reconfigure -f noninteractive tzdata
 
 mkdir -p /etc/clickhouse-server/config.d /etc/clickhouse-client/config.d
 
+TEST_CONNECT=${TEST_CONNECT=1}
+if [ "${TEST_CONNECT}" ]; then
+
 TEST_SSL=${TEST_SSL=1}
 if  [ "${TEST_SSL}" ]; then
     echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
@@ -25,7 +28,18 @@ if  [ "${TEST_SSL}" ]; then
 
     openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
     openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
+    CLIENT_ADD="--ssl"
 fi
+
+function finish {
+    kill $CH_PID || true
+    wait
+    service clickhouse-server stop
+    tail -n 100 /var/log/clickhouse-server/*
+    sleep 1
+    killall -9 clickhouse-server
+}
+trap finish EXIT SIGINT SIGQUIT SIGTERM
 
 service clickhouse-server start
 sleep 3
@@ -41,6 +55,8 @@ clickhouse-client ${CLIENT_ADD} -q "SELECT toDateTime(1);"
 
 
 service clickhouse-server stop
+
+fi
 
 # Test debug symbols
 # gdb -ex quit --args /usr/bin/clickhouse-server
