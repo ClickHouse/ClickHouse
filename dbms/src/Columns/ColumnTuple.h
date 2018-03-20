@@ -22,8 +22,10 @@ private:
     template <bool positive>
     struct Less;
 
-    ColumnTuple(const Columns & columns);
+    ColumnTuple(MutableColumns && columns);
     ColumnTuple(const ColumnTuple &) = default;
+
+    static Ptr createImmutable(const Columns & columns);
 
 public:
     std::string getName() const override;
@@ -49,9 +51,9 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
-    MutableColumnPtr replicate(const Offsets & offsets) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
