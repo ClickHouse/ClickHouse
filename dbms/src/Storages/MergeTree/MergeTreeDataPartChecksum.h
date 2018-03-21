@@ -61,6 +61,8 @@ struct MergeTreeDataPartChecksums
     /// Otherwise, it compares only the checksums of the files.
     void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
 
+    static bool isBadChecksumsErrorCode(int code);
+
     /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
     void checkSizes(const String & path) const;
 
@@ -73,11 +75,11 @@ struct MergeTreeDataPartChecksums
     bool read_v4(ReadBuffer & in);
 
     void write(WriteBuffer & out) const;
-    String toString() const;
 
     /// Checksum from the set of checksums of .bin files (for deduplication).
     void computeTotalChecksumDataOnly(SipHash & hash) const;
 
+    String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 };
 
@@ -101,7 +103,6 @@ struct MinimalisticDataPartChecksums
     static constexpr size_t MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS = 5;
 
     MinimalisticDataPartChecksums() = default;
-    explicit MinimalisticDataPartChecksums(const MergeTreeDataPartChecksums & full_checksums);
     void computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums);
 
     bool deserialize(ReadBuffer & in);
@@ -112,6 +113,7 @@ struct MinimalisticDataPartChecksums
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
     void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files);
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files);
     void checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files);
 };
 
