@@ -43,7 +43,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
     }
 }
 
-ColumnTuple::Ptr ColumnTuple::createImmutable(const Columns & columns)
+ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
     for (const auto & column : columns)
         if (column->isColumnConst())
