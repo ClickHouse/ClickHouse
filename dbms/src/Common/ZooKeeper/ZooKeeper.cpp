@@ -256,7 +256,7 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
 {
     std::string path_created;
-    int32_t code = createImpl(path, data, zkutil::CreateMode::Persistent, path_created);
+    int32_t code = createImpl(path, data, CreateMode::Persistent, path_created);
 
     if (code == ZOK || code == ZNODEEXISTS)
         return;
@@ -439,7 +439,7 @@ void ZooKeeper::createOrUpdate(const std::string & path, const std::string & dat
         create(path, data, mode);
     }
     else if (code != ZOK)
-        throw zkutil::KeeperException(code, path);
+        throw KeeperException(code, path);
 }
 
 int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
@@ -455,51 +455,42 @@ int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
 }
 
 
-int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_op_results, MultiTransactionInfo * out_info)
+int32_t ZooKeeper::multiImpl(const Requests & requests, Responses & responses)
 {
-    if (ops_.empty())
+    if (requests.empty())
         return ZOK;
 
-    size_t count = ops_.size();
-    std::vector<zoo_op_result_t> out_results_native(count);
+    int32_t code = 0;
+    Poco::Event event;
 
-    /// Copy the struct containing pointers with default copy-constructor.
-    /// It is safe because it hasn't got a destructor.
-    std::vector<zoo_op_t> ops;
-    ops.reserve(ops_.size());
-    for (const auto & op : ops_)
-        ops.push_back(*(op->data));
+    auto callback = [&](const ZooKeeperImpl::ZooKeeper::MultiResponse & response)
+    {
+        code = response.error;
+        if (!code)
+            responses = response.responses;
+        event.set();
+    };
 
-    int32_t code = zoo_multi(impl, static_cast<int>(ops.size()), ops.data(), out_results_native.data());
+    impl.multi(requests, callback);
+    event.wait();
+
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
-
-    if (out_op_results || out_info)
-    {
-        OpResultsPtr op_results;
-        convertOpResults(out_results_native, op_results, this);
-
-        if (out_op_results)
-            *out_op_results = op_results;
-
-        if (out_info)
-            *out_info = MultiTransactionInfo(code, ops_, op_results);
-    }
-
     return code;
 }
 
-OpResultsPtr ZooKeeper::multi(const Ops & ops)
+Responses ZooKeeper::multi(const Requests & requests)
 {
-    OpResultsPtr op_results;
-    int32_t code = multiImpl(ops, &op_results);
-    KeeperMultiException::check(code, ops, op_results);
-    return op_results;
+    Responses responses;
+    int32_t code = multiImpl(requests, responses);
+    KeeperMultiException::check(code, requests, responses);
+    return responses;
 }
 
-int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
+int32_t ZooKeeper::tryMulti(const Requests & requests)
 {
-    int32_t code = multiImpl(ops_, out_results_);
+    Responses responses;
+    int32_t code = multiImpl(requests, responses);
 
     if (!(code == ZOK ||
           code == ZNONODE ||
@@ -511,29 +502,21 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
     return code;
 }
 
-int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results, size_t * attempt)
-{
-    int32_t code = retry(std::bind(&ZooKeeper::multiImpl, this, std::ref(ops), out_results, nullptr), attempt);
-    if (!(code == ZOK ||
-        code == ZNONODE ||
-        code == ZNODEEXISTS ||
-        code == ZNOCHILDRENFOREPHEMERALS ||
-        code == ZBADVERSION ||
-        code == ZNOTEMPTY))
-        throw KeeperException(code);
-    return code;
-}
 
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);
     while (!children.empty())
     {
-        zkutil::Ops ops;
+        Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(path + "/" + children.back());
-            ops.emplace_back(std::make_unique<Op::Remove>(path + "/" + children.back(), -1));
+
+            ZooKeeperImpl::ZooKeeper::RemoveRequest request;
+            request.path = path + "/" + children.back();
+
+            ops.emplace_back(std::make_shared<ZooKeeperImpl::ZooKeeper::RemoveRequest>(std::move(request)));
             children.pop_back();
         }
         multi(ops);
@@ -547,26 +530,26 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
         return;
     while (!children.empty())
     {
-        zkutil::Ops ops;
+        Requests ops;
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             batch.push_back(path + "/" + children.back());
             children.pop_back();
             tryRemoveChildrenRecursive(batch.back());
-            ops.emplace_back(std::make_unique<Op::Remove>(batch.back(), -1));
+
+            ZooKeeperImpl::ZooKeeper::RemoveRequest request;
+            request.path = batch.back();
+
+            ops.emplace_back(std::make_shared<ZooKeeperImpl::ZooKeeper::RemoveRequest>(std::move(request)));
         }
 
         /// Try to remove the children with a faster method - in bulk. If this fails,
         /// this means someone is concurrently removing these children and we will have
         /// to remove them one by one.
         if (tryMulti(ops) != ZOK)
-        {
             for (const std::string & child : batch)
-            {
                 tryRemove(child);
-            }
-        }
     }
 }
 
@@ -587,34 +570,40 @@ void ZooKeeper::waitForDisappear(const std::string & path)
 {
     while (true)
     {
-        zkutil::EventPtr event = std::make_shared<Poco::Event>();
+        int32_t code = 0;
+        int32_t event_type = 0;
+        Poco::Event event;
 
-        std::string unused;
-        /// Use get instead of exists to prevent watch leak if the node has already disappeared.
-        if (!tryGet(path, unused, nullptr, event))
-            break;
+        auto callback = [&](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response)
+        {
+            code = response.error;
+            if (code)
+                event.set();
+        };
 
-        event->wait();
+        auto watch = [&](const ZooKeeperImpl::ZooKeeper::WatchResponse & response)
+        {
+            code = response.error;
+            if (!code)
+                event_type = response.type;
+            event.set();
+        };
+
+        impl.exists(path, callback, watch);
+        event.wait();
+
+        ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
+        ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+        if (code == ZNONODE)
+            return;
+
+        if (code)
+            throw KeeperException(code, path);
+
+        if (event_type == ZooKeeperImpl::ZooKeeper::DELETED)
+            return;
     }
-}
-
-ZooKeeper::~ZooKeeper()
-{
-    LOG_INFO(&Logger::get("~ZooKeeper"), "Closing ZooKeeper session");
-
-    int32_t code = zookeeper_close(impl);
-    if (code != ZOK)
-    {
-        LOG_ERROR(&Logger::get("~ZooKeeper"), "Failed to close ZooKeeper session: " << zerror(code));
-    }
-
-    LOG_INFO(&Logger::get("~ZooKeeper"), "Removing " << watch_context_store.size() << " watches");
-
-    /// Destroy WatchContexts that will never be used.
-    for (WatchContext * context : watch_context_store)
-        delete context;
-
-    LOG_INFO(&Logger::get("~ZooKeeper"), "Removed watches");
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
@@ -622,128 +611,84 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, chroot);
 }
 
-Op::Create::Create(const std::string & path_pattern_, const std::string & value_, ACLPtr acl_, int32_t flags_)
-    : path_pattern(path_pattern_), value(value_), acl(acl_), flags(flags_), created_path(path_pattern_.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
-{
-    zoo_create_op_init(data.get(), path_pattern.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());
-}
-
-ACLPtr ZooKeeper::getDefaultACL()
-{
-    std::lock_guard<std::mutex> lock(mutex);
-    return default_acl;
-}
 
 std::string ZooKeeper::error2string(int32_t code)
 {
-    return zerror(code);
+    return ZooKeeperImpl::ZooKeeper::errorMessage(code);
 }
 
 bool ZooKeeper::expired()
 {
-    return is_dirty || zoo_state(impl) == ZOO_EXPIRED_SESSION_STATE;
+    return impl.isExpired();
 }
 
 Int64 ZooKeeper::getClientID()
 {
-    return zoo_client_id(impl)->client_id;
+    return impl.getSessionID();
 }
 
 
-ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
+std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std::string & path)
 {
-    GetFuture future {
-        [path] (int rc, const char * value, int value_len, const Stat * stat)
-        {
-            if (rc != ZOK)
-                throw KeeperException(rc, path);
+    std::promise<ZooKeeperImpl::ZooKeeper::GetResponse> promise;
+    auto future = promise.get_future();
 
-            std::string value_str;
-            if (value_len > 0)    /// May be otherwise of the node contains NULL. We don't distinguish it from the empty string.
-                value_str = { value, size_t(value_len) };
+    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
+    {
+        if (response.error)
+            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+        else
+            promise.set_value(response);
+    };
 
-            return ValueAndStat{ value_str, stat ? *stat : Stat() };
-        }};
-
-    int32_t code = zoo_aget(
-        impl, path.c_str(), 0,
-        [] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
-        {
-            GetFuture::TaskPtr owned_task = std::move(const_cast<GetFuture::TaskPtr &>(*static_cast<const GetFuture::TaskPtr *>(data)));
-            (*owned_task)(rc, value, value_len, stat);
-        },
-        future.task.get());
+    impl.get(path, callback, {});
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
-
-    if (code != ZOK)
-        throw KeeperException(code, path);
-
     return future;
 }
 
-ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
+
+std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncTryGet(const std::string & path)
 {
-    TryGetFuture future {
-        [path] (int rc, const char * value, int value_len, const Stat * stat)
-        {
-            if (rc != ZOK && rc != ZNONODE)
-                throw KeeperException(rc, path);
+    std::promise<ZooKeeperImpl::ZooKeeper::GetResponse> promise;
+    auto future = promise.get_future();
 
-            std::string value_str;
-            if (value_len > 0)    /// May be otherwise of the node contains NULL. We don't distinguish it from the empty string.
-                value_str = { value, size_t(value_len) };
+    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
+    {
+        if (response.error && response.error != ZNONODE)
+            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+        else
+            promise.set_value(response);
+    };
 
-            return ValueAndStatAndExists{ value_str, stat ? *stat : Stat(), rc != ZNONODE };
-        }};
-
-    int32_t code = zoo_aget(
-        impl, path.c_str(), 0,
-        [] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
-        {
-            TryGetFuture::TaskPtr owned_task = std::move(const_cast<TryGetFuture::TaskPtr &>(*static_cast<const TryGetFuture::TaskPtr *>(data)));
-            (*owned_task)(rc, value, value_len, stat);
-        },
-        future.task.get());
+    impl.get(path, callback, {});
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
-
-    if (code != ZOK)
-        throw KeeperException(code, path);
-
     return future;
 }
 
-ZooKeeper::ExistsFuture ZooKeeper::asyncExists(const std::string & path)
+std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ZooKeeper::asyncExists(const std::string & path)
 {
-    ExistsFuture future {
-        [path] (int rc, const Stat * stat)
-        {
-            if (rc != ZOK && rc != ZNONODE)
-                throw KeeperException(rc, path);
+    std::promise<ZooKeeperImpl::ZooKeeper::ExistsResponse> promise;
+    auto future = promise.get_future();
 
-            return StatAndExists{ stat ? *stat : Stat(), rc != ZNONODE };
-        }};
+    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response) mutable
+    {
+        if (response.error && response.error != ZNONODE)
+            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+        else
+            promise.set_value(response);
+    };
 
-    int32_t code = zoo_aexists(
-        impl, path.c_str(), 0,
-        [] (int rc, const Stat * stat, const void * data)
-        {
-            ExistsFuture::TaskPtr owned_task = std::move(const_cast<ExistsFuture::TaskPtr &>(*static_cast<const ExistsFuture::TaskPtr *>(data)));
-            (*owned_task)(rc, stat);
-        },
-        future.task.get());
+    impl.exists(path, callback, {});
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
-
-    if (code != ZOK)
-        throw KeeperException(code, path);
-
     return future;
 }
+
 
 ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & path)
 {
@@ -838,18 +783,18 @@ ZooKeeper::TryRemoveFuture ZooKeeper::asyncTryRemove(const std::string & path, i
     return future;
 }
 
-ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception)
+ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const Ops & ops_, bool throw_exception)
 {
     /// We need to hold all references to ops data until the end of multi callback
     struct OpsHolder
     {
-        std::shared_ptr<zkutil::Ops> ops_ptr;
+        std::shared_ptr<Ops> ops_ptr;
         std::shared_ptr<std::vector<zoo_op_t>> ops_native;
         std::shared_ptr<std::vector<zoo_op_result_t>> op_results_native;
     } holder;
 
     /// Copy ops (swallow copy)
-    holder.ops_ptr = std::make_shared<zkutil::Ops>(ops_);
+    holder.ops_ptr = std::make_shared<Ops>(ops_);
     /// Copy native ops to contiguous vector
     holder.ops_native = std::make_shared<std::vector<zoo_op_t>>();
     for (const OpPtr & op : *holder.ops_ptr)
@@ -863,7 +808,7 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool 
         convertOpResults(*holder.op_results_native, res.results, zookeeper);
         res.ops_ptr = holder.ops_ptr;
         if (throw_exception && rc != ZOK)
-            throw zkutil::KeeperException(rc);
+            throw KeeperException(rc);
         return res;
     }};
 
@@ -897,12 +842,12 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool 
     return future;
 }
 
-ZooKeeper::MultiFuture ZooKeeper::tryAsyncMulti(const zkutil::Ops & ops)
+ZooKeeper::MultiFuture ZooKeeper::tryAsyncMulti(const Ops & ops)
 {
     return asyncMultiImpl(ops, false);
 }
 
-ZooKeeper::MultiFuture ZooKeeper::asyncMulti(const zkutil::Ops & ops)
+ZooKeeper::MultiFuture ZooKeeper::asyncMulti(const Ops & ops)
 {
     return asyncMultiImpl(ops, true);
 }
@@ -929,30 +874,6 @@ size_t getFailedOpIndex(const OpResultsPtr & op_results, int32_t transaction_ret
 }
 
 
-OpResult::OpResult(const zoo_op_result_t & op_result, const ZooKeeper * zookeeper)
-    : err(op_result.err)
-{
-    if (op_result.value)
-    {
-        value = std::string(op_result.value, op_result.value + op_result.valuelen);
-
-        /// Current version of libzookeeper does not cut chroot path prefixes
-        /// We do it here manually
-        if (zookeeper && !zookeeper->chroot.empty())
-        {
-            if (startsWith(value, zookeeper->chroot))
-                value = value.substr(zookeeper->chroot.length());
-            else
-                throw DB::Exception("Expected ZooKeeper path with chroot " + zookeeper->chroot + ", got " + value,
-                                    DB::ErrorCodes::LOGICAL_ERROR);
-        }
-    }
-
-    if (op_result.stat)
-        stat = std::make_unique<Stat>(*op_result.stat);
-}
-
-
 KeeperMultiException::KeeperMultiException(const MultiTransactionInfo & info_, size_t failed_op_index_)
     :KeeperException(
         "Transaction failed at op #" + std::to_string(failed_op_index_) + ": " + info_.ops.at(failed_op_index_)->describe(),
@@ -962,21 +883,11 @@ KeeperMultiException::KeeperMultiException(const MultiTransactionInfo & info_, s
 void KeeperMultiException::check(int32_t code, const Ops & ops, const OpResultsPtr & op_results)
 {
     if (code == ZOK) {}
-    else if (zkutil::isUserError(code))
+    else if (isUserError(code))
         throw KeeperMultiException(MultiTransactionInfo(code, ops, op_results), getFailedOpIndex(op_results, code));
     else
         throw KeeperException(code);
 }
-
-void KeeperMultiException::check(const MultiTransactionInfo & info)
-{
-    if (info.code == ZOK) {}
-    else if (zkutil::isUserError(info.code))
-        throw KeeperMultiException(info, getFailedOpIndex(info.op_results, info.code));
-    else
-        throw KeeperException(info.code);
-}
-
 
 const Op & MultiTransactionInfo::getFailedOp() const
 {

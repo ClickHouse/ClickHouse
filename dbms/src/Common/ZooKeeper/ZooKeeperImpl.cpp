@@ -426,7 +426,7 @@ ZooKeeper::~ZooKeeper()
         if (send_thread.joinable())
             send_thread.join();
 
-        /// This will also wakeup receiving event.
+        /// This will also wakeup receiving thread.
         socket.shutdown();
 
         if (receive_thread.joinable())
@@ -1259,6 +1259,8 @@ void ZooKeeper::multi(
 
 void ZooKeeper::close()
 {
+    /// TODO closed flag or make method private
+
     CloseRequest request;
     request.xid = close_xid;
 

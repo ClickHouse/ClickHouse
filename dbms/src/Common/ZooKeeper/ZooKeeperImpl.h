@@ -130,8 +130,8 @@ public:
 
     struct WatchResponse final : Response
     {
-        int32_t type;
-        int32_t state;
+        int32_t type = 0;
+        int32_t state = 0;
         String path;
 
         void readImpl(ReadBuffer &) override;

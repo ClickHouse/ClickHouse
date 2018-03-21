@@ -24,11 +24,12 @@ namespace CreateMode
 
 using EventPtr = std::shared_ptr<Poco::Event>;
 
-class ZooKeeper;
-
 /// Callback to call when the watch fires.
 /// Because callbacks are called in the single "completion" thread internal to libzookeeper,
 /// they must execute as quickly as possible (preferably just set some notification).
 using WatchCallback = ZooKeeperImpl::ZooKeeper::WatchCallback;
+
+using Requests = ZooKeeperImpl::ZooKeeper::Requests;
+using Responses = ZooKeeperImpl::ZooKeeper::Responses;
 
 }

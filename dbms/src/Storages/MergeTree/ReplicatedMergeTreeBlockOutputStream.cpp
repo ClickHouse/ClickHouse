@@ -403,18 +403,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                             ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
     }
-    else if (zkutil::isTemporaryErrorCode(info.code))
-    {
-        /** If the connection is lost, and we do not know if the changes were applied, you can not delete the local part
-          *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-          */
-        transaction.commit();
-        storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
-
-        /// We do not know whether or not data has been inserted.
-        throw Exception("Unknown status, client must retry. Reason: " + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
-    }
-    else if (zkutil::isUnrecoverableErrorCode(info.code))
+    else if (zkutil::isHardwareError(info.code))
     {
         transaction.rollback();
         throw Exception("Unrecoverable network error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
