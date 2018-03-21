@@ -133,7 +133,6 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        data = (*std::move(data)).mutate();
         auto & mutable_data = data->assumeMutableRef();
         auto res = mutable_data.deserializeAndInsertFromArena(pos);
         mutable_data.popBack(1);
