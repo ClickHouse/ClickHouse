@@ -360,4 +360,16 @@ using MutableColumns = std::vector<MutableColumnPtr>;
 using ColumnRawPtrs = std::vector<const IColumn *>;
 //using MutableColumnRawPtrs = std::vector<IColumn *>;
 
+template <typename ... Args>
+struct IsMutableColumns;
+
+template <typename Arg, typename ... Args>
+struct IsMutableColumns<Arg, Args ...>
+{
+    static const bool value = std::is_assignable<MutableColumnPtr &&, Arg>::value && IsMutableColumns<Args ...>::value;
+};
+
+template <>
+struct IsMutableColumns<> { static const bool value = true; };
+
 }

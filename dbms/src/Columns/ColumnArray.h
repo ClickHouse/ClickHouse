@@ -27,23 +27,29 @@ private:
     ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column);
 
     /** Create an empty column of arrays with the type of values as in the column `nested_column` */
-    ColumnArray(MutableColumnPtr && nested_column);
-
-    using Ptr = COWPtrHelper<IColumn, ColumnArray>::Ptr;
-
-    static Ptr createImmutable(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
-    {
-        return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
-    }
-
-    static Ptr createImmutable(const ColumnPtr & nested_column)
-    {
-        return ColumnArray::create(nested_column->assumeMutable());
-    }
+    explicit ColumnArray(MutableColumnPtr && nested_column);
 
     ColumnArray(const ColumnArray &) = default;
 
 public:
+    /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
+      * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
+      */
+    using Base = COWPtrHelper<IColumn, ColumnArray>;
+
+    static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
+    {
+        return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
+    }
+
+    static Ptr create(const ColumnPtr & nested_column)
+    {
+        return ColumnArray::create(nested_column->assumeMutable());
+    }
+
+    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
+
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
     using ColumnOffsets = ColumnVector<Offset>;
 
