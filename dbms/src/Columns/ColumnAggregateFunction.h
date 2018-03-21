@@ -67,7 +67,7 @@ private:
     /// Create a new column that has another column as a source.
     MutablePtr createView() const
     {
-        MutablePtr res = create(func, arenas);
+        MutablePtr res = createMutable(func, arenas);
         res->src = getPtr();
         return res;
     }

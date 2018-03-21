@@ -48,7 +48,7 @@ public:
 
     MutableColumnPtr cloneResized(size_t new_size) const override
     {
-        return ColumnConst::create(data, new_size);
+        return ColumnConst::createMutable(data, new_size);
     }
 
     size_t size() const override

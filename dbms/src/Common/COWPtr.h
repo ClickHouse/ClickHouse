@@ -269,7 +269,7 @@ public:
     }
 
     template <typename... Args>
-    static Ptr createMutable(Args &&... args)
+    static MutablePtr createMutable(Args &&... args)
     {
         return MutablePtr(new Derived(std::forward<Args>(args)...));
     }
@@ -278,7 +278,7 @@ public:
     static Ptr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
 
     template <typename T>
-    static Ptr createMutable(std::initializer_list<T> && arg)
+    static MutablePtr createMutable(std::initializer_list<T> && arg)
     {
         return createMutable(std::forward<std::initializer_list<T>>(arg));
     }
