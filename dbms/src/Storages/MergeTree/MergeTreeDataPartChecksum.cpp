@@ -247,7 +247,7 @@ void MergeTreeDataPartChecksums::computeTotalChecksumDataOnly(SipHash & hash) co
     }
 }
 
-String MergeTreeDataPartChecksums::toString() const
+String MergeTreeDataPartChecksums::getSerializedString() const
 {
     WriteBufferFromOwnString out;
     write(out);
@@ -264,10 +264,12 @@ MergeTreeDataPartChecksums MergeTreeDataPartChecksums::deserializeFrom(const Str
     return res;
 }
 
-MinimalisticDataPartChecksums::MinimalisticDataPartChecksums(const MergeTreeDataPartChecksums & full_checksums_)
+bool MergeTreeDataPartChecksums::isBadChecksumsErrorCode(int code)
 {
-    full_checksums = std::make_unique<MergeTreeDataPartChecksums>(full_checksums_);
-    computeTotalChecksums(*full_checksums);
+    return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+           || code == ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART
+           || code == ErrorCodes::NO_FILE_IN_DATA_PART
+           || code == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART;
 }
 
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const
@@ -371,7 +373,7 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
 String MinimalisticDataPartChecksums::getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic)
 {
     if (!minimalistic)
-        return full_checksums.toString();
+        return full_checksums.getSerializedString();
 
     MinimalisticDataPartChecksums checksums;
     checksums.computeTotalChecksums(full_checksums);
@@ -383,7 +385,19 @@ void MinimalisticDataPartChecksums::checkEqual(const MinimalisticDataPartChecksu
     if (full_checksums && rhs.full_checksums)
         full_checksums->checkEqual(*rhs.full_checksums, check_uncompressed_hash_in_compressed_files);
 
+    // If full checksums were checked, check total checksums just in case
     checkEqualImpl(rhs, check_uncompressed_hash_in_compressed_files);
+}
+
+void MinimalisticDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files)
+{
+    if (full_checksums)
+        full_checksums->checkEqual(rhs, check_uncompressed_hash_in_compressed_files);
+
+    // If full checksums were checked, check total checksums just in case
+    MinimalisticDataPartChecksums rhs_minimalistic;
+    rhs_minimalistic.computeTotalChecksums(rhs);
+    checkEqualImpl(rhs_minimalistic, check_uncompressed_hash_in_compressed_files);
 }
 
 void MinimalisticDataPartChecksums::checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files)
