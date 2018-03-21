@@ -133,7 +133,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
         if (deduplicate)
         {
             SipHash hash;
-            part->checksums.summaryDataChecksum(hash);
+            part->checksums.computeTotalChecksumDataOnly(hash);
             union
             {
                 char bytes[16];
