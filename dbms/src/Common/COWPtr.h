@@ -263,16 +263,25 @@ public:
     using MutablePtr = typename Base::template mutable_ptr<Derived>;
 
     template <typename... Args>
-    static auto create(Args &&... args)
+    static Ptr create(Args &&... args)
     {
-        if constexpr (HasCreateImmutable<Derived, Args ...>::value && !IsConstructable<Derived, Args ...>::value)
-            return Derived::createImmutable(std::forward<Args>(args)...);
-        else
-            return MutablePtr(new Derived(std::forward<Args>(args)...));
+        return Derived::createImmutable(std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    static Ptr createMutable(Args &&... args)
+    {
+        return MutablePtr(new Derived(std::forward<Args>(args)...));
     }
 
     template <typename T>
-    static auto create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
+    static Ptr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
+
+    template <typename T>
+    static Ptr createMutable(std::initializer_list<T> && arg)
+    {
+        return createMutable(std::forward<std::initializer_list<T>>(arg));
+    }
 
     typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
 };
