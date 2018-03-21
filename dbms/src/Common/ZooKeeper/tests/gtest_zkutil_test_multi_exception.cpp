@@ -146,7 +146,7 @@ TEST(zkutil, multi_async_libzookeeper_segfault)
     auto future = zookeeper->asyncMulti(ops);
     auto res = future.get();
 
-    EXPECT_TRUE(zkutil::isUnrecoverableErrorCode(res.code));
+    EXPECT_TRUE(zkutil::isHardwareError(res.code));
 }
 
 

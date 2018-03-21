@@ -817,19 +817,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     String query_path_prefix = queue_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
-    String node_path;
-    try
-    {
-        node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        /// TODO: This condition could be relaxed with additional post-checks
-        if (e.isTemporaryError())
-            throw Exception("Unknown status of distributed DDL task", ErrorCodes::UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK);
-
-        throw;
-    }
+    String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
 
     /// Optional step
     try
@@ -894,29 +882,22 @@ void DDLWorker::run()
         {
             if (e.isHardwareError())
             {
-                if (!e.isTemporaryError())
-                {
-                    LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
+                LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
 
-                    while (!stop_flag)
+                while (!stop_flag)
+                {
+                    try
                     {
-                        try
-                        {
-                            zookeeper = context.getZooKeeper();
-                            break;
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
-
-                            using namespace std::chrono_literals;
-                            std::this_thread::sleep_for(5s);
-                        }
+                        zookeeper = context.getZooKeeper();
+                        break;
                     }
-                }
-                else
-                {
-                    LOG_DEBUG(log, "Retry task processing after: " << getCurrentExceptionMessage(false));
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                        using namespace std::chrono_literals;
+                        std::this_thread::sleep_for(5s);
+                    }
                 }
             }
             else

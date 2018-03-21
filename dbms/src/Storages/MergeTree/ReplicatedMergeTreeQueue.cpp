@@ -256,13 +256,6 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 {
     std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
 
-    bool dirty_entries_loaded = false;
-    if (is_dirty)
-    {
-        dirty_entries_loaded = load(zookeeper);
-        is_dirty = false;
-    }
-
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
@@ -356,20 +349,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                 ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
                     replica_path + "/min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
-            try
-            {
-                zookeeper->multi(ops);
-            }
-            catch (const zkutil::KeeperException & ex)
-            {
-                if (ex.isTemporaryError())
-                {
-                    LOG_WARNING(log, "Unknown status of queue update, marking queue dirty (will reload on next iteration).");
-                    is_dirty = true;
-                }
-
-                throw;
-            }
+            zookeeper->multi(ops);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
@@ -406,7 +386,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
             next_update_event->set();
     }
 
-    return dirty_entries_loaded || !log_entries.empty();
+    return !log_entries.empty();
 }
 
 

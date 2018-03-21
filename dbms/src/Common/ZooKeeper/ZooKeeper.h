@@ -75,8 +75,6 @@ public:
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
 
-    ~ZooKeeper();
-
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
     /// This object remains unchanged, and the new session is returned.
@@ -149,14 +147,14 @@ public:
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
-    OpResultsPtr multi(const Ops & ops);
+    Responses multi(const Requests & requests);
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
-    int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
+    int32_t tryMulti(const Requests & requests);
     /// Throws nothing, just alias of multiImpl
-    int32_t tryMultiNoThrow(const Ops & ops, OpResultsPtr * out_op_results = nullptr, MultiTransactionInfo * out_info = nullptr)
+    int32_t tryMultiNoThrow(const Requests & requests, Responses & responses)
     {
-        return multiImpl(ops, out_op_results, out_info);
+        return multiImpl(requests, responses);
     }
 
     Int64 getClientID();
@@ -189,113 +187,26 @@ public:
     ///
     /// Future should not be destroyed before the result is gotten.
 
-    template <typename Result, typename... TaskParams>
-    class Future
-    {
-    friend class ZooKeeper;
-    private:
-        using Task = std::packaged_task<Result (TaskParams...)>;
-        using TaskPtr = std::unique_ptr<Task>;
-        using TaskPtrPtr = std::unique_ptr<TaskPtr>;
+    std::future<ZooKeeperImpl::ZooKeeper::GetResponse> asyncGet(const std::string & path);
 
-        /// Everything is complicated.
-        ///
-        /// In libzookeeper async interface a function (e.g. zoo_aget)
-        /// accepts a pointer to a standalone callback function and void* pointer to the context
-        /// which is then passed to the callback.
-        /// The caller is responsible for ensuring that the context lives until the callback
-        /// is finished and we can't simply pass ownership of the context into function object.
-        /// Instead, we save the context in a Future object and return it to the caller.
-        /// The context will live until the Future lives.
-        /// Context data is wrapped in an unique_ptr so that its address (which is passed to
-        /// libzookeeper) remains unchanged after the Future is returned from the function.
-        ///
-        /// The second problem is that after std::promise has been fulfilled, and the user
-        /// has gotten the result from std::future, the Future object can be destroyed
-        /// before the std::promise::set_value() call that fulfils the promise completes in another
-        /// thread.
-        /// See http://stackoverflow.com/questions/10843304/race-condition-in-pthread-once
-        /// To combat this we use the second unique_ptr. Inside the callback, the void* context
-        /// is cast to unique_ptr and moved into the local unique_ptr to prolong the lifetime of
-        /// the context data.
+    std::future<ZooKeeperImpl::ZooKeeper::GetResponse> asyncTryGet(const std::string & path);
 
-        TaskPtrPtr task;
-        std::future<Result> future;
+    std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> asyncExists(const std::string & path);
 
-        template <typename... Args>
-        Future(Args &&... args) :
-            task(std::make_unique<TaskPtr>(std::make_unique<Task>(std::forward<Args>(args)...))),
-            future((*task)->get_future()) {}
+    std::future<ZooKeeperImpl::ZooKeeper::ListResponse> asyncGetChildren(const std::string & path);
 
-    public:
-        Result get()
-        {
-            return future.get();
-        }
-
-        Future(Future &&) = default;
-        Future & operator= (Future &&) = default;
-
-        ~Future()
-        {
-            /// If nobody has waited for the result, we must wait for it before the object is
-            /// destroyed, because the object contents can still be used in the callback.
-            if (future.valid())
-                future.wait();
-        }
-    };
-
-
-    struct ValueAndStat
-    {
-        std::string value;
-        Stat stat;
-    };
-
-    using GetFuture = Future<ValueAndStat, int, const char *, int, const Stat *>;
-    GetFuture asyncGet(const std::string & path);
-
-
-    struct ValueAndStatAndExists
-    {
-        std::string value;
-        Stat stat;
-        bool exists;
-    };
-
-    using TryGetFuture = Future<ValueAndStatAndExists, int, const char *, int, const Stat *>;
-    TryGetFuture asyncTryGet(const std::string & path);
-
-
-    struct StatAndExists
-    {
-        Stat stat;
-        bool exists;
-    };
-
-    using ExistsFuture = Future<StatAndExists, int, const Stat *>;
-    ExistsFuture asyncExists(const std::string & path);
-
-
-    using GetChildrenFuture = Future<Strings, int, const String_vector *>;
-    GetChildrenFuture asyncGetChildren(const std::string & path);
-
-
-    using RemoveFuture = Future<void, int>;
-    RemoveFuture asyncRemove(const std::string & path, int32_t version = -1);
+    std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> asyncRemove(const std::string & path, int32_t version = -1);
 
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     /// * The versions do not match
     /// * The node has children
-    using TryRemoveFuture = Future<int32_t, int>;
-    TryRemoveFuture asyncTryRemove(const std::string & path, int32_t version = -1);
+    std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> asyncTryRemove(const std::string & path, int32_t version = -1);
 
+    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> asyncMulti(const Ops & ops);
 
-    using MultiFuture = Future<OpResultsAndCode, int>;
-    MultiFuture asyncMulti(const Ops & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
-    MultiFuture tryAsyncMulti(const Ops & ops);
+    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> tryAsyncMulti(const Ops & ops);
 
     static std::string error2string(int32_t code);
 
@@ -310,14 +221,12 @@ private:
 
     /// The following methods don't throw exceptions but return error codes.
     int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
-    int32_t removeImpl(const std::string & path, int32_t version = -1);
+    int32_t removeImpl(const std::string & path, int32_t version);
     int32_t getImpl(const std::string & path, std::string & res, Stat * stat, WatchCallback watch_callback);
-    int32_t setImpl(const std::string & path, const std::string & data, int32_t version = -1, Stat * stat = nullptr);
+    int32_t setImpl(const std::string & path, const std::string & data, int32_t version, Stat * stat);
     int32_t getChildrenImpl(const std::string & path, Strings & res, Stat * stat, WatchCallback watch_callback);
-    int32_t multiImpl(const Ops & ops, OpResultsPtr * out_op_results = nullptr, MultiTransactionInfo * out_info = nullptr);
+    int32_t multiImpl(const Requests & requests, Responses & responses);
     int32_t existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback);
-
-    MultiFuture asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception);
 
     ZooKeeperImpl::ZooKeeper impl;
 

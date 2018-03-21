@@ -1676,11 +1676,7 @@ protected:
                         catch (zkutil::KeeperException & e)
                         {
                             future_is_dirty_checker.reset();
-
-                            if (e.isTemporaryError())
-                                LOG_INFO(log, "ZooKeeper is lagging: " << e.displayText());
-                            else
-                                throw;
+                            throw;
                         }
 
                         if (status.exists)
