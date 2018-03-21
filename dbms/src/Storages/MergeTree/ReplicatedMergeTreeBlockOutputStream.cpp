@@ -306,7 +306,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         zkutil::CreateMode::Persistent));
     ops.emplace_back(std::make_shared<zkutil::Op::Create>(
         storage.replica_path + "/parts/" + part->name + "/checksums",
-        part->checksums.toString(),
+        storage.getChecksumsForZooKeeper(part->checksums),
         acl,
         zkutil::CreateMode::Persistent));
 
