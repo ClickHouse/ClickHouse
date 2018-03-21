@@ -33,7 +33,7 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
             /// Create ColumnAggregateFunction with initial aggregate function state.
 
             IAggregateFunction * function = column->getAggregateFunction().get();
-            auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
+            auto target = ColumnAggregateFunction::createMutable(column->getAggregateFunction(), Arenas(1, arena));
             AggregateDataPtr data = arena->alloc(function->sizeOfData());
             function->create(data);
             target->getData().push_back(data);
