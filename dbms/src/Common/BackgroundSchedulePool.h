@@ -72,6 +72,7 @@ public:
         bool deactivated = false;
         bool scheduled = false;
         bool delayed = false;
+        bool executing = false;
         BackgroundSchedulePool & pool;
         Task function;
 

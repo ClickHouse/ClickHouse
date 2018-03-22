@@ -49,10 +49,14 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
     scheduled = true;
 
-    if (delayed)
-        pool.cancelDelayedTask(shared_from_this(), lock);
+    if(!executing)
+    {
+        if (delayed)
+            pool.cancelDelayedTask(shared_from_this(), lock);
 
-    pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
+        pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
+    }
+
     return true;
 }
 
@@ -103,6 +107,7 @@ void BackgroundSchedulePool::TaskInfo::execute()
             return;
 
         scheduled = false;
+        executing = true;
     }
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
@@ -116,6 +121,20 @@ void BackgroundSchedulePool::TaskInfo::execute()
 
     if (milliseconds >= slow_execution_threshold_ms)
         LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Executing " << name << " took " << milliseconds << " ms.");
+
+    {
+        std::lock_guard lock_schedule(schedule_mutex);
+
+        executing = false;
+
+        /// In case was scheduled while executing (including a scheduleAfter which expired) we schedule the task
+		/// on the queue. We don't call the function again here because this way all tasks
+		/// will have their chance to execute
+
+        if(scheduled && !deactivated)
+            pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
+    }
+
 }
 
 zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
