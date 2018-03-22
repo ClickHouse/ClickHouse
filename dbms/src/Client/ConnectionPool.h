@@ -51,12 +51,12 @@ public:
             const ConnectionTimeouts & timeouts,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Secure secure_ = Protocol::Secure::Auto)
+            Protocol::Secure secure_ = Protocol::Secure::Disable)
        : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(host_, port_),
         client_name(client_name_), compression(compression_),
-        secure{secure_ == Protocol::Secure::Auto ? (port_ == DBMS_DEFAULT_SECURE_PORT ? Protocol::Secure::Enable : Protocol::Secure::Disable) : secure_},
+        secure{secure_},
         timeouts(timeouts)
     {
     }
@@ -68,12 +68,12 @@ public:
             const ConnectionTimeouts & timeouts,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Secure secure_ = Protocol::Secure::Auto)
+            Protocol::Secure secure_ = Protocol::Secure::Disable)
         : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(resolved_address_),
         client_name(client_name_), compression(compression_),
-        secure{secure_ == Protocol::Secure::Auto ? (port_ == DBMS_DEFAULT_SECURE_PORT ? Protocol::Secure::Enable : Protocol::Secure::Disable) : secure_},
+        secure{secure_},
         timeouts(timeouts)
     {
     }

@@ -115,7 +115,8 @@ String Cluster::Address::toStringFull() const
         (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' +
         escapeForFileName(resolved_address.host().toString()) + ':' +
         std::to_string(resolved_address.port()) +
-        (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)));
+        (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
+        + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
 
 

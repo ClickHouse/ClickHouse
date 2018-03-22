@@ -52,6 +52,13 @@ namespace
             const char * address_begin = static_cast<const char*>(address.data());
             const char * address_end = address_begin + address.size();
 
+            Protocol::Secure secure = Protocol::Secure::Disable;
+            std::string secure_tag = "+secure";
+            if (address.rfind(secure_tag) != std::string::npos) {
+                address_end -= secure_tag.size();
+                secure = Protocol::Secure::Enable;
+            }
+
             const char * user_pw_end = strchr(address.data(), '@');
             const char * colon = strchr(address.data(), ':');
             if (!user_pw_end || !colon)
@@ -76,7 +83,7 @@ namespace
             const auto database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end))
                                          : std::string();
 
-            pools.emplace_back(factory(host, port, user, password, database));
+            pools.emplace_back(factory(host, port, secure, user, password, database));
         }
 
         return pools;
@@ -152,13 +159,17 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 {
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.context.getSettingsRef());
     const auto pool_factory = [&storage, &name, &timeouts] (const std::string & host, const UInt16 port,
+                                                 const Protocol::Secure secure,
                                                  const std::string & user, const std::string & password,
                                                  const std::string & default_database)
     {
         return std::make_shared<ConnectionPool>(
             1, host, port, default_database,
             user, password, timeouts,
-            storage.getName() + '_' + name);
+            storage.getName() + '_' + name,
+            Protocol::Compression::Enable,
+            secure
+            );
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);

@@ -436,7 +436,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                                                                   server_pool,
                                                                   tcp_socket,
                                                                   new Poco::Net::TCPServerParams));
-                    LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
+                    LOG_INFO(log, "Listening tcp_secure: " + tcp_address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
