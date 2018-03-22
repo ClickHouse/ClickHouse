@@ -2,6 +2,7 @@
 /usr/bin/clickhouse-server
 /usr/bin/clickhouse-clang
 /usr/bin/clickhouse-lld
+/usr/bin/clickhouse-copier
 /etc/systemd/system/clickhouse-server.service
 /etc/init.d/clickhouse-server
 /etc/cron.d/clickhouse-server

@@ -10,12 +10,12 @@ String ASTKillQueryQuery::getID() const
 
 void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << "KILL QUERY WHERE ";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "KILL QUERY WHERE " << (settings.hilite ? hilite_none : "");
 
     if (where_expression)
         where_expression->formatImpl(settings, state, frame);
 
-    settings.ostr << " " << (test ? "TEST" : (sync ? "SYNC" : "ASYNC"));
+    settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << (test ? "TEST" : (sync ? "SYNC" : "ASYNC")) << (settings.hilite ? hilite_none : "");
 }
 
 }

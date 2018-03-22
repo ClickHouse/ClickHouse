@@ -20,15 +20,15 @@ function ch_url() {
 
 # Check correct exceptions handling
 
-exception_pattern="Code: 307, e\.displayText() = DB::Exception:[[:print:]]* e\.what() = DB::Exception$"
+exception_pattern="displayText() = DB::Exception:[[:print:]]* e\.what() = DB::Exception"
 
 function check_only_exception() {
     local res=`ch_url "$1" "$2"`
     #(echo "$res")
     #(echo "$res" | wc -l)
-    #(echo "$res" | grep -c "^$exception_pattern")
+    #(echo "$res" | grep -c "$exception_pattern")
     [[ `echo "$res" | wc -l` -eq 1 ]] || echo FAIL 1 $@
-    [[ $(echo "$res" | grep -c "^$exception_pattern") -eq 1 ]] || echo FAIL 2 $@
+    [[ $(echo "$res" | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 2 $@
 }
 
 function check_last_line_exception() {

@@ -209,9 +209,6 @@ private:
     Tables external_tables;
     size_t external_table_id = 1;
 
-    static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
-    NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, source_columns); }
-
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
       * as well as the columns added by JOIN (`columns_added_by_join`).

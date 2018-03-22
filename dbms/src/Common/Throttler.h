@@ -37,7 +37,7 @@ public:
         UInt64 elapsed_ns = 0;
 
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
 
             if (max_speed)
             {
@@ -76,10 +76,18 @@ public:
             parent->add(amount);
     }
 
+    void reset()
+    {
+        std::lock_guard lock(mutex);
+
+        count = 0;
+        watch.reset();
+    }
+
 private:
-    size_t max_speed = 0;
     size_t count = 0;
-    size_t limit = 0;        /// 0 - not limited.
+    const size_t max_speed = 0;
+    const size_t limit = 0;        /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     Stopwatch watch {CLOCK_MONOTONIC_COARSE};
     std::mutex mutex;

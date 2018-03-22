@@ -53,14 +53,14 @@ def test(started_cluster):
 
         time.sleep(1) # accrue replica delay
 
-        assert node_1_1.query("SELECT sum(x) FROM replicated").strip() == ''
+        assert node_1_1.query("SELECT sum(x) FROM replicated").strip() == '0'
         assert node_1_2.query("SELECT sum(x) FROM replicated").strip() == '1'
-        assert node_2_1.query("SELECT sum(x) FROM replicated").strip() == ''
+        assert node_2_1.query("SELECT sum(x) FROM replicated").strip() == '0'
         assert node_2_2.query("SELECT sum(x) FROM replicated").strip() == '2'
 
         # With in_order balancing first replicas are chosen.
         assert instance_with_dist_table.query(
-            "SELECT count() FROM distributed SETTINGS load_balancing='in_order'").strip() == ''
+            "SELECT count() FROM distributed SETTINGS load_balancing='in_order'").strip() == '0'
 
         # When we set max_replica_delay, first replicas must be excluded.
         assert instance_with_dist_table.query('''

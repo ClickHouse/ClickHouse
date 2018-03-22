@@ -158,7 +158,7 @@ void * ClickHouseDictionary_v2_loadKeys(void * data_ptr,
     return nullptr;
 }
 
-void * ClickHouseDictionary_v2_libNew()
+void * ClickHouseDictionary_v2_libNew(ClickHouseLibrary::CStrings * /*settings*/)
 {
     auto lib_ptr = new LibHolder;
     return lib_ptr;

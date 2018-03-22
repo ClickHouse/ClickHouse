@@ -163,7 +163,7 @@ public:
 
     Block readImpl() override
     {
-        if (isCancelled())
+        if (isCancelledOrThrowIfKilled())
             return {};
 
         return reader->read();
@@ -218,13 +218,10 @@ StorageKafka::StorageKafka(
     const std::string & table_name_,
     const std::string & database_name_,
     Context & context_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, const String & schema_name_, size_t num_consumers_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), context(context_),
     topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
@@ -291,6 +288,7 @@ void StorageKafka::startup()
 
         // Make consumer available
         pushConsumer(consumer);
+        ++num_created_consumers;
     }
 
     // Start the reader thread
@@ -306,7 +304,7 @@ void StorageKafka::shutdown()
 
     // Unsubscribe from assignments
     LOG_TRACE(log, "Unsubscribing from assignments");
-    for (size_t i = 0; i < num_consumers; ++i)
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto consumer = claimConsumer();
         consumer->unsubscribe();
@@ -591,7 +589,6 @@ void registerStorageKafka(StorageFactory & factory)
 
         return StorageKafka::create(
             args.table_name, args.database_name, args.context, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             brokers, group, topics, format, schema, num_consumers);
     });
 }

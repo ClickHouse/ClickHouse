@@ -438,8 +438,6 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
         should_evaluate_missing_defaults = false;
         should_reorder = false;
 
-        size_t rows = res.rows();
-
         /// insert default values only for columns without default expressions
         for (const auto & requested_column : columns)
         {
@@ -457,7 +455,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
             if (!has_column)
             {
                 should_reorder = true;
-                if (storage.column_defaults.count(requested_column.name) != 0)
+                if (storage.getColumns().defaults.count(requested_column.name) != 0)
                 {
                     should_evaluate_missing_defaults = true;
                     continue;

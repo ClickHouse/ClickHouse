@@ -19,8 +19,8 @@ namespace ErrorCodes
 StorageView::StorageView(
     const String & table_name_,
     const ASTCreateQuery & query,
-    const NamesAndTypesList & columns_)
-    : IStorage{columns_, {}, {}, {}}, table_name(table_name_)
+    const ColumnsDescription & columns_)
+    : IStorage{columns_}, table_name(table_name_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);

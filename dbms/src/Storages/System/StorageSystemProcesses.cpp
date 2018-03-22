@@ -14,7 +14,7 @@ namespace DB
 StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         { "is_initial_query",     std::make_shared<DataTypeUInt8>() },
 
         { "user",                 std::make_shared<DataTypeString>() },
@@ -42,14 +42,16 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
         { "quota_key",            std::make_shared<DataTypeString>() },
 
         { "elapsed",              std::make_shared<DataTypeFloat64>() },
+        { "is_cancelled",         std::make_shared<DataTypeUInt8>() },
         { "read_rows",            std::make_shared<DataTypeUInt64>() },
         { "read_bytes",           std::make_shared<DataTypeUInt64>() },
         { "total_rows_approx",    std::make_shared<DataTypeUInt64>() },
         { "written_rows",         std::make_shared<DataTypeUInt64>() },
         { "written_bytes",        std::make_shared<DataTypeUInt64>() },
         { "memory_usage",         std::make_shared<DataTypeInt64>() },
-        { "query",                std::make_shared<DataTypeString>() }
-    };
+        { "peak_memory_usage",    std::make_shared<DataTypeInt64>() },
+        { "query",                std::make_shared<DataTypeString>() },
+    }));
 }
 
 
@@ -91,12 +93,14 @@ BlockInputStreams StorageSystemProcesses::read(
         res_columns[i++]->insert(process.client_info.http_user_agent);
         res_columns[i++]->insert(process.client_info.quota_key);
         res_columns[i++]->insert(process.elapsed_seconds);
+        res_columns[i++]->insert(UInt64(process.is_cancelled));
         res_columns[i++]->insert(UInt64(process.read_rows));
         res_columns[i++]->insert(UInt64(process.read_bytes));
         res_columns[i++]->insert(UInt64(process.total_rows));
         res_columns[i++]->insert(UInt64(process.written_rows));
         res_columns[i++]->insert(UInt64(process.written_bytes));
         res_columns[i++]->insert(process.memory_usage);
+        res_columns[i++]->insert(process.peak_memory_usage);
         res_columns[i++]->insert(process.query);
     }
 

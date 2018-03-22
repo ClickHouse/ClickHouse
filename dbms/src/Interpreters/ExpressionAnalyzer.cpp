@@ -71,7 +71,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int CYCLIC_ALIASES;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
-    extern const int TOO_MUCH_ROWS;
+    extern const int TOO_MANY_ROWS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int ALIAS_REQUIRED;
@@ -190,7 +190,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     }
 
     if (storage && source_columns.empty())
-        source_columns = storage->getSampleBlock().getNamesAndTypesList();
+        source_columns = storage->getColumns().getAllPhysical();
     else
         removeDuplicateColumns(source_columns);
 
@@ -687,8 +687,8 @@ static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
       */
     Context subquery_context = context;
     Settings subquery_settings = context.getSettings();
-    subquery_settings.limits.max_result_rows = 0;
-    subquery_settings.limits.max_result_bytes = 0;
+    subquery_settings.max_result_rows = 0;
+    subquery_settings.max_result_bytes = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
@@ -712,7 +712,7 @@ static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         /// get columns list for target table
         auto database_table = getDatabaseAndTableNameFromIdentifier(*table);
         const auto & storage = context.getTable(database_table.first, database_table.second);
-        const auto & columns = storage->getColumnsListNonMaterialized();
+        const auto & columns = storage->getColumns().ordinary;
         select_expression_list->children.reserve(columns.size());
 
         /// manually substitute column names in place of asterisk
@@ -826,7 +826,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     Block sample = interpreter->getSampleBlock();
     NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-    StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+    StoragePtr external_storage = StorageMemory::create(external_table_name, ColumnsDescription{columns});
     external_storage->startup();
 
     /** We replace the subquery with the name of the temporary table.
@@ -860,7 +860,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
 }
 
 
-NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, NamesAndTypesList & cols)
+static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
 {
     return std::find_if(cols.begin(), cols.end(),
         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
@@ -936,7 +936,7 @@ void ExpressionAnalyzer::normalizeTree()
 
     try
     {
-        ast->checkSize(settings.limits.max_expanded_ast_elements);
+        ast->checkSize(settings.max_expanded_ast_elements);
     }
     catch (Exception & e)
     {
@@ -952,9 +952,9 @@ void ExpressionAnalyzer::normalizeTree()
 void ExpressionAnalyzer::normalizeTreeImpl(
     ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
 {
-    if (level > settings.limits.max_ast_depth)
+    if (level > settings.max_ast_depth)
         throw Exception("Normalized AST is too deep. Maximum: "
-            + settings.limits.max_ast_depth.toString(), ErrorCodes::TOO_DEEP_AST);
+            + settings.max_ast_depth.toString(), ErrorCodes::TOO_DEEP_AST);
 
     if (finished_asts.count(ast))
     {
@@ -980,7 +980,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
         if (functionIsInOrGlobalInOperator(func_node->name))
             if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
-                right->kind = ASTIdentifier::Table;
+                if (!aliases.count(right->name))
+                    right->kind = ASTIdentifier::Table;
 
         /// Special cases for count function.
         String func_name_lowercase = Poco::toLower(func_node->name);
@@ -1050,7 +1051,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
                 if (storage)
                 {
                     /// If we select from a table, get only not MATERIALIZED, not ALIAS columns.
-                    for (const auto & name_type : storage->getColumnsListNonMaterialized())
+                    for (const auto & name_type : storage->getColumns().ordinary)
                         all_columns.emplace_back(std::make_shared<ASTIdentifier>(name_type.name));
                 }
                 else
@@ -1147,7 +1148,8 @@ void ExpressionAnalyzer::addAliasColumns()
     if (!storage)
         return;
 
-    source_columns.insert(std::end(source_columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
+    const auto & aliases = storage->getColumns().aliases;
+    source_columns.insert(std::end(source_columns), std::begin(aliases), std::end(aliases));
 }
 
 
@@ -1210,7 +1212,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
     {
         Context subquery_context = context;
         Settings subquery_settings = context.getSettings();
-        subquery_settings.limits.max_result_rows = 1;
+        subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = 0;
         subquery_context.setSettings(subquery_settings);
 
@@ -1236,7 +1238,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::TOO_MUCH_ROWS)
+            if (e.code() == ErrorCodes::TOO_MANY_ROWS)
                 throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             else
                 throw;
@@ -1456,8 +1458,13 @@ void ExpressionAnalyzer::optimizeLimitBy()
 
 void ExpressionAnalyzer::makeSetsForIndex()
 {
-    if (storage && ast && storage->supportsIndexForIn())
-        makeSetsForIndexImpl(ast, storage->getSampleBlock());
+    if (storage && select_query && storage->supportsIndexForIn())
+    {
+        if (select_query->where_expression)
+            makeSetsForIndexImpl(select_query->where_expression, storage->getSampleBlock());
+        if (select_query->prewhere_expression)
+            makeSetsForIndexImpl(select_query->prewhere_expression, storage->getSampleBlock());
+    }
 }
 
 
@@ -1465,7 +1472,7 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
 {
     BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
 
-    SetPtr set = std::make_shared<Set>(settings.limits);
+    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
 
     while (Block block = res.in->read())
     {
@@ -1482,40 +1489,42 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
 {
     for (auto & child : node->children)
     {
-        /// Process expression only in current subquery
-        if (!typeid_cast<ASTSubquery *>(child.get()))
-            makeSetsForIndexImpl(child, sample_block);
+        /// Don't descent into subqueries.
+        if (typeid_cast<ASTSubquery *>(child.get()))
+            continue;
+
+        /// Don't dive into lambda functions
+        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        if (func && func->name == "lambda")
+            continue;
+
+        makeSetsForIndexImpl(child, sample_block);
     }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
     if (func && functionIsInOperator(func->name))
     {
         const IAST & args = *func->arguments;
-        const ASTPtr & arg = args.children.at(1);
 
-        if (!prepared_sets.count(arg.get())) /// Not already prepared.
+        if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0)))
         {
-            if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
+            const ASTPtr & arg = args.children.at(1);
+
+            if (!prepared_sets.count(arg.get())) /// Not already prepared.
             {
-                if (settings.use_index_for_in_with_subqueries && storage->mayBenefitFromIndexForIn(args.children.at(0)))
-                    tryMakeSetFromSubquery(arg);
-            }
-            else
-            {
-                try
+                if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
+                {
+                    if (settings.use_index_for_in_with_subqueries)
+                        tryMakeSetFromSubquery(arg);
+                }
+                else
                 {
                     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
                     getRootActions(func->arguments->children.at(0), true, false, temp_actions);
-                    makeExplicitSet(func, temp_actions->getSampleBlock(), true);
-                }
-                catch (const Exception & e)
-                {
-                    /// in `sample_block` there are no columns that are added by `getActions`
-                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
-                        throw;
 
-                    /// TODO: Delete the catch in the next release
-                    tryLogCurrentException(&Poco::Logger::get("ExpressionAnalyzer"));
+                    Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
+                    if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
+                        makeExplicitSet(func, sample_block_with_calculated_columns, true);
                 }
             }
         }
@@ -1571,14 +1580,14 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
             return;
         }
 
-        SetPtr set = std::make_shared<Set>(settings.limits);
+        SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
           *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
           * - this function shows the expression IN_data1.
           */
-        if (!subquery_for_set.source)
+        if (!subquery_for_set.source && (!storage || !storage->isRemote()))
         {
             auto interpreter = interpretSubquery(arg, context, subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
@@ -1645,15 +1654,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         for (const auto & arg : left_arg_tuple->arguments->children)
-        {
-            const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
-
-            /// NOTE prevent crash in query: SELECT (1, [1]) in (1, 1)
-            if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
-                throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-
-            set_element_types.push_back(data_type);
-        }
+            set_element_types.push_back(sample_block.getByName(arg->getColumnName()).type);
     }
     else
     {
@@ -1714,7 +1715,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
         elements_ast = exp_list;
     }
 
-    SetPtr set = std::make_shared<Set>(settings.limits);
+    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
     set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
     prepared_sets[arg.get()] = std::move(set);
 }
@@ -2390,7 +2391,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     {
         JoinPtr join = std::make_shared<Join>(
             join_key_names_left, join_key_names_right,
-            settings.join_use_nulls, settings.limits,
+            settings.join_use_nulls, SizeLimits(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode),
             join_params.kind, join_params.strictness);
 
         Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
