@@ -16,11 +16,11 @@ bool Lock::tryLock()
         std::string dummy;
         int32_t code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
 
-        if (code == ZNODEEXISTS)
+        if (code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
         {
             locked.reset(nullptr);
         }
-        else if (code == ZOK)
+        else if (code == ZooKeeperImpl::ZooKeeper::ZOK)
         {
             locked.reset(new ZooKeeperHandler(zookeeper));
         }

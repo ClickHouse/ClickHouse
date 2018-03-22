@@ -203,10 +203,10 @@ public:
     /// * The node has children
     std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> asyncTryRemove(const std::string & path, int32_t version = -1);
 
-    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> asyncMulti(const Ops & ops);
+    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> asyncMulti(const Requests & ops);
 
     /// Like the previous one but don't throw any exceptions on future.get()
-    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> tryAsyncMulti(const Ops & ops);
+    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> tryAsyncMulti(const Requests & ops);
 
     static std::string error2string(int32_t code);
 
@@ -214,7 +214,7 @@ private:
     friend class EphemeralNodeHolder;
     friend struct OpResult;
 
-    void init(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms, const std::string & chroot);
+    void init(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_, const std::string & chroot_);
 
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
@@ -228,7 +228,7 @@ private:
     int32_t multiImpl(const Requests & requests, Responses & responses);
     int32_t existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback);
 
-    ZooKeeperImpl::ZooKeeper impl;
+    std::unique_ptr<ZooKeeperImpl::ZooKeeper> impl;
 
     std::string hosts;
     std::string identity;
