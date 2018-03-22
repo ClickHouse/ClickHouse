@@ -2386,6 +2386,9 @@ void StorageReplicatedMergeTree::startup()
 
     /// In this thread replica will be activated.
     restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
+
+    /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
+    startup_event.wait();
 }
 
 
