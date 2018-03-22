@@ -288,6 +288,7 @@ void StorageKafka::startup()
 
         // Make consumer available
         pushConsumer(consumer);
+        ++num_created_consumers;
     }
 
     // Start the reader thread
@@ -303,7 +304,7 @@ void StorageKafka::shutdown()
 
     // Unsubscribe from assignments
     LOG_TRACE(log, "Unsubscribing from assignments");
-    for (size_t i = 0; i < num_consumers; ++i)
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto consumer = claimConsumer();
         consumer->unsubscribe();
