@@ -137,7 +137,7 @@ private:
                 return;
             }
 
-            if (!zookeeper.exists(path + "/" + *(it - 1), nullptr, task_handle))
+            if (!zookeeper.exists(path + "/" + *(it - 1), nullptr, task_handle->getWatchCallback()))
                 task_handle->schedule();
 
             success = true;

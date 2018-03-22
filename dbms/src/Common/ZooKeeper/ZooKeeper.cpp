@@ -204,23 +204,6 @@ WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
     return callback;
 }
 
-WatchCallback ZooKeeper::callbackForTaskHandle(const TaskHandlePtr & task)
-{
-    WatchCallback callback;
-    if (task)
-    {
-        callback = [t=task](ZooKeeper &, int, int, const char *) mutable
-        {
-            if (t)
-            {
-                t->schedule();
-                t.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
-            }
-        };
-    }
-    return callback;
-}
-
 WatchContext * ZooKeeper::createContext(WatchCallback && callback)
 {
     if (callback)
@@ -468,9 +451,9 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & 
     return existsWatch(path, stat_, callbackForEvent(watch));
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
+bool ZooKeeper::exists(const std::string & path, Stat * stat, const WatchCallback & watch_callback)
 {
-    return existsWatch(path, stat, callbackForTaskHandle(watch));
+    return existsWatch(path, stat, watch_callback);
 }
 
 bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
@@ -528,11 +511,11 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
-std::string ZooKeeper::get(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
+std::string ZooKeeper::get(const std::string & path, Stat * stat, const WatchCallback & watch_callback)
 {
     int code;
     std::string res;
-    if (tryGetWatch(path, res, stat, callbackForTaskHandle(watch), &code))
+    if (tryGetWatch(path, res, stat, watch_callback, &code))
         return res;
     else
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);

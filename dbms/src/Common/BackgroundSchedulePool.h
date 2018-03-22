@@ -11,7 +11,7 @@
 #include <map>
 #include <functional>
 #include <boost/noncopyable.hpp>
-
+#include <Common/ZooKeeper/Types.h>
 
 namespace DB
 {
@@ -54,6 +54,10 @@ public:
         /// Further attempts to schedule become no-op.
         void deactivate();
         void activate();
+
+        /// get zkutil::WatchCallback needed for zookeeper callbacks.
+
+        zkutil::WatchCallback getWatchCallback();
 
     private:
         friend class TaskNotification;
