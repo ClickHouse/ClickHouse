@@ -4,9 +4,6 @@ DROP TABLE IF EXISTS test.table_new;
 CREATE TABLE test.table_old (k UInt64, d Array(String)) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/checksums_test', 'old') ORDER BY k SETTINGS use_minimalistic_checksums_in_zookeeper=0;
 CREATE TABLE test.table_new (k UInt64, d Array(String)) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/checksums_test', 'new') ORDER BY k SETTINGS use_minimalistic_checksums_in_zookeeper=1;
 
--- Workaround to wait registration in leader election to correctly calculate number of active replicas to be able make quorum INSERT
-OPTIMIZE TABLE test.table_new;
-
 SET insert_quorum=2;
 INSERT INTO test.table_old VALUES (0, []);
 SELECT value LIKE '%checksums format version: 4%' FROM system.zookeeper WHERE path='/clickhouse/test/tables/checksums_test/replicas/old/parts/all_0_0_0' AND name = 'checksums';
