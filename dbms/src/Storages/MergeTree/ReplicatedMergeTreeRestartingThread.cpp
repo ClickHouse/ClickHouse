@@ -50,7 +50,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
         check_period_ms = storage.data.settings.check_delay_period * 1000;
 
-    storage.queue_updating_task_handle = storage.context.getSchedulePool().addTask("queue_updating_task_handle", [this]{ storage.queueUpdatingThread(); });
+    storage.queue_updating_task_handle = storage.context.getSchedulePool().addTask("StorageReplicatedMergeTree::queueUpdatingThread", [this]{ storage.queueUpdatingThread(); });
     storage.queue_updating_task_handle->deactivate();
 
     task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeRestartingThread", [this]{ run(); });

@@ -138,10 +138,13 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
 {
     try
     {
-        shutdown = true;
-        wakeup_event.notify_all();
-        queue.wakeUpAll();
+        {
+            std::unique_lock lock(delayed_tasks_lock);
+            shutdown = true;
+            wakeup_cond.notify_all();
+        }
 
+        queue.wakeUpAll();
         delayed_thread.join();
 
         LOG_TRACE(&Logger::get("BackgroundSchedulePool"), "Waiting for threads to finish.");
@@ -167,7 +170,7 @@ void BackgroundSchedulePool::removeTask(const TaskHandle & task)
 }
 
 
-void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms, std::lock_guard<std::mutex>&)
+void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms, std::lock_guard<std::mutex> & /* schedule_mutex_lock */)
 {
     Poco::Timestamp current_time;
 
@@ -181,11 +184,11 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t
         task->delayed = true;
     }
 
-    wakeup_event.notify_all();
+    wakeup_cond.notify_all();
 }
 
 
-void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task, std::lock_guard<std::mutex> &)
+void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task, std::lock_guard<std::mutex> & /* schedule_mutex_lock */)
 {
     {
         std::lock_guard lock(delayed_tasks_lock);
@@ -193,7 +196,7 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task, std::loc
         task->delayed = false;
     }
 
-    wakeup_event.notify_all();
+    wakeup_cond.notify_all();
 }
 
 
@@ -228,6 +231,10 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
         {
             std::unique_lock lock(delayed_tasks_lock);
+
+            if(!shutdown)
+                break;
+
             Poco::Timestamp min_time;
 
             if (!delayed_tasks.empty())
@@ -239,7 +246,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
             if (!task)
             {
-                wakeup_event.wait(lock);
+                wakeup_cond.wait(lock);
                 continue;
             }
 
@@ -247,7 +254,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
             if (min_time > current_time)
             {
-                wakeup_event.wait_for(lock, std::chrono::microseconds(min_time - current_time));
+                wakeup_cond.wait_for(lock, std::chrono::microseconds(min_time - current_time));
                 continue;
             }
         }

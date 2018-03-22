@@ -211,7 +211,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
     initMergeSelectSession();
-    merge_selecting_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree", [this] { mergeSelectingThread(); });
+    merge_selecting_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree::mergeSelectingThread", [this] { mergeSelectingThread(); });
 
     bool skip_sanity_checks = false;
 
