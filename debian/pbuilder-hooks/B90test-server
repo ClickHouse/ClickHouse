@@ -3,8 +3,8 @@ set -e
 set -x
 
 for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
-    apt-get install -y --force-yes "$PKG" || true 
-    apt-get remove -y "$PKG" || true 
+    apt-get install -y --force-yes "$PKG" || true
+    apt-get remove -y "$PKG" || true
 done
 
 dpkg -i /tmp/buildd/*.deb || true
@@ -16,21 +16,43 @@ ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime
 echo 'Europe/Moscow' > /etc/timezone
 dpkg-reconfigure -f noninteractive tzdata
 
+mkdir -p /etc/clickhouse-server/config.d /etc/clickhouse-client/config.d
 
-service clickhouse-server start
-sleep 3
+TEST_CONNECT=${TEST_CONNECT=1}
+if [ "${TEST_CONNECT}" ]; then
 
-# TODO: remove me or make only on error:
-tail -n100 /var/log/clickhouse-server/*
+    TEST_SSL=${TEST_SSL=1}
+    if  [ "${TEST_SSL}" ]; then
+        echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+        echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
 
-clickhouse-client -q "SELECT * from system.build_options;"
-clickhouse-client -q "SELECT toDateTime(1);"
+        openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
+        openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
+        CLIENT_ADD="--ssl"
+    fi
 
+    function finish {
+        service clickhouse-server stop
+        tail -n 100 /var/log/clickhouse-server/*
+        sleep 1
+        killall -9 clickhouse-server || true
+    }
+    trap finish EXIT SIGINT SIGQUIT SIGTERM
 
-( [ "${TEST_RUN}" ] && clickhouse-test --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ ${TEST_OPT} ) || ${TEST_TRUE:=true}
+    service clickhouse-server start
+    sleep 3
 
+    # TODO: remove me or make only on error:
+    tail -n100 /var/log/clickhouse-server/*
 
-service clickhouse-server stop
+    clickhouse-client -q "SELECT * from system.build_options;"
+    clickhouse-client ${CLIENT_ADD} -q "SELECT toDateTime(1);"
+
+    ( [ "${TEST_RUN}" ] && clickhouse-test --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ ${TEST_OPT} ) || ${TEST_TRUE:=true}
+
+    service clickhouse-server stop
+
+fi
 
 # Test debug symbols
 # gdb -ex quit --args /usr/bin/clickhouse-server

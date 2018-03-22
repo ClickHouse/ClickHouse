@@ -1,5 +1,7 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+
 
 namespace DB
 {

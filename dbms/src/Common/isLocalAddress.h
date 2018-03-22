@@ -12,7 +12,6 @@ namespace Poco
 
 namespace DB
 {
-
     /** Lets you check if the address is similar to `localhost`.
      * The purpose of this check is usually to make an assumption,
      *  that when we go to this address via the Internet, we'll get to ourselves.

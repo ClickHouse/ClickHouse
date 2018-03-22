@@ -13,9 +13,9 @@ SELECT count(), sum(toUInt64(ns)), max(toUInt64(ns)) FROM (SELECT intDiv(number,
 SELECT count(), sum(toUInt64(ns[1])), max(toUInt64(ns[1])), sum(toUInt64(ns[2]))/10 FROM (SELECT intDiv(number, 100) AS k, groupArray([toString(number), toString(number*10)]) AS ns FROM test.numbers_mt GROUP BY k) ARRAY JOIN ns;
 SELECT count(), sum(ns[1]), max(ns[1]), sum(ns[2])/10 FROM (SELECT intDiv(number, 100) AS k, groupArray([number, number*10]) AS ns FROM test.numbers_mt GROUP BY k) ARRAY JOIN ns;
 
-SELECT count(), sum(ns), max(ns) FROM (SELECT intDiv(number, 100) AS k, groupArray(number) AS ns FROM remote('127.0.0.{1,2}', 'test', 'numbers_mt') GROUP BY k) ARRAY JOIN ns;
-SELECT count(), sum(toUInt64(ns)), max(toUInt64(ns)) FROM (SELECT intDiv(number, 100) AS k, groupArray(toString(number)) AS ns FROM remote('127.0.0.{1,2}', 'test', 'numbers_mt') GROUP BY k) ARRAY JOIN ns;
-SELECT count(), sum(toUInt64(ns[1])), max(toUInt64(ns[1])), sum(toUInt64(ns[2]))/10 FROM (SELECT intDiv(number, 100) AS k, groupArray([toString(number), toString(number*10)]) AS ns FROM remote('127.0.0.{1,2}', 'test', 'numbers_mt') GROUP BY k) ARRAY JOIN ns;
+SELECT count(), sum(ns), max(ns) FROM (SELECT intDiv(number, 100) AS k, groupArray(number) AS ns FROM remote('127.0.0.{2,3}', 'test', 'numbers_mt') GROUP BY k) ARRAY JOIN ns;
+SELECT count(), sum(toUInt64(ns)), max(toUInt64(ns)) FROM (SELECT intDiv(number, 100) AS k, groupArray(toString(number)) AS ns FROM remote('127.0.0.{2,3}', 'test', 'numbers_mt') GROUP BY k) ARRAY JOIN ns;
+SELECT count(), sum(toUInt64(ns[1])), max(toUInt64(ns[1])), sum(toUInt64(ns[2]))/10 FROM (SELECT intDiv(number, 100) AS k, groupArray([toString(number), toString(number*10)]) AS ns FROM remote('127.0.0.{2,3}', 'test', 'numbers_mt') GROUP BY k) ARRAY JOIN ns;
 
 DROP TABLE test.numbers_mt;
 CREATE TABLE test.numbers_mt (number UInt64) ENGINE = Log;
@@ -27,9 +27,9 @@ SELECT roundToExp2(number) AS k, length(groupArray(1)(hex(number) AS i)), length
 SELECT roundToExp2(number) AS k, length(groupArray(1)([hex(number)] AS i)), length(groupArray(1024)(i)), length(groupArray(65536)(i)) AS s FROM test.numbers_mt GROUP BY k ORDER BY k LIMIT 9, 11;
 
 SELECT '';
-SELECT roundToExp2(number) AS k, length(groupArray(1)(number AS i)), length(groupArray(1500)(i)), length(groupArray(70000)(i)) AS s FROM remote('127.0.0.{1,2}', 'test', 'numbers_mt') GROUP BY k ORDER BY k LIMIT 9, 11;
-SELECT roundToExp2(number) AS k, length(groupArray(1)(hex(number) AS i)), length(groupArray(1500)(i)), length(groupArray(70000)(i)) AS s FROM remote('127.0.0.{1,2}', 'test', 'numbers_mt') GROUP BY k ORDER BY k LIMIT 9, 11;
-SELECT roundToExp2(number) AS k, length(groupArray(1)([hex(number)] AS i)), length(groupArray(1500)(i)), length(groupArray(70000)(i)) AS s FROM remote('127.0.0.{1,2}', 'test', 'numbers_mt') GROUP BY k ORDER BY k LIMIT 9, 11;
+SELECT roundToExp2(number) AS k, length(groupArray(1)(number AS i)), length(groupArray(1500)(i)), length(groupArray(70000)(i)) AS s FROM remote('127.0.0.{2,3}', 'test', 'numbers_mt') GROUP BY k ORDER BY k LIMIT 9, 11;
+SELECT roundToExp2(number) AS k, length(groupArray(1)(hex(number) AS i)), length(groupArray(1500)(i)), length(groupArray(70000)(i)) AS s FROM remote('127.0.0.{2,3}', 'test', 'numbers_mt') GROUP BY k ORDER BY k LIMIT 9, 11;
+SELECT roundToExp2(number) AS k, length(groupArray(1)([hex(number)] AS i)), length(groupArray(1500)(i)), length(groupArray(70000)(i)) AS s FROM remote('127.0.0.{2,3}', 'test', 'numbers_mt') GROUP BY k ORDER BY k LIMIT 9, 11;
 
 DROP TABLE test.numbers_mt;
 

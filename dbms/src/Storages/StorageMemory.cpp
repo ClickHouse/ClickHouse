@@ -74,14 +74,8 @@ private:
 };
 
 
-StorageMemory::StorageMemory(
-    const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
-    name(name_)
+StorageMemory::StorageMemory(String table_name_, ColumnsDescription columns_description_)
+    : IStorage{std::move(columns_description_)}, table_name(std::move(table_name_))
 {
 }
 
@@ -144,7 +138,7 @@ void registerStorageMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageMemory::create(args.table_name, args.columns, args.materialized_columns, args.alias_columns, args.column_defaults);
+        return StorageMemory::create(args.table_name, args.columns);
     });
 }
 

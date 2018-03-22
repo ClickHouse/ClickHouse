@@ -20,10 +20,12 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     const Block & sample_block, const Context & context)
     : log(&Logger::get("ODBCDictionarySource")),
+    update_time{std::chrono::system_clock::from_time_t(0)},
     dict_struct{dict_struct_},
     db{config.getString(config_prefix + ".db", "")},
     table{config.getString(config_prefix + ".table")},
     where{config.getString(config_prefix + ".where", "")},
+    update_field{config.getString(config_prefix + ".update_field", "")},
     sample_block{sample_block},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},    /// NOTE Better to obtain quoting style via ODBC interface.
     load_all_query{query_builder.composeLoadAllQuery()},
@@ -46,10 +48,12 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
 /// copy-constructor is provided in order to support cloneability
 ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     : log(&Logger::get("ODBCDictionarySource")),
+    update_time{other.update_time},
     dict_struct{other.dict_struct},
     db{other.db},
     table{other.table},
     where{other.where},
+    update_field{other.update_field},
     sample_block{other.sample_block},
     pool{other.pool},
     query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},
@@ -58,10 +62,36 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
 {
 }
 
+std::string ODBCDictionarySource::getUpdateFieldAndDate()
+{
+    if (update_time != std::chrono::system_clock::from_time_t(0))
+    {
+        auto tmp_time = update_time;
+        update_time = std::chrono::system_clock::now();
+        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
+        std::string str_time = std::to_string(LocalDateTime(hr_time));
+        return query_builder.composeUpdateQuery(update_field, str_time);
+    }
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        std::string str_time("0000-00-00 00:00:00"); ///for initial load
+        return query_builder.composeUpdateQuery(update_field, str_time);
+    }
+}
+
 BlockInputStreamPtr ODBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
     return std::make_shared<ODBCBlockInputStream>(pool->get(), load_all_query, sample_block, max_block_size);
+}
+
+BlockInputStreamPtr ODBCDictionarySource::loadUpdatedAll()
+{
+    std::string load_query_update = getUpdateFieldAndDate();
+
+    LOG_TRACE(log, load_query_update);
+    return std::make_shared<ODBCBlockInputStream>(pool->get(), load_query_update, sample_block, max_block_size);
 }
 
 BlockInputStreamPtr ODBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -80,6 +110,11 @@ BlockInputStreamPtr ODBCDictionarySource::loadKeys(
 bool ODBCDictionarySource::supportsSelectiveLoad() const
 {
     return true;
+}
+
+bool ODBCDictionarySource::hasUpdateField() const
+{
+    return !update_field.empty();
 }
 
 DictionarySourcePtr ODBCDictionarySource::clone() const

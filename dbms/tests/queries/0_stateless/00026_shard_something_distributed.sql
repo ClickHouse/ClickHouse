@@ -1,1 +1,1 @@
-SELECT NOT dummy FROM remote('127.0.0.{1,2}', system, one) WHERE NOT dummy
+SELECT NOT dummy FROM remote('127.0.0.{2,3}', system, one) WHERE NOT dummy

@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -31,11 +32,15 @@ public:
     }
 
     std::string getTableName() const override { return table_name; }
-    bool supportsSampling() const override { return data.supportsSampling(); }
-    bool supportsFinal() const override { return data.supportsFinal(); }
-    bool supportsPrewhere() const override { return data.supportsPrewhere(); }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
+    bool supportsSampling() const override { return data.supportsSampling(); }
+    bool supportsPrewhere() const override { return data.supportsPrewhere(); }
+    bool supportsFinal() const override { return data.supportsFinal(); }
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
+
+    const ColumnsDescription & getColumns() const override { return data.getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -71,9 +76,6 @@ public:
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
-
-    bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
     bool checkTableCanBeDropped() const override;
 
@@ -135,10 +137,7 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         bool attach,
         Context & context_,
         const ASTPtr & primary_expr_ast_,

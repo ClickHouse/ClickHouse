@@ -17,9 +17,9 @@ private:
     Poco::Logger * log;
 
 public:
-    explicit TCPHandlerFactory(IServer & server_)
+    explicit TCPHandlerFactory(IServer & server_, bool secure_ = false)
         : server(server_)
-        , log(&Logger::get("TCPHandlerFactory"))
+        , log(&Logger::get(std::string("TCP") + (secure_ ? "S" : "") + "HandlerFactory"))
     {
     }
 

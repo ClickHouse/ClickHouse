@@ -40,6 +40,11 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override
+    {
+        throw Exception{"Method loadUpdatedAll is unsupported for LibraryDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
@@ -47,6 +52,12 @@ public:
     bool isModified() const override;
 
     bool supportsSelectiveLoad() const override;
+
+    ///Not yet supported
+    bool hasUpdateField() const override
+    {
+        return false;
+    }
 
     DictionarySourcePtr clone() const override;
 
