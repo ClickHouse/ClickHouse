@@ -118,6 +118,17 @@ void BackgroundSchedulePool::TaskInfo::execute()
         LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Executing " << name << " took " << milliseconds << " ms.");
 }
 
+zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
+{
+    return [t=shared_from_this()](zkutil::ZooKeeper &, int, int, const char *) mutable {
+        if (t)
+        {
+            t->schedule();
+            t.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
+        }
+    };
+}
+
 
 // BackgroundSchedulePool
 
