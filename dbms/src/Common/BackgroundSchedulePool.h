@@ -102,7 +102,7 @@ private:
 
     /// Delayed notifications.
 
-    std::condition_variable wakeup_event;
+    std::condition_variable wakeup_cond;
     std::mutex delayed_tasks_lock;
     /// Thread waiting for next delayed task.
     std::thread delayed_thread;
