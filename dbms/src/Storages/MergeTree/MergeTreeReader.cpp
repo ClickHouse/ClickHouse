@@ -413,7 +413,8 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder)
+void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder,
+                                         size_t rows, bool never_evaluate_defaults)
 {
     if (!res)
         throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
@@ -443,8 +444,6 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
 
         bool should_evaluate_defaults = false;
         bool should_sort = always_reorder;
-
-        size_t rows = res.rows();
 
         /// insert default values only for columns without default expressions
         for (const auto & requested_column : columns)
@@ -497,7 +496,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
         }
 
         /// evaluate defaulted columns if necessary
-        if (should_evaluate_defaults)
+        if (!never_evaluate_defaults && should_evaluate_defaults)
             evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.context);
 
         /// sort columns to ensure consistent order among all blocks
