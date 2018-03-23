@@ -176,7 +176,7 @@ private:
         String default_database;
         String user;
         String password;
-        Protocol::Encryption security;
+        Protocol::Secure security;
         Protocol::Compression compression;
         ConnectionTimeouts timeouts;
 
@@ -186,8 +186,8 @@ private:
         {
             bool is_secure = config.getBool("secure", false);
             security = is_secure
-                ? Protocol::Encryption::Enable
-                : Protocol::Encryption::Disable;
+                ? Protocol::Secure::Enable
+                : Protocol::Secure::Disable;
 
             host = config.getString("host", "localhost");
             port = config.getInt("port",
