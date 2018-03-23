@@ -70,4 +70,36 @@ public:
     }
 };
 
+/// A base class for databases that manage their own list of tables.
+class DatabaseWithOwnTablesBase : public IDatabase
+{
+public:
+    bool isTableExist(
+        const Context & context,
+        const String & table_name) const override;
+
+    StoragePtr tryGetTable(
+        const Context & context,
+        const String & table_name) const override;
+
+    bool empty(const Context & context) const override;
+
+
+    void attachTable(const String & table_name, const StoragePtr & table) override;
+
+    StoragePtr detachTable(const String & table_name) override;
+
+    DatabaseIteratorPtr getIterator(const Context & context) override;
+
+    void shutdown() override;
+
+protected:
+    String name;
+
+    mutable std::mutex mutex;
+    Tables tables;
+
+    DatabaseWithOwnTablesBase(String name_) : name(std::move(name_)) { }
+};
+
 }

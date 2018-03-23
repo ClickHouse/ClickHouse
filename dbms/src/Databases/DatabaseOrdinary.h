@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesCommon.h>
 
 
 namespace DB
@@ -10,14 +10,10 @@ namespace DB
   * It stores tables list in filesystem using list of .sql files,
   *  that contain declaration of table represented by SQL ATTACH TABLE query.
   */
-class DatabaseOrdinary : public DatabaseMemory
+class DatabaseOrdinary : public DatabaseWithOwnTablesBase
 {
-protected:
-    const String metadata_path;
-    const String data_path;
-
 public:
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context);
+    DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context);
 
     String getEngineName() const override { return "Ordinary"; }
 
@@ -64,6 +60,10 @@ public:
     void drop() override;
 
 private:
+    const String metadata_path;
+    const String data_path;
+    Poco::Logger * log;
+
     void startupTables(ThreadPool * thread_pool);
 };
 
