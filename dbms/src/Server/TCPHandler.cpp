@@ -508,6 +508,10 @@ void TCPHandler::sendHello()
     {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+    {
+        writeStringBinary(server_display_name, *out);
+    }
     out->next();
 }
 

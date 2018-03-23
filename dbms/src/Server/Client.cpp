@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <map>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <optional>
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
@@ -98,7 +100,6 @@ private:
         "учшеж", "йгшеж", "дщпщгеж",
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
-
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
@@ -135,6 +136,8 @@ private:
 
     String current_profile;
 
+    String prompt_by_server_display_name;
+
     /// Path to a file containing command history.
     String history_file;
 
@@ -150,6 +153,7 @@ private:
     /// If the last query resulted in exception.
     bool got_exception = false;
     String server_version;
+    String server_display_name;
 
     Stopwatch watch;
 
@@ -334,6 +338,45 @@ private:
             }
         }
 
+        Strings keys;
+
+        prompt_by_server_display_name = config().getString("prompt_by_server_display_name.default", "{display_name} :) ");
+
+        config().keys("prompt_by_server_display_name", keys);
+
+        for (const String & key : keys)
+        {
+            if (key != "default" && server_display_name.find(key) != std::string::npos) 
+            {
+                prompt_by_server_display_name = config().getString("prompt_by_server_display_name." + key);
+                break;
+            }
+        }
+
+        std::map<String, String> terminalCharacters = {
+            { "\\e[",   "\e["  },
+            { "\\33[",  "\33[" },
+            { "\\033[", "\033["},
+            { "\\x1B[", "\x1B["},
+        };
+
+        for (const auto & [key, value]: terminalCharacters)
+        {
+            boost::replace_all(prompt_by_server_display_name, key, value);
+        }
+
+        std::map<String, String> environment = {
+            {"host",         config().getString("host", "localhost")},
+            {"port",         config().getString("port", "9000")},
+            {"user",         config().getString("user", "default")},
+            {"display_name", server_display_name},
+        };
+
+        for (const auto & [key, value]: environment)
+        {
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+        }
+
         if (is_interactive)
         {
             if (print_time_to_stderr)
@@ -425,6 +468,12 @@ private:
         connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
+
+        if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
+        {
+            server_display_name = config().getString("host", "localhost");
+        }
+
         if (is_interactive)
         {
             std::cout << "Connected to " << server_name
@@ -445,12 +494,17 @@ private:
         return select(1, &fds, 0, 0, &timeout) == 1;
     }
 
+    inline const String prompt() const
+    {
+        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+    }
 
     void loop()
     {
         String query;
         String prev_query;
-        while (char * line_ = readline(query.empty() ? ":) " : ":-] "))
+
+        while (char * line_ = readline(query.empty() ? prompt().c_str() : ":-] "))
         {
             String line = line_;
             free(line_);
