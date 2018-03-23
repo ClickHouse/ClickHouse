@@ -21,3 +21,13 @@ INSERT INTO test.mt (x, y, z) SELECT number AS x, number + 10 AS y, number / 2 A
 SELECT *, b FROM test.mt WHERE (z, y, x) IN ((617, 1244, 1234), (2839, 5688, 5678), (1,1,1)) AND NOT ignore(blockSize() < 10 AS b) ORDER BY (x, y, z);
 
 DROP TABLE test.mt;
+
+DROP TABLE IF EXISTS test.t;
+CREATE TABLE test.t (d date, x integer) engine = MergeTree(d, (x), 1);
+
+INSERT INTO test.t VALUES('2018-03-21', 1);
+INSERT INTO test.t VALUES('2018-03-21', 2);
+
+SELECT * FROM test.t WHERE d IN ('2018-03-21') AND x IN (1);
+
+DROP TABLE test.t
