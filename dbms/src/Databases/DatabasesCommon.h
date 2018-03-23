@@ -93,6 +93,8 @@ public:
 
     void shutdown() override;
 
+    virtual ~DatabaseWithOwnTablesBase() override;
+
 protected:
     String name;
 

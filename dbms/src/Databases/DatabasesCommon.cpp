@@ -157,4 +157,16 @@ void DatabaseWithOwnTablesBase::shutdown()
     tables.clear();
 }
 
+DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
+{
+    try
+    {
+        shutdown();
+    }
+    catch(...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 }
