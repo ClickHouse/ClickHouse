@@ -13,10 +13,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int TABLE_ALREADY_EXISTS;
-extern const int UNKNOWN_TABLE;
-extern const int LOGICAL_ERROR;
-extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int TABLE_ALREADY_EXISTS;
+    extern const int UNKNOWN_TABLE;
+    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int SYNTAX_ERROR;
 }
 
 DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & context)
@@ -163,15 +164,17 @@ time_t DatabaseDictionary::getTableMetadataModificationTime(
     return static_cast<time_t>(0);
 }
 
-ASTPtr DatabaseDictionary::getCreateTableQuery(
-    const Context & context,
-    const String & table_name) const
+ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
+                                                   const String & table_name, bool throw_on_error) const
 {
     String query;
     {
         WriteBufferFromString buffer(query);
 
-        auto dictionary = context.getExternalDictionaries().getDictionary(table_name);
+        const auto & dictionaries = context.getExternalDictionaries();
+        auto dictionary = throw_on_error ? dictionaries.getDictionary(table_name)
+                                         : dictionaries.tryGetDictionary(table_name);
+
         auto names_and_types = StorageDictionary::getNamesAndTypes(dictionary->getStructure());
         buffer << "CREATE TABLE " << backQuoteIfNeed(name) << '.' << backQuoteIfNeed(table_name) << " (";
         buffer << StorageDictionary::generateNamesAndTypesDescription(names_and_types.begin(), names_and_types.end());
@@ -179,12 +182,25 @@ ASTPtr DatabaseDictionary::getCreateTableQuery(
     }
 
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "");
+    const char * pos = query.data();
+    std::string error_message;
+    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
+            /* hilite = */ false, "", /* allow_multi_statements = */ false);
+
+    if (!ast && throw_on_error)
+        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+
+    return ast;
+}
+
+ASTPtr DatabaseDictionary::getCreateTableQuery(const Context & context, const String & table_name) const
+{
+    return getCreateTableQueryImpl(context, table_name, true);
 }
 
 ASTPtr DatabaseDictionary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
 {
-    return getCreateTableQuery(context, table_name);
+    return getCreateTableQueryImpl(context, table_name, false);
 }
 
 ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) const

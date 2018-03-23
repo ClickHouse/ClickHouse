@@ -82,6 +82,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 
