@@ -637,15 +637,16 @@ Int64 ZooKeeper::getClientID()
 
 std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std::string & path)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::GetResponse> promise;
-    auto future = promise.get_future();
+    /// https://stackoverflow.com/questions/25421346/how-to-create-an-stdfunction-from-a-move-capturing-lambda-expression
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::GetResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
     {
         if (response.error)
-            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise.set_value(response);
+            promise->set_value(response);
     };
 
     impl->get(path, std::move(callback), {});
@@ -658,15 +659,15 @@ std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std
 
 std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncTryGet(const std::string & path)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::GetResponse> promise;
-    auto future = promise.get_future();
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::GetResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
     {
         if (response.error && response.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise.set_value(response);
+            promise->set_value(response);
     };
 
     impl->get(path, std::move(callback), {});
@@ -678,15 +679,15 @@ std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncTryGet(const 
 
 std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ZooKeeper::asyncExists(const std::string & path)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::ExistsResponse> promise;
-    auto future = promise.get_future();
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::ExistsResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response) mutable
     {
         if (response.error && response.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise.set_value(response);
+            promise->set_value(response);
     };
 
     impl->exists(path, std::move(callback), {});
@@ -699,15 +700,15 @@ std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ZooKeeper::asyncExists(con
 
 std::future<ZooKeeperImpl::ZooKeeper::ListResponse> ZooKeeper::asyncGetChildren(const std::string & path)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::ListResponse> promise;
-    auto future = promise.get_future();
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::ListResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::ListResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::ListResponse & response) mutable
     {
         if (response.error)
-            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise.set_value(response);
+            promise->set_value(response);
     };
 
     impl->list(path, std::move(callback), {});
@@ -719,15 +720,15 @@ std::future<ZooKeeperImpl::ZooKeeper::ListResponse> ZooKeeper::asyncGetChildren(
 
 std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncRemove(const std::string & path, int32_t version)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::RemoveResponse> promise;
-    auto future = promise.get_future();
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::RemoveResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
     {
         if (response.error)
-            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise.set_value(response);
+            promise->set_value(response);
     };
 
     impl->remove(path, version, std::move(callback));
@@ -739,15 +740,15 @@ std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncRemove(con
 
 std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncTryRemove(const std::string & path, int32_t version)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::RemoveResponse> promise;
-    auto future = promise.get_future();
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::RemoveResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
     {
         if (response.error && response.error != ZooKeeperImpl::ZooKeeper::ZNONODE && response.error != ZooKeeperImpl::ZooKeeper::ZBADVERSION && response.error != ZooKeeperImpl::ZooKeeper::ZNOTEMPTY)
-            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise.set_value(response);
+            promise->set_value(response);
     };
 
     impl->remove(path, version, std::move(callback));
@@ -759,12 +760,12 @@ std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncTryRemove(
 
 std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::tryAsyncMulti(const Requests & ops)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::MultiResponse> promise;
-    auto future = promise.get_future();
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::MultiResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::MultiResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::MultiResponse & response) mutable
     {
-        promise.set_value(response);
+        promise->set_value(response);
     };
 
     impl->multi(ops, std::move(callback));
@@ -776,15 +777,15 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::tryAsyncMulti(co
 
 std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const Requests & ops)
 {
-    std::promise<ZooKeeperImpl::ZooKeeper::MultiResponse> promise;
-    auto future = promise.get_future();
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::MultiResponse>>();
+    auto future = promise->get_future();
 
-    auto callback = [promise = std::move(promise)](const ZooKeeperImpl::ZooKeeper::MultiResponse & response) mutable
+    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::MultiResponse & response) mutable
     {
         if (response.error)
-            promise.set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise.set_value(response);
+            promise->set_value(response);
     };
 
     impl->multi(ops, std::move(callback));
@@ -795,43 +796,38 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
 }
 
 
-size_t getFailedOpIndex(const OpResultsPtr & op_results, int32_t transaction_return_code)
+size_t getFailedOpIndex(const Responses & responses, int32_t transaction_return_code)
 {
-    if (op_results == nullptr || op_results->empty())
-        throw DB::Exception("OpResults is empty", DB::ErrorCodes::LOGICAL_ERROR);
+    if (responses.empty())
+        throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t index = 0; index < op_results->size(); ++index)
-    {
-        if ((*op_results)[index].err != ZooKeeperImpl::ZooKeeper::ZOK)
+    for (size_t index = 0, size = responses.size(); index < size; ++index)
+        if (responses[index]->error)
             return index;
-    }
 
     if (!isUserError(transaction_return_code))
-    {
         throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(transaction_return_code) + "' is not valid response code for that",
-                            DB::ErrorCodes::LOGICAL_ERROR);
-    }
+            DB::ErrorCodes::LOGICAL_ERROR);
 
     throw DB::Exception("There is no failed OpResult", DB::ErrorCodes::LOGICAL_ERROR);
 }
 
 
-KeeperMultiException::KeeperMultiException(const MultiTransactionInfo & info_, size_t failed_op_index_)
-    : KeeperException("Transaction failed at op #" + std::to_string(failed_op_index_) + ": " + info_.ops.at(failed_op_index_)->describe(), info_.code),
-    info(info_) {}
+KeeperMultiException::KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses)
+    : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex(responses, code)), code),
+    requests(requests), responses(responses)
+{
+}
 
 void KeeperMultiException::check(int32_t code, const Requests & requests, const Responses & responses)
 {
-    if (code == ZooKeeperImpl::ZooKeeper::ZOK) {}
-    else if (isUserError(code))
-        throw KeeperMultiException(MultiTransactionInfo(code, ops, op_results), getFailedOpIndex(op_results, code));
+    if (!code)
+        return;
+
+    if (isUserError(code))
+        throw KeeperMultiException(code, requests, responses);
     else
         throw KeeperException(code);
-}
-
-const Op & MultiTransactionInfo::getFailedOp() const
-{
-    return *ops.at(getFailedOpIndex(op_results, code));
 }
 
 }
