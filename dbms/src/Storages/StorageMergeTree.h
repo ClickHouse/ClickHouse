@@ -60,6 +60,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    std::optional<UInt64> totalRows() const override;
+
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     /** Perform the next step in combining the parts.

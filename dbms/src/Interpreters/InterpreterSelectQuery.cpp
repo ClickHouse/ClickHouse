@@ -19,6 +19,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -41,9 +42,14 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
+
 #include <Core/Field.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
+#include <ext/scope_guard.h>
 
 
 namespace ProfileEvents
@@ -676,16 +682,98 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 optimize_prewhere(*merge_tree);
         }
 
-        if (!dry_run)
+        /// Optimization for trivial query like SELECT count() FROM table.
+        auto check_trivial_count_query = [&, this]() -> AggregateFunctionPtr
+        {
+            if (!settings.optimize_trivial_count_query)
+                return {};
+
+            if (!query.tables)
+                return {};
+
+            const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*query.tables);
+            if (tables_in_select_query.children.empty() || tables_in_select_query.children.size() > 1)
+                return {};
+
+            const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+            if (!tables_element.table_expression)
+                return {};
+
+            const ASTTableExpression & table_expression = static_cast<const ASTTableExpression &>(*tables_element.table_expression);
+
+            if (table_expression.final || table_expression.sample_size || table_expression.sample_offset)
+                return {};
+
+            if (query.prewhere_expression
+                || query.where_expression           /// NOTE we can allow constexprs that evaluate to 1.
+                || query.group_expression_list)
+                return {};
+
+            if (!query_analyzer->hasAggregation())
+                return {};
+
+            Names key_names;
+            AggregateDescriptions aggregates;
+            query_analyzer->getAggregateInfo(key_names, aggregates);
+
+            if (!key_names.empty() || aggregates.size() != 1)
+                return {};
+
+            const AggregateDescription & desc = aggregates[0];
+            if (!desc.parameters.empty() || !desc.arguments.empty())    /// NOTE count(1) or count(const not null) should also be Ok.
+                return {};
+
+            if (typeid_cast<AggregateFunctionCount *>(desc.function.get()))
+                return desc.function;
+
+            return {};
+        };
+
+        if (AggregateFunctionPtr func = check_trivial_count_query())
+        {
+            std::optional<UInt64> num_rows = storage->totalRows();
+            if (num_rows)
+            {
+                std::cerr << *num_rows << "\n";
+
+                AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
+
+                /// We will process it up to "WithMergeableState".
+                std::vector<char> state(agg_count.sizeOfData());
+                AggregateDataPtr place = state.data();
+
+                agg_count.create(place);
+                SCOPE_EXIT(agg_count.destroy(place));
+
+                agg_count.addDelta(place, *num_rows);
+
+                auto column = ColumnAggregateFunction::create(func);
+                column->insertFrom(place);
+
+                Block block_with_count{
+                {
+                    std::move(column),
+                    std::make_shared<DataTypeAggregateFunction>(func, DataTypes(), Array()),
+                    "count()"
+                }};
+
+                pipeline.streams.emplace_back(std::make_shared<OneBlockInputStream>(block_with_count));
+                from_stage = QueryProcessingStage::WithMergeableState;
+            }
+        }
+
+        if (!dry_run && pipeline.streams.empty())
+        {
             pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+
+            pipeline.transform([&](auto & stream)
+            {
+                stream->addTableLock(table_lock);
+            });
+        }
 
         if (pipeline.streams.empty())
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
-
-        pipeline.transform([&](auto & stream)
-        {
-            stream->addTableLock(table_lock);
-        });
 
         /** Set the limits and quota for reading data, the speed and time of the query.
           *  Such restrictions are checked on the initiating server of the request, and not on remote servers.

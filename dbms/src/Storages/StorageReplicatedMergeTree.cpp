@@ -2477,6 +2477,12 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 }
 
 
+std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
+{
+    return data.getTotalActiveSizeInRows();
+}
+
+
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {
     if (is_readonly)

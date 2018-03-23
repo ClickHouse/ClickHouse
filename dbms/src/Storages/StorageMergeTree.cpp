@@ -108,6 +108,11 @@ BlockInputStreams StorageMergeTree::read(
     return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, 0);
 }
 
+std::optional<UInt64> StorageMergeTree::totalRows() const
+{
+    return data.getTotalActiveSizeInRows();
+}
+
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<MergeTreeBlockOutputStream>(*this);

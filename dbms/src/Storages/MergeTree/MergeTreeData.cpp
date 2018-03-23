@@ -1667,14 +1667,28 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part_to_detach, cons
 }
 
 
-size_t MergeTreeData::getTotalActiveSizeInBytes() const
+UInt64 MergeTreeData::getTotalActiveSizeInBytes() const
 {
-    size_t res = 0;
+    UInt64 res = 0;
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
 
         for (auto & part : getDataPartsStateRange(DataPartState::Committed))
             res += part->size_in_bytes;
+    }
+
+    return res;
+}
+
+
+UInt64 MergeTreeData::getTotalActiveSizeInRows() const
+{
+    UInt64 res = 0;
+    {
+        std::lock_guard<std::mutex> lock(data_parts_mutex);
+
+        for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+            res += part->rows_count;
     }
 
     return res;

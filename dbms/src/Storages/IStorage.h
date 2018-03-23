@@ -180,6 +180,13 @@ public:
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
+      */
+    virtual std::optional<UInt64> totalRows() const
+    {
+        return {};
+    }
+
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.

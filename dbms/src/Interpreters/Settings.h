@@ -180,6 +180,8 @@ struct Settings
     M(SettingBool, allow_distributed_ddl, true, "If it is set to true, then a user is allowed to executed distributed DDL queries.") \
     M(SettingUInt64, odbc_max_field_size, 1024, "Max size of filed can be read from ODBC dictionary. Long strings are truncated.") \
     \
+    M(SettingBool, optimize_trivial_count_query, true, "Process trivial 'SELECT count() FROM table' query from metadata.") \
+    \
     \
     /** Limits during query execution are part of the settings. \
       * Used to provide a more safe execution of queries from the user interface. \

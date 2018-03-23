@@ -352,7 +352,10 @@ public:
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
 
     /// Total size of active parts in bytes.
-    size_t getTotalActiveSizeInBytes() const;
+    UInt64 getTotalActiveSizeInBytes() const;
+
+    /// Total number of rows in the table.
+    UInt64 getTotalActiveSizeInRows() const;
 
     size_t getMaxPartsCountForPartition() const;
 
