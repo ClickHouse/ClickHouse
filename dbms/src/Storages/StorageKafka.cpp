@@ -4,6 +4,7 @@
 
 #include <thread>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -574,9 +575,12 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        // Parse topic list and consumer group
+        // Parse topic list
         Names topics;
-        topics.push_back(static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>());
+        String topicArg = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        boost::split(topics, topics , [](char c){return c == ',';});
+        
+        // Parse consumer group
         String group = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
 
         // Parse format from string
