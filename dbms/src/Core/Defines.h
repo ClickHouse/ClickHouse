@@ -75,8 +75,18 @@
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
-#define ALWAYS_INLINE __attribute__((__always_inline__))
-#define NO_INLINE __attribute__((__noinline__))
+// more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
+
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+    #define NO_INLINE static __declspec(noinline)
+    #define MAY_ALIAS
+#else
+    #define ALWAYS_INLINE __attribute__((__always_inline__))
+    #define NO_INLINE __attribute__((__noinline__))
+    #define MAY_ALIAS __attribute__((__may_alias__))
+#endif
+
 
 #define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64 (work in progress)"
 

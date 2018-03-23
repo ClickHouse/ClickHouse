@@ -48,7 +48,7 @@ const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(reinterpret_cast<const char *>(&data[n]), sizeof(T));
+    hash.update(data[n]);
 }
 
 template <typename T>

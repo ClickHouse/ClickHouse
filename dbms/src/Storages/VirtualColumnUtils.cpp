@@ -81,7 +81,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 
     ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
-    auto literal = std::make_shared<ASTLiteral>(StringRange(), value);
+    auto literal = std::make_shared<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
     with.children.push_back(literal);
@@ -158,11 +158,12 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
 
-    actions->execute(block);
+    Block block_with_filter = block;
+    actions->execute(block_with_filter);
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block.getByName(filter_column_name).column;
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column;
     if (ColumnPtr converted = filter_column->convertToFullColumnIfConst())
         filter_column = converted;
     const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
@@ -172,8 +173,6 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         ColumnPtr & column = block.safeGetByPosition(i).column;
         column = column->filter(filter, -1);
     }
-
-    block.erase(filter_column_name);
 }
 
 }

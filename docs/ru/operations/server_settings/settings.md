@@ -441,14 +441,14 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Настройки клиента/сервера SSL.
 
-Поддержку SSL обеспечивает библиотека ``libpoco``. Описание интерфейса находится в файле [SSLManager.h](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Поддержку SSL обеспечивает библиотека ``libpoco``. Описание интерфейса находится в файле [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
 
 Ключи настроек сервера/клиента:
 
 - privateKeyFile - Путь к файлу с секретным ключем сертификата в формате PEM. Файл может содержать ключ и сертификат одновременно.
 - certificateFile - Путь к файлу сертификата клиента/сервера в формате PEM. Можно не указывать, если ``privateKeyFile`` содержит сертификат.
 - caConfig - Путь к файлу или каталогу, которые содержат доверенные корневые сертификаты.
-- verificationMode - Способ проверки сертификатов узла. Подробности находятся в описании класса [Context](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/Context.h). Допустимые значения: ``none``, ``relaxed``, ``strict``, ``once``.
+- verificationMode - Способ проверки сертификатов узла. Подробности находятся в описании класса [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Допустимые значения: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth - Максимальная длина верификационой цепи. Верификация завершится ошибкой, если длина цепи сертификатов превысит установленное значение.
 - loadDefaultCAFile - Признак того, что будут использоваться встроенные CA-сертификаты для OpenSSL. Допустимые значения: ``true``, ``false``.  |
 - cipherList - Поддерживаемые OpenSSL-шифры. Например, ``ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.

@@ -49,7 +49,8 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
     endif ()
 
-    if (OPENSSL_FOUND)
+    # TODO! fix internal ssl
+    if (OPENSSL_FOUND AND NOT USE_INTERNAL_SSL_LIBRARY)
         set (Poco_NetSSL_FOUND 1)
         set (Poco_NetSSL_LIBRARY PocoNetSSL)
         set (Poco_Crypto_LIBRARY PocoCrypto)
@@ -57,8 +58,8 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
 
     if (USE_STATIC_LIBRARIES AND USE_INTERNAL_ZLIB_LIBRARY)
         list (APPEND Poco_INCLUDE_DIRS
-            "${ClickHouse_SOURCE_DIR}/contrib/zlib-ng/"
-            "${ClickHouse_BINARY_DIR}/contrib/zlib-ng/"
+            "${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}/"
+            "${ClickHouse_BINARY_DIR}/contrib/${INTERNAL_ZLIB_NAME}/"
         )
     endif ()
 

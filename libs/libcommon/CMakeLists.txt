@@ -1,5 +1,5 @@
 if (APPLE)
-    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
+    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.0.0")
         set (APPLE_SIERRA_OR_NEWER 1)
     else ()
         set (APPLE_SIERRA_OR_NEWER 0)
@@ -111,9 +111,12 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARY}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
+
+if (RT_LIBRARY)
+    target_link_libraries (common ${RT_LIBRARY})
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

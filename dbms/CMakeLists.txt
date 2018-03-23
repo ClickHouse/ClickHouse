@@ -18,7 +18,9 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+if (NOT MSVC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+endif ()
 
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -77,13 +79,17 @@ list (APPEND dbms_headers
     src/AggregateFunctions/FactoryHelpers.h
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
-list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (ARCH_FREEBSD)
+    target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
+endif ()
+
 add_subdirectory(src/Common/ZooKeeper)
-add_subdirectory(src/Common/ConfigProcessor)
+add_subdirectory(src/Common/Config)
 
 if (MAKE_STATIC_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
@@ -125,7 +131,6 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
-    ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
     ${Poco_Data_LIBRARY}
@@ -137,7 +142,7 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (dbms
     clickhouse_parsers
-    clickhouse_common_configprocessor
+    clickhouse_common_config
     clickhouse_common_io
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
@@ -152,16 +157,13 @@ if (NOT USE_INTERNAL_RE2_LIBRARY)
     target_include_directories (dbms BEFORE PRIVATE ${RE2_INCLUDE_DIR})
 endif ()
 
-if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
-    target_include_directories (clickhouse_common_io BEFORE PUBLIC ${ZOOKEEPER_INCLUDE_DIR})
-endif ()
-
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
 if (Poco_DataODBC_FOUND)
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES})
 endif()
 
 if (Poco_MongoDB_FOUND)

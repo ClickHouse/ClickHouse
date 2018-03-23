@@ -80,7 +80,7 @@ DataTypePtr getDataType(const String & mysql_data_type, bool is_unsigned, size_t
 }
 
 
-StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
 
@@ -152,7 +152,7 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
         std::move(pool),
         database_name,
         table_name,
-        columns);
+        ColumnsDescription{columns});
 
     res->startup();
     return res;

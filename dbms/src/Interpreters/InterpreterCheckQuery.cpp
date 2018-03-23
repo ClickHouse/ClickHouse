@@ -126,7 +126,7 @@ BlockIO InterpreterCheckQuery::execute()
 
         while (true)
         {
-            if (stream.isCancelled())
+            if (stream.isCancelledOrThrowIfKilled())
             {
                 BlockIO res;
                 res.in = std::make_shared<OneBlockInputStream>(result);

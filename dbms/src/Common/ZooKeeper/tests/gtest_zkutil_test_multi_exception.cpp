@@ -6,6 +6,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #include <gtest/gtest.h>
+#include <Common/ShellCommand.h>
+
+
 #pragma GCC diagnostic pop
 
 using namespace DB;
@@ -32,32 +35,32 @@ TEST(zkutil, multi_nice_exception_msg)
     zkutil::Ops ops;
 
     ASSERT_NO_THROW(
-        zookeeper->tryRemoveRecursive("/clickhouse_test_zkutil_multi");
+        zookeeper->tryRemoveRecursive("/clickhouse_test/zkutil_multi");
 
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi", "_", acl, zkutil::CreateMode::Persistent));
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi", "_", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
         zookeeper->multi(ops);
     );
 
     try
     {
         ops.clear();
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/c", "_", acl, zkutil::CreateMode::Persistent));
-        ops.emplace_back(new zkutil::Op::Remove("/clickhouse_test_zkutil_multi/c", -1));
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/a", "BadBoy", acl, zkutil::CreateMode::Persistent));
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/b", "_", acl, zkutil::CreateMode::Persistent));
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/c", "_", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Remove("/clickhouse_test/zkutil_multi/c", -1));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/a", "BadBoy", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/b", "_", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
 
         zookeeper->multi(ops);
         FAIL();
     }
     catch (...)
     {
-        zookeeper->tryRemoveRecursive("/clickhouse_test_zkutil_multi");
+        zookeeper->tryRemoveRecursive("/clickhouse_test/zkutil_multi");
 
         String msg = getCurrentExceptionMessage(false);
 
-        bool msg_has_reqired_patterns = msg.find("/clickhouse_test_zkutil_multi/a") != std::string::npos && msg.find("#2") != std::string::npos;
+        bool msg_has_reqired_patterns = msg.find("/clickhouse_test/zkutil_multi/a") != std::string::npos && msg.find("#2") != std::string::npos;
         EXPECT_TRUE(msg_has_reqired_patterns) << msg;
     }
 }
@@ -69,7 +72,7 @@ TEST(zkutil, multi_async)
     auto acl = zookeeper->getDefaultACL();
     zkutil::Ops ops;
 
-    zookeeper->tryRemoveRecursive("/clickhouse_test_zkutil_multi");
+    zookeeper->tryRemoveRecursive("/clickhouse_test/zkutil_multi");
 
     {
         ops.clear();
@@ -78,8 +81,8 @@ TEST(zkutil, multi_async)
 
     {
         ops.clear();
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi", "", acl, zkutil::CreateMode::Persistent));
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/a", "", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi", "", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/a", "", acl, zkutil::CreateMode::Persistent));
 
         auto fut = zookeeper->tryAsyncMulti(ops);
         ops.clear();
@@ -97,11 +100,11 @@ TEST(zkutil, multi_async)
         for (size_t i = 0; i < 10000; ++i)
         {
             ops.clear();
-            ops.emplace_back(new zkutil::Op::Remove("/clickhouse_test_zkutil_multi", -1));
-            ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi", "_", acl, zkutil::CreateMode::Persistent));
-            ops.emplace_back(new zkutil::Op::Check("/clickhouse_test_zkutil_multi", -1));
-            ops.emplace_back(new zkutil::Op::SetData("/clickhouse_test_zkutil_multi", "xxx", 42));
-            ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
+            ops.emplace_back(new zkutil::Op::Remove("/clickhouse_test/zkutil_multi", -1));
+            ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi", "_", acl, zkutil::CreateMode::Persistent));
+            ops.emplace_back(new zkutil::Op::Check("/clickhouse_test/zkutil_multi", -1));
+            ops.emplace_back(new zkutil::Op::SetData("/clickhouse_test/zkutil_multi", "xxx", 42));
+            ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
 
             futures.emplace_back(zookeeper->asyncMulti(ops));
         }
@@ -115,8 +118,8 @@ TEST(zkutil, multi_async)
 
     {
         ops.clear();
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi", "_", acl, zkutil::CreateMode::Persistent));
-        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test_zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi", "_", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(new zkutil::Op::Create("/clickhouse_test/zkutil_multi/a", "_", acl, zkutil::CreateMode::Persistent));
 
         auto fut = zookeeper->tryAsyncMulti(ops);
         ops.clear();
@@ -128,31 +131,55 @@ TEST(zkutil, multi_async)
     }
 }
 
+/// Run this test under sudo
+TEST(zkutil, multi_async_libzookeeper_segfault)
+{
+    auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181", "", 1000);
+    zkutil::Ops ops;
+
+    ops.emplace_back(new zkutil::Op::Check("/clickhouse_test/zkutil_multi", 0));
+
+    /// Uncomment to test
+    //auto cmd = ShellCommand::execute("sudo service zookeeper restart");
+    //cmd->wait();
+
+    auto future = zookeeper->asyncMulti(ops);
+    auto res = future.get();
+
+    EXPECT_TRUE(zkutil::isUnrecoverableErrorCode(res.code));
+}
+
 
 TEST(zkutil, multi_create_sequential)
 {
     try
     {
+        /// Create chroot node firstly
         auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
+        zookeeper->createAncestors("/clickhouse_test/");
+
+        zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181", "", zkutil::DEFAULT_SESSION_TIMEOUT, "/clickhouse_test");
         auto acl = zookeeper->getDefaultACL();
         zkutil::Ops ops;
 
-        String base_path = "/clickhouse_test/zkutil/multi_create_sequential";
+        String base_path = "/zkutil/multi_create_sequential";
         zookeeper->tryRemoveRecursive(base_path);
         zookeeper->createAncestors(base_path + "/");
 
-        String entry_path = base_path + "/queue-";
-        ops.emplace_back(new zkutil::Op::Create(entry_path, "", acl, zkutil::CreateMode::EphemeralSequential));
+        String sequential_node_prefix = base_path + "/queue-";
+        ops.emplace_back(new zkutil::Op::Create(sequential_node_prefix, "", acl, zkutil::CreateMode::EphemeralSequential));
         zkutil::OpResultsPtr results = zookeeper->multi(ops);
-        zkutil::OpResult & result = results->at(0);
+        zkutil::OpResult & sequential_node_result_op = results->at(0);
 
-        EXPECT_TRUE(result.value != nullptr);
-        EXPECT_TRUE(startsWith(result.value, entry_path));
+        EXPECT_FALSE(sequential_node_result_op.value.empty());
+        EXPECT_GT(sequential_node_result_op.value.length(), sequential_node_prefix.length());
+        EXPECT_EQ(sequential_node_result_op.value.substr(0, sequential_node_prefix.length()), sequential_node_prefix);
     }
     catch (...)
     {
         std::cerr << getCurrentExceptionMessage(false);
         throw;
     }
-
 }
+
+

@@ -7,6 +7,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
@@ -25,6 +26,7 @@
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
@@ -47,7 +49,7 @@ namespace ErrorCodes
 
 static void throwIfReadOnly(Context & context)
 {
-    if (context.getSettingsRef().limits.readonly)
+    if (context.getSettingsRef().readonly)
         throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
 }
 
@@ -56,7 +58,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
 {
     if (typeid_cast<ASTSelectQuery *>(query.get()))
     {
-        return std::make_unique<InterpreterSelectQuery>(query, context, stage);
+        return std::make_unique<InterpreterSelectQuery>(query, context, Names{}, stage);
+    }
+    else if (typeid_cast<ASTSelectWithUnionQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, Names{}, stage);
     }
     else if (typeid_cast<ASTInsertQuery *>(query.get()))
     {

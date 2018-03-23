@@ -22,9 +22,6 @@ public:
     /// Do deduplicate (default: false)
     bool deduplicate;
 
-    ASTOptimizeQuery() = default;
-    ASTOptimizeQuery(const StringRange range_) : IAST(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return "OptimizeQuery_" + database + "_" + table + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : ""); };
 

@@ -98,12 +98,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     zkutil::Ops ops;
     for (size_t i = 0; i < entries.size(); ++i)
     {
-        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/log/" + entries[i], -1));
+        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(storage.zookeeper_path + "/log/" + entries[i], -1));
 
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
-            ops.emplace_back(std::make_unique<zkutil::Op::Check>(storage.zookeeper_path + "/replicas", stat.version));
+            ops.emplace_back(std::make_shared<zkutil::Op::Check>(storage.zookeeper_path + "/replicas", stat.version));
             zookeeper->multi(ops);
             ops.clear();
         }

@@ -94,7 +94,7 @@ bool PartLog::addNewPartToTheLog(Context & context, const MergeTreeDataPart & pa
 
     try
     {
-        part_log = context.getPartLog(part.storage.getDatabaseName(), part.storage.getTableName());
+        part_log = context.getPartLog(part.storage.getDatabaseName());
         if (!part_log)
             return false;
 

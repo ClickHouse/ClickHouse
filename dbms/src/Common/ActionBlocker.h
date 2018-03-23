@@ -16,8 +16,8 @@ public:
     bool isCancelled() const { return counter > 0; }
 
     /// Temporarily blocks corresponding actions (while the returned object is alive)
-    struct BlockHolder;
-    BlockHolder cancel() const { return BlockHolder(this); }
+    struct LockHolder;
+    LockHolder cancel() const { return LockHolder(this); }
 
     /// Cancel the actions forever.
     void cancelForever() const { ++counter; }
@@ -26,30 +26,30 @@ public:
     auto & getCounter() { return counter; }
 
     /// Blocks related action while a BlockerHolder instance exists
-    struct BlockHolder
+    struct LockHolder
     {
-        explicit BlockHolder(const ActionBlocker * var_ = nullptr) : var(var_)
+        explicit LockHolder(const ActionBlocker * var_ = nullptr) : var(var_)
         {
             if (var)
                 ++var->counter;
         }
 
-        BlockHolder(BlockHolder && other) noexcept
+        LockHolder(LockHolder && other) noexcept
         {
             *this = std::move(other);
         }
 
-        BlockHolder & operator=(BlockHolder && other) noexcept
+        LockHolder & operator=(LockHolder && other) noexcept
         {
             var = other.var;
             other.var = nullptr;
             return *this;
         }
 
-        BlockHolder(const BlockHolder & other) = delete;
-        BlockHolder & operator=(const BlockHolder & other) = delete;
+        LockHolder(const LockHolder & other) = delete;
+        LockHolder & operator=(const LockHolder & other) = delete;
 
-        ~BlockHolder()
+        ~LockHolder()
         {
             if (var)
                 --var->counter;

@@ -16,14 +16,12 @@ namespace DB
 class TableFunctionRemote : public ITableFunction
 {
 public:
-
     explicit TableFunctionRemote(const std::string & name_ = "remote");
 
     std::string getName() const override { return name; }
 
-    StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
-
 private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context) const override;
 
     std::string name;
     bool is_cluster_function;

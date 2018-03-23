@@ -44,7 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_CODE;
-    extern const int TOO_MUCH_ROWS;
+    extern const int TOO_MANY_ROWS;
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
 }
@@ -112,7 +112,7 @@ Block Aggregator::getHeader(bool final) const
             else
                 type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 
-            res.insert({ type->createColumn(), type, params.aggregates[i].column_name });
+            res.insert({ type, params.aggregates[i].column_name });
         }
     }
     else if (params.intermediate_header)
@@ -973,7 +973,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::THROW:
                 throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
                     + " rows, maximum: " + toString(params.max_rows_to_group_by),
-                    ErrorCodes::TOO_MUCH_ROWS);
+                    ErrorCodes::TOO_MANY_ROWS);
 
             case OverflowMode::BREAK:
                 return false;
