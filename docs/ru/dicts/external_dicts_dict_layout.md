@@ -2,11 +2,11 @@
 
 # Хранение словарей в памяти
 
-Словари можно размещать в памяти [множеством способов](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-manner).
+Словари можно размещать в памяти [множеством способов](external_dicts_dict_layout#dicts-external_dicts_dict_layout-manner).
 
-Рекомендуем [flat](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-complex_key_hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](external_dicts_dict_layout#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](external_dicts_dict_layout#dicts-external_dicts_dict_layout-complex_key_hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе " [cache](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-cache)".
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе " [cache](external_dicts_dict_layout#dicts-external_dicts_dict_layout-cache)".
 
 Повысить производительнось словарей можно следующими способами:
 
@@ -27,7 +27,7 @@
     <dictionary>
         ...
         <layout>
-            <layout_type> 
+            <layout_type>
                 <!-- layout settings -->
             </layout_type>
         </layout>
@@ -46,6 +46,7 @@
 -   [range_hashed](#dicts-external_dicts_dict_layout-range_hashed)
 -   [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed)
 -   [complex_key_cache](#dicts-external_dicts_dict_layout-complex_key_cache)
+-   [ip_trie](#dicts-external_dicts_dict_layout-ip_trie)
 
 <a name="dicts-external_dicts_dict_layout-flat"></a>
 
@@ -87,7 +88,7 @@
 
 ### complex_key_hashed
 
-Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
 
 Пример конфигурации:
 
@@ -119,7 +120,7 @@
   +------------------+-----------------------------+------------+----------+
 ```
 
-Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure) определить элементы `range_min`, `range_max`.
+Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure#dicts-external_dicts_dict_structure) определить элементы `range_min`, `range_max`.
 
 Пример:
 
@@ -196,7 +197,7 @@
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
-Поддерживаются [источники](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
+Поддерживаются [источники](external_dicts_dict_sources#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
 
 Пример настройки:
 
@@ -226,4 +227,65 @@
 
 ### complex_key_cache
 
-Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `cache`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure#dicts-external_dicts_dict_structure). Аналогичен `cache`.
+
+<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
+
+### ip_trie
+
+Тип размещения предназначен для сопоставления префиксов сети (IP адресов) с метаданными, такими как ASN.
+
+Пример: таблица содержит префиксы сети и соответствующие им номера AS и коды стран:
+
+```
+  +-----------------+-------+--------+
+  | prefix          | asn   | cca2   |
+  +=================+=======+========+
+  | 202.79.32.0/20  | 17501 | NP     |
+  +-----------------+-------+--------+
+  | 2620:0:870::/48 | 3856  | US     |
+  +-----------------+-------+--------+
+  | 2a02:6b8:1::/48 | 13238 | RU     |
+  +-----------------+-------+--------+
+  | 2001:db8::/32   | 65536 | ZZ     |
+  +-----------------+-------+--------+
+```
+
+При использовании такого макета структура должна иметь составной ключ.
+
+Пример:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>prefix</name>
+            <type>String</type>
+        </attribute>
+    </key>
+    <attribute>
+            <name>asn</name>
+            <type>UInt32</type>
+            <null_value />
+    </attribute>
+    <attribute>
+            <name>cca2</name>
+            <type>String</type>
+            <null_value>??</null_value>
+    </attribute>
+    ...
+```
+
+Этот ключ должен иметь только один атрибут типа String, содержащий допустимый префикс IP. Другие типы еще не поддерживаются.
+
+Для запросов необходимо использовать те же функции (`dictGetT` с кортежем), что и для словарей с составными ключами:
+
+    dictGetT('dict_name', 'attr_name', tuple(ip))
+
+Функция принимает либо UInt32 для адреса IPv4, либо FixedString(16) для адреса IPv6:
+
+    dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+
+Никакие другие типы не поддерживаются. Функция возвращает атрибут для префикса, соответствующего данному IP-адресу. Если есть перекрывающиеся префиксы, возвращается наиболее специфический.
+
+Данные хранятся в побитовом дереве (trie), он должены полностью помещаться в оперативной памяти.

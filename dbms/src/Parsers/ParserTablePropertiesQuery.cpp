@@ -14,6 +14,7 @@ namespace DB
 bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_exists("EXISTS");
+    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_describe("DESCRIBE");
     ParserKeyword s_desc("DESC");
     ParserKeyword s_show("SHOW");
@@ -41,6 +42,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     {
         return false;
     }
+
+    if (s_temporary.ignore(pos, expected))
+        query->temporary = true;
 
     s_table.ignore(pos, expected);
 

@@ -56,18 +56,13 @@ void ReplicatedMergeTreeAlterThread::run()
 
             zkutil::Stat stat;
             const String columns_str = zookeeper->get(storage.zookeeper_path + "/columns", &stat, wakeup_event);
-            auto columns_desc = ColumnsDescription<true>::parse(columns_str);
-
-            auto & columns = columns_desc.columns;
-            auto & materialized_columns = columns_desc.materialized;
-            auto & alias_columns = columns_desc.alias;
-            auto & column_defaults = columns_desc.defaults;
+            auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
             bool changed_version = (stat.version != storage.columns_version);
 
             {
                 /// If you need to lock table structure, then suspend merges.
-                ActionBlocker::BlockHolder merge_blocker;
+                ActionBlocker::LockHolder merge_blocker;
 
                 if (changed_version || force_recheck_parts)
                     merge_blocker = storage.merger.merges_blocker.cancel();
@@ -81,7 +76,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     auto temporarily_stop_part_checks = storage.part_check_thread.temporarilyStop();
 
                     /// Temporarily cancel parts sending
-                    ActionBlocker::BlockHolder data_parts_exchange_blocker;
+                    ActionBlocker::LockHolder data_parts_exchange_blocker;
                     if (storage.data_parts_exchange_endpoint_holder)
                         data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->cancel();
 
@@ -92,42 +87,13 @@ void ReplicatedMergeTreeAlterThread::run()
 
                     auto table_lock = storage.lockStructureForAlter(__PRETTY_FUNCTION__);
 
-                    const auto columns_changed = columns != storage.data.getColumnsListNonMaterialized();
-                    const auto materialized_columns_changed = materialized_columns != storage.data.materialized_columns;
-                    const auto alias_columns_changed = alias_columns != storage.data.alias_columns;
-                    const auto column_defaults_changed = column_defaults != storage.data.column_defaults;
-
-                    if (columns_changed || materialized_columns_changed || alias_columns_changed ||
-                        column_defaults_changed)
+                    if (columns_in_zk != storage.getColumns())
                     {
                         LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 
                         storage.context.getDatabase(storage.database_name)->alterTable(
-                            storage.context, storage.table_name,
-                            columns, materialized_columns, alias_columns, column_defaults, {});
-
-                        if (columns_changed)
-                        {
-                            storage.data.setColumnsList(columns);
-                        }
-
-                        if (materialized_columns_changed)
-                        {
-                            storage.materialized_columns = materialized_columns;
-                            storage.data.materialized_columns = std::move(materialized_columns);
-                        }
-
-                        if (alias_columns_changed)
-                        {
-                            storage.alias_columns = alias_columns;
-                            storage.data.alias_columns = std::move(alias_columns);
-                        }
-
-                        if (column_defaults_changed)
-                        {
-                            storage.column_defaults = column_defaults;
-                            storage.data.column_defaults = std::move(column_defaults);
-                        }
+                            storage.context, storage.table_name, columns_in_zk, {});
+                        storage.setColumns(std::move(columns_in_zk));
 
                         /// Reinitialize primary key because primary key column types might have changed.
                         storage.data.initPrimaryKey();
@@ -158,7 +124,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     if (!changed_version)
                         parts = storage.data.getDataParts();
 
-                    const auto columns_plus_materialized = storage.data.getColumnsList();
+                    const auto columns_for_parts = storage.getColumns().getAllPhysical();
 
                     for (const MergeTreeData::DataPartPtr & part : parts)
                     {
@@ -166,7 +132,7 @@ void ReplicatedMergeTreeAlterThread::run()
                         /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                         /// node /flags/force_alter.
                         auto transaction = storage.data.alterDataPart(
-                            part, columns_plus_materialized, storage.data.primary_expr_ast, false);
+                            part, columns_for_parts, storage.data.primary_expr_ast, false);
 
                         if (!transaction)
                             continue;
@@ -175,10 +141,12 @@ void ReplicatedMergeTreeAlterThread::run()
 
                         /// Update part metadata in ZooKeeper.
                         zkutil::Ops ops;
-                        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
+                        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
                             storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-                        ops.emplace_back(std::make_unique<zkutil::Op::SetData>(
-                            storage.replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
+                        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+                            storage.replica_path + "/parts/" + part->name + "/checksums",
+                            storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
+                            -1));
 
                         try
                         {

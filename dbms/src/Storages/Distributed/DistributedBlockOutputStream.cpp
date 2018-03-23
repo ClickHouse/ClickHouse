@@ -57,7 +57,8 @@ namespace ErrorCodes
 DistributedBlockOutputStream::DistributedBlockOutputStream(
     StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
     const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_)
-    : storage(storage), query_ast(query_ast), cluster(cluster_), settings(settings_), insert_sync(insert_sync_), insert_timeout(insert_timeout_)
+    : storage(storage), query_ast(query_ast), cluster(cluster_), settings(settings_), insert_sync(insert_sync_),
+      insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
 {
 }
 
@@ -70,7 +71,6 @@ Block DistributedBlockOutputStream::getHeader() const
 
 void DistributedBlockOutputStream::writePrefix()
 {
-    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(insert_timeout);
 }
 
 
@@ -104,7 +104,18 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
         {
             buffer << "Wrote " << job.blocks_written << " blocks and " << job.rows_written << " rows"
                    << " on shard " << job.shard_index << " replica " << job.replica_index
-                   << ", " << addresses[job.shard_index][job.replica_index].readableString() << "\n";
+                   << ", " << addresses[job.shard_index][job.replica_index].readableString();
+
+            /// Performance statistics
+            if (job.bloks_started > 0)
+            {
+                buffer << " (average " << job.elapsed_time_ms / job.bloks_started << " ms per block";
+                if (job.bloks_started > 1)
+                    buffer << ", the slowest block " << job.max_elapsed_time_for_block_ms << " ms";
+                buffer << ")";
+            }
+
+            buffer << "\n";
         }
 
     return buffer.str();
@@ -154,31 +165,22 @@ void DistributedBlockOutputStream::initWritingJobs()
 
 void DistributedBlockOutputStream::waitForJobs()
 {
-    size_t jobs_count = remote_jobs_count + local_jobs_count;
-    auto cond = [this, jobs_count] { return finished_jobs_count >= jobs_count; };
+    pool->wait();
 
     if (insert_timeout)
     {
-        bool were_jobs_finished;
-        {
-            std::unique_lock<std::mutex> lock(mutex);
-            were_jobs_finished = cond_var.wait_until(lock, deadline, cond);
-        }
-
-        pool->wait();
-
-        if (!were_jobs_finished)
+        if (static_cast<UInt64>(watch.elapsedSeconds()) > insert_timeout)
         {
             ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
             throw Exception("Synchronous distributed insert timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
         }
     }
-    else
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-        cond_var.wait(lock, cond);
-        pool->wait();
-    }
+
+    size_t jobs_count = remote_jobs_count + local_jobs_count;
+    size_t num_finished_jobs = finished_jobs_count;
+
+    if (num_finished_jobs < jobs_count)
+        LOG_WARNING(log, "Expected " << jobs_count << " writing jobs, but finished only " << num_finished_jobs);
 }
 
 
@@ -187,10 +189,15 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
     auto memory_tracker = current_memory_tracker;
     return [this, memory_tracker, &job]()
     {
+        SCOPE_EXIT({++finished_jobs_count;});
+
+        Stopwatch watch;
+        ++job.bloks_started;
+
         SCOPE_EXIT({
-            std::lock_guard<std::mutex> lock(mutex);
-            ++finished_jobs_count;
-            cond_var.notify_one();
+            UInt64 elapsed_time_for_block_ms = watch.elapsedMilliseconds();
+            job.elapsed_time_ms += elapsed_time_for_block_ms;
+            job.max_elapsed_time_for_block_ms = std::max(job.max_elapsed_time_for_block_ms, elapsed_time_for_block_ms);
         });
 
         if (!current_memory_tracker)
@@ -261,7 +268,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 job.stream->write(block);
         }
 
-        ++job.blocks_written;
+        job.blocks_written += 1;
         job.rows_written += block.rows();
     };
 }
@@ -276,11 +283,13 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         pool.emplace(remote_jobs_count + local_jobs_count);
         query_string = queryToString(query_ast);
 
-        if (!throttler && (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes))
+        if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
         {
-            throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth, settings.limits.max_network_bytes,
+            throttler = std::make_shared<Throttler>(settings.max_network_bandwidth, settings.max_network_bytes,
                                                     "Network bandwidth limit for a query exceeded.");
         }
+
+        watch.restart();
     }
 
     const auto & shards_info = cluster->getShardsInfo();
@@ -318,9 +327,20 @@ void DistributedBlockOutputStream::writeSuffix()
                     pool->schedule([&job] () { job.stream->writeSuffix(); });
             }
 
-        pool->wait();
+        try
+        {
+            pool->wait();
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage(getCurrentStateDescription());
+            throw;
+        }
 
-        LOG_DEBUG(&Logger::get("DistributedBlockOutputStream"), getCurrentStateDescription());
+        double elapsed = watch.elapsedSeconds();
+        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << blocks_inserted << " blocks"
+                       << " (average " << std::fixed << std::setprecision(1) << elapsed / blocks_inserted * 1000 << " ms. per block)"
+                       << ". " << getCurrentStateDescription());
     }
 }
 

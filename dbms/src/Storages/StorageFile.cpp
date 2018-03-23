@@ -54,12 +54,9 @@ StorageFile::StorageFile(
         const std::string & db_dir_path,
         const std::string & table_name_,
         const std::string & format_name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         Context & context_)
-    : IStorage(columns_, materialized_columns_, alias_columns_, column_defaults_),
+    : IStorage(columns_),
     table_name(table_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
     if (table_fd < 0) /// Will use file
@@ -311,7 +308,6 @@ void registerStorageFile(StorageFactory & factory)
         return StorageFile::create(
             source_path, source_fd,
             args.data_path, args.table_name, format_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             args.context);
     });
 }

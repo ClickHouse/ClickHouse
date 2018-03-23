@@ -7,6 +7,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <common/logger_useful.h>
+#include <common/LocalDateTime.h>
 
 #include <Dictionaries/MySQLDictionarySource.h>
 #include <Dictionaries/MySQLBlockInputStream.h>
@@ -24,10 +25,12 @@ MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_st
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     const Block & sample_block)
     : log(&Logger::get("MySQLDictionarySource")),
+    update_time{std::chrono::system_clock::from_time_t(0)},
     dict_struct{dict_struct_},
     db{config.getString(config_prefix + ".db", "")},
     table{config.getString(config_prefix + ".table")},
     where{config.getString(config_prefix + ".where", "")},
+    update_field{config.getString(config_prefix + ".update_field", "")},
     dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)},
     sample_block{sample_block},
     pool{config, config_prefix},
@@ -40,10 +43,12 @@ MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_st
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
     : log(&Logger::get("MySQLDictionarySource")),
+    update_time{other.update_time},
     dict_struct{other.dict_struct},
     db{other.db},
     table{other.table},
     where{other.where},
+    update_field{other.update_field},
     dont_check_update_time{other.dont_check_update_time},
     sample_block{other.sample_block},
     pool{other.pool},
@@ -53,12 +58,39 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
 {
 }
 
+std::string MySQLDictionarySource::getUpdateFieldAndDate()
+{
+    if (update_time != std::chrono::system_clock::from_time_t(0))
+    {
+        auto tmp_time = update_time;
+        update_time = std::chrono::system_clock::now();
+        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
+        std::string str_time = std::to_string(LocalDateTime(hr_time));
+        return query_builder.composeUpdateQuery(update_field, str_time);
+    }
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        std::string str_time("0000-00-00 00:00:00"); ///for initial load
+        return query_builder.composeUpdateQuery(update_field, str_time);
+    }
+}
+
 BlockInputStreamPtr MySQLDictionarySource::loadAll()
 {
     last_modification = getLastModification();
 
     LOG_TRACE(log, load_all_query);
     return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_all_query, sample_block, max_block_size);
+}
+
+BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
+{
+    last_modification = getLastModification();
+
+    std::string load_update_query = getUpdateFieldAndDate();
+    LOG_TRACE(log, load_update_query);
+    return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_update_query, sample_block, max_block_size);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -98,6 +130,11 @@ bool MySQLDictionarySource::isModified() const
 bool MySQLDictionarySource::supportsSelectiveLoad() const
 {
     return true;
+}
+
+bool MySQLDictionarySource::hasUpdateField() const
+{
+    return !update_field.empty();
 }
 
 DictionarySourcePtr MySQLDictionarySource::clone() const

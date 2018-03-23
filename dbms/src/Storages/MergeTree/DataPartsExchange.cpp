@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
+#include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>
@@ -22,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
     extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
