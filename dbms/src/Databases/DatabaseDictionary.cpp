@@ -85,7 +85,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
 
 DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & /*context*/)
 {
-    return std::make_unique<DatabaseSnaphotIterator>(loadTables());
+    return std::make_unique<DatabaseSnapshotIterator>(loadTables());
 }
 
 bool DatabaseDictionary::empty(const Context & /*context*/) const

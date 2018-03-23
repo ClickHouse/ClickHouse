@@ -25,7 +25,6 @@ namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
-    extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;

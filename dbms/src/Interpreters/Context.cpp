@@ -74,7 +74,6 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
-    extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
