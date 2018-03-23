@@ -92,7 +92,7 @@ public:
     static void check(int32_t code, const Requests & requests, const Responses & responses);
 
 protected:
-    KeeperMultiException(const Requests & requests, const Responses & responses);
+    KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses);
 };
 
 };

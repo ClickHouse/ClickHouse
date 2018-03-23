@@ -33,8 +33,6 @@ const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
-struct WatchContext;
-struct MultiTransactionInfo;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -212,7 +210,6 @@ public:
 
 private:
     friend class EphemeralNodeHolder;
-    friend struct OpResult;
 
     void init(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_, const std::string & chroot_);
 
