@@ -1,8 +1,7 @@
-#include <unistd.h>
+#include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
-
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -10,13 +9,10 @@
 #include <algorithm>
 #include <optional>
 #include <boost/program_options.hpp>
-
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-
 #include <common/readline_use.h>
 #include <common/find_first_symbols.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>

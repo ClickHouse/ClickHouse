@@ -18,7 +18,7 @@
   *
   * packed - for memcmp to work naturally (but because m_year is 2 bytes, on little endian, comparison is correct only before year 2047)
   */
-class __attribute__ ((__packed__)) LocalDate
+class LocalDate
 {
 private:
     unsigned short m_year;

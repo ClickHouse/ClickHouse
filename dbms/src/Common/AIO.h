@@ -1,6 +1,6 @@
 #pragma once
 
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
+#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
