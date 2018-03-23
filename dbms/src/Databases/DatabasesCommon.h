@@ -36,17 +36,17 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 
 
 /// Copies list of tables and iterates through such snapshot.
-class DatabaseSnaphotIterator : public IDatabaseIterator
+class DatabaseSnapshotIterator : public IDatabaseIterator
 {
 private:
     Tables tables;
     Tables::iterator it;
 
 public:
-    DatabaseSnaphotIterator(Tables & tables_)
+    DatabaseSnapshotIterator(Tables & tables_)
         : tables(tables_), it(tables.begin()) {}
 
-    DatabaseSnaphotIterator(Tables && tables_)
+    DatabaseSnapshotIterator(Tables && tables_)
         : tables(tables_), it(tables.begin()) {}
 
     void next() override

@@ -46,7 +46,7 @@ StoragePtr DatabaseMemory::tryGetTable(
 DatabaseIteratorPtr DatabaseMemory::getIterator(const Context & /*context*/)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    return std::make_unique<DatabaseSnaphotIterator>(tables);
+    return std::make_unique<DatabaseSnapshotIterator>(tables);
 }
 
 bool DatabaseMemory::empty(const Context & /*context*/) const
