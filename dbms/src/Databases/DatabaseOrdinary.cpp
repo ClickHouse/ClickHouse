@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int SYNTAX_ERROR;
 }
 
 
@@ -335,7 +336,7 @@ void DatabaseOrdinary::removeTable(
     }
 }
 
-static ASTPtr getQueryFromMetadata(const String & metadata_path)
+static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true)
 {
     if (!Poco::File(metadata_path).exists())
         return nullptr;
@@ -348,12 +349,20 @@ static ASTPtr getQueryFromMetadata(const String & metadata_path)
     }
 
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + metadata_path);
+    const char * pos = query.data();
+    std::string error_message;
+    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
+                             "in file " + metadata_path, /* allow_multi_statements = */ false);
+
+    if (!ast && throw_on_error)
+        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+
+    return ast;
 }
 
-static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database)
+static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, bool throw_on_error)
 {
-    ASTPtr ast = getQueryFromMetadata(metadata_path);
+    ASTPtr ast = getQueryFromMetadata(metadata_path, throw_on_error);
 
     if (ast)
     {
@@ -428,20 +437,17 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
     }
 }
 
-
-ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context, const String & table_name, bool try_get) const
+ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
+                                                 const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
 
     auto table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
-    ast = getCreateQueryFromMetadata(table_metadata_path, name);
-    if (!ast)
+    ast = getCreateQueryFromMetadata(table_metadata_path, name, throw_on_error);
+    if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
         bool has_table = tryGetTable(context, table_name) != nullptr;
-
-        if (has_table && try_get)
-            return nullptr;
 
         auto msg = has_table
                    ? "There is no CREATE TABLE query for table "
@@ -455,12 +461,12 @@ ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context, const 
 
 ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name) const
 {
-    return getCreateTableQueryImpl(context, table_name, false);
+    return getCreateTableQueryImpl(context, table_name, true);
 }
 
 ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
 {
-    return getCreateTableQueryImpl(context, table_name, true);
+    return getCreateTableQueryImpl(context, table_name, false);
 }
 
 ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) const
@@ -468,7 +474,7 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
     ASTPtr ast;
 
     auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path);
-    ast = getCreateQueryFromMetadata(database_metadata_path, name);
+    ast = getCreateQueryFromMetadata(database_metadata_path, name, true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.

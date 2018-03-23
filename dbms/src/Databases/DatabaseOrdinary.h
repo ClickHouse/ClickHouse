@@ -60,8 +60,8 @@ public:
         const String & table_name) const override;
 
     ASTPtr tryGetCreateTableQuery(
-            const Context & context,
-            const String & table_name) const override;
+        const Context & context,
+        const String & table_name) const override;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
@@ -74,7 +74,8 @@ public:
 
 private:
     void startupTables(ThreadPool * thread_pool);
-    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool try_get) const;
+
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 
 }
