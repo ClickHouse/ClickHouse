@@ -169,6 +169,49 @@ private:
     std::list<ExternalTable> external_tables;
 
 
+    struct ConnectionParameters
+    {
+        String host;
+        UInt16 port;
+        String default_database;
+        String user;
+        String password;
+        Protocol::Encryption security;
+        Protocol::Compression compression;
+        ConnectionTimeouts timeouts;
+
+        ConnectionParameters() {}
+
+        ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
+        {
+            bool is_secure = config.getBool("secure", false);
+            security = is_secure
+                ? Protocol::Encryption::Enable
+                : Protocol::Encryption::Disable;
+
+            host = config.getString("host", "localhost");
+            port = config.getInt("port",
+                config.getInt(is_secure ? "tcp_secure_port" : "tcp_port",
+                    is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+
+            default_database = config.getString("database", "");
+            user = config.getString("user", "");
+            password = config.getString("password", "");
+
+            compression = config.getBool("compression", true)
+                ? Protocol::Compression::Enable
+                : Protocol::Compression::Disable;
+
+            timeouts = ConnectionTimeouts(
+                Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
+                Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
+                Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+        }
+    };
+
+    ConnectionParameters connection_parameters;
+
+
     void initialize(Poco::Util::Application & self)
     {
         Poco::Util::Application::initialize(self);
@@ -310,6 +353,7 @@ private:
             echo_queries = config().getBool("echo", false);
         }
 
+        connection_parameters = ConnectionParameters(config());
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -363,19 +407,17 @@ private:
         }
 
         /// Prompt may contain the following substitutions in a form of {name}.
-        std::map<String, String> environment =
+        std::map<String, String> prompt_substitutions
         {
-            {"host",         config().getString("host", "localhost")},
-            {"port",         config().getString("port", "9000")},
-            {"user",         config().getString("user", "default")},
+            {"host", connection_parameters.host},
+            {"port", toString(connection_parameters.port)},
+            {"user", connection_parameters.user},
             {"display_name", server_display_name},
         };
 
         /// Quite suboptimal.
-        for (const auto & [key, value]: environment)
-        {
+        for (const auto & [key, value]: prompt_substitutions)
             boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-        }
 
         if (is_interactive)
         {
@@ -425,34 +467,23 @@ private:
 
     void connect()
     {
-        auto encryption = config().getBool("ssl", false)
-            ? Protocol::Encryption::Enable
-            : Protocol::Encryption::Disable;
-
-        String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
-        String default_database = config().getString("database", "");
-        String user = config().getString("user", "");
-        String password = config().getString("password", "");
-
-        auto compression = config().getBool("compression", true)
-            ? Protocol::Compression::Enable
-            : Protocol::Compression::Disable;
-
         if (is_interactive)
             std::cout << "Connecting to "
-                << (!default_database.empty() ? "database " + default_database + " at " : "")
-                << host << ":" << port
-                << (!user.empty() ? " as user " + user : "")
+                << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at " : "")
+                << connection_parameters.host << ":" << connection_parameters.port
+                << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "")
                 << "." << std::endl;
 
-        ConnectionTimeouts timeouts(
-            Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-
         connection = std::make_unique<Connection>(
-            host, port, default_database, user, password, timeouts, "client", compression, encryption);
+            connection_parameters.host,
+            connection_parameters.port,
+            connection_parameters.default_database,
+            connection_parameters.user,
+            connection_parameters.password,
+            connection_parameters.timeouts,
+            "client",
+            connection_parameters.compression,
+            connection_parameters.security);
 
         String server_name;
         UInt64 server_version_major = 0;
