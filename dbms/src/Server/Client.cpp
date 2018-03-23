@@ -33,6 +33,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
@@ -340,38 +341,37 @@ private:
 
         Strings keys;
 
-        prompt_by_server_display_name = config().getString("prompt_by_server_display_name.default", "{display_name} :) ");
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
 
         config().keys("prompt_by_server_display_name", keys);
 
         for (const String & key : keys)
         {
-            if (key != "default" && server_display_name.find(key) != std::string::npos) 
+            if (key != "default" && server_display_name.find(key) != std::string::npos)
             {
-                prompt_by_server_display_name = config().getString("prompt_by_server_display_name." + key);
+                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
                 break;
             }
         }
 
-        std::map<String, String> terminalCharacters = {
-            { "\\e[",   "\e["  },
-            { "\\33[",  "\33[" },
-            { "\\033[", "\033["},
-            { "\\x1B[", "\x1B["},
-        };
-
-        for (const auto & [key, value]: terminalCharacters)
+        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
         {
-            boost::replace_all(prompt_by_server_display_name, key, value);
+            String unescaped_prompt_by_server_display_name;
+            ReadBufferFromString in(prompt_by_server_display_name);
+            readEscapedString(unescaped_prompt_by_server_display_name, in);
+            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
         }
 
-        std::map<String, String> environment = {
+        /// Prompt may contain the following substitutions in a form of {name}.
+        std::map<String, String> environment =
+        {
             {"host",         config().getString("host", "localhost")},
             {"port",         config().getString("port", "9000")},
             {"user",         config().getString("user", "default")},
             {"display_name", server_display_name},
         };
 
+        /// Quite suboptimal.
         for (const auto & [key, value]: environment)
         {
             boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
