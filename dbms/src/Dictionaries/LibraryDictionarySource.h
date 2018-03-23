@@ -24,7 +24,7 @@ class CStringsHolder;
 
 /// Allows loading dictionaries from dynamic libraries (.so)
 /// Experimental version
-/// Now supports only uint64 types
+/// Example: dbms/tests/external_dictionaries/dictionary_library/dictionary_library.cpp
 class LibraryDictionarySource final : public IDictionarySource
 {
 public:
@@ -36,7 +36,14 @@ public:
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
 
+    ~LibraryDictionarySource();
+
     BlockInputStreamPtr loadAll() override;
+
+    BlockInputStreamPtr loadUpdatedAll() override
+    {
+        throw Exception{"Method loadUpdatedAll is unsupported for LibraryDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
@@ -45,6 +52,12 @@ public:
     bool isModified() const override;
 
     bool supportsSelectiveLoad() const override;
+
+    ///Not yet supported
+    bool hasUpdateField() const override
+    {
+        return false;
+    }
 
     DictionarySourcePtr clone() const override;
 
@@ -63,5 +76,6 @@ private:
     SharedLibraryPtr library;
     ExternalResultDescription description;
     std::shared_ptr<CStringsHolder> settings;
+    void * lib_data = nullptr;
 };
 }

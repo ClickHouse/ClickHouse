@@ -2,18 +2,25 @@
 
 #include <IO/Progress.h>
 
-#include <Interpreters/Limits.h>
-
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/SizeLimits.h>
+
+#include <Interpreters/SettingsCommon.h>
 
 #include <atomic>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 class QuotaForIntervals;
-struct ProcessListElement;
+class ProcessListElement;
 class IProfilingBlockInputStream;
 
 using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;
@@ -106,14 +113,26 @@ public:
     /** Ask to abort the receipt of data as soon as possible.
       * By default - just sets the flag is_cancelled and asks that all children be interrupted.
       * This function can be called several times, including simultaneously from different threads.
+      * Have two modes:
+      *  with kill = false only is_cancelled is set - streams will stop silently with returning some processed data.
+      *  with kill = true also is_killed set - queries will stop with exception.
       */
-    virtual void cancel();
+    virtual void cancel(bool kill);
 
     /** Do you want to abort the receipt of data.
      */
     bool isCancelled() const
     {
         return is_cancelled.load(std::memory_order_seq_cst);
+    }
+
+    bool isCancelledOrThrowIfKilled() const
+    {
+        if (!isCancelled())
+            return false;
+        if (is_killed)
+            throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+        return true;
     }
 
     /** What limitations and quotas should be checked.
@@ -134,10 +153,7 @@ public:
     {
         LimitsMode mode = LIMITS_CURRENT;
 
-        /// If it is zero, corresponding limit check isn't performed.
-        size_t max_rows_to_read = 0;
-        size_t max_bytes_to_read = 0;
-        OverflowMode read_overflow_mode = OverflowMode::THROW;
+        SizeLimits size_limits;
 
         Poco::Timespan max_execution_time = 0;
         OverflowMode timeout_overflow_mode = OverflowMode::THROW;
@@ -173,6 +189,7 @@ public:
 protected:
     BlockStreamProfileInfo info;
     std::atomic<bool> is_cancelled{false};
+    bool is_killed{false};
     ProgressCallback progress_callback;
     ProcessListElement * process_list_elem = nullptr;
 
@@ -220,7 +237,6 @@ private:
     /** Check constraints and quotas.
       * But only those that can be tested within each separate source.
       */
-    bool checkDataSizeLimits();
     bool checkTimeLimits();
     void checkQuota(Block & block);
 

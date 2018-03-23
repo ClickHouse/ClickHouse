@@ -452,23 +452,21 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    auto & limits = context.getSettingsRef().limits;
+    auto & settings = context.getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
     {
-        if (limits.readonly == 0)
-            limits.readonly = 2;
+        if (settings.readonly == 0)
+            settings.readonly = 2;
     }
 
-    auto readonly_before_query = limits.readonly;
+    auto readonly_before_query = settings.readonly;
 
     NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
         "buffer_size", "wait_end_of_query",
         "session_id", "session_timeout", "session_check"
     };
-
-    const Settings & settings = context.getSettingsRef();
 
     for (auto it = params.begin(); it != params.end(); ++it)
     {

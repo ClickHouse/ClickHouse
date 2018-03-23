@@ -44,7 +44,7 @@ std::ostream & operator<<(std::ostream & stream, const IDataType & what)
 std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
-           << what.getColumnsList().toString()
+           << what.getColumns().getAllPhysical().toString()
            << "}";
     // isRemote supportsSampling supportsFinal supportsPrewhere
     return stream;
@@ -123,9 +123,7 @@ std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
 
 std::ostream & operator<<(std::ostream & stream, const IAST & what)
 {
-    stream << "IAST("
-           << "query_string = " << what.query_string
-           <<"){";
+    stream << "IAST{";
     what.dumpTree(stream);
     stream << "}";
     return stream;
@@ -135,10 +133,8 @@ std::ostream & operator<<(std::ostream & stream, const ExpressionAnalyzer & what
 {
     stream << "ExpressionAnalyzer{"
            << "hasAggregation=" << what.hasAggregation()
-           << ", RequiredColumns=" << what.getRequiredColumns()
            << ", SubqueriesForSet=" << what.getSubqueriesForSets()
            << ", ExternalTables=" << what.getExternalTables()
-           // TODO
            << "}";
     return stream;
 }

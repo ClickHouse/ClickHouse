@@ -5,7 +5,7 @@ This directory contains tests that involve several ClickHouse instances, custom 
 ### Running
 
 Prerequisites:
-* Ubuntu 14.04 (Trusty).
+* Ubuntu 14.04 (Trusty) or higher.
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
 
 You must install latest Docker from

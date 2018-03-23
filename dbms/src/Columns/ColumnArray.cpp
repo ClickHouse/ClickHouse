@@ -202,7 +202,7 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
 
-    hash.update(reinterpret_cast<const char *>(&array_size), sizeof(array_size));
+    hash.update(array_size);
     for (size_t i = 0; i < array_size; ++i)
         getData().updateHashWithValue(offset + i, hash);
 }

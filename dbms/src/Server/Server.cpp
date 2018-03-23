@@ -30,7 +30,7 @@
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include "ConfigReloader.h"
+#include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
 #include "StatusFile.h"
@@ -221,14 +221,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     if (config().has("macros"))
-        global_context->setMacros(Macros(config(), "macros"));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         std::move(main_config_zk_node_cache),
-        [&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+        [&](ConfigurationPtr config)
+        {
+            global_context->setClustersConfig(config);
+            global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+        },
         /* already_loaded = */ true);
 
     /// Initialize users config reloader.
@@ -246,6 +250,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
+
+    /// Reload config in SYSTEM RELOAD CONFIG query.
+    global_context->setConfigReloadCallback([&]() {
+        main_config_reloader->reload();
+        users_config_reloader->reload();
+    });
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -275,6 +285,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     LOG_INFO(log, "Loading metadata.");
     loadMetadataSystem(*global_context);
+    /// After attaching system databases we can initialize system log.
+    global_context->initializeSystemLogs();
     /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
     attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
     /// Then, load remaining databases
@@ -330,14 +342,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::DNSException & e)
             {
-                if (e.code() == EAI_FAMILY
+                const auto code = e.code();
+                if (code == EAI_FAMILY
 #if defined(EAI_ADDRFAMILY)
-                    || e.code() == EAI_ADDRFAMILY
+                    || code == EAI_ADDRFAMILY
 #endif
                     )
                 {
                     LOG_ERROR(log,
-                        "Cannot resolve listen_host (" << host << "), error: " << e.message() << ". "
+                        "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message() << ". "
                         "If it is an IPv6 address and your host has disabled IPv6, then consider to "
                         "specify IPv4 address to listen in <listen_host> element of configuration "
                         "file. Example: <listen_host>0.0.0.0</listen_host>");
@@ -381,7 +394,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     http_socket.setSendTimeout(settings.http_send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
-                        new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                        new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
                         http_socket,
                         http_params));
@@ -419,7 +432,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     tcp_socket.setReceiveTimeout(settings.receive_timeout);
                     tcp_socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this),
+                        new TCPHandlerFactory(*this, /* secure= */ true ),
                                                                   server_pool,
                                                                   tcp_socket,
                                                                   new Poco::Net::TCPServerParams));
@@ -452,8 +465,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (listen_try && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
+                if (listen_try)
+                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.code() << ": " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                         "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
@@ -468,6 +481,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        main_config_reloader->start();
+        users_config_reloader->start();
 
         {
             std::stringstream message;

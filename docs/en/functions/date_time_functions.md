@@ -85,6 +85,10 @@ Note: If you need to round a date with time to any other number of seconds, minu
 
 Rounds down a date with time to the start of the hour.
 
+## toStartOfDay
+
+Rounds down a date with time to the start of the day.
+
 ## toTime
 
 Converts a date with time to a certain fixed date, while preserving the time.

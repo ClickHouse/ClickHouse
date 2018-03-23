@@ -198,7 +198,7 @@ public:
 
         /// Create table
         NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-        StoragePtr storage = StorageMemory::create(data.second, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+        StoragePtr storage = StorageMemory::create(data.second, ColumnsDescription{columns});
         storage->startup();
         context.addExternalTable(data.second, storage);
         BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());

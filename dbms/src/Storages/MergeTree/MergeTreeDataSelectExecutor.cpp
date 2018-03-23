@@ -175,7 +175,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         }
     }
 
-    NamesAndTypesList available_real_columns = data.getColumnsList();
+    NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
 
     NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
     for (const auto & name : virt_column_names)
@@ -434,7 +434,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(data.sampling_expression);
-                args->children.push_back(std::make_shared<ASTLiteral>(StringRange(), lower));
+                args->children.push_back(std::make_shared<ASTLiteral>(lower));
 
                 lower_function = std::make_shared<ASTFunction>();
                 lower_function->name = "greaterOrEquals";
@@ -451,7 +451,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(data.sampling_expression);
-                args->children.push_back(std::make_shared<ASTLiteral>(StringRange(), upper));
+                args->children.push_back(std::make_shared<ASTLiteral>(upper));
 
                 upper_function = std::make_shared<ASTFunction>();
                 upper_function->name = "less";
@@ -508,7 +508,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
           * They are done before the execution of the pipeline; they can not be interrupted; during the computation, packets of progress are not sent.
           */
         if (!prewhere_subqueries.empty())
-            CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(Block()), prewhere_subqueries, settings.limits).read();
+            CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(Block()), prewhere_subqueries,
+                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode)).read();
     }
 
     RangesInDataParts parts_with_ranges;
@@ -846,8 +847,8 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 {
     auto function = std::make_shared<ASTFunction>();
     auto arguments = std::make_shared<ASTExpressionList>();
-    auto sign = std::make_shared<ASTIdentifier>();
-    auto one = std::make_shared<ASTLiteral>();
+    auto sign = std::make_shared<ASTIdentifier>(data.merging_params.sign_column);
+    auto one = std::make_shared<ASTLiteral>(Field(static_cast<Int64>(1)));
 
     function->name = "equals";
     function->arguments = arguments;
@@ -856,12 +857,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     arguments->children.push_back(sign);
     arguments->children.push_back(one);
 
-    sign->name = data.merging_params.sign_column;
-    sign->kind = ASTIdentifier::Column;
-
-    one->value = Field(static_cast<Int64>(1));
-
-    out_expression = ExpressionAnalyzer(function, context, {}, data.getColumnsList()).getActions(false);
+    out_expression = ExpressionAnalyzer(function, context, {}, data.getColumns().getAllPhysical()).getActions(false);
     out_column = function->getColumnName();
 }
 

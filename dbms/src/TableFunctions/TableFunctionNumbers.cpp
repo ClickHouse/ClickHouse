@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-StoragePtr TableFunctionNumbers::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionNumbers::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 

@@ -1024,7 +1024,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
+            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         data_columns[i] = &array->getData();
@@ -1331,7 +1331,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
         if (i == 0)
             offsets = &offsets_i;
         else if (offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
+            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         data_columns[i] = &array->getData();
@@ -2412,32 +2412,40 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
     std::vector<ColumnPtr> materialized_columns;
 
-    std::vector<const IColumn *> aggregate_arguments_vec(arguments.size() - 1);
+    const size_t num_arguments_columns = arguments.size() - 1;
+
+    std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+    const ColumnArray::Offsets * offsets = nullptr;
 
     bool is_const = true;
 
-    for (size_t i = 0, size = arguments.size() - 1; i < size; ++i)
+    for (size_t i = 0; i < num_arguments_columns; ++i)
     {
         const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
+        const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
         {
             aggregate_arguments_vec[i] = &arr->getData();
+            offsets_i = &arr->getOffsets();
             is_const = false;
         }
-        else if (const ColumnConst * arr = checkAndGetColumnConst<ColumnArray>(col))
+        else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
         {
-            materialized_columns.emplace_back(arr->convertToFullColumn());
-            aggregate_arguments_vec[i] = &typeid_cast<const ColumnArray &>(*materialized_columns.back().get()).getData();
+            materialized_columns.emplace_back(const_arr->convertToFullColumn());
+            const auto & arr = typeid_cast<const ColumnArray &>(*materialized_columns.back().get());
+            aggregate_arguments_vec[i] = &arr.getData();
+            offsets_i = &arr.getOffsets();
         }
         else
             throw Exception("Illegal column " + col->getName() + " as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
+        if (i == 0)
+            offsets = offsets_i;
+        else if (*offsets_i != *offsets)
+            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
+                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
-
-    const ColumnArray::Offsets & offsets = typeid_cast<const ColumnArray &>(!materialized_columns.empty()
-        ? *materialized_columns.front().get()
-        : *block.getByPosition(arguments[1]).column.get()).getOffsets();
 
     MutableColumnPtr result_holder = block.getByPosition(result).type->createColumn();
     IColumn & res_col = *result_holder;
@@ -2453,7 +2461,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     for (size_t i = 0; i < rows; ++i)
     {
         agg_func.create(place);
-        ColumnArray::Offset next_offset = offsets[i];
+        ColumnArray::Offset next_offset = (*offsets)[i];
 
         try
         {
