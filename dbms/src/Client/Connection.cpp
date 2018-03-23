@@ -149,6 +149,10 @@ void Connection::receiveHello()
         {
             readStringBinary(server_timezone, *in);
         }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+        {
+            readStringBinary(server_display_name, *in);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -202,6 +206,14 @@ const String & Connection::getServerTimezone()
         connect();
 
     return server_timezone;
+}
+
+const String & Connection::getServerDisplayName()
+{
+    if (!connected)
+        connect();
+
+    return server_display_name;
 }
 
 void Connection::forceConnected()

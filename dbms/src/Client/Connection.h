@@ -134,6 +134,7 @@ public:
     void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
     const String & getServerTimezone();
+    const String & getServerDisplayName();
 
     /// For log and exception messages.
     const String & getDescription() const;
@@ -213,6 +214,7 @@ private:
     UInt64 server_version_minor = 0;
     UInt64 server_revision = 0;
     String server_timezone;
+    String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBuffer> in;
