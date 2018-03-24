@@ -986,14 +986,14 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             zookeeper->multi(ops);
             return transaction.commit();
         }
-        catch (zkutil::KeeperMultiException & e)
+        catch (const zkutil::KeeperMultiException & e)
         {
             size_t num_check_ops = 2 * absent_part_paths_on_replicas.size();
-            size_t failed_op_index = zkutil::getFailedOpIndex(e.info.op_results, e.info.code);
+            size_t failed_op_index = e.failed_op_index;
 
-            if (failed_op_index < num_check_ops && e.info.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+            if (failed_op_index < num_check_ops && e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             {
-                LOG_INFO(log, "The part " << e.info.getFailedOp().describe() << " on a replica suddenly appeared, will recheck checksums");
+                LOG_INFO(log, "The part " << e.getPathForFirstFailedOp() << " on a replica suddenly appeared, will recheck checksums");
             }
             else
                 throw;

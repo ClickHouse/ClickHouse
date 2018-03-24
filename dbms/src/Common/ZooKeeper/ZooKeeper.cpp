@@ -815,8 +815,14 @@ size_t getFailedOpIndex(const Responses & responses, int32_t transaction_return_
 
 KeeperMultiException::KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses)
     : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex(responses, code)), code),
-    requests(requests), responses(responses)
+    requests(requests), responses(responses), failed_op_index(getFailedOpIndex(responses, code))
 {
+}
+
+std::string KeeperMultiException::getPathForFirstFailedOp() const
+{
+    return requests[failed_op_index]->getPath();
+
 }
 
 void KeeperMultiException::check(int32_t code, const Requests & requests, const Responses & responses)

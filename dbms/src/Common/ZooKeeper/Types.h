@@ -29,6 +29,9 @@ using EventPtr = std::shared_ptr<Poco::Event>;
 /// they must execute as quickly as possible (preferably just set some notification).
 using WatchCallback = ZooKeeperImpl::ZooKeeper::WatchCallback;
 
+using Request = ZooKeeperImpl::ZooKeeper::Request;
+using Response = ZooKeeperImpl::ZooKeeper::Response;
+
 using RequestPtr = ZooKeeperImpl::ZooKeeper::RequestPtr;
 using ResponsePtr = ZooKeeperImpl::ZooKeeper::ResponsePtr;
 
