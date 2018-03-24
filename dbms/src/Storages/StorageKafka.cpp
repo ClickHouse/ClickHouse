@@ -578,7 +578,7 @@ void registerStorageKafka(StorageFactory & factory)
         // Parse topic list
         Names topics;
         String topicArg = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
-        boost::split(topics, topics , [](char c){return c == ',';});
+        boost::split(topics, topicArg , [](char c){return c == ',';});
         
         // Parse consumer group
         String group = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
