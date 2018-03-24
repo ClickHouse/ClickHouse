@@ -1,6 +1,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/typeid_cast.h>
 #include <iostream>
 #include <port/unistd.h>
+
 
 using namespace zkutil;
 
@@ -41,7 +43,7 @@ try
     ops.emplace_back(zkutil::makeRemoveRequest("/test", -1));
     std::cout << "multi" << std::endl;
     zkutil::Responses res = zk.multi(ops);
-    std::cout << "path created: " << dynamic_cast<ZooKeeperImpl::ZooKeeper::CreateResponse &>(*ops[0]).path_created << std::endl;
+    std::cout << "path created: " << typeid_cast<const CreateResponse &>(*res[0]).path_created << std::endl;
 
     return 0;
 }
