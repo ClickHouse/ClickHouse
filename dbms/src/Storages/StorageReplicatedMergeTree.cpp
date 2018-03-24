@@ -232,7 +232,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     catch (const zkutil::KeeperException & e)
     {
         /// Failed to connect to ZK (this became known when trying to perform the first operation).
-        if (e.code == ZCONNECTIONLOSS)
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             current_zookeeper = nullptr;
@@ -500,7 +500,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
         zkutil::CreateMode::Persistent));
 
     auto code = zookeeper->tryMulti(ops);
-    if (code && code != ZNODEEXISTS)
+    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
         throw zkutil::KeeperException(code);
 }
 
@@ -601,7 +601,7 @@ void StorageReplicatedMergeTree::createReplica()
       */
     String source_replica;
 
-    Stat stat;
+    zkutil::Stat stat;
     zookeeper->exists(replica_path, &stat);
     auto my_create_time = stat.czxid;
 
@@ -1347,7 +1347,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                 for (size_t i = 0, size = replicas.size(); i < size; ++i)
                 {
-                    Stat stat;
+                    zkutil::Stat stat;
                     String path = zookeeper_path + "/replicas/" + replicas[i] + "/host";
                     zookeeper->get(path, &stat);
                     ops.emplace_back(zkutil::makeCheckRequest(path, stat.version));
@@ -1361,7 +1361,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 
                 if (replica.empty())
                 {
-                    Stat quorum_stat;
+                    zkutil::Stat quorum_stat;
                     String quorum_path = zookeeper_path + "/quorum/status";
                     String quorum_str = zookeeper->get(quorum_path, &quorum_stat);
                     ReplicatedMergeTreeQuorumEntry quorum_entry;
@@ -1403,7 +1403,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
                         else if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION || code == ZooKeeperImpl::ZooKeeper::ZNONODE || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
                         {
                             LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part "
-                                << entry.new_part_name << " as failed. Code: " << zerror(code));
+                                << entry.new_part_name << " as failed. Code: " << zkutil::ZooKeeper::error2string(code));
                         }
                         else
                             throw zkutil::KeeperException(code);
@@ -1600,14 +1600,6 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
             last_queue_update_finish_time.store(time(nullptr));
             update_in_progress = false;
             queue_updating_event->wait();
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (e.code == ZINVALIDSTATE)
-                restarting_thread->wakeup();
-
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
         }
         catch (...)
         {
@@ -3019,7 +3011,7 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
     if (!existsNodeCached(partition_path))
     {
         int code = zookeeper->tryCreate(partition_path, "", zkutil::CreateMode::Persistent);
-        if (code && code != ZNODEEXISTS)
+        if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             throw zkutil::KeeperException(code, partition_path);
     }
 
@@ -3688,17 +3680,17 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     {
                         LOG_DEBUG(log, "There is no part " << *it_in_batch << " in ZooKeeper, it was only in filesystem");
                     }
-                    else if (parts_should_be_retied && zkutil::isHardwareErrorCode(cur_code))
+                    else if (parts_should_be_retied && zkutil::isHardwareError(cur_code))
                     {
                         parts_should_be_retied->emplace(*it_in_batch);
                     }
                     else if (cur_code)
                     {
-                        LOG_WARNING(log, "Cannot remove part " << *it_in_batch << " from ZooKeeper: " << ::zerror(cur_code));
+                        LOG_WARNING(log, "Cannot remove part " << *it_in_batch << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(cur_code));
                     }
                 }
             }
-            else if (parts_should_be_retied && zkutil::isHardwareErrorCode(code))
+            else if (parts_should_be_retied && zkutil::isHardwareError(code))
             {
                 for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
                     parts_should_be_retied->emplace(*it_in_batch);
@@ -3706,7 +3698,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
             else if (code)
             {
                 LOG_WARNING(log, "There was a problem with deleting " << (it_next - it_first_node_in_batch)
-                    << " nodes from ZooKeeper: " << ::zerror(code));
+                    << " nodes from ZooKeeper: " << ::zkutil::ZooKeeper::error2string(code));
             }
 
             it_first_node_in_batch = it_next;
@@ -3719,11 +3711,11 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num)
 {
     Strings blocks;
-    if (ZOK != zookeeper.tryGetChildren(zookeeper_path + "/blocks", blocks))
+    if (zookeeper.tryGetChildren(zookeeper_path + "/blocks", blocks))
         throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     String partition_prefix = partition_id + "_";
-    std::vector<std::pair<String, zkutil::ZooKeeper::TryGetFuture>> get_futures;
+    std::vector<std::pair<String, std::future<zkutil::GetResponse>>> get_futures;
     for (const String & block_id : blocks)
     {
         if (startsWith(block_id, partition_prefix))
@@ -3733,16 +3725,16 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         }
     }
 
-    std::vector<std::pair<String, zkutil::ZooKeeper::TryRemoveFuture>> to_delete_futures;
+    std::vector<std::pair<String, std::future<zkutil::RemoveResponse>>> to_delete_futures;
     for (auto & pair : get_futures)
     {
         const String & path = pair.first;
-        zkutil::ZooKeeper::ValueAndStatAndExists result = pair.second.get();
+        auto result = pair.second.get();
 
-        if (!result.exists)
+        if (result.error == ZooKeeperImpl::ZooKeeper::ZNONODE)
             continue;
 
-        ReadBufferFromString buf(result.value);
+        ReadBufferFromString buf(result.data);
         Int64 block_num = 0;
         bool parsed = tryReadIntText(block_num, buf) && buf.eof();
         if (!parsed || (min_block_num <= block_num && block_num <= max_block_num))
@@ -3752,13 +3744,13 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     for (auto & pair : to_delete_futures)
     {
         const String & path = pair.first;
-        int32_t rc = pair.second.get();
+        int32_t rc = pair.second.get().error;
         if (rc == ZooKeeperImpl::ZooKeeper::ZNOTEMPTY)
         {
              /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper.removeRecursive(path);
         }
-        else if (rc != ZOK)
+        else if (rc)
             LOG_WARNING(log,
                 "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
     }

@@ -53,7 +53,7 @@ using CheckResponse = ZooKeeperImpl::ZooKeeper::CheckResponse;
 
 RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode);
 RequestPtr makeRemoveRequest(const std::string & path, int version);
-RequestPtr makeSetRequest(const std::string & path, const std::string & data);
+RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
 RequestPtr makeCheckRequest(const std::string & path, int version);
 
 }
