@@ -849,11 +849,12 @@ RequestPtr makeRemoveRequest(const std::string & path, int version)
     return request;
 }
 
-RequestPtr makeSetRequest(const std::string & path, const std::string & data)
+RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {
     auto request = std::make_shared<SetRequest>();
     request->path = path;
     request->data = data;
+    request->version = version;
     return request;
 }
 
