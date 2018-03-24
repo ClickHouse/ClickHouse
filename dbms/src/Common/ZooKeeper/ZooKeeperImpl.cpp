@@ -11,7 +11,7 @@
 
 #include <array>
 
-#include <iostream>
+//#include <iostream>
 
 
 /** ZooKeeper wire protocol.
@@ -799,7 +799,7 @@ void ZooKeeper::receiveEvent()
 
         response = std::make_shared<HeartbeatResponse>();
 
-        std::cerr << "Received heartbeat\n";
+//        std::cerr << "Received heartbeat\n";
     }
     else if (xid == watch_xid)
     {
@@ -833,7 +833,7 @@ void ZooKeeper::receiveEvent()
             }
         };
 
-        std::cerr << "Received watch\n";
+//        std::cerr << "Received watch\n";
     }
     else
     {
@@ -848,7 +848,7 @@ void ZooKeeper::receiveEvent()
             operations.erase(it);
         }
 
-        std::cerr << "Received response: " << request_info.request->getOpNum() << "\n";
+//        std::cerr << "Received response: " << request_info.request->getOpNum() << "\n";
 
         response = request_info.request->makeResponse();
     }
@@ -1083,7 +1083,7 @@ void ZooKeeper::MultiResponse::readImpl(ReadBuffer & in)
         ZooKeeperImpl::read(done, in);
         ZooKeeperImpl::read(op_error, in);
 
-        std::cerr << "Received result for multi: " << op_num << "\n";
+//        std::cerr << "Received result for multi: " << op_num << "\n";
 
         if (done)
             throw Exception("Not enough results received for multi transaction");
