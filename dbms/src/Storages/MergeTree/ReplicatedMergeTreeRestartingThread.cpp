@@ -312,7 +312,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
       * This is possible only when session in ZooKeeper expires.
       */
     String data;
-    Stat stat;
+    zkutil::Stat stat;
     bool has_is_active = zookeeper->tryGet(is_active_path, data, &stat);
     if (has_is_active && data == active_node_identifier)
     {

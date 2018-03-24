@@ -131,7 +131,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
     if (path_part == "/")
         path_part.clear();
 
-    std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
+    std::vector<std::future<zkutil::GetResponse>> futures;
     futures.reserve(nodes.size());
     for (const String & node : nodes)
         futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
@@ -141,7 +141,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
     for (size_t i = 0, size = nodes.size(); i < size; ++i)
     {
         auto res = futures[i].get();
-        if (!res.exists)
+        if (res.error == ZooKeeperImpl::ZooKeeper::ZNONODE)
             continue;   /// Node was deleted meanwhile.
 
         const zkutil::Stat & stat = res.stat;
