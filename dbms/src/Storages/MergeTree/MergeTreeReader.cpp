@@ -500,7 +500,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
             evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.context);
 
         /// sort columns to ensure consistent order among all blocks
-        if (should_sort)
+        if (!never_evaluate_defaults && should_sort)
         {
             Block ordered_block;
 
