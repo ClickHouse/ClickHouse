@@ -731,7 +731,8 @@ private:
     /// Process the query that doesn't require transfering data blocks to the server.
     void processOrdinaryQuery()
     {
-        connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        String query_id = config().getString("query_id", "");
+        connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
     }
@@ -740,6 +741,7 @@ private:
     /// Process the query that requires transfering data blocks to the server.
     void processInsertQuery()
     {
+        String query_id = config().getString("query_id", "");
         /// Send part of query without data, because data will be sent separately.
         const ASTInsertQuery & parsed_insert_query = typeid_cast<const ASTInsertQuery &>(*parsed_query);
         String query_without_data = parsed_insert_query.data
@@ -749,7 +751,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1286,6 +1288,7 @@ public:
             ("ssl,s", "ssl")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
+            ("query_id", boost::program_options::value<std::string>(), "query_id")
             ("query,q", boost::program_options::value<std::string>(), "query")
             ("database,d", boost::program_options::value<std::string>(), "database")
             ("pager", boost::program_options::value<std::string>(), "pager")
@@ -1377,6 +1380,8 @@ public:
             config().setString("config-file", options["config-file"].as<std::string>());
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
+        if (options.count("query_id"))
+            config().setString("query_id", options["query_id"].as<std::string>());
         if (options.count("query"))
             config().setString("query", options["query"].as<std::string>());
         if (options.count("database"))
