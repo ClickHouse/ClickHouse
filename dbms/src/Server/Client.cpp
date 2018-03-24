@@ -111,6 +111,7 @@ private:
     winsize terminal_size {};            /// Terminal size is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
+    String query_id;                     /// Current query_id.
     String query;                        /// Current query.
 
     String format;                       /// Query results output format.
@@ -336,6 +337,7 @@ private:
 
         if (is_interactive)
         {
+            query_id = "";
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
@@ -370,6 +372,7 @@ private:
         }
         else
         {
+            query_id = config().getString("query_id", "");
             nonInteractive();
 
             if (last_exception)
@@ -731,7 +734,6 @@ private:
     /// Process the query that doesn't require transfering data blocks to the server.
     void processOrdinaryQuery()
     {
-        String query_id = config().getString("query_id", "");
         connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
@@ -741,7 +743,6 @@ private:
     /// Process the query that requires transfering data blocks to the server.
     void processInsertQuery()
     {
-        String query_id = config().getString("query_id", "");
         /// Send part of query without data, because data will be sent separately.
         const ASTInsertQuery & parsed_insert_query = typeid_cast<const ASTInsertQuery &>(*parsed_query);
         String query_without_data = parsed_insert_query.data
