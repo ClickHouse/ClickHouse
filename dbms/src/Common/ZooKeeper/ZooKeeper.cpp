@@ -12,6 +12,7 @@
 #include <Common/randomSeed.h>
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
+#define ZOOKEEPER_OPERATION_TIMEOUT_MS 1000
 
 
 namespace ProfileEvents
@@ -80,7 +81,8 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
         identity_.empty() ? "" : "digest",
         identity_,
         Poco::Timespan(0, session_timeout_ms_ * 1000),
-        Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000));
+        Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
+        Poco::Timespan(0, ZOOKEEPER_OPERATION_TIMEOUT_MS * 1000));
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 
@@ -166,6 +168,8 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 
 static WatchCallback callbackForEvent(const EventPtr & watch)
 {
+    if (!watch)
+        return {};
     return [watch](const ZooKeeperImpl::ZooKeeper::WatchResponse &) { watch->set(); };
 }
 
