@@ -41,5 +41,5 @@ try
 catch (const Poco::Exception & e)
 {
     std::cout << e.message() << std::endl;
-    throw;
+    return 1;
 }

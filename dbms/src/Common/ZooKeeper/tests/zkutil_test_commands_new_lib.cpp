@@ -31,7 +31,7 @@ try
     for (const auto & address_string : addresses_strings)
         addresses.emplace_back(address_string);
 
-    ZooKeeper zk(addresses, {}, {}, {}, {5, 0}, {0, 50000});
+    ZooKeeper zk(addresses, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000});
 
     Poco::Event event(true);
 

@@ -13,6 +13,7 @@
 
 #include <map>
 #include <mutex>
+#include <chrono>
 #include <vector>
 #include <memory>
 #include <thread>
@@ -331,14 +332,18 @@ public:
     };
 
 
-    /// Connection to addresses is performed in order. If you want, shuffle them manually.
+    /** Connection to addresses is performed in order. If you want, shuffle them manually.
+      * Operation timeout couldn't be greater than session timeout.
+      * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
+      */
     ZooKeeper(
         const Addresses & addresses,
         const String & root_path,
         const String & auth_scheme,
         const String & auth_data,
         Poco::Timespan session_timeout,
-        Poco::Timespan connection_timeout);
+        Poco::Timespan connection_timeout,
+        Poco::Timespan operation_timeout);
 
     ~ZooKeeper();
 
@@ -402,8 +407,6 @@ public:
     void multi(
         const Requests & requests,
         MultiCallback callback);
-
-    void close();
 
 
     enum Error
@@ -476,6 +479,7 @@ private:
     ACLs default_acls;
 
     Poco::Timespan session_timeout;
+    Poco::Timespan operation_timeout;
 
     Poco::Net::StreamSocket socket;
     std::optional<ReadBufferFromPocoSocket> in;
@@ -484,11 +488,14 @@ private:
     int64_t session_id = 0;
     std::atomic<XID> xid {1};
 
+    using clock = std::chrono::steady_clock;
+
     struct RequestInfo
     {
         RequestPtr request;
         ResponseCallback callback;
         WatchCallback watch;
+        clock::time_point time;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestPtr>;
@@ -526,8 +533,10 @@ private:
     void sendThread();
     void receiveThread();
 
+    void close();
+
     /// Call all remaining callbacks and watches, passing errors to them.
-    void finalize();
+    void finalize(bool error_send, bool error_receive);
 
     template <typename T>
     void write(const T &);
