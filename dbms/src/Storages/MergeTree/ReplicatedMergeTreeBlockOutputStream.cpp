@@ -205,21 +205,19 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
     /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
-    auto acl = zookeeper->getDefaultACL();
-
     /// Deduplication stuff
     bool deduplicate_block = !block_id.empty();
     String block_id_path;
-    zkutil::Ops deduplication_check_ops;
-    zkutil::Ops * deduplication_check_ops_ptr = nullptr;
+    zkutil::Requests deduplication_check_ops;
+    zkutil::Requests * deduplication_check_ops_ptr = nullptr;
 
     if (deduplicate_block)
     {
         block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
 
         /// Lets check for duplicates in advance, to avoid superflous block numbers allocation
-        deduplication_check_ops.emplace_back(std::make_shared<zkutil::Op::Create>(block_id_path, "", acl, zkutil::CreateMode::Persistent));
-        deduplication_check_ops.emplace_back(std::make_shared<zkutil::Op::Remove>(block_id_path, -1));
+        deduplication_check_ops.emplace_back(zkutil::makeCreateRequest(block_id_path, "", zkutil::CreateMode::Persistent));
+        deduplication_check_ops.emplace_back(zkutil::makeRemoveRequest(block_id_path, -1));
         deduplication_check_ops_ptr = &deduplication_check_ops;
     }
 
@@ -233,7 +231,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     {
         zkutil::MultiTransactionInfo & info = e.info;
 
-        if (deduplicate_block && info.code == ZNODEEXISTS && info.getFailedOp().getPath() == block_id_path)
+        if (deduplicate_block && info.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && info.getFailedOp().getPath() == block_id_path)
         {
             LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (skip the insertion)");
             part->is_duplicate = true;
@@ -276,13 +274,13 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     /// Simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
 
     /// Information about the part.
-    zkutil::Ops ops;
+    zkutil::Requests ops;
 
     if (deduplicate_block)
     {
         /// Make final duplicate check and commit block_id
         ops.emplace_back(
-            std::make_shared<zkutil::Op::Create>(
+            zkutil::makeCreateRequest(
                 block_id_path,
                 toString(block_number),  /// We will able to know original part number for duplicate blocks, if we want.
                 acl,
@@ -291,30 +289,26 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     /// Information about the part, in the replica data.
 
-    ops.emplace_back(std::make_shared<zkutil::Op::Check>(
+    ops.emplace_back(zkutil::makeCheckRequest(
         storage.zookeeper_path + "/columns",
         storage.columns_version));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
+    ops.emplace_back(zkutil::makeCreateRequest(
         storage.replica_path + "/parts/" + part->name,
         "",
-        acl,
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
+    ops.emplace_back(zkutil::makeCreateRequest(
         storage.replica_path + "/parts/" + part->name + "/columns",
         part->columns.toString(),
-        acl,
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
+    ops.emplace_back(zkutil::makeCreateRequest(
         storage.replica_path + "/parts/" + part->name + "/checksums",
         storage.getChecksumsForZooKeeper(part->checksums),
-        acl,
         zkutil::CreateMode::Persistent));
 
     /// Replication log.
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
+    ops.emplace_back(zkutil::makeCreateRequest(
         storage.zookeeper_path + "/log/log-",
         log_entry.toString(),
-        acl,
         zkutil::CreateMode::PersistentSequential));
 
     /// Deletes the information that the block number is used for writing.
@@ -339,7 +333,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             */
 
         ops.emplace_back(
-            std::make_shared<zkutil::Op::Create>(
+            zkutil::makeCreateRequest(
                 quorum_info.status_path,
                 quorum_entry.toString(),
                 acl,
@@ -347,7 +341,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
         /// Make sure that during the insertion time, the replica was not reinitialized or disabled (when the server is finished).
         ops.emplace_back(
-            std::make_shared<zkutil::Op::Check>(
+            zkutil::makeCheckRequest(
                 storage.replica_path + "/is_active",
                 quorum_info.is_active_node_version));
 
@@ -355,7 +349,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         /// But then the `host` value will change. We will check this.
         /// It's great that these two nodes change in the same transaction (see MergeTreeRestartingThread).
         ops.emplace_back(
-            std::make_shared<zkutil::Op::Check>(
+            zkutil::makeCheckRequest(
                 storage.replica_path + "/host",
                 quorum_info.host_node_version));
     }
@@ -366,7 +360,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     zkutil::MultiTransactionInfo info;
     zookeeper->tryMultiNoThrow(ops, nullptr, &info); /// 1 RTT
 
-    if (info.code == ZOK)
+    if (info.code == ZooKeeperImpl::ZooKeeper::ZOK)
     {
         transaction.commit();
         storage.merge_selecting_event.set();
@@ -378,7 +372,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     {
         String failed_op_path = info.getFailedOp().getPath();
 
-        if (info.code == ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
+        if (info.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
             /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
             LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
@@ -388,7 +382,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             last_block_is_duplicate = true;
             ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
         }
-        else if (info.code == ZNODEEXISTS && failed_op_path == quorum_info.status_path)
+        else if (info.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
         {
             transaction.rollback();
 

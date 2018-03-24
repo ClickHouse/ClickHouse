@@ -549,16 +549,16 @@ void DDLWorker::processTask(DDLTask & task)
     String active_node_path = task.entry_path + "/active/" + task.host_id_str;
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
-    auto code = zookeeper->tryCreateWithRetries(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
-    if (code == ZOK || code == ZNODEEXISTS)
+    auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
+    if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
     {
         // Ok
     }
-    else if (code == ZNONODE)
+    else if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
     {
         /// There is no parent
         createStatusDirs(task.entry_path);
-        if (ZOK != zookeeper->tryCreateWithRetries(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+        if (ZooKeeperImpl::ZooKeeper::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
             throw zkutil::KeeperException(code, active_node_path);
     }
     else
@@ -599,10 +599,9 @@ void DDLWorker::processTask(DDLTask & task)
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
 
     /// Delete active flag and create finish flag
-    zkutil::Ops ops;
-    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(active_node_path, -1));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(finished_node_path, task.execution_status.serializeText(),
-                                                          zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+    zkutil::Requests ops;
+    ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
+    ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
 }
 
@@ -779,9 +778,9 @@ void DDLWorker::cleanupQueue()
                 }
 
                 /// Remove the lock node and its parent atomically
-                zkutil::Ops ops;
-                ops.emplace_back(std::make_shared<zkutil::Op::Remove>(lock_path, -1));
-                ops.emplace_back(std::make_shared<zkutil::Op::Remove>(node_path, -1));
+                zkutil::Requests ops;
+                ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
+                ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
                 zookeeper->multi(ops);
 
                 lock->unlockAssumeLockNodeRemovedManually();
@@ -798,13 +797,19 @@ void DDLWorker::cleanupQueue()
 /// Try to create nonexisting "status" dirs for a node
 void DDLWorker::createStatusDirs(const std::string & node_path)
 {
-    zkutil::Ops ops;
-    auto acl = zookeeper->getDefaultACL();
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(node_path + "/active", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(node_path + "/finished", "", acl, zkutil::CreateMode::Persistent));
-
+    zkutil::Requests ops;
+    {
+        zkutil::CreateRequest request;
+        request.path = node_path + "/active";
+        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+    }
+    {
+        zkutil::CreateRequest request;
+        request.path = node_path + "/finished";
+        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+    }
     int code = zookeeper->tryMulti(ops);
-    if (code != ZOK && code != ZNODEEXISTS)
+    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
         throw zkutil::KeeperException(code);
 }
 
@@ -1041,7 +1046,7 @@ private:
     {
         Strings res;
         int code = zookeeper->tryGetChildren(node_path, res);
-        if (code != ZOK && code != ZNONODE)
+        if (code && code != ZooKeeperImpl::ZooKeeper::ZNONODE)
             throw zkutil::KeeperException(code, node_path);
         return res;
     }

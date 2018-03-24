@@ -35,13 +35,13 @@ try
 
     zk.remove("/test");
 
-    Ops ops;
-    ops.emplace_back(std::make_unique<Op::Create>("/test", "multi1", zk.getDefaultACL(), CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<Op::SetData>("/test", "multi2", -1));
-    ops.emplace_back(std::make_unique<Op::Remove>("/test", -1));
+    zkutil::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest("/test", "multi1", CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeSetRequest("/test", "multi2", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest("/test", -1));
     std::cout << "multi" << std::endl;
-    OpResultsPtr res = zk.multi(ops);
-    std::cout << "path created: " << dynamic_cast<Op::Create &>(*ops[0]).getPathCreated() << std::endl;
+    zkutil::Responses res = zk.multi(ops);
+    std::cout << "path created: " << dynamic_cast<ZooKeeperImpl::ZooKeeper::CreateResponse &>(*ops[0]).path_created << std::endl;
 
     return 0;
 }

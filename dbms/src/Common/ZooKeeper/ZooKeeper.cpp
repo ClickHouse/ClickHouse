@@ -830,4 +830,39 @@ void KeeperMultiException::check(int32_t code, const Requests & requests, const 
         throw KeeperException(code);
 }
 
+
+RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode)
+{
+    auto request = std::make_shared<CreateRequest>();
+    request->path = path;
+    request->data = data;
+    request->is_ephemeral = create_mode == CreateMode::Ephemeral || create_mode == CreateMode::EphemeralSequential;
+    request->is_sequential = create_mode == CreateMode::PersistentSequential || create_mode == CreateMode::EphemeralSequential;
+    return request;
+}
+
+RequestPtr makeRemoveRequest(const std::string & path, int version)
+{
+    auto request = std::make_shared<RemoveRequest>();
+    request->path = path;
+    request->version = version;
+    return request;
+}
+
+RequestPtr makeSetRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<SetRequest>();
+    request->path = path;
+    request->data = data;
+    return request;
+}
+
+RequestPtr makeCheckRequest(const std::string & path, int version)
+{
+    auto request = std::make_shared<CheckRequest>();
+    request->path = path;
+    request->version = version;
+    return request;
+}
+
 }

@@ -95,15 +95,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     if (entries.empty())
         return;
 
-    zkutil::Ops ops;
+    zkutil::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
     {
-        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(storage.zookeeper_path + "/log/" + entries[i], -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/log/" + entries[i], -1));
 
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
-            ops.emplace_back(std::make_shared<zkutil::Op::Check>(storage.zookeeper_path + "/replicas", stat.version));
+            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
             zookeeper->multi(ops);
             ops.clear();
         }
@@ -159,7 +159,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     {
         const String & path = pair.first;
         int32_t rc = pair.second.get();
-        if (rc == ZNOTEMPTY)
+        if (rc == ZooKeeperImpl::ZooKeeper::ZNOTEMPTY)
         {
             /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper->removeRecursive(path);

@@ -161,21 +161,21 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
     ///  because we update times in ZooKeeper with unlocked mutex, while these times may change.
     /// Consider it unimportant (for a short time, ZK will have a slightly different time value).
 
-    zkutil::Ops ops;
+    zkutil::Requests ops;
 
     if (min_unprocessed_insert_time_changed)
-        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+        ops.emplace_back(zkutil::makeSetRequest(
             replica_path + "/min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
     if (max_processed_insert_time_changed)
-        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+        ops.emplace_back(zkutil::makeSetRequest(
             replica_path + "/max_processed_insert_time", toString(*max_processed_insert_time_changed), -1));
 
     if (!ops.empty())
     {
         auto code = zookeeper->tryMulti(ops);
 
-        if (code != ZOK)
+        if (code)
             LOG_ERROR(log, "Couldn't set value of nodes for insert times ("
                 << replica_path << "/min_unprocessed_insert_time, max_processed_insert_time)" << ": "
                 << zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
@@ -187,7 +187,7 @@ void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
 {
     auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
 
-    if (code != ZOK)
+    if (code)
         LOG_ERROR(log, "Couldn't remove " << replica_path << "/queue/" << entry->znode_name << ": "
             << zkutil::ZooKeeper::error2string(code) << ". This shouldn't happen often.");
 
@@ -316,7 +316,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
-            zkutil::Ops ops;
+            zkutil::Requests ops;
             std::vector<LogEntryPtr> copied_entries;
             copied_entries.reserve(end - begin);
 
@@ -327,8 +327,8 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                 zkutil::ZooKeeper::ValueAndStat res = future.second.get();
                 copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
 
-                ops.emplace_back(std::make_shared<zkutil::Op::Create>(
-                    replica_path + "/queue/queue-", res.value, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+                ops.emplace_back(zkutil::makeCreateRequest(
+                    replica_path + "/queue/queue-", res.value, zkutil::CreateMode::PersistentSequential));
 
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART)
@@ -342,14 +342,14 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                 }
             }
 
-            ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+            ops.emplace_back(zkutil::makeSetRequest(
                 replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
 
             if (min_unprocessed_insert_time_changed)
-                ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+                ops.emplace_back(zkutil::makeSetRequest(
                     replica_path + "/min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
-            zookeeper->multi(ops);
+            auto responses = zookeeper->multi(ops);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
@@ -359,7 +359,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
                 for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
                 {
-                    String path_created = dynamic_cast<zkutil::Op::Create &>(*ops[i]).getPathCreated();
+                    String path_created = dynamic_cast<const zkutil::CreateResponse &>(*responses[i]).path_created;
                     copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
                     std::optional<time_t> unused = false;
@@ -451,7 +451,7 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
             auto code = zookeeper->tryRemove(replica_path + "/queue/" + (*it)->znode_name);
-            if (code != ZOK)
+            if (code)
                 LOG_INFO(log, "Couldn't remove " << replica_path + "/queue/" + (*it)->znode_name << ": "
                     << zkutil::ZooKeeper::error2string(code));
 
