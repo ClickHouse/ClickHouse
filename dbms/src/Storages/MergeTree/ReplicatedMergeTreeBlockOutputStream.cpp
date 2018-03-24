@@ -227,11 +227,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         /// 2 RTT
         block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, deduplication_check_ops_ptr);
     }
-    catch (zkutil::KeeperMultiException & e)
+    catch (const zkutil::KeeperMultiException & e)
     {
-        zkutil::MultiTransactionInfo & info = e.info;
-
-        if (deduplicate_block && info.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && info.getFailedOp().getPath() == block_id_path)
+        if (deduplicate_block && e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && e.getPathForFirstFailedOp() == block_id_path)
         {
             LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (skip the insertion)");
             part->is_duplicate = true;
@@ -242,7 +240,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
         throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
     }
-    catch (zkutil::KeeperException & e)
+    catch (const zkutil::KeeperException & e)
     {
         throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
     }
@@ -355,10 +353,10 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     MergeTreeData::Transaction transaction; /// If you can not add a part to ZK, we'll remove it back from the working set.
     storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
-    zkutil::MultiTransactionInfo info;
-    zookeeper->tryMultiNoThrow(ops, nullptr, &info); /// 1 RTT
+    zkutil::Responses responses;
+    int32_t multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
 
-    if (info.code == ZooKeeperImpl::ZooKeeper::ZOK)
+    if (multi_code == ZooKeeperImpl::ZooKeeper::ZOK)
     {
         transaction.commit();
         storage.merge_selecting_event.set();
@@ -366,11 +364,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         /// Lock nodes have been already deleted, do not delete them in destructor
         block_number_lock.assumeUnlocked();
     }
-    else if (zkutil::isUserError(info.code))
+    else if (zkutil::isUserError(multi_code))
     {
-        String failed_op_path = info.getFailedOp().getPath();
+        String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
 
-        if (info.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
+        if (multi_code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
             /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
             LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
@@ -380,7 +378,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             last_block_is_duplicate = true;
             ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
         }
-        else if (info.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
+        else if (multi_code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
         {
             transaction.rollback();
 
@@ -391,21 +389,21 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
             transaction.rollback();
             throw Exception("Unexpected logical error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                            + zkutil::ZooKeeper::error2string(info.code) + ", path " + failed_op_path,
+                            + zkutil::ZooKeeper::error2string(multi_code) + ", path " + failed_op_path,
                             ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
     }
-    else if (zkutil::isHardwareError(info.code))
+    else if (zkutil::isHardwareError(multi_code))
     {
         transaction.rollback();
         throw Exception("Unrecoverable network error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                        + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+                        + zkutil::ZooKeeper::error2string(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
     else
     {
         transaction.rollback();
         throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                        + zkutil::ZooKeeper::error2string(info.code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+                        + zkutil::ZooKeeper::error2string(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
 
     if (quorum)
