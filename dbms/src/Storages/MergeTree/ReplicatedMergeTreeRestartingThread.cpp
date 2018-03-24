@@ -260,10 +260,10 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
         {
             LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
 
-            zkutil::Ops ops;
+            zkutil::Requests ops;
             storage.removePartFromZooKeeper(part_name, ops);
             auto code = zookeeper->tryMulti(ops);
-            if (code == ZNONODE)
+            if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
                 LOG_WARNING(log, "Part " << part_name << " with failed quorum is not in ZooKeeper. This shouldn't happen often.");
 
             storage.data.renameAndDetachPart(part, "noquorum");
@@ -318,20 +318,19 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     {
         auto code = zookeeper->tryRemove(is_active_path, stat.version);
 
-        if (code == ZBADVERSION)
+        if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
             throw Exception("Another instance of replica " + storage.replica_path + " was created just now."
                 " You shouldn't run multiple instances of same replica. You need to check configuration files.",
                 ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 
-        if (code != ZOK && code != ZNONODE)
+        if (code && code != ZooKeeperImpl::ZooKeeper::ZNONODE)
             throw zkutil::KeeperException(code, is_active_path);
     }
 
     /// Simultaneously declare that this replica is active, and update the host.
-    zkutil::Ops ops;
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(is_active_path,
-        active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(std::make_shared<zkutil::Op::SetData>(storage.replica_path + "/host", address.toString(), -1));
+    zkutil::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
+    ops.emplace_back(zkutil::makeSetRequest(storage.replica_path + "/host", address.toString(), -1));
 
     try
     {
@@ -339,7 +338,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     }
     catch (const zkutil::KeeperException & e)
     {
-        if (e.code == ZNODEEXISTS)
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             throw Exception("Replica " + storage.replica_path + " appears to be already active. If you're sure it's not, "
                 "try again in a minute or remove znode " + storage.replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 

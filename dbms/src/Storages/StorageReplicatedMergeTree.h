@@ -321,7 +321,7 @@ private:
       * Call under TableStructureLock.
       */
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
-                                           zkutil::Ops & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+                                           zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums);
 
@@ -330,7 +330,7 @@ private:
                                                                const MergeTreeData::DataPartPtr & part);
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
+    void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -415,7 +415,7 @@ private:
 
     /// Creates new block number and additionally perform precheck_ops while creates 'abandoned node'
     AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                   zkutil::Ops * precheck_ops = nullptr);
+                                                   zkutil::Requests * precheck_ops = nullptr);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
