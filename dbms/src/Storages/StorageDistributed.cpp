@@ -194,8 +194,6 @@ BlockInputStreams StorageDistributed::read(
 
     if (settings.distributed_group_by_no_merge)
         processed_stage = QueryProcessingStage::Complete;
-    else if (settings.distributed_group_by_force_mergeable_state)
-        processed_stage = QueryProcessingStage::WithMergeableState;
     else    /// Normal mode.
         processed_stage = result_size == 1
             ? QueryProcessingStage::Complete
