@@ -25,10 +25,10 @@ try
             {
                 std::vector<std::future<zkutil::GetResponse>> futures;
                 for (auto & node : nodes)
-                    futures.push_back(zookeeper.asyncTryGet("/tmp/" + node));
+                    futures.push_back(zookeeper.asyncGet("/tmp/" + node));
 
                 for (auto & future : futures)
-                    std::cerr << (future.get().value.empty() ? ',' : '.');
+                    std::cerr << (future.get().data.empty() ? ',' : '.');
             }
         });
     }

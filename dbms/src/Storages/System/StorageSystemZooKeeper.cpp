@@ -148,7 +148,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 
         size_t col_num = 0;
         res_columns[col_num++]->insert(nodes[i]);
-        res_columns[col_num++]->insert(res.value);
+        res_columns[col_num++]->insert(res.data);
         res_columns[col_num++]->insert(Int64(stat.czxid));
         res_columns[col_num++]->insert(Int64(stat.mzxid));
         res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
