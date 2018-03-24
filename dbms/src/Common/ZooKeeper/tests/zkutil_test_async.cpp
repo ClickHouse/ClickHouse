@@ -23,7 +23,7 @@ try
         {
             while (true)
             {
-                std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
+                std::vector<std::future<zkutil::GetResponse>> futures;
                 for (auto & node : nodes)
                     futures.push_back(zookeeper.asyncTryGet("/tmp/" + node));
 

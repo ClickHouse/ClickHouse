@@ -1660,7 +1660,7 @@ protected:
                     output = io_insert.out;
                 }
 
-                using ExistsFuture = zkutil::ZooKeeper::ExistsFuture;
+                using ExistsFuture = std::future<zkutil::ExistsResponse>;
                 auto future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
 
                 Stopwatch watch(CLOCK_MONOTONIC_COARSE);
@@ -1686,7 +1686,7 @@ protected:
                             throw;
                         }
 
-                        if (status.exists)
+                        if (status.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
                             throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
                     }
 

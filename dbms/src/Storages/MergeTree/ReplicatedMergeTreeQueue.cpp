@@ -53,7 +53,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         std::sort(children.begin(), children.end());
 
-        std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+        std::vector<std::pair<String, std::future<zkutil::GetResponse>>> futures;
         futures.reserve(children.size());
 
         for (const String & child : children)
@@ -61,8 +61,9 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         for (auto & future : futures)
         {
-            zkutil::ZooKeeper::ValueAndStat res = future.second.get();
-            LogEntryPtr entry = LogEntry::parse(res.value, res.stat);
+            zkutil::GetResponse res = future.second.get();
+
+            LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
             entry->znode_name = future.first;
 
             insertUnlocked(entry, min_unprocessed_insert_time_changed, lock);
@@ -308,7 +309,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             LOG_DEBUG(log, "Pulling " << (end - begin) << " entries to queue: " << *begin << " - " << *last);
 
-            std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+            std::vector<std::pair<String, std::future<zkutil::GetResponse>>> futures;
             futures.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
@@ -324,11 +325,12 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             for (auto & future : futures)
             {
-                zkutil::ZooKeeper::ValueAndStat res = future.second.get();
-                copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
+                zkutil::GetResponse res = future.second.get();
+
+                copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
 
                 ops.emplace_back(zkutil::makeCreateRequest(
-                    replica_path + "/queue/queue-", res.value, zkutil::CreateMode::PersistentSequential));
+                    replica_path + "/queue/queue-", res.data, zkutil::CreateMode::PersistentSequential));
 
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART)

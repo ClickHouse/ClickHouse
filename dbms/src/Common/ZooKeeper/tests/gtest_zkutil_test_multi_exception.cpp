@@ -93,7 +93,7 @@ TEST(zkutil, multi_async)
 
     EXPECT_ANY_THROW
     (
-        std::vector<zkutil::ZooKeeper::MultiFuture> futures;
+        std::vector<std::future<zkutil::MultiResponse>> futures;
 
         for (size_t i = 0; i < 10000; ++i)
         {
