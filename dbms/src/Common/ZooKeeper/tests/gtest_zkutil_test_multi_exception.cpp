@@ -1,3 +1,4 @@
+#include <Common/typeid_cast.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <iostream>
@@ -86,14 +87,13 @@ TEST(zkutil, multi_async)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_TRUE(res.code == ZooKeeperImpl::ZooKeeper::ZOK);
-        ASSERT_EQ(res.results->size(), 2);
-        ASSERT_EQ(res.ops_ptr->size(), 2);
+        ASSERT_TRUE(res.error == ZooKeeperImpl::ZooKeeper::ZOK);
+        ASSERT_EQ(res.responses.size(), 2);
     }
 
     EXPECT_ANY_THROW
     (
-        std::vector<std::future<zkutil::MultiResponse>> futures;
+        std::vector<std::future<ZooKeeperImpl::ZooKeeper::MultiResponse>> futures;
 
         for (size_t i = 0; i < 10000; ++i)
         {
@@ -123,9 +123,8 @@ TEST(zkutil, multi_async)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_TRUE(res.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS);
-        ASSERT_EQ(res.results->size(), 2);
-        ASSERT_EQ(res.ops_ptr->size(), 2);
+        ASSERT_TRUE(res.error == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS);
+        ASSERT_EQ(res.responses.size(), 2);
     }
 }
 
@@ -144,7 +143,7 @@ TEST(zkutil, multi_async_libzookeeper_segfault)
     auto future = zookeeper->asyncMulti(ops);
     auto res = future.get();
 
-    EXPECT_TRUE(zkutil::isHardwareError(res.code));
+    EXPECT_TRUE(zkutil::isHardwareError(res.error));
 }
 
 
@@ -165,12 +164,12 @@ TEST(zkutil, multi_create_sequential)
 
         String sequential_node_prefix = base_path + "/queue-";
         ops.emplace_back(zkutil::makeCreateRequest(sequential_node_prefix, "", zkutil::CreateMode::EphemeralSequential));
-        zkutil::OpResultsPtr results = zookeeper->multi(ops);
-        zkutil::OpResult & sequential_node_result_op = results->at(0);
+        auto results = zookeeper->multi(ops);
+        const auto & sequential_node_result_op = typeid_cast<const zkutil::CreateResponse &>(*results.at(0));
 
-        EXPECT_FALSE(sequential_node_result_op.value.empty());
-        EXPECT_GT(sequential_node_result_op.value.length(), sequential_node_prefix.length());
-        EXPECT_EQ(sequential_node_result_op.value.substr(0, sequential_node_prefix.length()), sequential_node_prefix);
+        EXPECT_FALSE(sequential_node_result_op.path_created.empty());
+        EXPECT_GT(sequential_node_result_op.path_created.length(), sequential_node_prefix.length());
+        EXPECT_EQ(sequential_node_result_op.path_created.substr(0, sequential_node_prefix.length()), sequential_node_prefix);
     }
     catch (...)
     {
