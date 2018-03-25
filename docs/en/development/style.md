@@ -4,7 +4,7 @@
 
 1. The following are recommendations, not requirements.
 2. If you are editing code, it makes sense to follow the formatting of the existing code.
-3. Code style is needed for consistency. Consistency makes it easier to read the code. and it also makes it easier to search the code.
+3. Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
 4. Many of the rules do not have logical reasons; they are dictated by established practices.
 
 ## Formatting
@@ -93,25 +93,25 @@
 14. In classes and structures, public, private, and protected are written on the same level as the class/struct, but all other internal elements should be deeper.
 
    ```cpp
-    template <typename T, typename Ptr = std::shared_ptr<T>>
-    class MultiVersion
-    {
-    public:
-        /// The specific version of the object to use.
-        using Version = Ptr;
-        ...
-    }
+   template <typename T>
+class MultiVersion
+{
+public:
+    /// Version of object for usage. shared_ptr manage lifetime of version.
+    using Version = std::shared_ptr<const T>;
+    ...
+}
    ```
 
 15. If the same namespace is used for the entire file, and there isn't anything else significant, an offset is not necessary  inside namespace.
 
 16. If the block for if, for, while... expressions consists of a single statement, you don't need to use curly brackets. Place the statement on a separate line, instead. The same is true for a nested if, for, while... statement. But if the inner statement contains curly brackets or else, the external block should be written in curly brackets.
 
-    ```cpp
-    /// Finish write.
-    for (auto & stream : streams)
-        stream.second->finalize();
-    ```
+   ```cpp
+   /// Finish write.
+for (auto & stream : streams)
+    stream.second->finalize();
+   ```
 
 17. There should be any spaces at the ends of lines.
 
@@ -218,11 +218,11 @@
    */
    void executeQuery(
        ReadBuffer & istr, /// Where to read the query from (and data for INSERT, if applicable)
-           WriteBuffer & ostr, /// Where to write the result
-           Context & context, /// DB, tables, data types, engines, functions, aggregate functions...
-           BlockInputStreamPtr & query_plan, /// A description of query processing can be included here
-           QueryProcessingStage::Enum stage = QueryProcessingStage::Complete /// The last stage to process the SELECT query to
-           )
+       WriteBuffer & ostr, /// Where to write the result
+       Context & context, /// DB, tables, data types, engines, functions, aggregate functions...
+       BlockInputStreamPtr & query_plan, /// A description of query processing can be included here
+       QueryProcessingStage::Enum stage = QueryProcessingStage::Complete /// The last stage to process the SELECT query to
+       )
    ```
 
 4. Comments should be written in English only.
@@ -252,7 +252,7 @@
     */
    ```
 
-   (Example taken from: [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)
+   (the example is borrowed from the resource [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)
 
 7. Do not write garbage comments (author, creation date ..) at the beginning of each file.
 
@@ -497,7 +497,15 @@ This is not recommended, but it is allowed.
    You can create a separate code block inside a single function in order to make certain variables local, so that the destructors are called when exiting the block.
 
    ```cpp
-   Block block = data.in->read();{    std::lock_guard<std::mutex> lock(mutex);    data.ready = true;    data.block = block;}ready_any.set();
+   Block block = data.in->read();
+
+   {
+       std::lock_guard<std::mutex> lock(mutex);
+       data.ready = true;
+       data.block = block;
+   }
+
+   ready_any.set();
    ```
 
 7. Multithreading.
@@ -560,13 +568,12 @@ This is not recommended, but it is allowed.
 
    ```cpp
    using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
-
-   /** Creates an aggregate function by name.
-     */
+   
+   /** Creates an aggregate function by name.  */
    class AggregateFunctionFactory
    {
    public:
-       AggregateFunctionFactory();
+       AggregateFunctionFactory();    
        AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
    ```
 
@@ -591,10 +598,10 @@ This is not recommended, but it is allowed.
    If later you’ll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use shared_ptr/unique_ptr.
 
    ```cpp
-    Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
-
-    /// For delayed initialization
-    Loader() {}
+   Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
+   
+   /// For delayed initialization
+   Loader() {}
    ```
 
 17. Virtual functions.

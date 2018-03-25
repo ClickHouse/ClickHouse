@@ -17,7 +17,7 @@ Example:
 <profiles>
     <!-- Default settings -->
     <default>
-    <!-- The maximum number of threads when running a single query. -->
+        <!-- The maximum number of threads when running a single query. -->
         <max_threads>8</max_threads>
     </default>
 
