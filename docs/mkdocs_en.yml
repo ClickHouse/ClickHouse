@@ -96,7 +96,6 @@ pages:
   - 'View': 'table_engines/view.md'
   - 'MaterializedView': 'table_engines/materializedview.md'
   - 'Kafka': 'table_engines/kafka.md'
-  - 'MySQL': 'table_engines/mysql.md'
   - 'External data for query processing': 'table_engines/external_data.md'
 
 - 'System tables':
