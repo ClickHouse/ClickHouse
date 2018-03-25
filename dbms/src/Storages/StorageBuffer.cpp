@@ -323,6 +323,20 @@ BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settin
 }
 
 
+bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+{
+    if (no_destination)
+        return false;
+
+    auto destination = context.getTable(destination_database, destination_table);
+
+    if (destination.get() == this)
+        throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+    return destination->mayBenefitFromIndexForIn(left_in_operand);
+}
+
+
 void StorageBuffer::startup()
 {
     if (context.getSettingsRef().readonly)

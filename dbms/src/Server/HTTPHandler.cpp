@@ -12,7 +12,7 @@
 #include <Common/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-
+#include <Common/getFQDNOrHostName.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -198,6 +198,7 @@ HTTPHandler::HTTPHandler(IServer & server_)
     : server(server_)
     , log(&Logger::get("HTTPHandler"))
 {
+    server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
 
 
@@ -629,7 +630,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     try
     {
         response.setContentType("text/plain; charset=UTF-8");
-
+        response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
         if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);

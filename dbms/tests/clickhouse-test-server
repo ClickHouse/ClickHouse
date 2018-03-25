@@ -64,5 +64,5 @@ if [ -n "$*" ]; then
 else
     ${BIN_DIR}clickhouse-client --config ${CONFIG_CLIENT} -q 'SELECT * from system.build_options;'
     PATH=$PATH:$BIN_DIR \
-      ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient ${CONFIG_CLIENT} --configserver ${CLICKHOUSE_CONFIG} --tmp $DATA_DIR/tmp --queries ${QUERIES_DIR} $TEST_OPT
+      ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient ${CONFIG_CLIENT} --configserver ${CLICKHOUSE_CONFIG} --tmp $DATA_DIR/tmp --queries ${QUERIES_DIR} $TEST_OPT0 $TEST_OPT
 fi
