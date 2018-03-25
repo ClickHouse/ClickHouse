@@ -349,7 +349,7 @@ public:
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const { return !expired; }
+    bool isExpired() const { return expired; }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const { return session_id; }
