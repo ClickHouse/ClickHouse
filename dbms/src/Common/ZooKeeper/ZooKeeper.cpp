@@ -498,17 +498,10 @@ Responses ZooKeeper::multi(const Requests & requests)
     return responses;
 }
 
-int32_t ZooKeeper::tryMulti(const Requests & requests)
+int32_t ZooKeeper::tryMulti(const Requests & requests, Responses & responses)
 {
-    Responses responses;
     int32_t code = multiImpl(requests, responses);
-
-    if (!(code == ZooKeeperImpl::ZooKeeper::ZOK ||
-          code == ZooKeeperImpl::ZooKeeper::ZNONODE ||
-          code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS ||
-          code == ZooKeeperImpl::ZooKeeper::ZNOCHILDRENFOREPHEMERALS ||
-          code == ZooKeeperImpl::ZooKeeper::ZBADVERSION ||
-          code == ZooKeeperImpl::ZooKeeper::ZNOTEMPTY))
+    if (code && !isUserError(code))
         throw KeeperException(code);
     return code;
 }
@@ -558,7 +551,8 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
         /// Try to remove the children with a faster method - in bulk. If this fails,
         /// this means someone is concurrently removing these children and we will have
         /// to remove them one by one.
-        if (tryMulti(ops) != ZooKeeperImpl::ZooKeeper::ZOK)
+        Responses responses;
+        if (tryMulti(ops, responses) != ZooKeeperImpl::ZooKeeper::ZOK)
             for (const std::string & child : batch)
                 tryRemove(child);
     }

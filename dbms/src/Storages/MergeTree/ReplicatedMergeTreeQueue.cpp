@@ -174,7 +174,8 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 
     if (!ops.empty())
     {
-        auto code = zookeeper->tryMulti(ops);
+        zkutil::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
 
         if (code)
             LOG_ERROR(log, "Couldn't set value of nodes for insert times ("

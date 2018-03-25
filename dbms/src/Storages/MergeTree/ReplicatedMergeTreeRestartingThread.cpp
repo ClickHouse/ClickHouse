@@ -261,8 +261,9 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
             LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
 
             zkutil::Requests ops;
+            zkutil::Responses responses;
             storage.removePartFromZooKeeper(part_name, ops);
-            auto code = zookeeper->tryMulti(ops);
+            auto code = zookeeper->tryMulti(ops, responses);
             if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
                 LOG_WARNING(log, "Part " << part_name << " with failed quorum is not in ZooKeeper. This shouldn't happen often.");
 

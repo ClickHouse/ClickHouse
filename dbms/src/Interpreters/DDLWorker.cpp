@@ -808,7 +808,8 @@ void DDLWorker::createStatusDirs(const std::string & node_path)
         request.path = node_path + "/finished";
         ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
     }
-    int code = zookeeper->tryMulti(ops);
+    zkutil::Responses responses;
+    int code = zookeeper->tryMulti(ops, responses);
     if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
         throw zkutil::KeeperException(code);
 }
