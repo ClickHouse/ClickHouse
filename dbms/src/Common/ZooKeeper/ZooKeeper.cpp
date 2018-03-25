@@ -478,9 +478,6 @@ int32_t ZooKeeper::multiImpl(const Requests & requests, Responses & responses)
     {
         code = response.error;
         responses = response.responses;
-
-        std::cerr << code << ", " << responses.size() << "\n";
-
         event.set();
     };
 
@@ -496,7 +493,6 @@ Responses ZooKeeper::multi(const Requests & requests)
 {
     Responses responses;
     int32_t code = multiImpl(requests, responses);
-    std::cerr << responses.size() << "\n";
     KeeperMultiException::check(code, requests, responses);
     return responses;
 }
