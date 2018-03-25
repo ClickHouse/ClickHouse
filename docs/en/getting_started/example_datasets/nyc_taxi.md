@@ -1,8 +1,8 @@
-# Data about New York taxis
+# New York Taxi data
 
-## How to import raw data
+## How to import the raw data
 
-See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for description of the dataset and loading instructions.
+See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for the description of the dataset and instructions for downloading.
 
 Downloading will result in about 227 GB of uncompressed data in CSV files. The download takes about an hour over a 1 Gbit connection (parallel downloading from s3.amazonaws.com recovers at least half of a 1 Gbit channel).
 Some of the files might not download fully. Check the file sizes and re-download any that seem doubtful.
@@ -301,19 +301,14 @@ SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetr
 Q4:
 
 ```sql
-SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
-FROM trips_mergetree
-GROUP BY passenger_count, year, distance
-ORDER BY year, count(*) DESC
+SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)FROM trips_mergetreeGROUP BY passenger_count, year, distanceORDER BY year, count(*) DESC
 ```
 
 3.593 seconds.
 
 The following server was used:
 
-Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical kernels total,
-128 GiB RAM,
-8x6 TB HD on hardware RAID-5
+Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical kernels total,128 GiB RAM,8x6 TB HD on hardware RAID-5
 
 Execution time is the best of three runsBut starting from the second run, queries read data from the file system cache. No further caching occurs: the data is read out and processed in each run.
 

@@ -105,7 +105,7 @@ Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be m
 
 You are probably already using ZooKeeper for other purposes. You can use the same installation of ZooKeeper, if it isn't already overloaded.
 
-It's best to use a fresh version of ZooKeeper – 3.5 or later. The version in stable Linux distributions may be outdated.
+It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 With the default settings, ZooKeeper is a time bomb:
 
@@ -174,8 +174,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 Java version:
 
 ```text
-Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
-Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
+Java(TM) SE Runtime Environment (build 1.8.0_25-b17)Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
 
 JVM parameters:

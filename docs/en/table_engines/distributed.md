@@ -25,29 +25,29 @@ Clusters are set like this:
 <remote_servers>
     <logs>
         <shard>
-             <!-- Optional. Shard weight when writing data. Default: 1. -->
-             <weight>1</weight>
-             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
-            <internal_replication>false</internal_replication>
-            <replica>
-                <host>example01-01-1</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>example01-01-2</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-        <shard>
-            <weight>2</weight>
-            <internal_replication>false</internal_replication>
-            <replica>
-                <host>example01-02-1</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>example01-02-2</host>
-                <port>9000</port>
+            <!-- Optional. Shard weight when writing data. Default: 1. -->
+            <weight>1</weight>            
+            <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->            
+            <internal_replication>false</internal_replication>            
+            <replica>                
+                <host>example01-01-1</host>                
+                <port>9000</port>            
+            </replica>            
+            <replica>                
+                 <host>example01-01-2</host>                
+                 <port>9000</port>            
+            </replica>        
+        </shard>        
+        <shard>            
+            <weight>2</weight>            
+            <internal_replication>false</internal_replication>            
+            <replica>                
+                <host>example01-02-1</host>                
+                <port>9000</port>            
+            </replica>            
+            <replica>                
+            <host>example01-02-2</host>                
+            <port>9000</port>
             </replica>
         </shard>
     </logs>
