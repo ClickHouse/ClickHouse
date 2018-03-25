@@ -13,4 +13,19 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
+    <!--
+        It's a custom prompt settings for the clickhouse-client
+        Possible macros: 
+            {host}
+            {port}
+            {user}
+            {database} 
+            {display_name}
+        Terminal colors: https://misc.flogisoft.com/bash/tip_colors_and_formatting
+    -->
+    <prompt_by_server_display_name>
+        <default>{display_name} :) </default>
+        <test>{display_name} \e[1;32m:)\e[0m  </test> <!-- if it matched to the substring "test" in the server display name - -->
+        <production>{display_name} \e[1;31m:)\e[0m </production> <!-- if it matched to the substring "production" in the server display name -->
+    </prompt_by_server_display_name>
 </config>
