@@ -323,7 +323,7 @@ Here, `20140317_20140323_2_2_0` and ` 20140317_20140323_4_4_0` are the directori
 Let's break down the name of the first part: `20140317_20140323_2_2_0`.
 
 - `20140317` is the minimum date of the data in the chunk.
-- `20140323` is the maximum data of the data in the chunk.
+- `20140323` is the maximum date of the data in the chunk.
 - `2` is the minimum number of the data block.
 - `2` is the maximum number of the data block.
 - `0` is the chunk level (the depth of the merge tree it is formed from).
@@ -1506,4 +1506,3 @@ The response contains the `kill_status` column, which can take the following val
 3. The other values ​​explain why the query can't be terminated.
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to terminate.
-
