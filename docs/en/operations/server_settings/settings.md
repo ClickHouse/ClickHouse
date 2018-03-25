@@ -100,7 +100,7 @@ Path:
 - Specify the absolute path or the path relative to the server config file.
 - The path can contain wildcards \* and ?.
 
-See also "[External dictionaries]("./../dicts/external_dicts.md#dicts-external_dicts)".
+See also "[External dictionaries](../../dicts/external_dicts.md#dicts-external_dicts)".
 
 **Example**
 
