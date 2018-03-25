@@ -46,6 +46,7 @@ The configuration looks like this:
 - [range_hashed](#dicts-external_dicts_dict_layout-range_hashed)
 - [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed)
 - [complex_key_cache](#dicts-external_dicts_dict_layout-complex_key_cache)
+- [ip_trie](#dicts-external_dicts_dict_layout-ip_trie)
 
 <a name="dicts-external_dicts_dict_layout-flat"></a>
 
@@ -227,3 +228,65 @@ Do not use ClickHouse as a source, because it is slow to process queries with ra
 ### complex_key_cache
 
 This type of storage is for use with composite [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.
+
+<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
+
+### ip_trie
+
+
+The table stores IP prefixes for each key (IP address), which makes it possible to map IP addresses to metadata such as ASN or threat score.
+
+Example: in the table there are prefixes matches to AS number and country:
+
+```
+  +-----------------+-------+--------+
+  | prefix          | asn   | cca2   |
+  +=================+=======+========+
+  | 202.79.32.0/20  | 17501 | NP     |
+  +-----------------+-------+--------+
+  | 2620:0:870::/48 | 3856  | US     |
+  +-----------------+-------+--------+
+  | 2a02:6b8:1::/48 | 13238 | RU     |
+  +-----------------+-------+--------+
+  | 2001:db8::/32   | 65536 | ZZ     |
+  +-----------------+-------+--------+
+```
+
+When using such a layout, the structure should have the "key" element.
+
+Example:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>prefix</name>
+            <type>String</type>
+        </attribute>
+    </key>
+    <attribute>
+            <name>asn</name>
+            <type>UInt32</type>
+            <null_value />
+    </attribute>
+    <attribute>
+            <name>cca2</name>
+            <type>String</type>
+            <null_value>??</null_value>
+    </attribute>
+    ...
+```
+
+These key must have only one attribute of type String, containing a valid IP prefix. Other types are not yet supported.
+
+For querying, same functions (dictGetT with tuple) as for complex key dictionaries have to be used:
+
+    dictGetT('dict_name', 'attr_name', tuple(ip))
+
+The function accepts either UInt32 for IPv4 address or FixedString(16) for IPv6 address in wire format:
+
+    dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+
+No other type is supported. The function returns attribute for a prefix matching the given IP address. If there are overlapping prefixes, the most specific one is returned.
+
+The data is stored currently in a bitwise trie, it has to fit in memory.
