@@ -354,32 +354,26 @@ struct TaskCluster
 };
 
 
+struct MultiTransactionInfo
+{
+    int32_t code;
+    zkutil::Requests requests;
+    zkutil::Responses responses;
+};
+
+
 /// Atomically checks that is_dirty node is not exists, and made the remaining op
 /// Returns relative number of failed operation in the second field (the passed op has 0 index)
-static zkutil::MultiTransactionInfo checkNoNodeAndCommit(
+static MultiTransactionInfo checkNoNodeAndCommit(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & checking_node_path,
     zkutil::RequestPtr && op)
 {
-    zkutil::Requests ops;
-    {
-        zkutil::CreateRequest request;
-        request.path = checking_node_path;
-        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
-    }
-    {
-        zkutil::RemoveRequest request;
-        request.path = checking_node_path;
-        ops.emplace_back(std::make_shared<zkutil::RemoveRequest>(std::move(request)));
-    }
-    ops.emplace_back(std::move(op));
-
-    zkutil::Responses responses;
-    auto code = zookeeper->tryMultiNoThrow(ops, responses);
-
-    if (code && !zkutil::isUserError(code))
-        throw zkutil::KeeperException(code);
-
+    MultiTransactionInfo info;
+    info.requests.emplace_back(zkutil::makeCreateRequest(checking_node_path, "", zkutil::CreateMode::Persistent));
+    info.requests.emplace_back(zkutil::makeRemoveRequest(checking_node_path, -1));
+    info.requests.emplace_back(std::move(op));
+    info.code = zookeeper->tryMulti(info.requests, info.responses);
     return info;
 }
 
@@ -740,7 +734,7 @@ public:
     {
         auto zookeeper = getZooKeeper();
 
-        task_description_watch_callback = [this] (zkutil::ZooKeeper &, int, int, const char *)
+        task_description_watch_callback = [this] (const ZooKeeperImpl::ZooKeeper::WatchResponse &)
         {
             UInt64 version = ++task_descprtion_version;
             LOG_DEBUG(log, "Task description should be updated, local version " << version);
@@ -1061,7 +1055,8 @@ protected:
                 zkutil::Requests ops;
                 ops.emplace_back(zkutil::makeSetRequest(workers_version_path, description, version));
                 ops.emplace_back(zkutil::makeCreateRequest(current_worker_path, description, zkutil::CreateMode::Ephemeral));
-                auto code = zookeeper->tryMulti(ops);
+                zkutil::Responses responses;
+                auto code = zookeeper->tryMulti(ops, responses);
 
                 if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
                     return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
@@ -1466,7 +1461,7 @@ protected:
         auto create_is_dirty_node = [&] ()
         {
             auto code = zookeeper->tryCreate(is_dirty_flag_path, current_task_status_path, zkutil::CreateMode::Persistent);
-            if (code && code != ZNODEEXISTS)
+            if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
                 throw zkutil::KeeperException(code, is_dirty_flag_path);
         };
 
@@ -1587,17 +1582,19 @@ protected:
         {
             String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
             auto op_create = zkutil::makeCreateRequest(current_task_status_path, start_state, zkutil::CreateMode::Persistent);
-            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create));
+            MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create));
 
             if (info.code)
             {
-                if (info.getFailedOp().getPath() == is_dirty_flag_path)
+                zkutil::KeeperMultiException exception(info.code, info.requests, info.responses);
+
+                if (exception.getPathForFirstFailedOp() == is_dirty_flag_path)
                 {
                     LOG_INFO(log, "Partition " << task_partition.name << " is dirty and will be dropped and refilled");
                     return PartitionTaskStatus::Error;
                 }
 
-                throw zkutil::KeeperException(info.code, current_task_status_path);
+                throw exception;
             }
         }
 
@@ -1674,7 +1671,7 @@ protected:
 
                     if (future_is_dirty_checker != nullptr)
                     {
-                        zkutil::ZooKeeper::StatAndExists status;
+                        zkutil::ExistsResponse status;
                         try
                         {
                             status = future_is_dirty_checker->get();
@@ -1729,11 +1726,13 @@ protected:
         {
             String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
             auto op_set = zkutil::makeSetRequest(current_task_status_path, state_finished, 0);
-            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set));
+            MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set));
 
             if (info.code)
             {
-                if (info.getFailedOp().getPath() == is_dirty_flag_path)
+                zkutil::KeeperMultiException exception(info.code, info.requests, info.responses);
+
+                if (exception.getPathForFirstFailedOp() == is_dirty_flag_path)
                     LOG_INFO(log, "Partition " << task_partition.name << " became dirty and will be dropped and refilled");
                 else
                     LOG_INFO(log, "Someone made the node abandoned. Will refill partition. " << zkutil::ZooKeeper::error2string(info.code));

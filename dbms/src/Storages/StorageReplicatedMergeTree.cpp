@@ -499,7 +499,8 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "",
         zkutil::CreateMode::Persistent));
 
-    auto code = zookeeper->tryMulti(ops);
+    zkutil::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
     if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
         throw zkutil::KeeperException(code);
 }
@@ -1393,7 +1394,8 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
                         if (!entry.block_id.empty() && zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
                             ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/blocks/" + entry.block_id, -1));
 
-                        auto code = zookeeper->tryMulti(ops);
+                        zkutil::Responses responses;
+                        auto code = zookeeper->tryMulti(ops, responses);
 
                         if (code == ZooKeeperImpl::ZooKeeper::ZOK)
                         {
@@ -1507,8 +1509,9 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
             data.renameAndDetachPart(part);
 
         zkutil::Requests ops;
+        zkutil::Responses responses;
         removePartFromZooKeeper(part->name, ops);
-        auto code = getZooKeeper()->tryMulti(ops);
+        auto code = getZooKeeper()->tryMulti(ops, responses);
 
         /// If the part is already removed (for example, because it was never added to ZK due to crash,
         /// see ReplicatedMergeTreeBlockOutputStream), then Ok.
@@ -2170,9 +2173,10 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
 
             zkutil::Requests ops;
+            zkutil::Responses responses;
             ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
             ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, part_name, -1));
-            auto code = zookeeper->tryMulti(ops);
+            auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == ZooKeeperImpl::ZooKeeper::ZOK)
             {
@@ -3632,22 +3636,6 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 }
 
 
-static int32_t tryMulti(zkutil::ZooKeeperPtr & zookeeper, zkutil::Requests & ops) noexcept
-{
-    int32_t code;
-    try
-    {
-        code = zookeeper->tryMulti(ops);
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        code = e.code;
-    }
-
-    return code;
-}
-
-
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                                           NameSet * parts_should_be_retied)
 {
@@ -3661,8 +3649,8 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
         auto it_next = std::next(it);
         if (ops.size() >= zkutil::MULTI_BATCH_SIZE || it_next == part_names.cend())
         {
-            /// It is Ok to use multi with retries to delete nodes, because new nodes with the same names cannot appear here
-            auto code = tryMulti(zookeeper, ops);
+            zkutil::Responses unused_responses;
+            auto code = zookeeper->tryMultiNoThrow(ops, unused_responses);
             ops.clear();
 
             if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
@@ -3674,7 +3662,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                 {
                     zkutil::Requests cur_ops;
                     removePartFromZooKeeper(*it_in_batch, cur_ops);
-                    auto cur_code = tryMulti(zookeeper, cur_ops);
+                    auto cur_code = zookeeper->tryMultiNoThrow(cur_ops, unused_responses);
 
                     if (cur_code == ZooKeeperImpl::ZooKeeper::ZNONODE)
                     {
