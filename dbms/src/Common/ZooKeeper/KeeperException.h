@@ -88,7 +88,6 @@ public:
     Responses responses;
     size_t failed_op_index = 0;
 
-    size_t getFailedOpIndex() const;
     std::string getPathForFirstFailedOp() const;
 
     /// If it is user error throws KeeperMultiException else throws ordinary KeeperException
@@ -96,6 +95,9 @@ public:
     static void check(int32_t code, const Requests & requests, const Responses & responses);
 
     KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses);
+
+private:
+    size_t getFailedOpIndex(int32_t code, const Responses & responses) const;
 };
 
 };
