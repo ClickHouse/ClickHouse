@@ -794,7 +794,7 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
 }
 
 
-size_t getFailedOpIndex(const Responses & responses, int32_t transaction_return_code)
+size_t KeeperMultiException::getFailedOpIndex() const
 {
     if (responses.empty())
         throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);
@@ -803,8 +803,8 @@ size_t getFailedOpIndex(const Responses & responses, int32_t transaction_return_
         if (responses[index]->error)
             return index;
 
-    if (!isUserError(transaction_return_code))
-        throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(transaction_return_code) + "' is not valid response code for that",
+    if (!isUserError(code))
+        throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(code) + "' is not valid response code for that",
             DB::ErrorCodes::LOGICAL_ERROR);
 
     throw DB::Exception("There is no failed OpResult", DB::ErrorCodes::LOGICAL_ERROR);
@@ -812,8 +812,8 @@ size_t getFailedOpIndex(const Responses & responses, int32_t transaction_return_
 
 
 KeeperMultiException::KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses)
-    : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex(responses, code)), code),
-    requests(requests), responses(responses), failed_op_index(getFailedOpIndex(responses, code))
+    : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex()), code),
+    requests(requests), responses(responses)
 {
 }
 
