@@ -634,10 +634,10 @@ std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::GetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
     {
         if (response.error)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
             promise->set_value(response);
     };
@@ -655,10 +655,10 @@ std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncTryGet(const 
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::GetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::GetResponse & response) mutable
     {
         if (response.error && response.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
             promise->set_value(response);
     };
@@ -675,10 +675,10 @@ std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ZooKeeper::asyncExists(con
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::ExistsResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response) mutable
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response) mutable
     {
         if (response.error && response.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
             promise->set_value(response);
     };
@@ -696,10 +696,10 @@ std::future<ZooKeeperImpl::ZooKeeper::ListResponse> ZooKeeper::asyncGetChildren(
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::ListResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::ListResponse & response) mutable
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::ListResponse & response) mutable
     {
         if (response.error)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
             promise->set_value(response);
     };
@@ -716,10 +716,10 @@ std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncRemove(con
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::RemoveResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
     {
         if (response.error)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
             promise->set_value(response);
     };
@@ -736,10 +736,10 @@ std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncTryRemove(
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::RemoveResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::RemoveResponse & response) mutable
     {
         if (response.error && response.error != ZooKeeperImpl::ZooKeeper::ZNONODE && response.error != ZooKeeperImpl::ZooKeeper::ZBADVERSION && response.error != ZooKeeperImpl::ZooKeeper::ZNOTEMPTY)
-            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
             promise->set_value(response);
     };
