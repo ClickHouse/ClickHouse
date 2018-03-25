@@ -24,7 +24,7 @@ Example:
                 ["bathroom interior design", "2166"],
                 ["yandex", "1655"],
                 ["spring 2014 fashion", "1549"],
-                ["freeform photos", "1480"]
+                ["freeform photo", "1480"]
         ],
 
         "totals": ["","8873898"],

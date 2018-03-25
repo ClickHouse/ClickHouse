@@ -73,7 +73,7 @@ Returns the index of the first element in the 'arr1' array for which 'func' retu
 
 ### arrayCumSum(\[func,\] arr1, ...)
 
-Returns the cumulative sum of the array obtained from the original application of the 'func' function to each element in the 'arr' array.
+Returns an array of partial sums of elements in the source array (a running sum). If the `func` function is specified, then the values of the array elements are converted by this function before summing.
 
 Example:
 
@@ -86,4 +86,3 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 │ [1, 2, 3, 4] │
 └──────────────┘
 ```
-
