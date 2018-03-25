@@ -477,8 +477,10 @@ int32_t ZooKeeper::multiImpl(const Requests & requests, Responses & responses)
     auto callback = [&](const ZooKeeperImpl::ZooKeeper::MultiResponse & response)
     {
         code = response.error;
-        if (!code)
-            responses = response.responses;
+        responses = response.responses;
+
+        std::cerr << code << ", " << responses.size() << "\n";
+
         event.set();
     };
 
@@ -494,6 +496,7 @@ Responses ZooKeeper::multi(const Requests & requests)
 {
     Responses responses;
     int32_t code = multiImpl(requests, responses);
+    std::cerr << responses.size() << "\n";
     KeeperMultiException::check(code, requests, responses);
     return responses;
 }
@@ -516,11 +519,7 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path)
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(path + "/" + children.back());
-
-            ZooKeeperImpl::ZooKeeper::RemoveRequest request;
-            request.path = path + "/" + children.back();
-
-            ops.emplace_back(std::make_shared<ZooKeeperImpl::ZooKeeper::RemoveRequest>(std::move(request)));
+            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
             children.pop_back();
         }
         multi(ops);
@@ -794,7 +793,7 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
 }
 
 
-size_t KeeperMultiException::getFailedOpIndex() const
+size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses) const
 {
     if (responses.empty())
         throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);
@@ -812,7 +811,7 @@ size_t KeeperMultiException::getFailedOpIndex() const
 
 
 KeeperMultiException::KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses)
-    : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex()), code),
+    : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex(code, responses)), code),
     requests(requests), responses(responses)
 {
 }
