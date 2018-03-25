@@ -337,7 +337,8 @@ private:
 
         if (is_interactive)
         {
-            query_id = "";
+            if (!query_id.empty())
+                throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
