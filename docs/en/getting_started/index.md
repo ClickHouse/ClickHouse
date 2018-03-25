@@ -16,14 +16,15 @@ The terminal must use UTF-8 encoding (the default in Ubuntu).
 
 For testing and development, the system can be installed on a single server or on a desktop computer.
 
-### Installing from packages Debian/Ubuntu
+### Installing from packages
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
 ```text
-deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
+deb http://repo.yandex.ru/clickhouse/trusty stable main
 ```
 
+On other versions of Ubuntu, replace `trusty` with `xenial` or `precise`.
 If you want to use the most recent test version, replace 'stable' with 'testing'.
 
 Then run:
@@ -34,7 +35,10 @@ sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server-common
 ```
 
-You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/deb/stable/main/>
+You can also download and install packages manually from here:
+<http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/>
+<http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/>
+<http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/>
 
 ClickHouse contains access restriction settings. They are located in the 'users.xml' file (next to 'config.xml').
 By default, access is allowed from anywhere for the 'default' user, without a password. See 'user/default/networks'.
@@ -100,7 +104,8 @@ clickhouse-client
 ```
 
 The default parameters indicate connecting with localhost:9000 on behalf of the user 'default' without a password.
-The client can be used for connecting to a remote server. Example:
+The client can be used for connecting to a remote server.
+Example:
 
 ```bash
 clickhouse-client --host=example.com
@@ -132,3 +137,4 @@ SELECT 1
 **Congratulations, the system works!**
 
 To continue experimenting, you can try to download from the test data sets.
+

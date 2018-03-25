@@ -18,10 +18,10 @@ Let's look at the section of the 'users.xml' file that defines quotas.
     <!-- Quota name. -->    
     <default>
         <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->        
-        <interval>
+        <interval>            
             <!-- Length of the interval. -->            
-            <duration>3600</duration>            
-            
+            <duration>3600</duration>
+
             <!-- Unlimited. Just collect data for the specified time interval. -->            
             <queries>0</queries>            
             <errors>0</errors>            
@@ -39,21 +39,19 @@ The resource consumption calculated for each interval is output to the server lo
 <statbox>
     <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->    
     <interval>        
-        <!-- Length of the interval. -->
-        <duration>3600</duration>
+        <!-- Length of the interval. -->        
+        <duration>3600</duration>        
+        <queries>1000</queries>        
+        <errors>100</errors>        
+        <result_rows>1000000000</result_rows>        
+        <read_rows>100000000000</read_rows>        
+        <execution_time>900</execution_time>    
+    </interval>    
 
-        <queries>1000</queries>
-        <errors>100</errors>
-        <result_rows>1000000000</result_rows>
-        <read_rows>100000000000</read_rows>
-        <execution_time>900</execution_time>
-    </interval>
-
-    <interval>
-        <duration>86400</duration>
-
-        <queries>10000</queries>
-        <errors>1000</errors>
+    <interval>        
+        <duration>86400</duration>        
+        <queries>10000</queries>        
+        <errors>1000</errors>        
         <result_rows>5000000000</result_rows>
         <read_rows>500000000000</read_rows>
         <execution_time>7200</execution_time>
@@ -89,7 +87,7 @@ Quotas can use the "quota key" feature in order to report on resources for multi
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
         You can also write <keyed_by_ip /> so the IP address is used as the quota key.(But keep in mind that users can change the IPv6 address fairly easily.)
-         --> 
+    -->
     <keyed />
 ```
 
@@ -98,4 +96,3 @@ The quota is assigned to users in the 'users' section of the config. See the sec
 For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will "start over".
 
 When the server is restarted, quotas are reset.
-

@@ -42,37 +42,41 @@ Columns:
 database:           database name
 table:              table name
 engine:             table engine name
+
 is_leader:          whether the replica is the leader
 
 Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.
 Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
 
-is_readonly:        Whether the replica is in read-only mode.This mode is turned on if the config doesn't have sections with ZK, if an unknown error occurred when reinitializing sessions in ZK, and during session reinitialization in ZK.
+is_readonly:        Whether the replica is in read-only mode.
+This mode is turned on if the config doesn't have sections with ZK, if an unknown error occurred when reinitializing sessions in ZK, and during session reinitialization in ZK.
 
 is_session_expired: Whether the ZK session expired.
 Basically, the same thing as is_readonly.
 
-future_parts: The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet. 
+future_parts:       The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet. 
 
-parts_to_check: The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
+parts_to_check:     The number of data parts in the queue for verification. 
+A part is put in the verification queue if there is suspicion that it might be damaged.
 
-zookeeper_path: The path to the table data in ZK. 
+zookeeper_path:     The path to the table data in ZK. 
 replica_name: Name of the replica in ZK. Different replicas of the same table have different names. 
-replica_path: The path to the replica data in ZK. The same as concatenating zookeeper_path/replicas/replica_path.
+replica_path:       The path to the replica data in ZK. The same as concatenating zookeeper_path/replicas/replica_path.
 
-columns_version: Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven't made all of the ALTERs yet.
+columns_version:    Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven't made all of the ALTERs yet.
 
-queue_size:         Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions.
+queue_size:         Size of the queue for operations waiting to be performed. 
+Operations include inserting blocks of data, merges, and certain other actions.
 Normally coincides with future_parts.
 
-inserts_in_queue: Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If the number is high, something is wrong.
+inserts_in_queue:   Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If the number is high, something is wrong.
 
-merges_in_queue: The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time.
+merges_in_queue:    The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time.
 
 The next 4 columns have a non-null value only if the ZK session is active.
 
-log_max_index:     Maximum entry number in the log of general activity.
-log_pointer:        Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. If log_pointer is much smaller than log_max_index, something is wrong.
+log_max_index:      Maximum entry number in the log of general activity. log_pointer:        Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one.
+If log_pointer is much smaller than log_max_index, something is wrong.
 
 total_replicas:     Total number of known replicas of this table.
 active_replicas:    Number of replicas of this table that have a ZK session (the number of active replicas).

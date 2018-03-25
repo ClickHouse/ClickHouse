@@ -80,7 +80,7 @@ Setting fields:
 
 ## HTTP(s)
 
-Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -135,9 +135,9 @@ Installing unixODBC and the ODBC driver for PostgreSQL:
 Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 
 ```
-    [DEFAULT]
+[DEFAULT]
     Driver = myconnection
-    
+
     [myconnection]
     Description         = PostgreSQL connection to my_db
     Driver              = PostgreSQL Unicode

@@ -19,7 +19,7 @@ In some cases, you can rely on the order of execution. This applies to cases whe
 
 When a `SELECT` query has the `GROUP BY` clause or at least one aggregate function, ClickHouse (in contrast to MySQL) requires that all expressions in the `SELECT`, `HAVING`, and `ORDER BY` clauses be calculated from keys or from aggregate functions. In other words, each column selected from the table must be used either in keys or inside aggregate functions. To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
 
-## anyHeavy(x)
+## anyHeavy
 
 Selects a frequently occurring value using the [heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf) algorithm. If there is a value that occurs more than in half the cases in each of the query's execution threads, this value is returned. Normally, the result is nondeterministic.
 
@@ -39,7 +39,6 @@ Take the [OnTime](../getting_started/example_datasets/ontime.md#example_datasets
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
-
 ```
 ┌───res─┐
 │ 19690 │
@@ -125,11 +124,11 @@ The result is always Float64.
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
 
 Uses an adaptive sampling algorithm: for the calculation state, it uses a sample of element hash values with a size up to 65536.
-This algorithm is also very accurate for data sets with small cardinality (up to 65536) and very efficient on CPU (when computing not too many of these functions, using `uniq` is almost as fast as using other aggregate functions).
+This algorithm is also very accurate for data sets with low cardinality (up to 65536) and very efficient on CPU (when computing not too many of these functions, using `uniq` is almost as fast as using other aggregate functions).
 
 The result is determinate (it doesn't depend on the order of query processing).
 
-This function provides excellent accuracy even for data sets with huge cardinality (10B+ elements) and is recommended for use by default.
+This function provides excellent accuracy even for data sets with extremely high cardinality (over 10 billion elements). It is recommended for default use.
 
 ## uniqCombined(x)
 
@@ -139,16 +138,16 @@ A combination of three algorithms is used: array, hash table and [HyperLogLog](h
 
 The result is determinate (it doesn't depend on the order of query processing).
 
-The `uniqCombined` function is a good default choice for calculating the number of different values, but the following should be considered: for data sets with large cardinality (200M+) error of estimate will only grow and for data sets with huge cardinality(1B+ elements) it returns result with high inaccuracy.
+The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error will increase for high-cardinality data sets (200M+ elements), and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
 ## uniqHLL12(x)
 
 Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the number of different values of the argument.
-212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. Result is not very accurate (error up to ~10%) for data sets of small cardinality(<10K elements), but for data sets with large cardinality (10K - 100M) result is quite accurate (error up to ~1.6%) and after that error of estimate will only grow and for data sets with huge cardinality (1B+ elements) it returns result with high inaccuracy.
+212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
 The result is determinate (it doesn't depend on the order of query processing).
 
-This function is not recommended for use, and in most cases, use the  `uniq` or `uniqCombined` function.
+We don't recommend using this function. In most cases, use the  `uniq` or `uniqCombined` function.
 
 ## uniqExact(x)
 
@@ -170,7 +169,7 @@ In some cases, you can still rely on the order of execution. This applies to cas
 
 <a name="agg_functions_groupArrayInsertAt"></a>
 
-## groupArrayInsertAt(x)
+## groupArrayInsertAt
 
 Inserts a value into the array in the specified position.
 
@@ -236,8 +235,8 @@ For its purpose (calculating quantiles of page loading times), using this functi
 
 ## quantileTimingWeighted(level)(x, weight)
 
-Differs from the 'quantileTiming' function in that it has a second argument, "weights". Weight is a non-negative integer.
-The result is calculated as if the 'x' value were passed 'weight' number of times to the 'quantileTiming' function.
+Differs from the `quantileTiming`  function in that it has a second argument, "weights". Weight is a non-negative integer.
+The result is calculated as if the `x`  value were passed `weight` number of times to the `quantileTiming` function.
 
 ## quantileExact(level)(x)
 
@@ -257,7 +256,7 @@ The performance of the function is lower than for ` quantile`, ` quantileTiming`
 
 The result depends on the order of running the query, and is nondeterministic.
 
-## median(x)
+## median
 
 All the quantile functions have corresponding median functions: `median`, `medianDeterministic`, `medianTiming`, `medianTimingWeighted`, `medianExact`, `medianExactWeighted`, `medianTDigest`. They are synonyms and their behavior is identical.
 
@@ -275,7 +274,7 @@ Returns `Float64`. When `n <= 1`, returns `+∞`.
 
 ## varPop(x)
 
-Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
+Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
@@ -287,11 +286,15 @@ The result is equal to the square root of `varSamp(x)`.
 
 The result is equal to the square root of `varPop(x)`.
 
-## topK(N)(column)
+## topK
 
 Returns an array of the most frequent values in the specified column. The resulting array is sorted in descending order of frequency of values (not by the values themselves).
 
 Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+
+```
+topK(N)(column)
+```
 
 This function doesn't provide a guaranteed result. In certain situations, errors might occur and it might return frequent values that aren't the most frequent values.
 
@@ -299,18 +302,17 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 **Arguments**
 
-- 'N' – The number of values.
+- 'N' is the number of values.
 - ' x ' – The column.
 
 **Example**
 
-Take the [OnTime](../getting_started/example_datasets/ontime.md#example_datasets-ontime)data set and select the three most frequently occurring values in the `AirlineID` column.
+Take the [OnTime](../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select the three most frequently occurring values in the `AirlineID` column.
 
 ```sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
-
 ```
 ┌─res─────────────────┐
 │ [19393,19790,19805] │

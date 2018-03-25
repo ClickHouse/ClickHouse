@@ -2,13 +2,13 @@
 
 # GraphiteMergeTree
 
-This engine is designed for rollup (thinning and aggregating/averaging) [ Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
+This engine is designed for rollup (thinning and aggregating/averaging) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
 Graphite stores full data in ClickHouse, and data can be retrieved in the following ways:
 
 - Without thinning.
 
-   Using the [MergeTree](mergetree.md#table_engines-mergetree) engine.
+   Uses the [MergeTree](mergetree.md#table_engines-mergetree) engine.
 
 - With thinning.
 
@@ -83,4 +83,3 @@ Example of settings:
     </default>
 </graphite_rollup>
 ```
-

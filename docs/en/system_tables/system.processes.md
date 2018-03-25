@@ -14,12 +14,12 @@ rows_read UInt64        – The number of rows read from the table. For distribu
 
 bytes_read UInt64 – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 
-total_rows_approx UInt64 – The approximate total number of rows that must be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
+UInt64 total_rows_approx – The approximate total number of rows that must be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
 
 memory_usage UInt64 – Memory consumption by the query. It might not include some types of dedicated memory.
 
-query String – The query text. For INSERT, it doesn't include the data to insert.
+Query String – The query text. For INSERT, it doesn't include the data to insert.
 
-query_id String - The query ID, if defined.
+query_id – Query ID, if defined.
 ```
 
