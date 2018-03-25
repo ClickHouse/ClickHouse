@@ -1,4 +1,4 @@
-# Star scheme
+# Star Schema Benchmark
 
 Compiling dbgen: <https://github.com/vadimtk/ssb-dbgen>
 
@@ -82,3 +82,4 @@ Downloading data (change 'customer' to 'customerd' in the distributed version):
 cat customer.tbl | sed 's/$/2000-01-01/' | clickhouse-client --query "INSERT INTO customer FORMAT CSV"
 cat lineorder.tbl | clickhouse-client --query "INSERT INTO lineorder FORMAT CSV"
 ```
+

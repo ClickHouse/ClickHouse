@@ -21,12 +21,11 @@ The dictionary config file has the following format:
 
     <!--Optional element. File name with substitutions-->
     <include_from>/etc/metrika.xml</include_from>
-
     
     <dictionary>
-        <!-- Dictionary configuration -->
+        <!-- Dictionary configuration -->    
     </dictionary>
-
+            
     ...
 
     <dictionary>

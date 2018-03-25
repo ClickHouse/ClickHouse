@@ -2,6 +2,7 @@
 
 # Data types
 
-ClickHouse table fields can contain data of different types.
+ClickHouse can store various types of data in table cells.
 
-The topic contains descriptions of data types supported and specificity of their usage of implementation if exists.
+This section describes the supported data types and special considerations when using and/or implementing them, if any.
+
