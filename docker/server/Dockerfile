@@ -4,7 +4,7 @@ ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
 ARG version=\*
 
 RUN apt-get update && \
-    apt-get install -y apt-transport-https && \
+    apt-get install -y apt-transport-https gosu && \
     mkdir -p /etc/apt/sources.list.d && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
@@ -15,10 +15,15 @@ RUN apt-get update && \
 COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 RUN chown -R clickhouse /etc/clickhouse-server/
 
-USER clickhouse
 EXPOSE 9000 8123 9009
 VOLUME /var/lib/clickhouse
 
-ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
-ENTRYPOINT exec /usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}
+ENV \
+  CLICKHOUSE_CONFIG=/etc/clickhouse-server/config.xml \
+  \
+  USER_UID=105 \
+  USER_GID=106
+
+ENTRYPOINT /usr/local/bin/entrypoint.sh
