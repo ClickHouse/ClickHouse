@@ -9,9 +9,9 @@ Ways to configure settings, in order of priority:
 
 - Settings in the server config file.
 
-   Settings from user profiles.
+   Set via user profiles.
 
-- Session settings.
+- For the session.
 
    Send ` SET setting=value` from the ClickHouse console client in interactive mode.
 Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to specify the `session_id` HTTP parameter.
