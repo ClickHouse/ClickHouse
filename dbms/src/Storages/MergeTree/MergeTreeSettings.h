@@ -131,6 +131,12 @@ struct MergeTreeSettings
       *  for backward compatibility.                                                                          \
       */                                                                                                      \
     M(SettingBool, compatibility_allow_sampling_expression_not_in_primary_key, false)                         \
+                                                                                                              \
+    /** Use small format (dozens bytes) for part checksums in ZooKeeper                                       \
+      *  instead of ordinary ones (dozens KB).                                                                \
+      * Before enabling check that all replicas support new format.                                           \
+      */                                                                                                      \
+    M(SettingBool, use_minimalistic_checksums_in_zookeeper, false)
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \

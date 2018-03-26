@@ -2172,13 +2172,17 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
     return total_covered_parts;
 }
 
-bool MergeTreeData::isPrimaryKeyColumn(const ASTPtr &node) const
+bool MergeTreeData::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     String column_name = node->getColumnName();
 
     for (const auto & column : primary_sort_descr)
         if (column_name == column.column_name)
             return true;
+
+    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+        if (func->arguments->children.size() == 1)
+            return isPrimaryKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
     return false;
 }
@@ -2191,16 +2195,16 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
-            if (!isPrimaryKeyColumn(item))
+            if (!isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
                 /// The tuple itself may be part of the primary key, so check that as a last resort.
-                return isPrimaryKeyColumn(left_in_operand);
+                return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
 
         /// tuple() is invalid but can still be found here since this method may be called before the arguments are validated.
         return !left_in_operand_tuple->arguments->children.empty();
     }
     else
     {
-        return isPrimaryKeyColumn(left_in_operand);
+        return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }
 

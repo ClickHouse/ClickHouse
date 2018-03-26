@@ -4,6 +4,8 @@
 
 #include <thread>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -288,6 +290,7 @@ void StorageKafka::startup()
 
         // Make consumer available
         pushConsumer(consumer);
+        ++num_created_consumers;
     }
 
     // Start the reader thread
@@ -303,7 +306,7 @@ void StorageKafka::shutdown()
 
     // Unsubscribe from assignments
     LOG_TRACE(log, "Unsubscribing from assignments");
-    for (size_t i = 0; i < num_consumers; ++i)
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto consumer = claimConsumer();
         consumer->unsubscribe();
@@ -573,9 +576,14 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        // Parse topic list and consumer group
+        // Parse topic list
         Names topics;
-        topics.push_back(static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>());
+        String topic_arg = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        boost::split(topics, topic_arg , [](char c){ return c == ','; });
+        for(String & topic : topics)
+            boost::trim(topic);
+
+        // Parse consumer group
         String group = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
 
         // Parse format from string

@@ -56,13 +56,13 @@ std::string determineDefaultTimeZone()
         /// then the relative path is the time zone id.
         fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
         if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-            return relative_path.native();
+            return relative_path.string();
 
         /// The file is not inside the tz_database_dir, so we hope that it was copied and
         /// try to find the file with exact same contents in the database.
 
         size_t tzfile_size = fs::file_size(tz_file_path);
-        Poco::SHA1Engine::Digest tzfile_sha1 = calcSHA1(tz_file_path.native());
+        Poco::SHA1Engine::Digest tzfile_sha1 = calcSHA1(tz_file_path.string());
 
         fs::recursive_directory_iterator begin(tz_database_path);
         fs::recursive_directory_iterator end;
@@ -80,8 +80,8 @@ std::string determineDefaultTimeZone()
             if (candidate_it->status().type() != fs::regular_file || path.filename() == "localtime")
                 continue;
 
-            if (fs::file_size(path) == tzfile_size && calcSHA1(path.native()) == tzfile_sha1)
-                return path.lexically_relative(tz_database_path).native();
+            if (fs::file_size(path) == tzfile_size && calcSHA1(path.string()) == tzfile_sha1)
+                return path.lexically_relative(tz_database_path).string();
         }
     }
     catch (const Poco::Exception & ex)

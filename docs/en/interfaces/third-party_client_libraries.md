@@ -2,7 +2,7 @@
 
 There are libraries for working with ClickHouse for:
 
-- Python:
+- Python
    - [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
    - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse)
    - [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)

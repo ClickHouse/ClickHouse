@@ -5,81 +5,13 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Columns/IColumn.h>
 #include <shared_mutex>
 
 
-class SipHash;
-
-
 namespace DB
 {
-
-
-/// Checksum of one file.
-struct MergeTreeDataPartChecksum
-{
-    using uint128 = CityHash_v1_0_2::uint128;
-
-    UInt64 file_size {};
-    uint128 file_hash {};
-
-    bool is_compressed = false;
-    UInt64 uncompressed_size {};
-    uint128 uncompressed_hash {};
-
-    MergeTreeDataPartChecksum() {}
-    MergeTreeDataPartChecksum(UInt64 file_size_, uint128 file_hash_) : file_size(file_size_), file_hash(file_hash_) {}
-    MergeTreeDataPartChecksum(UInt64 file_size_, uint128 file_hash_, UInt64 uncompressed_size_, uint128 uncompressed_hash_)
-        : file_size(file_size_), file_hash(file_hash_), is_compressed(true),
-        uncompressed_size(uncompressed_size_), uncompressed_hash(uncompressed_hash_) {}
-
-    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const;
-    void checkSize(const String & path) const;
-};
-
-
-/** Checksums of all non-temporary files.
-  * For compressed files, the check sum and the size of the decompressed data are stored to not depend on the compression method.
-  */
-struct MergeTreeDataPartChecksums
-{
-    using Checksum = MergeTreeDataPartChecksum;
-
-    /// The order is important.
-    using FileChecksums = std::map<String, Checksum>;
-    FileChecksums files;
-
-    void addFile(const String & file_name, UInt64 file_size, Checksum::uint128 file_hash);
-
-    void add(MergeTreeDataPartChecksums && rhs_checksums);
-
-    /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
-    /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data. Otherwise, it compares only the checksums of the files.
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
-
-    /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
-    void checkSizes(const String & path) const;
-
-    /// Serializes and deserializes in human readable form.
-    bool read(ReadBuffer & in); /// Returns false if the checksum is too old.
-    bool read_v2(ReadBuffer & in);
-    bool read_v3(ReadBuffer & in);
-    bool read_v4(ReadBuffer & in);
-    void write(WriteBuffer & out) const;
-
-    bool empty() const
-    {
-        return files.empty();
-    }
-
-    /// Checksum from the set of checksums of .bin files.
-    void summaryDataChecksum(SipHash & hash) const;
-
-    String toString() const;
-    static MergeTreeDataPartChecksums parse(const String & s);
-};
-
 
 class MergeTreeData;
 
@@ -148,7 +80,8 @@ struct MergeTreeDataPart
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
-    mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() }; /// When the part is removed from the working set. Changes once.
+    /// When the part is removed from the working set. Changes once.
+    mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;

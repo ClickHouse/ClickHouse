@@ -2,11 +2,11 @@
 
 # Storing dictionaries in memory
 
-There are [many different ways](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
+There are a [variety of ways](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
 
-We recommend [flat](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-hashed), and [complex_key_hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
+We recommend [flat](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-hashed)and[complex_key_hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more about this in the "[cache](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-cache)" section.
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section " [cache](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-cache)".
 
 There are several ways to improve dictionary performance:
 
@@ -87,7 +87,7 @@ Configuration example:
 
 ### complex_key_hashed
 
-This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). It is similar to hashed.
+This type is for use with composite [keys](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). Similar to `hashed`.
 
 Configuration example:
 
@@ -108,10 +108,18 @@ This storage method works the same way as hashed and allows using date/time rang
 Example: The table contains discounts for each advertiser in the format:
 
 ```
-+------------------+-----------------------------+------------+----------+  | advertiser id | discount start date | discount end date | amount |  +==================+=============================+============+==========+  | 123              | 2015-01-01                  | 2015-01-15 | 0.15     |  +------------------+-----------------------------+------------+----------+  | 123              | 2015-01-16                  | 2015-01-31 | 0.25     |  +------------------+-----------------------------+------------+----------+  | 456              | 2015-01-01                  | 2015-01-15 | 0.05     |  +------------------+-----------------------------+------------+----------+
++---------------+---------------------+-------------------+--------+
+| advertiser id | discount start date | discount end date | amount |
++===============+=====================+===================+========+
+| 123           | 2015-01-01          | 2015-01-15        | 0.15   |
++---------------+---------------------+-------------------+--------+
+| 123           | 2015-01-16          | 2015-01-31        | 0.25   |
++---------------+---------------------+-------------------+--------+
+| 456           | 2015-01-01          | 2015-01-15        | 0.05   |
++---------------+---------------------+-------------------+--------+
 ```
 
-To use a sample for date ranges, define `range_min` and `range_max` in [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure).
 
 Example:
 
@@ -195,8 +203,8 @@ Example of settings:
 ```xml
 <layout>
     <cache>
-        <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
-               <size_in_cells>1000000000</size_in_cells>
+        <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->        
+        <size_in_cells>1000000000</size_in_cells>
     </cache>
 </layout>
 ```
@@ -218,4 +226,4 @@ Do not use ClickHouse as a source, because it is slow to process queries with ra
 
 ### complex_key_cache
 
-This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.
+This type of storage is for use with composite [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.

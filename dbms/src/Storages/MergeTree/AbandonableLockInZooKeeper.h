@@ -19,7 +19,7 @@ namespace ErrorCodes
   * When the destructor is called or the session ends in ZooKeeper, it goes into the ABANDONED state.
   * (Including when the program is halted).
   */
-class AbandonableLockInZooKeeper : private boost::noncopyable
+class AbandonableLockInZooKeeper : public boost::noncopyable
 {
 public:
     enum State
@@ -31,44 +31,52 @@ public:
 
     AbandonableLockInZooKeeper(
         const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, zkutil::Ops * precheck_ops = nullptr)
-        : zookeeper(zookeeper_), path_prefix(path_prefix_)
+        : zookeeper(&zookeeper_), path_prefix(path_prefix_)
     {
         String abandonable_path = temp_path + "/abandonable_lock-";
 
         /// Let's create an secondary ephemeral node.
         if (!precheck_ops || precheck_ops->empty())
         {
-            holder_path = zookeeper.create(abandonable_path, "", zkutil::CreateMode::EphemeralSequential);
+            holder_path = zookeeper->create(abandonable_path, "", zkutil::CreateMode::EphemeralSequential);
         }
         else
         {
-            precheck_ops->emplace_back(std::make_unique<zkutil::Op::Create>(
-                abandonable_path, "", zookeeper.getDefaultACL(), zkutil::CreateMode::EphemeralSequential));
+            precheck_ops->emplace_back(std::make_shared<zkutil::Op::Create>(
+                abandonable_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::EphemeralSequential));
 
-            if (zookeeper.tryMultiUnsafe(*precheck_ops, precheck_info) != ZOK)
-                return;
+            zkutil::OpResultsPtr op_results = zookeeper->multi(*precheck_ops);
 
-            holder_path = precheck_info.op_results->back().value;
+            holder_path = op_results->back().value;
         }
 
         /// Write the path to the secondary node in the main node.
-        path = zookeeper.create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);
+        path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);
 
         if (path.size() <= path_prefix.size())
             throw Exception("Logical error: name of sequential node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    AbandonableLockInZooKeeper(AbandonableLockInZooKeeper && rhs)
-        : zookeeper(rhs.zookeeper)
+    AbandonableLockInZooKeeper() = default;
+
+    AbandonableLockInZooKeeper(AbandonableLockInZooKeeper && rhs) noexcept
     {
-        std::swap(path_prefix, rhs.path_prefix);
-        std::swap(path, rhs.path);
-        std::swap(holder_path, rhs.holder_path);
+        *this = std::move(rhs);
+    }
+
+    AbandonableLockInZooKeeper & operator=(AbandonableLockInZooKeeper && rhs) noexcept
+    {
+        zookeeper = rhs.zookeeper;
+        rhs.zookeeper = nullptr;
+        path_prefix = std::move(rhs.path_prefix);
+        path = std::move(rhs.path);
+        holder_path = std::move(rhs.holder_path);
+        return *this;
     }
 
     bool isCreated() const
     {
-        return !holder_path.empty() && !path.empty();
+        return zookeeper && !holder_path.empty() && !path.empty();
     }
 
     String getPath() const
@@ -87,8 +95,8 @@ public:
     void unlock()
     {
         checkCreated();
-        zookeeper.remove(path);
-        zookeeper.remove(holder_path);
+        zookeeper->remove(path);
+        zookeeper->remove(holder_path);
         holder_path = "";
     }
 
@@ -96,8 +104,15 @@ public:
     void getUnlockOps(zkutil::Ops & ops)
     {
         checkCreated();
-        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(path, -1));
-        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(holder_path, -1));
+        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(path, -1));
+        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(holder_path, -1));
+    }
+
+    /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
+    ///  because the nodes will be already deleted.
+    void assumeUnlocked()
+    {
+        holder_path.clear();
     }
 
     void checkCreated() const
@@ -108,13 +123,13 @@ public:
 
     ~AbandonableLockInZooKeeper()
     {
-        if (holder_path.empty())
+        if (!zookeeper || holder_path.empty())
             return;
 
         try
         {
-            zookeeper.tryRemoveEphemeralNodeWithRetries(holder_path);
-            zookeeper.trySet(path, ""); /// It's not necessary.
+            zookeeper->tryRemoveEphemeralNodeWithRetries(holder_path);
+            zookeeper->trySet(path, ""); /// It's not necessary.
         }
         catch (...)
         {
@@ -153,15 +168,10 @@ public:
     }
 
 private:
-    zkutil::ZooKeeper & zookeeper;
+    zkutil::ZooKeeper * zookeeper = nullptr;
     String path_prefix;
     String path;
     String holder_path;
-
-public:
-    /// Contains information about execution of passed precheck ops and block-creation payload
-    /// TODO: quite ugly interface to handle precheck ops
-    zkutil::MultiTransactionInfo precheck_info;
 };
 
 }

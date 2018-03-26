@@ -330,12 +330,12 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     NamesAndTypesList & merging_columns, Names & merging_column_names
 )
 {
-    Names primary_key_columns_dup = primary_key_expressions->getRequiredColumns();
-    std::set<String> key_columns(primary_key_columns_dup.cbegin(), primary_key_columns_dup.cend());
+    Names primary_key_columns_vec = primary_key_expressions->getRequiredColumns();
+    std::set<String> key_columns(primary_key_columns_vec.cbegin(), primary_key_columns_vec.cend());
     if (secondary_key_expressions)
     {
-        Names secondary_key_columns_dup = secondary_key_expressions->getRequiredColumns();
-        key_columns.insert(secondary_key_columns_dup.begin(), secondary_key_columns_dup.end());
+        Names secondary_key_columns_vec = secondary_key_expressions->getRequiredColumns();
+        key_columns.insert(secondary_key_columns_vec.begin(), secondary_key_columns_vec.end());
     }
 
     /// Force sign column for Collapsing mode
@@ -349,6 +349,10 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         key_columns.emplace(merging_params.sign_column);
+
+    /// Force to merge at least one column in case of empty key
+    if (key_columns.empty())
+        key_columns.emplace(all_columns.front().name);
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 

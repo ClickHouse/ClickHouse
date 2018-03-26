@@ -980,7 +980,8 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
         if (functionIsInOrGlobalInOperator(func_node->name))
             if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
-                right->kind = ASTIdentifier::Table;
+                if (!aliases.count(right->name))
+                    right->kind = ASTIdentifier::Table;
 
         /// Special cases for count function.
         String func_name_lowercase = Poco::toLower(func_node->name);
@@ -1457,8 +1458,13 @@ void ExpressionAnalyzer::optimizeLimitBy()
 
 void ExpressionAnalyzer::makeSetsForIndex()
 {
-    if (storage && ast && storage->supportsIndexForIn())
-        makeSetsForIndexImpl(ast, storage->getSampleBlock());
+    if (storage && select_query && storage->supportsIndexForIn())
+    {
+        if (select_query->where_expression)
+            makeSetsForIndexImpl(select_query->where_expression, storage->getSampleBlock());
+        if (select_query->prewhere_expression)
+            makeSetsForIndexImpl(select_query->prewhere_expression, storage->getSampleBlock());
+    }
 }
 
 
@@ -1483,40 +1489,42 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
 {
     for (auto & child : node->children)
     {
-        /// Process expression only in current subquery
-        if (!typeid_cast<ASTSubquery *>(child.get()))
-            makeSetsForIndexImpl(child, sample_block);
+        /// Don't descent into subqueries.
+        if (typeid_cast<ASTSubquery *>(child.get()))
+            continue;
+
+        /// Don't dive into lambda functions
+        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        if (func && func->name == "lambda")
+            continue;
+
+        makeSetsForIndexImpl(child, sample_block);
     }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
     if (func && functionIsInOperator(func->name))
     {
         const IAST & args = *func->arguments;
-        const ASTPtr & arg = args.children.at(1);
 
-        if (!prepared_sets.count(arg.get())) /// Not already prepared.
+        if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0)))
         {
-            if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
+            const ASTPtr & arg = args.children.at(1);
+
+            if (!prepared_sets.count(arg.get())) /// Not already prepared.
             {
-                if (settings.use_index_for_in_with_subqueries && storage->mayBenefitFromIndexForIn(args.children.at(0)))
-                    tryMakeSetFromSubquery(arg);
-            }
-            else
-            {
-                try
+                if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
+                {
+                    if (settings.use_index_for_in_with_subqueries)
+                        tryMakeSetFromSubquery(arg);
+                }
+                else
                 {
                     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
                     getRootActions(func->arguments->children.at(0), true, false, temp_actions);
-                    makeExplicitSet(func, temp_actions->getSampleBlock(), true);
-                }
-                catch (const Exception & e)
-                {
-                    /// in `sample_block` there are no columns that are added by `getActions`
-                    if (e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
-                        throw;
 
-                    /// TODO: Delete the catch in the next release
-                    tryLogCurrentException(&Poco::Logger::get("ExpressionAnalyzer"));
+                    Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
+                    if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
+                        makeExplicitSet(func, sample_block_with_calculated_columns, true);
                 }
             }
         }
@@ -1579,7 +1587,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
           *   in the subquery_for_set object, this subquery is set as source and the temporary table _data1 as the table.
           * - this function shows the expression IN_data1.
           */
-        if (!subquery_for_set.source)
+        if (!subquery_for_set.source && (!storage || !storage->isRemote()))
         {
             auto interpreter = interpretSubquery(arg, context, subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
@@ -1646,15 +1654,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         for (const auto & arg : left_arg_tuple->arguments->children)
-        {
-            const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
-
-            /// NOTE prevent crash in query: SELECT (1, [1]) in (1, 1)
-            if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
-                throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-
-            set_element_types.push_back(data_type);
-        }
+            set_element_types.push_back(sample_block.getByName(arg->getColumnName()).type);
     }
     else
     {
