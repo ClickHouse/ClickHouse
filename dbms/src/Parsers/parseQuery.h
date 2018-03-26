@@ -14,7 +14,8 @@ ASTPtr tryParseQuery(
     std::string & out_error_message,
     bool hilite,
     const std::string & description,
-    bool allow_multi_statements);    /// If false, check for non-space characters after semicolon and set error message if any.
+    bool allow_multi_statements,    /// If false, check for non-space characters after semicolon and set error message if any.
+    size_t max_query_size = 0);
 
 
 /// Parse query or throw an exception with error message.
@@ -23,23 +24,27 @@ ASTPtr parseQueryAndMovePosition(
     const char * & pos,                /// Moved to end of parsed fragment.
     const char * end,
     const std::string & description,
-    bool allow_multi_statements);
+    bool allow_multi_statements,
+    size_t max_query_size = 0);
 
 
 ASTPtr parseQuery(
     IParser & parser,
     const char * begin,
     const char * end,
-    const std::string & description);
+    const std::string & description,
+    size_t max_query_size = 0);
 
 ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
-    const std::string & query_description);
+    const std::string & query_description,
+    size_t max_query_size);
 
 ASTPtr parseQuery(
     IParser & parser,
-    const std::string & query);
+    const std::string & query,
+    size_t max_query_size = 0);
 
 
 /** Split queries separated by ; on to list of single queries

@@ -157,16 +157,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "");
+        ast = parseQuery(parser, begin, end, "", max_query_size);
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
         if (!(begin <= ast->range.first && ast->range.second <= end))
             throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
         query_size = ast->range.second - begin;
-
-        if (max_query_size && query_size > max_query_size)
-            throw Exception("Query is too large (" + toString(query_size) + ")."
-                " max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
     }
     catch (...)
     {
@@ -415,30 +411,23 @@ void executeQuery(
     if (istr.buffer().size() == 0)
         istr.next();
 
-    size_t bytes_copied = 0;
+    size_t max_query_size = context.getSettingsRef().max_query_size;
 
-    do
+    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
-        ssize_t buffer_size = istr.buffer().end() - istr.position();
-
-        if(buffer_size == 0)
-            break;
-
-        size_t new_size = bytes_copied + buffer_size;
-
-        //should we protect here against malicious code ? checking for max_query_size seems not ok as
-        //time for inserts the values are ignored
-        //size_t max_query_size = context.getSettingsRef().max_query_size;
-        //if(max_query_size && new_size > max_query_size)
-        //    throw Exception("Query is too large exceeding max_query_size of " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
-
-        parse_buf.resize(new_size);
-        bytes_copied += istr.read(&parse_buf[bytes_copied], buffer_size);
+        /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
+        begin = istr.position();
+        end = istr.buffer().end();
+        istr.position() += end - begin;
     }
-    while(istr.next());
-
-    begin = &parse_buf[0];
-    end = begin + bytes_copied;
+    else
+    {
+        /// If not - copy enough data into 'parse_buf'.
+        parse_buf.resize(max_query_size + 1);
+        parse_buf.resize(istr.read(&parse_buf[0], max_query_size + 1));
+        begin = &parse_buf[0];
+        end = begin + parse_buf.size();
+    }
 
     ASTPtr ast;
     BlockIO streams;
