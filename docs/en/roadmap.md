@@ -3,13 +3,11 @@
 ## Q1 2018
 
 ### New functionality
-
-- Support for `UPDATE` and `DELETE`.
-
-- Multidimensional and nested arrays.
-
-   It can look something like this:
-
+- Initial support for `UPDATE` and `DELETE`.
+- Multi-dimensional and nested arrays.
+    
+    It may look like this:
+    
 ```sql
 CREATE TABLE t
 (
@@ -23,7 +21,7 @@ ENGINE = MergeTree ORDER BY x
 
 - External MySQL and ODBC tables.
 
-   External tables can be integrated into ClickHouse using external dictionaries. This new functionality is a convenient alternative to connecting external tables.
+    External tables can be integrated to ClickHouse using external dictionaries. This will be an alternative and a more convenient way to do so.
 
 ```sql
 SELECT ... 
@@ -32,68 +30,66 @@ FROM mysql('host:port', 'db', 'table', 'user', 'password')`
 
 ### Improvements
 
-- Effective data copying between ClickHouse clusters.
+- Efficient data copy between ClickHouse clusters.
 
-   Now you can copy data with the remote() function. For example: `
+    Currently, it is possible to copy data using remote() function, e.g.: `
 INSERT INTO t SELECT * FROM remote(...) `.
 
-   This operation will have improved performance.
+    The performance of this will be improved by proper distributed execution.
 
 - O_DIRECT for merges.
 
-   This will improve the performance of the OS cache and "hot" queries.
+    Should improve OS cache performance and correspondingly query performance for 'hot' queries.
+
 
 ## Q2 2018
 
 ### New functionality
 
-- UPDATE/DELETE conform to the EU GDPR.
-- Protobuf and Parquet input and output formats.
-- Creating dictionaries using DDL queries.
+- UPDATE/DELETE in order to comply with Europe GDPR.
+- Protobuf and Parquet input/output formats.
+- Create dictionaries by DDL queries.
 
-   Currently, dictionaries that are part of the database schema are defined in external XML files. This is inconvenient and counter-intuitive. The new approach should fix it.
+    Currently, it is inconvenient and confusing that dictionaries are defined in external XML files while being a part of DB schema. The new approach will fix that.
 
-- Integration with LDAP.
-
+- LDAP integration.
 - WITH ROLLUP and WITH CUBE for GROUP BY.
+- Custom encoding/compression for columns.
 
-- Custom encoding and compression for each column individually.
+    Currently, ClickHouse support LZ4 and ZSTD compressions for columns, and compressions settings are global (see our article [Compression in ClickHouse](https://www.altinity.com/blog/2017/11/21/compression-in-clickhouse)) for more details). Column level encoding (e.g. delta encoding) and compression will allow more efficient data storage and therefore faster queries.
 
-   As of now, ClickHouse supports LZ4 and ZSTD compression of columns, and compression settings are global (see the article [Compression in ClickHouse](https://www.altinity.com/blog/2017/11/21/compression-in-clickhouse)). Per-column compression and encoding will provide more efficient data storage, which in turn will speed up queries.
+- Store data at multiple disk volumes of a single server.
 
-- Storing data on multiple disks on the same server.
-
-   This functionality will make it easier to extend the disk space, since different disk systems can be used for different databases or tables. Currently, users are forced to use symbolic links if the databases and tables must be stored on a different disk.
+    That will make it easier to extend disk system as well as use different disk systems for different DBs or tables. Currently, users have to use symlinks if DB/table needs to be stored in another volume.
 
 ### Improvements
 
-Many improvements and fixes are planned for the query execution system. For example:
+A lot of enhancements and fixes are planned for query execution. In particular:
 
-- Using an index for `in (subquery)`.
+- Using index for ‘in (subquery)’.
 
-   The index is not used right now, which reduces performance.
+    Currently, index is not used for such queries resulting in lower performance.
 
-- Passing predicates from `where` to subqueries, and passing predicates to views.
+- Predicate pushdown from ‘where’ into subqueries and Predicate pushdown for views.
 
-   The predicates must be passed, since the view is changed by the subquery. Performance is still low for view filters, and views can't use the primary key of the original table, which makes views useless for large tables.
+    These two are related since view is replaced by subquery. Currently, performance of filter conditions for views is significantly degraded, views can not use primary key of the underlying table, that makes views on big tables pretty much useless.
 
-- Optimizing branching operations (ternary operator, if, multiIf).
+- Short-circuit expressions evaluation (ternary operator, if, multiIf).
 
-   ClickHouse currently performs all branches, even if they aren't necessary.
+    Currently, ClickHouse evaluates all branches even if the first one needs to be returned due to logical condition result.
 
-- Using a primary key for GROUP BY and ORDER BY.
+- Using primary key for GROUP BY and ORDER BY.
 
-   This will speed up certain types of queries with partially sorted data.
+    This may speed up certain types of queries since data is already partially pre-sorted.
 
 ## Q3-Q4 2018
 
-We don't have any set plans yet, but the main projects will be:
+Longer term plans are not yet finalized. There are two major projects on the list so far.
 
-- Resource pools for executing queries.
+- Resource pools for query execution.
 
-   This will make load management more efficient.
+    That will allow managing workloads more efficiently.
 
 - ANSI SQL JOIN syntax.
 
-   Improve ClickHouse compatibility with many SQL tools.
-
+    That will make ClickHouse more friendly for numerous SQL tools.
