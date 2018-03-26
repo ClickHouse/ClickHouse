@@ -42,7 +42,7 @@ struct MergeTreeDataPart
         void add(const ColumnSize & other)
         {
             marks += other.marks;
-            data_compressed += other.data_uncompressed;
+            data_compressed += other.data_compressed;
             data_uncompressed += other.data_uncompressed;
         }
     };
