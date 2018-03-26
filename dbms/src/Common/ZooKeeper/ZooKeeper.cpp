@@ -451,11 +451,6 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & 
     return existsWatch(path, stat_, callbackForEvent(watch));
 }
 
-bool ZooKeeper::exists(const std::string & path, Stat * stat, const WatchCallback & watch_callback)
-{
-    return existsWatch(path, stat, watch_callback);
-}
-
 bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
 {
     int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch_callback));

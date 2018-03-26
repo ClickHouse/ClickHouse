@@ -160,7 +160,6 @@ public:
     int32_t tryRemoveEphemeralNodeWithRetries(const std::string & path, int32_t version = -1, size_t * attempt = nullptr);
 
     bool exists(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    bool exists(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
     bool existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
 
     std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
