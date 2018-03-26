@@ -252,7 +252,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 }
 
 
-bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_event)
+bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_task_handle)
 {
     std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
 
@@ -400,10 +400,10 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, B
         }
     }
 
-    if (next_update_event)
+    if (next_update_task_handle)
     {
-        if (zookeeper->exists(zookeeper_path + "/log/log-" + padIndex(index), nullptr, next_update_event->getWatchCallback()))
-            next_update_event->schedule();
+        if (zookeeper->exists(zookeeper_path + "/log/log-" + padIndex(index), nullptr, next_update_task_handle->getWatchCallback()))
+            next_update_task_handle->schedule();
     }
 
     return dirty_entries_loaded || !log_entries.empty();
