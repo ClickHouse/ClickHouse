@@ -259,6 +259,8 @@ private:
     void loadPartitionAndMinMaxIndex();
 
     void checkConsistency(bool require_part_metadata);
+
+    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
 };
 
 
