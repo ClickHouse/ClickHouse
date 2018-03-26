@@ -341,9 +341,9 @@ private:
     /// Running jobs from the queue.
 
     /** Copies the new entries from the logs of all replicas to the queue of this replica.
-      * If next_update_event != nullptr, calls this event when new entries appear in the log.
+      * If next_update_task_handle != nullptr, schedules this task when new entries appear in the log.
       */
-    void pullLogsToQueue(BackgroundSchedulePool::TaskHandle next_update_event = nullptr);
+    void pullLogsToQueue(BackgroundSchedulePool::TaskHandle next_update_task_handle = nullptr);
 
     /** Execute the action from the queue. Throws an exception if something is wrong.
       * Returns whether or not it succeeds. If it did not work, write it to the end of the queue.

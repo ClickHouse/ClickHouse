@@ -953,9 +953,9 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
 }
 
 
-void StorageReplicatedMergeTree::pullLogsToQueue(BackgroundSchedulePool::TaskHandle next_update_event)
+void StorageReplicatedMergeTree::pullLogsToQueue(BackgroundSchedulePool::TaskHandle next_update_task_handle)
 {
-    if (queue.pullLogsToQueue(getZooKeeper(), next_update_event))
+    if (queue.pullLogsToQueue(getZooKeeper(), next_update_task_handle))
     {
         if (queue_task_handle)
             queue_task_handle->wake();
