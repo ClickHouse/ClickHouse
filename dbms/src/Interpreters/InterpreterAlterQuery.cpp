@@ -110,7 +110,7 @@ void InterpreterAlterQuery::parseAlter(
             }
             if (ast_col_decl.default_expression)
             {
-                command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+                command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
                 command.default_expression = ast_col_decl.default_expression;
             }
 
@@ -157,7 +157,7 @@ void InterpreterAlterQuery::parseAlter(
 
             if (ast_col_decl.default_expression)
             {
-                command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+                command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
                 command.default_expression = ast_col_decl.default_expression;
             }
 
@@ -200,7 +200,7 @@ void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
         {
             String column_name = command.column_name.safeGet<String>();
 
-            if (!table->hasRealColumn(column_name))
+            if (!table->getColumns().hasPhysical(column_name))
             {
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
                     DB::ErrorCodes::ILLEGAL_COLUMN);

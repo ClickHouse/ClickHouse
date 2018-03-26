@@ -25,8 +25,7 @@ void registerStorageNull(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageNull::create(args.table_name,
-            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults);
+        return StorageNull::create(args.table_name, args.columns);
     });
 }
 
@@ -34,11 +33,10 @@ void StorageNull::alter(const AlterCommands & params, const String & database_na
 {
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
-    params.apply(columns, materialized_columns, alias_columns, column_defaults);
-
-    context.getDatabase(database_name)->alterTable(
-        context, table_name,
-        columns, materialized_columns, alias_columns, column_defaults, {});
+    ColumnsDescription new_columns = getColumns();
+    params.apply(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    setColumns(std::move(new_columns));
 }
 
 }

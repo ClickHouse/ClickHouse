@@ -216,7 +216,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             }
 
             progressImpl({ res.rows(), res.bytes() });
-            pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
+            pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder, res.rows());
 
             /// Compute the expression in PREWHERE.
             prewhere_actions->execute(res);
@@ -396,7 +396,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 ///  as a result of reading components of Nested data structures with no data in filesystem.
                 /// We must fill these arrays to filter them correctly.
 
-                reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
+                reader->fillMissingColumns(res, task->ordered_names, task->should_reorder, post_filter.size(), true);
 
                 /// Filter the columns related to PREWHERE using pre_filter,
                 ///  other columns - using post_filter.
@@ -422,7 +422,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 if (task->size_predictor)
                     task->size_predictor->update(res);
 
-                reader->fillMissingColumns(res, task->ordered_names, true);
+                reader->fillMissingColumns(res, task->ordered_names, true, res.rows());
 
                 res.checkNumberOfRows();
             }
@@ -464,7 +464,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             return res;
 
         progressImpl({ res.rows(), res.bytes() });
-        reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
+        reader->fillMissingColumns(res, task->ordered_names, task->should_reorder, res.rows());
     }
 
     return res;

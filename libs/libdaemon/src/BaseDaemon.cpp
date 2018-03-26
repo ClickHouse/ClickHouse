@@ -63,6 +63,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
+
 using Poco::Logger;
 using Poco::AutoPtr;
 using Poco::Observer;
@@ -310,19 +311,6 @@ private:
         LOG_ERROR(log, "(from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
-        if (sig == SIGSEGV)
-        {
-            /// Print info about address and reason.
-            if (nullptr == info.si_addr)
-                LOG_ERROR(log, "Address: NULL pointer.");
-            else
-                LOG_ERROR(log, "Address: " << info.si_addr
-                    << (info.si_code == SEGV_ACCERR ? ". Attempted access has violated the permissions assigned to the memory area." : ""));
-        }
-
-        if (already_printed_stack_trace)
-            return;
-
         void * caller_address = nullptr;
 
 #if defined(__x86_64__)
@@ -333,10 +321,150 @@ private:
         caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
         #else
         caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
+        auto err_mask = context.uc_mcontext.gregs[REG_ERR];
         #endif
 #elif defined(__aarch64__)
         caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
 #endif
+
+        switch (sig)
+        {
+            case SIGSEGV:
+            {
+                /// Print info about address and reason.
+                if (nullptr == info.si_addr)
+                    LOG_ERROR(log, "Address: NULL pointer.");
+                else
+                    LOG_ERROR(log, "Address: " << info.si_addr);
+
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
+                if ((err_mask & 0x02))
+                    LOG_ERROR(log, "Access: write.");
+                else
+                    LOG_ERROR(log, "Access: read.");
+#endif
+
+                switch (info.si_code)
+                {
+                    case SEGV_ACCERR:
+                        LOG_ERROR(log, "Attempted access has violated the permissions assigned to the memory area.");
+                        break;
+                    case SEGV_MAPERR:
+                        LOG_ERROR(log, "Address not mapped to object.");
+                        break;
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+
+            case SIGBUS:
+            {
+                switch (info.si_code)
+                {
+                    case BUS_ADRALN:
+                        LOG_ERROR(log, "Invalid address alignment.");
+                        break;
+                    case BUS_ADRERR:
+                        LOG_ERROR(log, "Non-existant physical address.");
+                        break;
+                    case BUS_OBJERR:
+                        LOG_ERROR(log, "Object specific hardware error.");
+                        break;
+
+                    // Linux specific
+#if defined(BUS_MCEERR_AR)
+                    case BUS_MCEERR_AR:
+                        LOG_ERROR(log, "Hardware memory error: action required.");
+                        break;
+#endif
+#if defined(BUS_MCEERR_AO)
+                    case BUS_MCEERR_AO:
+                        LOG_ERROR(log, "Hardware memory error: action optional.");
+                        break;
+#endif
+
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+
+            case SIGILL:
+            {
+                switch (info.si_code)
+                {
+                    case ILL_ILLOPC:
+                        LOG_ERROR(log, "Illegal opcode.");
+                        break;
+                    case ILL_ILLOPN:
+                        LOG_ERROR(log, "Illegal operand.");
+                        break;
+                    case ILL_ILLADR:
+                        LOG_ERROR(log, "Illegal addressing mode.");
+                        break;
+                    case ILL_ILLTRP:
+                        LOG_ERROR(log, "Illegal trap.");
+                        break;
+                    case ILL_PRVOPC:
+                        LOG_ERROR(log, "Privileged opcode.");
+                        break;
+                    case ILL_PRVREG:
+                        LOG_ERROR(log, "Privileged register.");
+                        break;
+                    case ILL_COPROC:
+                        LOG_ERROR(log, "Coprocessor error.");
+                        break;
+                    case ILL_BADSTK:
+                        LOG_ERROR(log, "Internal stack error.");
+                        break;
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+
+            case SIGFPE:
+            {
+                switch (info.si_code)
+                {
+                    case FPE_INTDIV:
+                        LOG_ERROR(log, "Integer divide by zero.");
+                        break;
+                    case FPE_INTOVF:
+                        LOG_ERROR(log, "Integer overflow.");
+                        break;
+                    case FPE_FLTDIV:
+                        LOG_ERROR(log, "Floating point divide by zero.");
+                        break;
+                    case FPE_FLTOVF:
+                        LOG_ERROR(log, "Floating point overflow.");
+                        break;
+                    case FPE_FLTUND:
+                        LOG_ERROR(log, "Floating point underflow.");
+                        break;
+                    case FPE_FLTRES:
+                        LOG_ERROR(log, "Floating point inexact result.");
+                        break;
+                    case FPE_FLTINV:
+                        LOG_ERROR(log, "Floating point invalid operation.");
+                        break;
+                    case FPE_FLTSUB:
+                        LOG_ERROR(log, "Subscript out of range.");
+                        break;
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+        }
+
+        if (already_printed_stack_trace)
+            return;
 
         static const int max_frames = 50;
         void * frames[max_frames];

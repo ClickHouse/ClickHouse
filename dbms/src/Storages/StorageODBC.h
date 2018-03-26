@@ -30,7 +30,7 @@ public:
         const std::string & connection_string,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const NamesAndTypesList & columns_);
+        const ColumnsDescription & columns_);
 
     std::string getName() const override { return "ODBC"; }
     std::string getTableName() const override { return name; }

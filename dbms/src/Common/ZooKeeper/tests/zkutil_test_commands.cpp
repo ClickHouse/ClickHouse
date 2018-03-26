@@ -1,6 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <iostream>
-#include <unistd.h>
+#include <port/unistd.h>
 
 using namespace zkutil;
 

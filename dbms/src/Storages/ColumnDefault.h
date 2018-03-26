@@ -9,7 +9,7 @@
 namespace DB
 {
 
-enum class ColumnDefaultType
+enum class ColumnDefaultKind
 {
     Default,
     Materialized,
@@ -17,13 +17,13 @@ enum class ColumnDefaultType
 };
 
 
-ColumnDefaultType columnDefaultTypeFromString(const std::string & str);
-std::string toString(const ColumnDefaultType type);
+ColumnDefaultKind columnDefaultKindFromString(const std::string & str);
+std::string toString(const ColumnDefaultKind type);
 
 
 struct ColumnDefault
 {
-    ColumnDefaultType type;
+    ColumnDefaultKind kind;
     ASTPtr expression;
 };
 
