@@ -262,7 +262,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         {
             std::unique_lock lock(delayed_tasks_lock);
 
-            if(!shutdown)
+            if(shutdown)
                 break;
 
             Poco::Timestamp min_time;
