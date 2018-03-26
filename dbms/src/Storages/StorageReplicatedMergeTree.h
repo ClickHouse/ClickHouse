@@ -261,7 +261,7 @@ private:
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
     /// A task that selects parts to merge.
-    BackgroundSchedulePool::TaskHandle merge_selecting_handle;
+    BackgroundSchedulePool::TaskHandle merge_selecting_task_handle;
     bool merge_sel_deduplicate;
     std::function<bool(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> merge_sel_uncached_merging_predicate;
     std::function<std::pair<String, String>(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> merge_sel_merging_predicate_args_to_key;
