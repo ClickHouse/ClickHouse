@@ -39,6 +39,7 @@
 
 #include <random>
 #include <pcg_random.hpp>
+#include <Poco/Net/NetException.h>
 
 
 namespace DB
@@ -95,7 +96,7 @@ struct HostID
         {
             return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port), clickhouse_port);
         }
-        catch (const Poco::Exception & e)
+        catch (const Poco::Net::NetException & e)
         {
             /// Avoid "Host not found" exceptions
             return false;
