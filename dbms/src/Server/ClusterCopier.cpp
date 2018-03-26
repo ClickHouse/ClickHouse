@@ -1128,7 +1128,7 @@ protected:
         catch (const zkutil::KeeperException & e)
         {
             LOG_INFO(log, "A ZooKeeper error occurred while checking partition " << partition_name
-                          << ". Will recheck the partition. Error: " << e.what());
+                          << ". Will recheck the partition. Error: " << e.displayText());
             return false;
         }
 
@@ -1259,8 +1259,10 @@ protected:
         }
 
         /// Remove the locking node
-        cleaner_holder.reset();
-        zookeeper->remove(is_dirty_flag_path);
+        zkutil::Ops ops;
+        ops.emplace_back(new zkutil::Op::Remove(dirt_cleaner_path, -1));
+        ops.emplace_back(new zkutil::Op::Remove(is_dirty_flag_path, -1));
+        zookeeper->multi(ops);
 
         LOG_INFO(log, "Partition " << task_partition.name << " was dropped on cluster " << task_table.cluster_push_name);
         return true;
@@ -1283,6 +1285,7 @@ protected:
             Stopwatch watch;
             TasksShard expected_shards;
             size_t num_failed_shards = 0;
+            bool previous_shard_is_instantly_finished = false;
 
             ++cluster_partition.total_tries;
 
@@ -1328,14 +1331,19 @@ protected:
 
                 expected_shards.emplace_back(shard);
 
+                /// Do not sleep if there is a sequence of already processed shards to increase startup
+                bool sleep_before_execution = !previous_shard_is_instantly_finished && shard->priority.is_remote;
                 PartitionTaskStatus task_status = PartitionTaskStatus::Error;
+                bool was_error = false;
                 for (size_t try_num = 0; try_num < max_shard_partition_tries; ++try_num)
                 {
-                    task_status = tryProcessPartitionTask(partition);
+                    task_status = tryProcessPartitionTask(partition, sleep_before_execution);
 
                     /// Exit if success
                     if (task_status == PartitionTaskStatus::Finished)
                         break;
+
+                    was_error = true;
 
                     /// Skip if the task is being processed by someone
                     if (task_status == PartitionTaskStatus::Active)
@@ -1347,6 +1355,8 @@ protected:
 
                 if (task_status == PartitionTaskStatus::Error)
                     ++num_failed_shards;
+
+                previous_shard_is_instantly_finished = !was_error;
             }
 
             cluster_partition.elapsed_time_seconds += watch.elapsedSeconds();
@@ -1413,13 +1423,13 @@ protected:
         Error,
     };
 
-    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition)
+    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition, bool sleep_before_execution)
     {
         PartitionTaskStatus res;
 
         try
         {
-            res = processPartitionTaskImpl(task_partition);
+            res = processPartitionTaskImpl(task_partition, sleep_before_execution);
         }
         catch (...)
         {
@@ -1440,7 +1450,7 @@ protected:
         return res;
     }
 
-    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition)
+    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition, bool sleep_before_execution)
     {
         TaskShard & task_shard = task_partition.task_shard;
         TaskTable & task_table = task_shard.task_table;
@@ -1480,7 +1490,7 @@ protected:
         };
 
         /// Load balancing
-        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, task_shard.priority.is_remote);
+        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, sleep_before_execution);
 
         LOG_DEBUG(log, "Processing " << current_task_status_path);
 
@@ -1654,7 +1664,7 @@ protected:
                 }
 
                 using ExistsFuture = zkutil::ZooKeeper::ExistsFuture;
-                auto future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
+                std::unique_ptr<ExistsFuture> future_is_dirty_checker;
 
                 Stopwatch watch(CLOCK_MONOTONIC_COARSE);
                 constexpr size_t check_period_milliseconds = 500;
@@ -1665,9 +1675,15 @@ protected:
                     if (zookeeper->expired())
                         throw Exception("ZooKeeper session is expired, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
 
-                    if (future_is_dirty_checker != nullptr)
+                    if (!future_is_dirty_checker)
+                        future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
+
+                    /// check_period_milliseconds should less than average insert time of single block
+                    /// Otherwise, the insertion will slow a little bit
+                    if (watch.elapsedMilliseconds() >= check_period_milliseconds)
                     {
                         zkutil::ZooKeeper::StatAndExists status;
+
                         try
                         {
                             status = future_is_dirty_checker->get();
@@ -1685,12 +1701,6 @@ protected:
 
                         if (status.exists)
                             throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
-                    }
-
-                    if (watch.elapsedMilliseconds() >= check_period_milliseconds)
-                    {
-                        watch.restart();
-                        future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
                     }
 
                     return false;
