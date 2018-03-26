@@ -116,7 +116,7 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Set
 bool StorageMergeTree::checkTableCanBeDropped() const
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
+    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
     return true;
 }
 
@@ -334,7 +334,7 @@ bool StorageMergeTree::merge(
             part_log_elem.part_name = future_part.name;
 
             if (new_part)
-                part_log_elem.bytes_compressed_on_disk = new_part->size_in_bytes;
+                part_log_elem.bytes_compressed_on_disk = new_part->bytes_on_disk;
 
             part_log_elem.source_part_names.reserve(future_part.parts.size());
             for (const auto & source_part : future_part.parts)
