@@ -1434,7 +1434,7 @@ and the result will be put in a temporary table in RAM. Then the request will be
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
-and the temporary table '_data1' will be sent to every remote server together with the query (the name of the temporary table is implementation-defined).
+and the temporary table `_data1` will be sent to every remote server together with the query (the name of the temporary table is implementation-defined).
 
 This is more optimal than using the normal IN. However, keep the following points in mind:
 
@@ -1476,28 +1476,29 @@ In all other cases, we don't recommend using the asterisk, since it only gives y
 ## KILL QUERY
 
 ```sql
-KILL QUERY WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
+KILL QUERY
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
 ```
 
 Attempts to terminate queries currently running.
-The queries to terminate are selected from the system.processes table for which expression_for_system.processes is true.
+The queries to terminate are selected from the system.processes table for which `WHERE` expression is true.
 
 Examples:
 
 ```sql
+-- Terminates all queries with the specified query_id.
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
-```
 
-Terminates all queries with the specified query_id.
-
-```sql
+-- Synchronously terminates all queries run by `username`.
 KILL QUERY WHERE user='username' SYNC
 ```
 
-Synchronously terminates all queries run by `username`.
-
 Readonly-users can only terminate their own requests.
+
 By default, the asynchronous version of queries is used (`ASYNC`), which terminates without waiting for queries to complete.
+
 The synchronous version (`SYNC`) waits for all queries to be completed and displays information about each process as it terminates.
 The response contains the `kill_status` column, which can take the following values:
 
