@@ -39,6 +39,9 @@
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
+#include <Interpreters/DNSCacheUpdater.h>
+
+
 #endif
 
 namespace CurrentMetrics
@@ -320,6 +323,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
+
+    /// Initialize a watcher updating DNS cache in case of network errors
+    DNSCacheUpdater dns_cache_updater(*global_context);
 
     {
         Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
