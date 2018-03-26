@@ -15,7 +15,7 @@ For example, you can't compare a date with a string. You have to use a function 
 
 Strings are compared by bytes. A shorter string is smaller than all strings that start with it and that contain at least one more character.
 
-Note: Up until version 1.1.54134, signed and unsigned numbers were compared the same way as in C++. In other words, you could get an incorrect result in cases like SELECT 9223372036854775807 &gt; -1. This behavior changed in version 1.1.54134 and is now mathematically correct.
+Note. Up until version 1.1.54134, signed and unsigned numbers were compared the same way as in C++. In other words, you could get an incorrect result in cases like SELECT 9223372036854775807 &gt; -1. This behavior changed in version 1.1.54134 and is now mathematically correct.
 
 ## equals, a = b and a == b operator
 
