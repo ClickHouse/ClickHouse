@@ -440,14 +440,14 @@ For more information, see the MergeTreeSettings.h header file.
 
 SSL client/server configuration.
 
-Support for SSL is provided by the `` libpoco`` library. The interface is described in the file [SSLManager.h](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Support for SSL is provided by the `` libpoco`` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
 
 Keys for server/client settings:
 
 - privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 - certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `` privateKeyFile`` contains the certificate.
 - caConfig – The path to the file or directory that contains trusted root certificates.
-- verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: ``none``, ``relaxed``, ``strict``, ``once``.
+- verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `` true``, `` false``.  |
 - cipherList - Поддерживаемые OpenSSL-шифры. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
