@@ -88,6 +88,7 @@ private:
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
     Stopwatch watch;
+    Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
     String query_string;

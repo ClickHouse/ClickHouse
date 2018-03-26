@@ -193,13 +193,12 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
     auto memory_tracker = current_memory_tracker;
     return [this, memory_tracker, &job, &current_block]()
     {
-        SCOPE_EXIT({++finished_jobs_count;});
-
-        Stopwatch watch;
         ++job.blocks_started;
 
         SCOPE_EXIT({
-            UInt64 elapsed_time_for_block_ms = watch.elapsedMilliseconds();
+            ++finished_jobs_count;
+
+            UInt64 elapsed_time_for_block_ms = watch_current_block.elapsedMilliseconds();
             job.elapsed_time_ms += elapsed_time_for_block_ms;
             job.max_elapsed_time_for_block_ms = std::max(job.max_elapsed_time_for_block_ms, elapsed_time_for_block_ms);
         });
@@ -321,6 +320,8 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
         watch.restart();
     }
+
+    watch_current_block.restart();
 
     if (num_shards > 1)
     {
