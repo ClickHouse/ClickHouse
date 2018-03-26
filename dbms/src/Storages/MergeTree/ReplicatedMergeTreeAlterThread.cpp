@@ -58,7 +58,7 @@ void ReplicatedMergeTreeAlterThread::run()
         auto zookeeper = storage.getZooKeeper();
 
         zkutil::Stat stat;
-        const String columns_str = zookeeper->get(storage.zookeeper_path + "/columns", &stat, task_handle->getWatchCallback());
+        const String columns_str = zookeeper->getWatch(storage.zookeeper_path + "/columns", &stat, task_handle->getWatchCallback());
         auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
         bool changed_version = (stat.version != storage.columns_version);
