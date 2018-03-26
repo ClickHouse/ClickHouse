@@ -4,7 +4,7 @@
 
 ## distributed_product_mode
 
-Alters the behavior of [distributed subqueries](../../query_language/queries.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
+Changes the behavior of [distributed subqueries](../../query_language/queries.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
 
 ClickHouse applies the configuration if the subqueries on any level have a distributed table that exists on the local server and has more than one shard.
 
@@ -12,9 +12,9 @@ Restrictions:
 
 - Only applied for IN and JOIN subqueries.
 - Used only if a distributed table is used in the FROM clause.
-- Not used for a table-valued [ remote](../../table_functions/remote.md#table_functions-remote)function.
+- Not used for a table-valued [ remote](../../table_functions/remote.md#table_functions-remote) function.
 
-Possible values:
+The possible values ​​are:
 
 <a name="settings-settings-fallback_to_stale_replicas_for_distributed_queries"></a>
 
@@ -36,7 +36,7 @@ Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`,  ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)".
+If `force_index_by_date=1`,  ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see "[MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)".
 
 <a name="settings-settings-force_primary_key"></a>
 
@@ -46,7 +46,7 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about ranges of data in MergeTree tables, see [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)".
+If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)".
 
 <a name="settings_settings_fsync_metadata"></a>
 
@@ -158,7 +158,7 @@ Don't confuse blocks for compression (a chunk of memory consisting of bytes) and
 
 ## min_compress_block_size
 
-For [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
+For [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
 
 The actual size of the block, if the uncompressed data is less than 'max_compress_block_size', is no less than this value and no less than the volume of data for one mark.
 
@@ -253,13 +253,13 @@ Yandex.Metrica uses this parameter set to 1 for implementing suggestions for seg
 
 ## schema
 
-This parameter is useful when you are using formats that require a schema definition, such as [ Cap'n Proto](https://capnproto.org/). The value depends on the format.
+This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/). The value depends on the format.
 
 <a name="settings-settings_stream_flush_interval_ms"></a>
 
 ## stream_flush_interval_ms
 
-Works for tables with streaming in the case of a timeout, or when a thread generates [ max_insert_block_size](#settings-settings-max_insert_block_size)  rows.
+Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size](#settings-settings-max_insert_block_size) rows.
 
 The default value is 7500.
 
