@@ -211,7 +211,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
     initMergeSelectSession();
-    merge_selecting_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree::mergeSelectingThread", [this] { mergeSelectingThread(); });
+    merge_selecting_task_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree::mergeSelectingThread", [this] { mergeSelectingThread(); });
 
     bool skip_sanity_checks = false;
 
@@ -1228,7 +1228,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
           * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
           */
-        merge_selecting_handle->schedule();
+        merge_selecting_task_handle->schedule();
         ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
         write_part_log({});
@@ -1898,9 +1898,9 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
         return;
 
     if (!success)
-        merge_selecting_handle->scheduleAfter(MERGE_SELECTING_SLEEP_MS);
+        merge_selecting_task_handle->scheduleAfter(MERGE_SELECTING_SLEEP_MS);
     else
-        merge_selecting_handle->schedule();
+        merge_selecting_task_handle->schedule();
 }
 
 
@@ -2007,10 +2007,10 @@ void StorageReplicatedMergeTree::becomeLeader()
 
     LOG_INFO(log, "Became leader");
     is_leader_node = false;
-    merge_selecting_handle->activate();
+    merge_selecting_task_handle->activate();
     initMergeSelectSession();
     is_leader_node = true;
-    merge_selecting_handle->schedule();
+    merge_selecting_task_handle->schedule();
 }
 
 
@@ -2287,7 +2287,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             if (quorum)
                 updateQuorum(part_name);
 
-            merge_selecting_handle->schedule();
+            merge_selecting_task_handle->schedule();
 
             for (const auto & replaced_part : replaced_parts)
             {
@@ -2375,7 +2375,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    context.getSchedulePool().removeTask(merge_selecting_handle);
+    context.getSchedulePool().removeTask(merge_selecting_task_handle);
 }
 
 

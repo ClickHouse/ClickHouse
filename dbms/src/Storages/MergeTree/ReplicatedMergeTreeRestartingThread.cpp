@@ -148,7 +148,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                 storage.is_leader_node = false;
                 CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-                storage.merge_selecting_handle->deactivate();
+                storage.merge_selecting_task_handle->deactivate();
                 storage.leader_election->yield();
             }
         }
@@ -368,7 +368,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         if (storage.is_leader_node.compare_exchange_strong(old_val, false))
         {
             CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-            storage.merge_selecting_handle->deactivate();
+            storage.merge_selecting_task_handle->deactivate();
         }
     }
 
