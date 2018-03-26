@@ -237,7 +237,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
             try
             {
-                auto zk_checksums = MergeTreeData::DataPart::Checksums::parse(
+                auto zk_checksums = MinimalisticDataPartChecksums::deserializeFrom(
                     zookeeper->get(storage.replica_path + "/parts/" + part_name + "/checksums"));
                 zk_checksums.checkEqual(part->checksums, true);
 

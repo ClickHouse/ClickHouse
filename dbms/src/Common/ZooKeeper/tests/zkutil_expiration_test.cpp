@@ -34,11 +34,11 @@ int main(int argc, char ** argv)
         {
             {
                 zkutil::Ops ops;
-                ops.emplace_back(std::make_unique<zkutil::Op::Create>("/test/zk_expiration_test", "hello", zk.getDefaultACL(), zkutil::CreateMode::Persistent));
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>("/test/zk_expiration_test", -1));
+                ops.emplace_back(std::make_shared<zkutil::Op::Create>("/test/zk_expiration_test", "hello", zk.getDefaultACL(), zkutil::CreateMode::Persistent));
+                ops.emplace_back(std::make_shared<zkutil::Op::Remove>("/test/zk_expiration_test", -1));
 
                 zkutil::MultiTransactionInfo info;
-                zk.tryMultiUnsafe(ops, info);
+                zk.tryMultiNoThrow(ops, nullptr, &info);
 
                 std::cout << time(nullptr) - time0 << "s: " << zkutil::ZooKeeper::error2string(info.code) << std::endl;
                 try

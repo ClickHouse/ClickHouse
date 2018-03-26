@@ -24,7 +24,7 @@ public:
         mysqlxx::Pool && pool,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const NamesAndTypesList & columns_);
+        const ColumnsDescription & columns);
 
     std::string getName() const override { return "MySQL"; }
     std::string getTableName() const override { return name; }

@@ -468,7 +468,7 @@ bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & f
 
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
-    return storage.name + '.' + storage.getName() + ".DirectoryMonitor";
+    return storage.table_name + '.' + storage.getName() + ".DirectoryMonitor";
 }
 
 }

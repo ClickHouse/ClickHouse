@@ -508,6 +508,10 @@ void TCPHandler::sendHello()
     {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+    {
+        writeStringBinary(server_display_name, *out);
+    }
     out->next();
 }
 
@@ -630,7 +634,8 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context.tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+                storage = StorageMemory::create(external_table_name,
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }

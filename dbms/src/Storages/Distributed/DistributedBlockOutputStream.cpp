@@ -337,7 +337,10 @@ void DistributedBlockOutputStream::writeSuffix()
             throw;
         }
 
-        LOG_DEBUG(log, getCurrentStateDescription());
+        double elapsed = watch.elapsedSeconds();
+        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << blocks_inserted << " blocks"
+                       << " (average " << std::fixed << std::setprecision(1) << elapsed / blocks_inserted * 1000 << " ms. per block)"
+                       << ". " << getCurrentStateDescription());
     }
 }
 
