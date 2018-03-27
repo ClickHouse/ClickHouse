@@ -258,38 +258,46 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
     while (!shutdown)
     {
         TaskHandle task;
+        bool found = false;
 
         {
             std::unique_lock lock(delayed_tasks_lock);
 
-            if(shutdown)
-                break;
-
-            Poco::Timestamp min_time;
-
-            if (!delayed_tasks.empty())
+            while(!shutdown)
             {
-                auto t = delayed_tasks.begin();
-                min_time = t->first;
-                task = t->second;
-            }
+                Poco::Timestamp min_time;
 
-            if (!task)
-            {
-                wakeup_cond.wait(lock);
-                continue;
-            }
+                if (!delayed_tasks.empty())
+                {
+                    auto t = delayed_tasks.begin();
+                    min_time = t->first;
+                    task = t->second;
+                }
 
-            Poco::Timestamp current_time;
+                if (!task)
+                {
+                    wakeup_cond.wait(lock);
+                    continue;
+                }
 
-            if (min_time > current_time)
-            {
-                wakeup_cond.wait_for(lock, std::chrono::microseconds(min_time - current_time));
-                continue;
+                Poco::Timestamp current_time;
+
+                if (min_time > current_time)
+                {
+                    wakeup_cond.wait_for(lock, std::chrono::microseconds(min_time - current_time));
+                    continue;
+                }
+                else
+                {
+                    /// We have a task ready for execution
+                    found = true;
+                    break;
+                }
             }
         }
 
-        task->schedule();
+        if(found)
+            task->schedule();
     }
 }
 
