@@ -3,23 +3,23 @@ language: generic
 matrix:
   fast_finish: true
   include:
-    - os: linux
-
-      cache:
-        ccache: true
-        timeout: 1000
-
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages: [ g++-7,            libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo ]
-
-      env:
-        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
-
-      script:
-        - env TEST_RUN= utils/travis/normal.sh
+#    - os: linux
+#
+#      cache:
+#        ccache: true
+#        timeout: 1000
+#
+#      addons:
+#        apt:
+#          sources:
+#            - ubuntu-toolchain-r-test
+#          packages: [ g++-7,            libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl ]
+#
+#      env:
+#        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
+#
+#      script:
+#        - env TEST_RUN= utils/travis/normal.sh
 
 
     # We need to have gcc7 headers to compile c++17 code on clang
@@ -28,13 +28,15 @@ matrix:
       cache:
         ccache: true
         timeout: 1000
+        directories:
+        - /home/travis/.ccache
 
       addons:
         apt:
           sources:
             - ubuntu-toolchain-r-test
             - llvm-toolchain-trusty-5.0
-          packages: [ g++-7, clang-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo ]
+          packages: [ g++-7, clang-5.0, lld-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl]
 
       env:
         - MATRIX_EVAL="export CC=clang-5.0 && export CXX=clang++-5.0"
@@ -43,6 +45,27 @@ matrix:
         - utils/travis/normal.sh
 
 
+# TODO: fix internal compiler
+#    - os: linux
+#
+#      sudo: required
+#
+#      cache:
+#        timeout: 1000
+#        directories:
+#        - /var/cache/pbuilder/ccache
+#
+#      addons:
+#        apt:
+#          packages: [ pbuilder, fakeroot, debhelper ]
+#
+#      env:
+#        - MATRIX_EVAL="export DEB_CC=clang-5.0 && export DEB_CXX=clang++-5.0"
+#
+#      script:
+#        - utils/travis/pbuilder.sh
+
+
     - os: linux
 
       sudo: required
@@ -55,32 +78,29 @@ matrix:
       addons:
         apt:
           packages: [ pbuilder, fakeroot, debhelper ]
-
-      env:
-        - MATRIX_EVAL="export DEB_CC=clang-5.0 && export DEB_CXX=clang++-5.0"
 
       script:
         - utils/travis/pbuilder.sh
 
 
-    - os: linux
-
-      sudo: required
-
-      cache:
-        timeout: 1000
-        directories:
-        - /var/cache/pbuilder/ccache
-
-      addons:
-        apt:
-          packages: [ pbuilder, fakeroot, debhelper ]
-
-      env:
-        - MATRIX_EVAL="export ARCH=i386"
-
-      script:
-        - env PBUILDER_TIMEOUT=40m TEST_TRUE=true TEST_RUN= utils/travis/pbuilder.sh
+#    - os: linux
+#
+#      sudo: required
+#
+#      cache:
+#        timeout: 1000
+#        directories:
+#        - /var/cache/pbuilder/ccache
+#
+#      addons:
+#        apt:
+#          packages: [ pbuilder, fakeroot, debhelper ]
+#
+#      env:
+#        - MATRIX_EVAL="export ARCH=i386"
+#
+#      script:
+#        - env PBUILDER_TIMEOUT=40m TEST_TRUE=true TEST_RUN= utils/travis/pbuilder.sh
 
 
 # TODO: Can't bootstrap bionic on trusty host
@@ -98,7 +118,7 @@ matrix:
 #          packages: [ pbuilder, fakeroot, debhelper ]
 #
 #      env:
-#        - MATRIX_EVAL="export DEB_CC=clang-6.0 && export DEB_CXX=clang++-6.0 && export DIST=bionic && export EXTRAPACKAGES=clang-6.0"
+#        - MATRIX_EVAL="export DEB_CC=clang-6.0 && export DEB_CXX=clang++-6.0 && export DIST=bionic && export EXTRAPACKAGES='clang-6.0 lld-6.0'"
 #
 #      script:
 #        - utils/travis/pbuilder.sh

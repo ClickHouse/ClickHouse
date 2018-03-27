@@ -148,6 +148,10 @@ void Connection::receiveHello()
         {
             readStringBinary(server_timezone, *in);
         }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+        {
+            readStringBinary(server_display_name, *in);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -201,6 +205,14 @@ const String & Connection::getServerTimezone()
         connect();
 
     return server_timezone;
+}
+
+const String & Connection::getServerDisplayName()
+{
+    if (!connected)
+        connect();
+
+    return server_display_name;
 }
 
 void Connection::forceConnected()
@@ -393,7 +405,7 @@ void Connection::sendData(const Block & block, const String & name)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision);
+        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
     writeVarUInt(Protocol::Client::Data, *out);

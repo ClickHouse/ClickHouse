@@ -90,6 +90,7 @@
         <div class="clear"></div>
     </div>
 </div>
+
 <div class="page">
     <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
 
@@ -379,17 +380,13 @@
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-    <p>Install packages for
-        <span class="distributive_not_selected" id="ubuntu_xenial">Ubuntu 16.04 Xenial</span>, <span
-                class="distributive_selected" id="ubuntu_trusty">Ubuntu 14.04 Trusty</span> or <span
-                class="distributive_not_selected" id="ubuntu_precise">Ubuntu 12.04 Precise</span>:
-    </p>
+    <p>Install packages for Ubuntu/Debian:</p>
 
-    <code id="ubuntu-install">
+    <code id="packages-install">
 <pre>
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 
-sudo apt-add-repository "deb http://repo.yandex.ru/clickhouse/<span id="distributive">trusty</span> stable main"
+sudo apt-add-repository "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
 sudo apt-get update
 
 sudo apt-get install clickhouse-server-common clickhouse-client -y
@@ -449,7 +446,7 @@ clickhouse-client
         ClickHouse source code is published under Apache 2.0 License.</a> Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND, either express or implied.</p>
 
-    <p id="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+    <p id="footer">&copy; 2016–2018 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
 
 </div>
 
@@ -487,7 +484,7 @@ clickhouse-client
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 
-        var available_distributives = ['xenial', 'trusty', 'precise'];
+/*        var available_distributives = ['xenial', 'trusty', 'precise'];
         available_distributives.forEach(function (name) {
             $('#ubuntu_' + name).on('click', function () {
                 $('#distributive').html(name);
@@ -495,7 +492,7 @@ clickhouse-client
                     $('#ubuntu_' + distr).attr('class', (name == distr) ? 'distributive_selected' : 'distributive_not_selected');
                 });
             });
-        });
+        });*/
     });
 </script>
 

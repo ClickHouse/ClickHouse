@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int FUNCTION_IS_SPECIAL;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_SLOW;
+    extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
 /** Helper functions
@@ -104,6 +105,8 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), db_name);
@@ -125,6 +128,8 @@ public:
     {
         return name;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -334,9 +339,11 @@ public:
     {
         const auto & elem = block.getByPosition(arguments[0]);
 
+        /// Note that the result is not a constant, because it contains block size.
+
         block.getByPosition(result).column
             = DataTypeString().createColumnConst(block.rows(),
-                elem.type->getName() + ", " + elem.column->dumpStructure());
+                elem.type->getName() + ", " + elem.column->dumpStructure())->convertToFullColumnIfConst();
     }
 };
 
@@ -391,6 +398,8 @@ public:
         return name;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -433,6 +442,8 @@ public:
     {
         return 0;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -482,6 +493,8 @@ public:
         return 0;
     }
 
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -523,6 +536,8 @@ public:
     {
         return 0;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -599,29 +614,16 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const IColumn * col = block.getByPosition(arguments[0]).column.get();
-        double seconds;
-        size_t size = col->size();
 
-        if (auto column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
-            seconds = column->getValue<Float64>();
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
-            seconds = static_cast<double>(column->getValue<Float64>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
-            seconds = static_cast<double>(column->getValue<UInt64>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
-            seconds = static_cast<double>(column->getValue<UInt32>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
-            seconds = static_cast<double>(column->getValue<UInt16>());
-
-        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
-            seconds = static_cast<double>(column->getValue<UInt8>());
-
-        else
+        if (!col->isColumnConst())
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+
+        Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const ColumnConst &>(*col).getField());
+
+        if (seconds < 0)
+            throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+
+        size_t size = col->size();
 
         /// We do not sleep if the block is empty.
         if (size > 0)
@@ -902,6 +904,8 @@ public:
     }
 
     /** It could return many different values for single argument. */
+    bool isDeterministic() override { return false; }
+
     bool isDeterministicInScopeOfQuery() override
     {
         return false;
@@ -1137,7 +1141,9 @@ public:
     {
         const auto in = block.getByPosition(arguments.front()).column.get();
 
-        if (!execute<UInt8>(block, in, result) && !execute<UInt16>(block, in, result) && !execute<UInt32>(block, in, result)
+        if (   !execute<UInt8>(block, in, result)
+            && !execute<UInt16>(block, in, result)
+            && !execute<UInt32>(block, in, result)
             && !execute<UInt64>(block, in, result)
             && !execute<Int8>(block, in, result)
             && !execute<Int16>(block, in, result)
@@ -1301,6 +1307,8 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt32().createColumnConst(block.rows(), static_cast<UInt64>(uptime));
@@ -1336,6 +1344,8 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), DateLUT::instance().getTimeZone());
@@ -1367,6 +1377,8 @@ public:
     {
         return 1;
     }
+
+    bool isDeterministic() override { return false; }
 
     bool isDeterministicInScopeOfQuery() override
     {
@@ -1645,6 +1657,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
+    bool isDeterministic() override { return false; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 private:
@@ -1735,14 +1749,79 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     else
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
-        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort());
-        auto names_and_types_list = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
-        const auto & names = names_and_types_list.getNames();
-        has_column = std::find(names.begin(), names.end(), column_name) != names.end();
+        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort(), false);
+        auto remote_columns = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
+        has_column = remote_columns.hasPhysical(column_name);
     }
 
     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(has_column));
 }
+
+
+/// Throw an exception if the argument is non zero.
+class FunctionThrowIf : public IFunction
+{
+public:
+    static constexpr auto name = "throwIf";
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionThrowIf>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!arguments.front()->isNumber())
+            throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    {
+        const auto in = block.getByPosition(arguments.front()).column.get();
+
+        if (   !execute<UInt8>(block, in, result)
+            && !execute<UInt16>(block, in, result)
+            && !execute<UInt32>(block, in, result)
+            && !execute<UInt64>(block, in, result)
+            && !execute<Int8>(block, in, result)
+            && !execute<Int16>(block, in, result)
+            && !execute<Int32>(block, in, result)
+            && !execute<Int64>(block, in, result)
+            && !execute<Float32>(block, in, result)
+            && !execute<Float64>(block, in, result))
+            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+    }
+
+    template <typename T>
+    bool execute(Block & block, const IColumn * in_untyped, const size_t result)
+    {
+        if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
+        {
+            const auto & in_data = in->getData();
+            if (!memoryIsZero(in_data.data(), in_data.size() * sizeof(in_data[0])))
+                throw Exception("Value passed to 'throwIf' function is non zero", ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO);
+
+            /// We return non constant to avoid constant folding.
+            block.getByPosition(result).column = ColumnUInt8::create(in_data.size(), 0);
+            return true;
+        }
+
+        return false;
+    }
+};
 
 
 std::string FunctionVersion::getVersion() const
@@ -1786,6 +1865,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionIsFinite>();
     factory.registerFunction<FunctionIsInfinite>();
     factory.registerFunction<FunctionIsNaN>();
+    factory.registerFunction<FunctionThrowIf>();
 
     factory.registerFunction<FunctionVersion>();
     factory.registerFunction<FunctionUptime>();

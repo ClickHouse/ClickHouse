@@ -1,20 +1,18 @@
 #include <Storages/IStorage.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
 #include <Parsers/queryToString.h>
+#include <Common/typeid_cast.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Common/typeid_cast.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <TableFunctions/ITableFunction.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 
 
 namespace DB
@@ -24,8 +22,6 @@ BlockIO InterpreterDescribeQuery::execute()
 {
     BlockIO res;
     res.in = executeImpl();
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 
@@ -64,7 +60,9 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
 
     if (table_expression->subquery)
-        columns = InterpreterSelectQuery::getSampleBlock(table_expression->subquery->children[0], context).getNamesAndTypesList();
+    {
+        columns = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression->subquery->children[0], context).getNamesAndTypesList();
+    }
     else
     {
         if (table_expression->table_function)
@@ -101,9 +99,8 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
 
         auto table_lock = table->lockStructure(false, __PRETTY_FUNCTION__);
-        columns = table->getColumnsList();
-        columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
-        column_defaults = table->column_defaults;
+        columns = table->getColumns().getAll();
+        column_defaults = table->getColumns().defaults;
     }
 
     Block sample_block = getSampleBlock();
@@ -122,7 +119,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
-            res_columns[2]->insert(toString(it->second.type));
+            res_columns[2]->insert(toString(it->second.kind));
             res_columns[3]->insert(queryToString(it->second.expression));
         }
     }

@@ -6,6 +6,7 @@
 #include <Common/setThreadName.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -13,6 +14,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 
@@ -42,7 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_CODE;
-    extern const int TOO_MUCH_ROWS;
+    extern const int TOO_MANY_ROWS;
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
 }
@@ -88,31 +90,55 @@ void AggregatedDataVariants::convertToTwoLevel()
 }
 
 
-void Aggregator::Params::calculateColumnNumbers(const Block & block)
+Block Aggregator::getHeader(bool final) const
 {
-    if (keys.empty() && !key_names.empty())
-        for (Names::const_iterator it = key_names.begin(); it != key_names.end(); ++it)
-            keys.push_back(block.getPositionByName(*it));
+    Block res;
 
-    for (AggregateDescriptions::iterator it = aggregates.begin(); it != aggregates.end(); ++it)
-        if (it->arguments.empty() && !it->argument_names.empty())
-            for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
-                it->arguments.push_back(block.getPositionByName(*jt));
+    if (params.src_header)
+    {
+        for (size_t i = 0; i < params.keys_size; ++i)
+            res.insert(params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty());
+
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            size_t arguments_size = params.aggregates[i].arguments.size();
+            DataTypes argument_types(arguments_size);
+            for (size_t j = 0; j < arguments_size; ++j)
+                argument_types[j] = params.src_header.safeGetByPosition(params.aggregates[i].arguments[j]).type;
+
+            DataTypePtr type;
+            if (final)
+                type = params.aggregates[i].function->getReturnType();
+            else
+                type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
+
+            res.insert({ type, params.aggregates[i].column_name });
+        }
+    }
+    else if (params.intermediate_header)
+    {
+        res = params.intermediate_header.cloneEmpty();
+
+        if (final)
+        {
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                auto & elem = res.getByPosition(params.keys_size + i);
+
+                elem.type = params.aggregates[i].function->getReturnType();
+                elem.column = elem.type->createColumn();
+            }
+        }
+    }
+
+    return materializeBlock(res);
 }
 
 
-void Aggregator::initialize(const Block & block)
+Aggregator::Aggregator(const Params & params_)
+    : params(params_),
+    isCancelled([]() { return false; })
 {
-    if (isCancelled())
-        return;
-
-    std::lock_guard<std::mutex> lock(mutex);
-
-    if (initialized)
-        return;
-
-    initialized = true;
-
     if (current_memory_tracker)
         memory_usage_before_aggregation = current_memory_tracker->get();
 
@@ -134,56 +160,7 @@ void Aggregator::initialize(const Block & block)
             all_aggregates_has_trivial_destructor = false;
     }
 
-    if (isCancelled())
-        return;
-
-    /** All below, if non-empty block passed.
-      * (it doesn't needed in methods that merging blocks with aggregation states).
-      */
-    if (!block)
-        return;
-
-    /// Transform names of columns to numbers.
-    params.calculateColumnNumbers(block);
-
-    if (isCancelled())
-        return;
-
-    /// Create "header" block, describing result.
-    if (!sample)
-    {
-        for (size_t i = 0; i < params.keys_size; ++i)
-        {
-            sample.insert(block.safeGetByPosition(params.keys[i]).cloneEmpty());
-            if (ColumnPtr converted = sample.safeGetByPosition(i).column->convertToFullColumnIfConst())
-                sample.safeGetByPosition(i).column = converted;
-        }
-
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-        {
-            ColumnWithTypeAndName col;
-            col.name = params.aggregates[i].column_name;
-
-            size_t arguments_size = params.aggregates[i].arguments.size();
-            DataTypes argument_types(arguments_size);
-            for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = block.safeGetByPosition(params.aggregates[i].arguments[j]).type;
-
-            col.type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
-            col.column = col.type->createColumn();
-
-            sample.insert(std::move(col));
-        }
-    }
-}
-
-
-void Aggregator::setSampleBlock(const Block & block)
-{
-    std::lock_guard<std::mutex> lock(mutex);
-
-    if (!sample)
-        sample = block.cloneEmpty();
+    method = chooseAggregationMethod();
 }
 
 
@@ -377,102 +354,70 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 }
 
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes) const
+AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 {
+    /// If no keys. All aggregating to single row.
+    if (params.keys_size == 0)
+        return AggregatedDataVariants::Type::without_key;
+
     /// Check if at least one of the specified keys is nullable.
-    /// Create a set of nested key columns from the corresponding key columns.
-    /// Here "nested" means that, if a key column is nullable, we take its nested
-    /// column; otherwise we take the key column as is.
-    ColumnRawPtrs nested_key_columns;
-    nested_key_columns.reserve(key_columns.size());
+    DataTypes types_removed_nullable;
+    types_removed_nullable.reserve(params.keys.size());
     bool has_nullable_key = false;
 
-    for (const auto & col : key_columns)
+    for (const auto & pos : params.keys)
     {
-        if (col->isColumnNullable())
+        const auto & type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(pos).type;
+
+        if (type->isNullable())
         {
-            const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-            nested_key_columns.push_back(&nullable_col.getNestedColumn());
             has_nullable_key = true;
+            types_removed_nullable.push_back(removeNullable(type));
         }
         else
-            nested_key_columns.push_back(col);
+            types_removed_nullable.push_back(type);
     }
 
     /** Returns ordinary (not two-level) methods, because we start from them.
       * Later, during aggregation process, data may be converted (partitioned) to two-level structure, if cardinality is high.
       */
 
-    bool all_fixed = true;
     size_t keys_bytes = 0;
 
-    size_t num_array_keys = 0;
-    bool has_arrays_of_non_fixed_elems = false;
-    bool all_non_array_keys_are_fixed = true;
-    bool has_tuples = false;
-    bool has_arrays_of_nullable = false;
+    size_t num_contiguous_keys = 0;
+    size_t num_fixed_contiguous_keys = 0;
+    size_t num_string_keys = 0;
 
     key_sizes.resize(params.keys_size);
     for (size_t j = 0; j < params.keys_size; ++j)
     {
-        if (nested_key_columns[j]->isFixedAndContiguous())
+        if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
-            key_sizes[j] = nested_key_columns[j]->sizeOfValueIfFixed();
-            keys_bytes += key_sizes[j];
-        }
-        else
-        {
-            all_fixed = false;
+            ++num_contiguous_keys;
 
-            if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(nested_key_columns[j]))
+            if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             {
-                ++num_array_keys;
-
-                if (arr->getData().isColumnNullable())
-                    has_arrays_of_nullable = true;
-
-                if (!arr->getData().isFixedAndContiguous())
-                    has_arrays_of_non_fixed_elems = true;
+                ++num_fixed_contiguous_keys;
+                key_sizes[j] = types_removed_nullable[j]->getSizeOfValueInMemory();
+                keys_bytes += key_sizes[j];
             }
-            else
-            {
-                all_non_array_keys_are_fixed = false;
 
-                if (typeid_cast<const ColumnTuple *>(nested_key_columns[j]))
-                    has_tuples = true;
+            if (types_removed_nullable[j]->isString())
+            {
+                ++num_string_keys;
             }
         }
     }
 
-    /// If no keys. All aggregating to single row.
-    if (params.keys_size == 0)
-        return AggregatedDataVariants::Type::without_key;
-
-    if (has_nullable_key || has_arrays_of_nullable)
+    if (has_nullable_key)
     {
-        /// At least one key is nullable. Therefore we choose an aggregation method
-        /// that takes into account this fact.
-        if ((params.keys_size == 1) && (nested_key_columns[0]->isNumeric()))
-        {
-            /// We have exactly one key and it is nullable. We shall add it a tag
-            /// which specifies whether its value is null or not.
-            size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
-            if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8) || (size_of_field == 16))
-                return AggregatedDataVariants::Type::nullable_keys128;
-            else
-                throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.",
-                    ErrorCodes::LOGICAL_ERROR};
-        }
-
-        if (all_fixed)
+        if (params.keys_size == num_fixed_contiguous_keys)
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
-            if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
-                throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
-            if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
+            if (std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes <= 16)
                 return AggregatedDataVariants::Type::nullable_keys128;
-            if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
+            if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
@@ -483,9 +428,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ColumnRaw
     /// No key has been found to be nullable.
 
     /// Single numeric key.
-    if ((params.keys_size == 1) && nested_key_columns[0]->isNumeric())
+    if (params.keys_size == 1 && types_removed_nullable[0]->isValueRepresentedByNumber())
     {
-        size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
+        size_t size_of_field = types_removed_nullable[0]->getSizeOfValueInMemory();
         if (size_of_field == 1)
             return AggregatedDataVariants::Type::key8;
         if (size_of_field == 2)
@@ -500,23 +445,24 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ColumnRaw
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
-    if (all_fixed && keys_bytes <= 16)
-        return AggregatedDataVariants::Type::keys128;
-    if (all_fixed && keys_bytes <= 32)
-        return AggregatedDataVariants::Type::keys256;
+    if (params.keys_size == num_fixed_contiguous_keys)
+    {
+        if (keys_bytes <= 16)
+            return AggregatedDataVariants::Type::keys128;
+        if (keys_bytes <= 32)
+            return AggregatedDataVariants::Type::keys256;
+    }
 
     /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
-    if (params.keys_size == 1 && typeid_cast<const ColumnString *>(nested_key_columns[0]))
+    if (params.keys_size == 1 && types_removed_nullable[0]->isString())
         return AggregatedDataVariants::Type::key_string;
 
-    if (params.keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))
+    if (params.keys_size == 1 && types_removed_nullable[0]->isFixedString())
         return AggregatedDataVariants::Type::key_fixed_string;
 
-    /** If some keys are arrays.
-      * If there is no more than one key that is array, and it is array of fixed-size elements, and all other keys are fixed-size,
-      *  then it is possible to use 'concat' method (due to one-to-one correspondense). Otherwise the method will be 'serialized'.
+    /** If it is possible to use 'concat' method due to one-to-one correspondense. Otherwise the method will be 'serialized'.
       */
-    if (num_array_keys == 1 && !has_arrays_of_non_fixed_elems && all_non_array_keys_are_fixed)
+    if (params.keys_size == num_contiguous_keys && num_fixed_contiguous_keys + 1 >= num_contiguous_keys)
         return AggregatedDataVariants::Type::concat;
 
     /** For case with multiple strings, we use 'concat' method despite the fact, that correspondense is not one-to-one.
@@ -524,11 +470,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ColumnRaw
       * But if strings contains zero bytes in between, different keys may clash.
       * For example, keys ('a\0b', 'c') and ('a', 'b\0c') will be aggregated as one key.
       * This is documented behaviour. It may be avoided by just switching to 'serialized' method, which is less efficient.
-      *
-      * Some of aggregation keys may be tuples. In most cases, tuples are flattened in expression analyzer and not passed here.
-      * But in rare cases, they are not flattened. Will fallback to 'serialized' method for simplicity.
       */
-    if (num_array_keys == 0 && !has_tuples)
+    if (params.keys_size == num_fixed_contiguous_keys + num_string_keys)
         return AggregatedDataVariants::Type::concat;
 
     return AggregatedDataVariants::Type::serialized;
@@ -706,13 +649,10 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 }
 
 
-bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
-    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,
-    Sizes & key_sizes, StringRefs & key,
+bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, StringRefs & key,
     bool & no_more_keys)
 {
-    initialize(block);
-
     if (isCancelled())
         return true;
 
@@ -769,7 +709,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
     /// How to perform the aggregation?
     if (result.empty())
     {
-        result.init(chooseAggregationMethod(key_columns, key_sizes));
+        result.init(method);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
@@ -901,7 +841,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
-    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get());
+    NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
@@ -1033,7 +973,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::THROW:
                 throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
                     + " rows, maximum: " + toString(params.max_rows_to_group_by),
-                    ErrorCodes::TOO_MUCH_ROWS);
+                    ErrorCodes::TOO_MANY_ROWS);
 
             case OverflowMode::BREAK:
                 return false;
@@ -1056,7 +996,6 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
     AggregateColumns aggregate_columns(params.aggregates_size);
-    Sizes key_sizes;
 
     /** Used if there is a limit on the maximum number of rows in the aggregation,
       *  and if group_by_overflow_mode == ANY.
@@ -1081,14 +1020,17 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
         src_rows += block.rows();
         src_bytes += block.bytes();
 
-        if (!executeOnBlock(block, result,
-            key_columns, aggregate_columns, key_sizes, key,
-            no_more_keys))
+        if (!executeOnBlock(block, result, key_columns, aggregate_columns, key, no_more_keys))
             break;
     }
 
+    /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
+    /// To do this, we pass a block with zero rows to aggregate.
+    if (result.empty() && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+        executeOnBlock(stream->getHeader(), result, key_columns, aggregate_columns, key, no_more_keys);
+
     double elapsed_seconds = watch.elapsedSeconds();
-    size_t rows = result.size();
+    size_t rows = result.sizeWithoutOverflowRow();
     LOG_TRACE(log, std::fixed << std::setprecision(3)
         << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."
@@ -1174,9 +1116,11 @@ Block Aggregator::prepareBlockAndFill(
     MutableColumns final_aggregate_columns(params.aggregates_size);
     AggregateColumnsData aggregate_columns_data(params.aggregates_size);
 
+    Block header = getHeader(final);
+
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = sample.safeGetByPosition(i).column->cloneEmpty();
+        key_columns[i] = header.safeGetByPosition(i).type->createColumn();
         key_columns[i]->reserve(rows);
     }
 
@@ -1184,7 +1128,7 @@ Block Aggregator::prepareBlockAndFill(
     {
         if (!final)
         {
-            aggregate_columns[i] = sample.safeGetByPosition(i + params.keys_size).column->cloneEmpty();
+            aggregate_columns[i] = header.safeGetByPosition(i + params.keys_size).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
@@ -1213,7 +1157,7 @@ Block Aggregator::prepareBlockAndFill(
 
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, data_variants.key_sizes, final);
 
-    Block res = sample.cloneEmpty();
+    Block res = header.cloneEmpty();
 
     for (size_t i = 0; i < params.keys_size; ++i)
         res.getByPosition(i).column = std::move(key_columns[i]);
@@ -1221,18 +1165,13 @@ Block Aggregator::prepareBlockAndFill(
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         if (final)
-        {
-            res.getByPosition(i + params.keys_size).type = aggregate_functions[i]->getReturnType();
             res.getByPosition(i + params.keys_size).column = std::move(final_aggregate_columns[i]);
-        }
         else
-        {
             res.getByPosition(i + params.keys_size).column = std::move(aggregate_columns[i]);
-        }
     }
 
     /// Change the size of the columns-constants in the block.
-    size_t columns = sample.columns();
+    size_t columns = header.columns();
     for (size_t i = 0; i < columns; ++i)
         if (res.getByPosition(i).column->isColumnConst())
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
@@ -1653,12 +1592,7 @@ public:
 
     String getName() const override { return "MergingAndConverting"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << this;
-        return res.str();
-    }
+    Block getHeader() const override { return aggregator.getHeader(final); }
 
     ~MergingAndConvertingBlockInputStream()
     {
@@ -1846,7 +1780,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
             non_empty_data.push_back(data);
 
     if (non_empty_data.empty())
-        return std::make_unique<NullBlockInputStream>();
+        return std::make_unique<NullBlockInputStream>(getHeader(final));
 
     if (non_empty_data.size() > 1)
     {
@@ -2026,14 +1960,6 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
     if (isCancelled())
         return;
 
-    StringRefs key(params.keys_size);
-    ColumnRawPtrs key_columns(params.keys_size);
-
-    initialize({});
-
-    if (isCancelled())
-        return;
-
     /** If the remote servers used a two-level aggregation method,
       *  then blocks will contain information about the number of the bucket.
       * Then the calculations can be parallelized by buckets.
@@ -2061,15 +1987,6 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
     if (bucket_to_blocks.empty())
         return;
-
-    setSampleBlock(bucket_to_blocks.begin()->second.front());
-
-    /// How to perform the aggregation?
-    for (size_t i = 0; i < params.keys_size; ++i)
-        key_columns[i] = sample.safeGetByPosition(i).column.get();
-
-    Sizes key_sizes;
-    AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
 
     /** `minus one` means the absence of information about the bucket
       * - in the case of single-level aggregation, as well as for blocks with "overflowing" values.
@@ -2111,7 +2028,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, &key_sizes, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
         {
             current_memory_tracker = memory_tracker;
 
@@ -2122,7 +2039,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(block, key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
+                    mergeStreamsImpl(block, result.key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
 
                 if (false) {}
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2190,7 +2107,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+                mergeStreamsImpl(block, result.key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -2214,36 +2131,24 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << bucket_num << ").");
     Stopwatch watch;
 
-    StringRefs key(params.keys_size);
-    ColumnRawPtrs key_columns(params.keys_size);
-
-    initialize({});
-    setSampleBlock(blocks.front());
-
-    /// How to perform the aggregation?
-    for (size_t i = 0; i < params.keys_size; ++i)
-        key_columns[i] = sample.safeGetByPosition(i).column.get();
-
-    Sizes key_sizes;
-    AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
-
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
       * Better hash function is needed because during external aggregation,
       *  we may merge partitions of data with total number of keys far greater than 4 billion.
       */
+    auto merge_method = method;
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
-        M(key64)             \
-        M(key_string)         \
+        M(key64)            \
+        M(key_string)       \
         M(key_fixed_string) \
-        M(keys128)             \
-        M(keys256)             \
-        M(concat)             \
-        M(serialized)        \
+        M(keys128)          \
+        M(keys256)          \
+        M(concat)           \
+        M(serialized)       \
 
 #define M(NAME) \
-    if (method == AggregatedDataVariants::Type::NAME) \
-        method = AggregatedDataVariants::Type::NAME ## _hash64; \
+    if (merge_method == AggregatedDataVariants::Type::NAME) \
+        merge_method = AggregatedDataVariants::Type::NAME ## _hash64; \
 
     APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
 #undef M
@@ -2256,7 +2161,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     /// result will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
-    result.init(method);
+    result.init(merge_method);
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
@@ -2377,20 +2282,16 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
     if (!block)
         return {};
 
-    initialize({});
-    setSampleBlock(block);
-
     AggregatedDataVariants data;
 
     StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
-    Sizes key_sizes;
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
         key_columns[i] = block.safeGetByPosition(i).column.get();
 
-    AggregatedDataVariants::Type type = chooseAggregationMethod(key_columns, key_sizes);
+    AggregatedDataVariants::Type type = method;
     data.keys_size = params.keys_size;
     data.key_sizes = key_sizes;
 
@@ -2495,30 +2396,6 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
         throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 }
 
-
-String Aggregator::getID() const
-{
-    std::stringstream res;
-
-    if (params.keys.empty())
-    {
-        res << "key_names";
-        for (size_t i = 0; i < params.key_names.size(); ++i)
-            res << ", " << params.key_names[i];
-    }
-    else
-    {
-        res << "keys";
-        for (size_t i = 0; i < params.keys.size(); ++i)
-            res << ", " << params.keys[i];
-    }
-
-    res << ", aggregates";
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-        res << ", " << params.aggregates[i].column_name;
-
-    return res.str();
-}
 
 void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
 {

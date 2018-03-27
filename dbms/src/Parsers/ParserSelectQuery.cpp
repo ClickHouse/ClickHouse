@@ -22,8 +22,6 @@ namespace ErrorCodes
 
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
@@ -68,7 +66,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction
+    /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
     if (s_from.ignore(pos, expected))
     {
         if (!ParserTablesInSelectQuery().parse(pos, select_query->tables, expected))
@@ -173,18 +171,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    // UNION ALL select query
-    if (ParserKeyword("UNION ALL").ignore(pos, expected))
-    {
-        ParserSelectQuery select_p;
-        if (!select_p.parse(pos, select_query->next_union_all, expected))
-            return false;
-        auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
-        next_select_query->prev_union_all = node.get();
-    }
-
-    select_query->range = StringRange(begin, pos);
-
     if (select_query->with_expression_list)
         select_query->children.push_back(select_query->with_expression_list);
     select_query->children.push_back(select_query->select_expression_list);
@@ -210,9 +196,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         select_query->children.push_back(select_query->limit_length);
     if (select_query->settings)
         select_query->children.push_back(select_query->settings);
-
-    if (select_query->next_union_all)
-        select_query->children.push_back(select_query->next_union_all);
 
     return true;
 }

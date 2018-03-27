@@ -20,11 +20,9 @@ public:
     CreatingSetsBlockInputStream(
         const BlockInputStreamPtr & input,
         const SubqueriesForSets & subqueries_for_sets_,
-        const Limits & limits)
+        const SizeLimits & network_transfer_limits)
         : subqueries_for_sets(subqueries_for_sets_),
-        max_rows_to_transfer(limits.max_rows_to_transfer),
-        max_bytes_to_transfer(limits.max_bytes_to_transfer),
-        transfer_overflow_mode(limits.transfer_overflow_mode)
+        network_transfer_limits(network_transfer_limits)
     {
         for (auto & elem : subqueries_for_sets)
             if (elem.second.source)
@@ -35,27 +33,10 @@ public:
 
     String getName() const override { return "CreatingSets"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "CreatingSets(";
-
-        Strings children_ids(children.size());
-        for (size_t i = 0; i < children.size(); ++i)
-            children_ids[i] = children[i]->getID();
-
-        /// Let's assume that the order of creating sets does not matter.
-        std::sort(children_ids.begin(), children_ids.end() - 1);
-
-        for (size_t i = 0; i < children_ids.size(); ++i)
-            res << (i == 0 ? "" : ", ") << children_ids[i];
-
-        res << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return children.back()->getHeader(); }
 
     /// Takes `totals` only from the main source, not from subquery sources.
-    const Block & getTotals() override;
+    Block getTotals() override;
 
 protected:
     Block readImpl() override;
@@ -65,9 +46,7 @@ private:
     SubqueriesForSets subqueries_for_sets;
     bool created = false;
 
-    size_t max_rows_to_transfer;
-    size_t max_bytes_to_transfer;
-    OverflowMode transfer_overflow_mode;
+    SizeLimits network_transfer_limits;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;

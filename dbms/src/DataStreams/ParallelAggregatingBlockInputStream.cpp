@@ -29,34 +29,22 @@ ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
 }
 
 
-String ParallelAggregatingBlockInputStream::getID() const
+Block ParallelAggregatingBlockInputStream::getHeader() const
 {
-    std::stringstream res;
-    res << "ParallelAggregating(";
-
-    Strings children_ids(children.size());
-    for (size_t i = 0; i < children.size(); ++i)
-        children_ids[i] = children[i]->getID();
-
-    /// Order does not matter.
-    std::sort(children_ids.begin(), children_ids.end());
-
-    for (size_t i = 0; i < children_ids.size(); ++i)
-        res << (i == 0 ? "" : ", ") << children_ids[i];
-
-    res << ", " << aggregator.getID() << ")";
-    return res.str();
+    return aggregator.getHeader(final);
 }
 
 
-void ParallelAggregatingBlockInputStream::cancel()
+void ParallelAggregatingBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
 
     if (!executed)
-        processor.cancel();
+        processor.cancel(kill);
 }
 
 
@@ -69,7 +57,7 @@ Block ParallelAggregatingBlockInputStream::readImpl()
 
         execute();
 
-        if (isCancelled())
+        if (isCancelledOrThrowIfKilled())
             return {};
 
         if (!aggregator.hasTemporaryFiles())
@@ -106,7 +94,7 @@ Block ParallelAggregatingBlockInputStream::readImpl()
     }
 
     Block res;
-    if (isCancelled() || !impl)
+    if (isCancelledOrThrowIfKilled() || !impl)
         return res;
 
     return impl->read();
@@ -114,7 +102,8 @@ Block ParallelAggregatingBlockInputStream::readImpl()
 
 
 ParallelAggregatingBlockInputStream::TemporaryFileStream::TemporaryFileStream(const std::string & path)
-    : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
+    : file_in(path), compressed_in(file_in),
+    block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
 
 
 
@@ -122,8 +111,7 @@ void ParallelAggregatingBlockInputStream::Handler::onBlock(Block & block, size_t
 {
     parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],
         parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
-        parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key,
-        parent.no_more_keys);
+        parent.threads_data[thread_num].key, parent.no_more_keys);
 
     parent.threads_data[thread_num].src_rows += block.rows();
     parent.threads_data[thread_num].src_bytes += block.bytes();
@@ -164,7 +152,7 @@ void ParallelAggregatingBlockInputStream::Handler::onFinish()
 void ParallelAggregatingBlockInputStream::Handler::onException(std::exception_ptr & exception, size_t thread_num)
 {
     parent.exceptions[thread_num] = exception;
-    parent.cancel();
+    parent.cancel(false);
 }
 
 
@@ -188,7 +176,7 @@ void ParallelAggregatingBlockInputStream::execute()
 
     rethrowFirstException(exceptions);
 
-    if (isCancelled())
+    if (isCancelledOrThrowIfKilled())
         return;
 
     double elapsed_seconds = watch.elapsedSeconds();
@@ -212,6 +200,13 @@ void ParallelAggregatingBlockInputStream::execute()
         << "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."
         << " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+    /// If there was no data, and we aggregate without keys, we must return single row with the result of empty aggregation.
+    /// To do this, we pass a block with zero rows to aggregate.
+    if (total_src_rows == 0 && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+        aggregator.executeOnBlock(children.at(0)->getHeader(), *many_data[0],
+            threads_data[0].key_columns, threads_data[0].aggregate_columns,
+            threads_data[0].key, no_more_keys);
 }
 
 }

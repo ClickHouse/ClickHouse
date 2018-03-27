@@ -1,10 +1,12 @@
 #pragma once
 
 #include <shared_mutex>
+#include <Core/Block.h>
 #include <Columns/ColumnArray.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/Limits.h>
+#include <DataStreams/SizeLimits.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
@@ -28,11 +30,9 @@ using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 class Set
 {
 public:
-    Set(const Limits & limits) :
+    Set(const SizeLimits & limits) :
         log(&Logger::get("Set")),
-        max_rows(limits.max_rows_in_set),
-        max_bytes(limits.max_bytes_in_set),
-        overflow_mode(limits.set_overflow_mode),
+        limits(limits),
         set_elements(std::make_unique<SetElements>())
     {
     }
@@ -87,9 +87,7 @@ private:
     Logger * log;
 
     /// Limitations on the maximum size of the set
-    size_t max_rows;
-    size_t max_bytes;
-    OverflowMode overflow_mode;
+    SizeLimits limits;
 
     /// If there is an array on the left side of IN. We check that at least one element of the array presents in the set.
     void executeArray(const ColumnArray * key_column, ColumnUInt8::Container & vec_res, bool negative) const;
@@ -100,9 +98,6 @@ private:
         ColumnUInt8::Container & vec_res,
         bool negative,
         const PaddedPODArray<UInt8> * null_map) const;
-
-    /// Check whether the permissible sizes of keys set reached
-    bool checkSetSizeLimits() const;
 
     /// Vector of elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
@@ -179,12 +174,11 @@ public:
         size_t tuple_index;
         size_t pk_index;
         std::vector<FunctionBasePtr> functions;
-        DataTypePtr data_type;
     };
 
     MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && indexes_mapping_);
 
-    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges);
+    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 private:
     using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
     OrderedTuples ordered_set;

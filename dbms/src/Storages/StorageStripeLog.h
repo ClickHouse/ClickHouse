@@ -49,7 +49,9 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    std::string full_path() { return path + escapeForFileName(name) + '/';}
+    std::string full_path() const { return path + escapeForFileName(name) + '/';}
+
+    String getDataPath() const override { return full_path(); }
 
 private:
     String path;
@@ -66,10 +68,7 @@ protected:
     StorageStripeLog(
         const std::string & path_,
         const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         bool attach,
         size_t max_compress_block_size_);
 };

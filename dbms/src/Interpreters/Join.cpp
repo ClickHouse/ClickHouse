@@ -11,6 +11,8 @@
 #include <Interpreters/NullableUtils.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/materializeBlock.h>
+
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
 
@@ -29,15 +31,13 @@ namespace ErrorCodes
 
 
 Join::Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
-    const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+    const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
     : kind(kind_), strictness(strictness_),
     key_names_left(key_names_left_),
     key_names_right(key_names_right_),
     use_nulls(use_nulls_),
     log(&Logger::get("Join")),
-    max_rows(limits.max_rows_in_join),
-    max_bytes(limits.max_bytes_in_join),
-    overflow_mode(limits.join_overflow_mode)
+    limits(limits)
 {
 }
 
@@ -241,16 +241,6 @@ size_t Join::getTotalByteCount() const
 }
 
 
-bool Join::checkSizeLimits() const
-{
-    if (max_rows && getTotalRowCount() > max_rows)
-        return false;
-    if (max_bytes && getTotalByteCount() > max_bytes)
-        return false;
-    return true;
-}
-
-
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
     column.type = makeNullable(column.type);
@@ -281,7 +271,7 @@ void Join::setSampleBlock(const Block & block)
     /// Choose data structure to use for JOIN.
     init(chooseMethod(key_columns, key_sizes));
 
-    sample_block_with_columns_to_add = block;
+    sample_block_with_columns_to_add = materializeBlock(block);
 
     /// Move from `sample_block_with_columns_to_add` key columns to `sample_block_with_keys`, keeping the order.
     size_t pos = 0;
@@ -462,8 +452,8 @@ bool Join::insertFromBlock(const Block & block)
 
     if (getFullness(kind))
     {
-        /** Transfer the key columns to the beginning of the block.
-          * This is where NonJoinedBlockInputStream will wait for them.
+        /** Move the key columns to the beginning of the block.
+          * This is where NonJoinedBlockInputStream will expect.
           */
         size_t key_num = 0;
         for (const auto & name : key_names_right)
@@ -520,27 +510,7 @@ bool Join::insertFromBlock(const Block & block)
         }
     }
 
-    if (!checkSizeLimits())
-    {
-        switch (overflow_mode)
-        {
-            case OverflowMode::THROW:
-                throw Exception("Join size limit exceeded."
-                    " Rows: " + toString(getTotalRowCount()) +
-                    ", limit: " + toString(max_rows) +
-                    ". Bytes: " + toString(getTotalByteCount()) +
-                    ", limit: " + toString(max_bytes) + ".",
-                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-
-            case OverflowMode::BREAK:
-                return false;
-
-            default:
-                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-        }
-    }
-
-    return true;
+    return limits.check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 
@@ -990,7 +960,7 @@ public:
         size_t num_columns_left = left_sample_block.columns() - num_keys;
         size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
 
-        result_sample_block = left_sample_block;
+        result_sample_block = materializeBlock(left_sample_block);
 
         /// Add columns from the right-side table to the block.
         for (size_t i = 0; i < num_columns_right; ++i)
@@ -1038,12 +1008,7 @@ public:
 
     String getName() const override { return "NonJoined"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "NonJoined(" << &parent << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return result_sample_block; };
 
 
 protected:
@@ -1159,7 +1124,7 @@ private:
 };
 
 
-BlockInputStreamPtr Join::createStreamWithNonJoinedRows(Block & left_sample_block, size_t max_block_size) const
+BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, size_t max_block_size) const
 {
     return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
 }

@@ -59,7 +59,7 @@ DataTypePtr getDataType(SQLSMALLINT type)
     }
 }
 
-StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
 
@@ -113,7 +113,7 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
         columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
     }
 
-    auto result = StorageODBC::create(table_name, connection_string, "", table_name, columns);
+    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns});
     result->startup();
     return result;
 }

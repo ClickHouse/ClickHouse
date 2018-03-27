@@ -13,6 +13,7 @@ DEB_CXX=${DEB_CXX:=g++-7}
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
 DEBUILD_NODEPS_OPTIONS="-d"
+USE_PBUILDER=1
 
 if [ -z "$REVISION" ] ; then
     get_revision_author
@@ -35,11 +36,14 @@ do
         REVISION=`git rev-parse HEAD`
         shift
     elif [[ $1 == '--pbuilder' ]]; then
-        USE_PBUILDER=1
+        # Default
+        shift
+    elif [[ $1 == '--no-pbuilder' ]]; then
+        USE_PBUILDER=
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo openssl"
         shift
     else
         echo "Unknown option $1"
@@ -58,7 +62,7 @@ then
     # GLIBC_COMPATIBILITY отключен по умолчанию
     export DEB_CC=clang-5.0
     export DEB_CXX=clang++-5.0
-    EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 "
+    EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 lld-5.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     VERSION_POSTFIX+=-$BUILD_TYPE
@@ -72,7 +76,7 @@ if [ -z "$THREAD_COUNT" ] ; then
     THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4`
 fi
 
-CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 export CMAKE_FLAGS
 export EXTRAPACKAGES
 

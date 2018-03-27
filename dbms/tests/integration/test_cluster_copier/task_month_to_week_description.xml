@@ -1,0 +1,97 @@
+<?xml version="1.0"?>
+<yandex>
+    <!-- How many simualteneous workers are posssible -->
+    <max_workers>4</max_workers>
+
+    <!-- Common setting for pull and push operations -->
+    <settings>
+        <connect_timeout>1</connect_timeout>
+    </settings>
+
+    <settings_pull>
+        <max_rows_in_distinct>0</max_rows_in_distinct>
+    </settings_pull>
+
+    <!-- Tasks -->
+    <tables>
+        <AB>
+            <cluster_pull>cluster0</cluster_pull>
+            <database_pull>default</database_pull>
+            <table_pull>a</table_pull>
+
+            <cluster_push>cluster1</cluster_push>
+            <database_push>default</database_push>
+            <table_push>b</table_push>
+
+            <!--
+            <enabled_partitions>
+                <partition></partition>
+            </enabled_partitions>
+            -->
+
+            <!-- Engine of destination tables -->
+            <engine>ENGINE=
+                ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/b', '{replica}')
+                PARTITION BY toMonday(date)
+                ORDER BY d
+            </engine>
+
+            <!-- Which sarding key to use while copying -->
+            <sharding_key>jumpConsistentHash(intHash64(d), 2)</sharding_key>
+
+            <!-- Optional expression that filter copying data -->
+            <!-- <where_condition></where_condition> -->
+        </AB>
+    </tables>
+
+    <!-- Configuration of clusters -->
+    <remote_servers>
+    <cluster0>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>s0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster0>
+
+    <cluster1>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>s1_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s1_0_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>s1_1_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <!-- Died replica -->
+                <host>255.255.255.255</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster1>
+    </remote_servers>
+
+</yandex>

@@ -15,11 +15,15 @@ public:
     NumbersBlockInputStream(size_t block_size_, size_t offset_, size_t step_)
         : block_size(block_size_), next(offset_), step(step_) {}
 
-    String getName() const { return "Numbers"; }
-    String getID() const { return "Numbers"; }
+    String getName() const override { return "Numbers"; }
+
+    Block getHeader() const override
+    {
+        return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
+    }
 
 protected:
-    Block readImpl()
+    Block readImpl() override
     {
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
@@ -43,7 +47,7 @@ private:
 StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_)
     : name(name_), multithreaded(multithreaded_), limit(limit_)
 {
-    columns = NamesAndTypesList{{"number", std::make_shared<DataTypeUInt64>()}};
+    setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
 
 

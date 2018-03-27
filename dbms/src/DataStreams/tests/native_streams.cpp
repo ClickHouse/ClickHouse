@@ -95,8 +95,8 @@ try
 
     /// create an object of an existing hit log table
 
-    StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    StoragePtr table = StorageLog::create(
+        "./", "HitLog", ColumnsDescription{names_and_types_list}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
     table->startup();
 
     /// read from it
@@ -106,7 +106,7 @@ try
         BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
         WriteBufferFromFileDescriptor out1(STDOUT_FILENO);
         CompressedWriteBuffer out2(out1);
-        NativeBlockOutputStream out3(out2, ClickHouseRevision::get());
+        NativeBlockOutputStream out3(out2, ClickHouseRevision::get(), in->getHeader());
         copyData(*in, out3);
     }
 

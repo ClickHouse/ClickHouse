@@ -33,6 +33,7 @@ public:
     SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
         const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
 
+    Block getHeader() const override { return table.getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -54,7 +55,7 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & ta
     backup_file_name(backup_file_name_),
     backup_buf(backup_tmp_path + backup_file_name),
     compressed_backup_buf(backup_buf),
-    backup_stream(compressed_backup_buf)
+    backup_stream(compressed_backup_buf, 0, table.getSampleBlock())
 {
 }
 
@@ -87,18 +88,14 @@ BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const
 
 StorageSetOrJoinBase::StorageSetOrJoinBase(
     const String & path_,
-    const String & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
-    name(name_)
+    const String & table_name_,
+    const ColumnsDescription & columns_)
+    : IStorage{columns_}, table_name(table_name_)
 {
     if (path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    path = path_ + escapeForFileName(name_) + '/';
+    path = path_ + escapeForFileName(table_name_) + '/';
 }
 
 
@@ -106,12 +103,9 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 StorageSet::StorageSet(
     const String & path_,
     const String & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-    : StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
-    set(std::make_shared<Set>(Limits{}))
+    const ColumnsDescription & columns_)
+    : StorageSetOrJoinBase{path_, name_, columns_},
+    set(std::make_shared<Set>(SizeLimits()))
 {
     restore();
 }
@@ -157,7 +151,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ReadBufferFromFile backup_buf(file_path);
     CompressedReadBuffer compressed_backup_buf(backup_buf);
-    NativeBlockInputStream backup_stream(compressed_backup_buf);
+    NativeBlockInputStream backup_stream(compressed_backup_buf, 0);
 
     backup_stream.readPrefix();
     while (Block block = backup_stream.read())
@@ -180,7 +174,7 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & 
     Poco::File(path).renameTo(new_path);
 
     path = new_path + "/";
-    name = new_table_name;
+    table_name = new_table_name;
 }
 
 
@@ -193,9 +187,7 @@ void registerStorageSet(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageSet::create(
-            args.data_path, args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults);
+        return StorageSet::create(args.data_path, args.table_name, args.columns);
     });
 }
 

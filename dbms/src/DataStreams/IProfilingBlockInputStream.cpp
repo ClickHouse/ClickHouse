@@ -1,20 +1,20 @@
-#include <iomanip>
-#include <random>
-
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int TOO_MUCH_ROWS;
-    extern const int TOO_MUCH_BYTES;
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -25,7 +25,11 @@ IProfilingBlockInputStream::IProfilingBlockInputStream()
 
 Block IProfilingBlockInputStream::read()
 {
-    collectAndSendTotalRowsApprox();
+    if (total_rows_approx)
+    {
+        progressImpl(Progress(0, 0, total_rows_approx));
+        total_rows_approx = 0;
+    }
 
     if (!info.started)
     {
@@ -35,7 +39,7 @@ Block IProfilingBlockInputStream::read()
 
     Block res;
 
-    if (is_cancelled.load(std::memory_order_seq_cst))
+    if (isCancelledOrThrowIfKilled())
         return res;
 
     if (!checkTimeLimits())
@@ -51,7 +55,7 @@ Block IProfilingBlockInputStream::read()
         if (enabled_extremes)
             updateExtremes(res);
 
-        if (!checkDataSizeLimits())
+        if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
         if (quota != nullptr)
@@ -62,13 +66,22 @@ Block IProfilingBlockInputStream::read()
         /** If the thread is over, then we will ask all children to abort the execution.
           * This makes sense when running a query with LIMIT
           * - there is a situation when all the necessary data has already been read,
-          *   but `children sources are still working,
+          *   but children sources are still working,
           *   herewith they can work in separate threads or even remotely.
           */
-        cancel();
+        cancel(false);
     }
 
     progress(Progress(res.rows(), res.bytes()));
+
+#ifndef NDEBUG
+    if (res)
+    {
+        Block header = getHeader();
+        if (header)
+            assertBlocksHaveEqualStructure(res, header, getName());
+    }
+#endif
 
     return res;
 }
@@ -78,15 +91,21 @@ void IProfilingBlockInputStream::readPrefix()
 {
     readPrefixImpl();
 
-    for (auto & child : children)
-        child->readPrefix();
+    forEachChild([&] (IBlockInputStream & child)
+    {
+        child.readPrefix();
+        return false;
+    });
 }
 
 
 void IProfilingBlockInputStream::readSuffix()
 {
-    for (auto & child : children)
-        child->readSuffix();
+    forEachChild([&] (IBlockInputStream & child)
+    {
+        child.readSuffix();
+        return false;
+    });
 
     readSuffixImpl();
 }
@@ -171,30 +190,6 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
     }
 };
 
-bool IProfilingBlockInputStream::checkDataSizeLimits()
-{
-    if (limits.mode == LIMITS_CURRENT)
-    {
-        /// Check current stream limitations (i.e. max_result_{rows,bytes})
-
-        if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
-            return handleOverflowMode(limits.read_overflow_mode,
-                std::string("Limit for result rows")
-                    + " exceeded: read " + toString(info.rows)
-                    + " rows, maximum: " + toString(limits.max_rows_to_read),
-                ErrorCodes::TOO_MUCH_ROWS);
-
-        if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
-            return handleOverflowMode(limits.read_overflow_mode,
-                std::string("Limit for result bytes (uncompressed)")
-                    + " exceeded: read " + toString(info.bytes)
-                    + " bytes, maximum: " + toString(limits.max_bytes_to_read),
-                ErrorCodes::TOO_MUCH_BYTES);
-    }
-
-    return true;
-}
-
 
 bool IProfilingBlockInputStream::checkTimeLimits()
 {
@@ -243,45 +238,43 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
     if (process_list_elem)
     {
         if (!process_list_elem->updateProgressIn(value))
-            cancel();
+            cancel(false);
 
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
-        size_t rows_processed = process_list_elem->progress_in.rows;
-        size_t bytes_processed = process_list_elem->progress_in.bytes;
-
-        size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress_in.total_rows.load(std::memory_order_relaxed));
+        ProgressValues progress = process_list_elem->getProgressIn();
+        size_t total_rows_estimate = std::max(progress.rows, progress.total_rows);
 
         /** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
             * NOTE: Maybe it makes sense to have them checked directly in ProcessList?
             */
 
         if (limits.mode == LIMITS_TOTAL
-            && ((limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
-                || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read)))
+            && ((limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
+                || (limits.size_limits.max_bytes && progress.bytes > limits.size_limits.max_bytes)))
         {
-            switch (limits.read_overflow_mode)
+            switch (limits.size_limits.overflow_mode)
             {
                 case OverflowMode::THROW:
                 {
-                    if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+                    if (limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
                         throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
-                            + " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
-                            ErrorCodes::TOO_MUCH_ROWS);
+                            + " rows read (or to read), maximum: " + toString(limits.size_limits.max_rows),
+                            ErrorCodes::TOO_MANY_ROWS);
                     else
-                        throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
-                            + " bytes read, maximum: " + toString(limits.max_bytes_to_read),
-                            ErrorCodes::TOO_MUCH_BYTES);
+                        throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(progress.bytes)
+                            + " bytes read, maximum: " + toString(limits.size_limits.max_bytes),
+                            ErrorCodes::TOO_MANY_BYTES);
                     break;
                 }
 
                 case OverflowMode::BREAK:
                 {
-                    /// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
-                    if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
-                        || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
+                    /// For `break`, we will stop only if so many rows were actually read, and not just supposed to be read.
+                    if ((limits.size_limits.max_rows && progress.rows > limits.size_limits.max_rows)
+                        || (limits.size_limits.max_bytes && progress.bytes > limits.size_limits.max_bytes))
                     {
-                        cancel();
+                        cancel(false);
                     }
 
                     break;
@@ -292,7 +285,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
             }
         }
 
-        size_t total_rows = process_list_elem->progress_in.total_rows;
+        size_t total_rows = progress.total_rows;
 
         if (limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
         {
@@ -300,17 +293,17 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
             if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0)
             {
-                if (limits.min_execution_speed && rows_processed / total_elapsed < limits.min_execution_speed)
-                    throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
+                if (limits.min_execution_speed && progress.rows / total_elapsed < limits.min_execution_speed)
+                    throw Exception("Query is executing too slow: " + toString(progress.rows / total_elapsed)
                         + " rows/sec., minimum: " + toString(limits.min_execution_speed),
                         ErrorCodes::TOO_SLOW);
 
-                size_t total_rows = process_list_elem->progress_in.total_rows;
+                size_t total_rows = progress.total_rows;
 
                 /// If the predicted execution time is longer than `max_execution_time`.
                 if (limits.max_execution_time != 0 && total_rows)
                 {
-                    double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / rows_processed);
+                    double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / progress.rows);
 
                     if (estimated_execution_time_seconds > limits.max_execution_time.totalSeconds())
                         throw Exception("Estimated query execution time (" + toString(estimated_execution_time_seconds) + " seconds)"
@@ -329,15 +322,20 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 }
 
 
-void IProfilingBlockInputStream::cancel()
+void IProfilingBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
+
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
 
-    for (auto & child : children)
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-            p_child->cancel();
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
+    {
+        child.cancel(kill);
+        return false;
+    });
 }
 
 
@@ -345,9 +343,11 @@ void IProfilingBlockInputStream::setProgressCallback(const ProgressCallback & ca
 {
     progress_callback = callback;
 
-    for (auto & child : children)
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-            p_child->setProgressCallback(callback);
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
+    {
+        child.setProgressCallback(callback);
+        return false;
+    });
 }
 
 
@@ -355,71 +355,44 @@ void IProfilingBlockInputStream::setProcessListElement(ProcessListElement * elem
 {
     process_list_elem = elem;
 
-    for (auto & child : children)
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-            p_child->setProcessListElement(elem);
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
+    {
+        child.setProcessListElement(elem);
+        return false;
+    });
 }
 
 
-const Block & IProfilingBlockInputStream::getTotals()
+Block IProfilingBlockInputStream::getTotals()
 {
     if (totals)
         return totals;
 
-    for (auto & child : children)
+    Block res;
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
     {
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-        {
-            const Block & res = p_child->getTotals();
-            if (res)
-                return res;
-        }
-    }
-
-    return totals;
+        res = child.getTotals();
+        if (res)
+            return true;
+        return false;
+    });
+    return res;
 }
 
-const Block & IProfilingBlockInputStream::getExtremes() const
+Block IProfilingBlockInputStream::getExtremes()
 {
     if (extremes)
         return extremes;
 
-    for (const auto & child : children)
+    Block res;
+    forEachProfilingChild([&] (IProfilingBlockInputStream & child)
     {
-        if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
-        {
-            const Block & res = p_child->getExtremes();
-            if (res)
-                return res;
-        }
-    }
-
-    return extremes;
-}
-
-void IProfilingBlockInputStream::collectTotalRowsApprox()
-{
-    bool old_val = false;
-    if (!collected_total_rows_approx.compare_exchange_strong(old_val, true))
-        return;
-
-    for (auto & child : children)
-    {
-        if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
-        {
-            p_child->collectTotalRowsApprox();
-            total_rows_approx += p_child->total_rows_approx;
-        }
-    }
-}
-
-void IProfilingBlockInputStream::collectAndSendTotalRowsApprox()
-{
-    if (collected_total_rows_approx)
-        return;
-
-    collectTotalRowsApprox();
-    progressImpl(Progress(0, 0, total_rows_approx));
+        res = child.getExtremes();
+        if (res)
+            return true;
+        return false;
+    });
+    return res;
 }
 
 }

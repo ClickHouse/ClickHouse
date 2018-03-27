@@ -41,7 +41,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_COMPRESSED_CHUNK = 31;
     extern const int ATTEMPT_TO_READ_AFTER_EOF = 32;
     extern const int CANNOT_READ_ALL_DATA = 33;
-    extern const int TOO_MUCH_ARGUMENTS_FOR_FUNCTION = 34;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION = 34;
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION = 35;
     extern const int BAD_ARGUMENTS = 36;
     extern const int UNKNOWN_ELEMENT_IN_AST = 37;
@@ -164,15 +164,15 @@ namespace ErrorCodes
     extern const int UNKNOWN_RELATION = 155;
     extern const int DICTIONARIES_WAS_NOT_LOADED = 156;
     extern const int ILLEGAL_OVERFLOW_MODE = 157;
-    extern const int TOO_MUCH_ROWS = 158;
+    extern const int TOO_MANY_ROWS = 158;
     extern const int TIMEOUT_EXCEEDED = 159;
     extern const int TOO_SLOW = 160;
-    extern const int TOO_MUCH_COLUMNS = 161;
+    extern const int TOO_MANY_COLUMNS = 161;
     extern const int TOO_DEEP_SUBQUERIES = 162;
     extern const int TOO_DEEP_PIPELINE = 163;
     extern const int READONLY = 164;
-    extern const int TOO_MUCH_TEMPORARY_COLUMNS = 165;
-    extern const int TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS = 166;
+    extern const int TOO_MANY_TEMPORARY_COLUMNS = 165;
+    extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS = 166;
     extern const int TOO_DEEP_AST = 167;
     extern const int TOO_BIG_AST = 168;
     extern const int BAD_TYPE_OF_FIELD = 169;
@@ -207,7 +207,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_QUOTA = 199;
     extern const int QUOTA_DOESNT_ALLOW_KEYS = 200;
     extern const int QUOTA_EXPIRED = 201;
-    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES = 202;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES = 202;
     extern const int NO_FREE_CONNECTION = 203;
     extern const int CANNOT_FSYNC = 204;
     extern const int NESTED_TYPE_TOO_DEEP = 205;
@@ -255,14 +255,13 @@ namespace ErrorCodes
     extern const int INVALID_PARTITION_VALUE = 248;
     extern const int NOT_ENOUGH_BLOCK_NUMBERS = 250;
     extern const int NO_SUCH_REPLICA = 251;
-    extern const int TOO_MUCH_PARTS = 252;
+    extern const int TOO_MANY_PARTS = 252;
     extern const int REPLICA_IS_ALREADY_EXIST = 253;
     extern const int NO_ACTIVE_REPLICAS = 254;
-    extern const int TOO_MUCH_RETRIES_TO_FETCH_PARTS = 255;
+    extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS = 255;
     extern const int PARTITION_ALREADY_EXISTS = 256;
     extern const int PARTITION_DOESNT_EXIST = 257;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH = 258;
-    extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH = 259;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED = 260;
     extern const int UNKNOWN_BLOCK_INFO_FIELD = 261;
     extern const int BAD_COLLATION = 262;
@@ -309,7 +308,7 @@ namespace ErrorCodes
     extern const int CANNOT_WAITPID = 304;
     extern const int TABLE_WAS_NOT_DROPPED = 305;
     extern const int TOO_DEEP_RECURSION = 306;
-    extern const int TOO_MUCH_BYTES = 307;
+    extern const int TOO_MANY_BYTES = 307;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER = 308;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS = 309;
     extern const int INVALID_SHARD_WEIGHT = 317;
@@ -343,7 +342,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS = 364;
     extern const int OUTPUT_IS_NOT_SORTED = 365;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT = 366;
-    extern const int TOO_MUCH_FETCHES = 367;
+    extern const int TOO_MANY_FETCHES = 367;
     extern const int BAD_CAST = 368;
     extern const int ALL_REPLICAS_ARE_STALE = 369;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES = 370;
@@ -367,6 +366,14 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE = 388;
     extern const int INSERT_WAS_DEDUPLICATED = 389;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY = 390;
+    extern const int EXTERNAL_LIBRARY_ERROR = 391;
+    extern const int QUERY_IS_PROHIBITED = 392;
+    extern const int THERE_IS_NO_QUERY = 393;
+    extern const int QUERY_WAS_CANCELLED = 394;
+    extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO = 395;
+    extern const int TOO_MANY_ROWS_OR_BYTES = 396;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW = 397;
+
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

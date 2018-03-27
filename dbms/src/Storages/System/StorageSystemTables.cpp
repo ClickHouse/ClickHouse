@@ -114,13 +114,15 @@ protected:
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList
+    setColumns(ColumnsDescription(
     {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
-    };
+        {"data_path", std::make_shared<DataTypeString>()},
+        {"metadata_path", std::make_shared<DataTypeString>()},
+    }));
 
     virtual_columns =
     {
@@ -190,6 +192,8 @@ BlockInputStreams StorageSystemTables::read(
             res_columns[j++]->insert(table_name);
             res_columns[j++]->insert(iterator->table()->getName());
             res_columns[j++]->insert(UInt64(0));
+            res_columns[j++]->insert(iterator->table()->getDataPath());
+            res_columns[j++]->insert(database->getTableMetadataPath(table_name));
 
             if (has_metadata_modification_time)
                 res_columns[j++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));

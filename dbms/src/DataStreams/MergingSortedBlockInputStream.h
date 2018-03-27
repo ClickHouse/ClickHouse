@@ -70,11 +70,11 @@ public:
 
     String getName() const override { return "MergingSorted"; }
 
-    String getID() const override;
-
     bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
+
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     struct RowRef
@@ -103,6 +103,12 @@ protected:
         bool operator!=(const RowRef & other) const
         {
             return !(*this == other);
+        }
+
+        void reset()
+        {
+            RowRef empty;
+            swap(empty);
         }
 
         bool empty() const { return columns == nullptr; }

@@ -38,13 +38,12 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
 }
 
 
-String MergeTreeThreadBlockInputStream::getID() const
+Block MergeTreeThreadBlockInputStream::getHeader() const
 {
-    std::stringstream res;
-    /// @todo print some meaningful information
-    res << static_cast<const void *>(this);
-    return res.str();
-}
+    auto res = pool->getHeader();
+    injectVirtualColumns(res);
+    return res;
+};
 
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one

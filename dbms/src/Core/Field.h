@@ -29,6 +29,7 @@ STRONG_TYPEDEF(TupleBackend, Tuple); /// Array and Tuple are different types wit
 
 
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
+  * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
 #define DBMS_MIN_FIELD_SIZE 32
 
@@ -197,14 +198,14 @@ public:
     template <typename T> T & get()
     {
         using TWithoutRef = std::remove_reference_t<T>;
-        TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(&storage);
+        TWithoutRef * MAY_ALIAS ptr = reinterpret_cast<TWithoutRef*>(&storage);
         return *ptr;
     };
 
     template <typename T> const T & get() const
     {
         using TWithoutRef = std::remove_reference_t<T>;
-        const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(&storage);
+        const TWithoutRef * MAY_ALIAS ptr = reinterpret_cast<const TWithoutRef*>(&storage);
         return *ptr;
     };
 
@@ -339,7 +340,7 @@ private:
     void createConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
-        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
+        JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         new (ptr) JustT(std::forward<T>(x));
         which = TypeToEnum<JustT>::value;
     }
@@ -349,7 +350,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
-        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
+        JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
 
@@ -397,7 +398,7 @@ private:
 
     void create(const char * data, size_t size)
     {
-        String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(&storage);
+        String * MAY_ALIAS ptr = reinterpret_cast<String*>(&storage);
         new (ptr) String(data, size);
         which = Types::String;
     }
@@ -433,7 +434,7 @@ private:
     template <typename T>
     void destroy()
     {
-        T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(&storage);
+        T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
     }
 };

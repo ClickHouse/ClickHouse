@@ -2,7 +2,7 @@ table with 2 blocks final
 table with 2 blocks optimized
 2018-01-31	str_8	0	-1
 2018-01-31	str_9	0	1
-#########################
+-------------------------
 table with 2 blocks final
 2018-01-31	str_0	0	-1
 2018-01-31	str_0	0	-1
@@ -45,12 +45,12 @@ table with 2 blocks optimized
 2018-01-31	str_8	0	-1
 2018-01-31	str_9	0	1
 2018-01-31	str_9	0	1
-#########################
+-------------------------
 table with 2 blocks final
 table with 2 blocks optimized
 2018-01-31	str_9	0	1
 2018-01-31	str_9	0	-1
-#########################
+-------------------------
 table with 2 blocks final
 2018-01-31	str_0	0	-1
 2018-01-31	str_0	1	1
@@ -93,12 +93,12 @@ table with 2 blocks optimized
 2018-01-31	str_8	1	1
 2018-01-31	str_9	0	1
 2018-01-31	str_9	1	-1
-#########################
+-------------------------
 table with 4 blocks final
 table with 4 blocks optimized
 2018-01-31	str_9	0	1
 2018-01-31	str_9	0	-1
-#########################
+-------------------------
 table with 5 blocks final
 2018-01-31	str_0	1	-1
 2018-01-31	str_1	1	-1
@@ -121,12 +121,12 @@ table with 5 blocks optimized
 2018-01-31	str_7	1	-1
 2018-01-31	str_8	1	-1
 2018-01-31	str_9	1	-1
-#########################
+-------------------------
 table with 2 blocks final
 table with 2 blocks optimized
 2018-01-31	str_999999	0	1
 2018-01-31	str_999999	0	-1
-#########################
+-------------------------
 table with 2 blocks final
 2018-01-31	0	0	1
 2018-01-31	1	0	1
@@ -263,14 +263,14 @@ table with 2 blocks final
 table with 2 blocks optimized
 2018-01-31	0	0	-1
 2018-01-31	127	0	1
-#########################
+-------------------------
 Vertival merge
-#########################
+-------------------------
 table with 2 blocks final
 table with 2 blocks optimized
 2018-01-31	str_8	0	-1
 2018-01-31	str_9	0	1
-#########################
+-------------------------
 table with 2 blocks final
 2018-01-31	str_0	0	-1
 2018-01-31	str_0	0	-1
@@ -313,12 +313,12 @@ table with 2 blocks optimized
 2018-01-31	str_8	0	-1
 2018-01-31	str_9	0	1
 2018-01-31	str_9	0	1
-#########################
+-------------------------
 table with 2 blocks final
 table with 2 blocks optimized
 2018-01-31	str_9	0	1
 2018-01-31	str_9	0	-1
-#########################
+-------------------------
 table with 2 blocks final
 2018-01-31	str_0	0	-1
 2018-01-31	str_0	1	1
@@ -361,12 +361,12 @@ table with 2 blocks optimized
 2018-01-31	str_8	1	1
 2018-01-31	str_9	0	1
 2018-01-31	str_9	1	-1
-#########################
+-------------------------
 table with 4 blocks final
 table with 4 blocks optimized
 2018-01-31	str_9	0	1
 2018-01-31	str_9	0	-1
-#########################
+-------------------------
 table with 5 blocks final
 2018-01-31	str_0	1	-1
 2018-01-31	str_1	1	-1
@@ -389,12 +389,12 @@ table with 5 blocks optimized
 2018-01-31	str_7	1	-1
 2018-01-31	str_8	1	-1
 2018-01-31	str_9	1	-1
-#########################
+-------------------------
 table with 2 blocks final
 table with 2 blocks optimized
 2018-01-31	str_999999	0	1
 2018-01-31	str_999999	0	-1
-#########################
+-------------------------
 table with 2 blocks final
 2018-01-31	0	0	1
 2018-01-31	1	0	1

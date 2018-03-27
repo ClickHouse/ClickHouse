@@ -83,6 +83,10 @@ public:
     /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
+    /** The name of the table.
+      */
+    virtual std::string getTableName() const = 0;
+
     /** Returns true if the storage receives data from a remote server or servers. */
     virtual bool isRemote() const { return false; }
 
@@ -288,9 +292,11 @@ public:
     /// Otherwise - throws an exception with detailed information or returns false
     virtual bool checkTableCanBeDropped() const { return true; }
 
-
     /** Notify engine about updated dependencies for this storage. */
     virtual void updateDependencies() {}
+
+    /// Returns data path if storage supports it, empty string otherwise.
+    virtual String getDataPath() const { return {}; }
 
 protected:
     using ITableDeclaration::ITableDeclaration;

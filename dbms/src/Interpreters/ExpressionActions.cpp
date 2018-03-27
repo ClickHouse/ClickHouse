@@ -27,8 +27,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_ACTION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
-    extern const int TOO_MUCH_TEMPORARY_COLUMNS;
-    extern const int TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS;
+    extern const int TOO_MANY_TEMPORARY_COLUMNS;
+    extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
 }
 
 
@@ -142,39 +142,11 @@ ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join
 }
 
 
-ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_block)
-{
-    ExpressionActions::Actions res;
-
-    if (type == APPLY_FUNCTION)
-    {
-        if (sample_block.has(result_name))
-            throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
-        ColumnsWithTypeAndName arguments(argument_names.size());
-        for (size_t i = 0; i < argument_names.size(); ++i)
-        {
-            if (!sample_block.has(argument_names[i]))
-                throw Exception("Unknown identifier: '" + argument_names[i] + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-            arguments[i] = sample_block.getByName(argument_names[i]);
-        }
-
-        function = function_builder->build(arguments);
-        result_type = function->getReturnType();
-    }
-
-    return res;
-}
-
 void ExpressionAction::prepare(Block & sample_block)
 {
 //    std::cerr << "preparing: " << toString() << std::endl;
 
     /** Constant expressions should be evaluated, and put the result in sample_block.
-      * For non-constant columns, put the nullptr as the column in sample_block.
-      *
-      * The fact that only for constant expressions column != nullptr,
-      *  can be used later when optimizing the query.
       */
 
     switch (type)
@@ -527,20 +499,19 @@ std::string ExpressionAction::toString() const
 
 void ExpressionActions::checkLimits(Block & block) const
 {
-    const Limits & limits = settings.limits;
-    if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
+    if (settings.max_temporary_columns && block.columns() > settings.max_temporary_columns)
         throw Exception("Too many temporary columns: " + block.dumpNames()
-            + ". Maximum: " + limits.max_temporary_columns.toString(),
-            ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
+            + ". Maximum: " + settings.max_temporary_columns.toString(),
+            ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
 
-    if (limits.max_temporary_non_const_columns)
+    if (settings.max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
         for (size_t i = 0, size = block.columns(); i < size; ++i)
             if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isColumnConst())
                 ++non_const_columns;
 
-        if (non_const_columns > limits.max_temporary_non_const_columns)
+        if (non_const_columns > settings.max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
@@ -548,8 +519,8 @@ void ExpressionActions::checkLimits(Block & block) const
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + limits.max_temporary_non_const_columns.toString(),
-                ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+                + ". Maximum: " + settings.max_temporary_non_const_columns.toString(),
+                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
 }
@@ -567,40 +538,43 @@ void ExpressionActions::addInput(const NameAndTypePair & column)
 
 void ExpressionActions::add(const ExpressionAction & action, Names & out_new_columns)
 {
-    NameSet temp_names;
-    addImpl(action, temp_names, out_new_columns);
+    addImpl(action, out_new_columns);
 }
 
 void ExpressionActions::add(const ExpressionAction & action)
 {
-    NameSet temp_names;
     Names new_names;
-    addImpl(action, temp_names, new_names);
+    addImpl(action, new_names);
 }
 
-void ExpressionActions::addImpl(ExpressionAction action, NameSet & current_names, Names & new_names)
+void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
     if (sample_block.has(action.result_name))
         return;
-
-    if (current_names.count(action.result_name))
-        throw Exception("Cyclic function prerequisites: " + action.result_name, ErrorCodes::LOGICAL_ERROR);
-
-    current_names.insert(action.result_name);
 
     if (action.result_name != "")
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
-    Actions prerequisites = action.getPrerequisites(sample_block);
+    if (action.type == ExpressionAction::APPLY_FUNCTION)
+    {
+        if (sample_block.has(action.result_name))
+            throw Exception("Column '" + action.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
-    for (size_t i = 0; i < prerequisites.size(); ++i)
-        addImpl(prerequisites[i], current_names, new_names);
+        ColumnsWithTypeAndName arguments(action.argument_names.size());
+        for (size_t i = 0; i < action.argument_names.size(); ++i)
+        {
+            if (!sample_block.has(action.argument_names[i]))
+                throw Exception("Unknown identifier: '" + action.argument_names[i] + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+            arguments[i] = sample_block.getByName(action.argument_names[i]);
+        }
+
+        action.function = action.function_builder->build(arguments);
+        action.result_type = action.function->getReturnType();
+    }
 
     action.prepare(sample_block);
     actions.push_back(action);
-
-    current_names.erase(action.result_name);
 }
 
 void ExpressionActions::prependProjectInput()
@@ -831,7 +805,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         needed_columns.insert(getSmallestColumn(input_columns));
 
     /// We will not leave the block empty so as not to lose the number of rows in it.
-    if (final_columns.empty())
+    if (final_columns.empty() && !input_columns.empty())
         final_columns.insert(getSmallestColumn(input_columns));
 
     for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
@@ -909,45 +883,6 @@ void ExpressionActions::finalize(const Names & output_columns)
     checkLimits(sample_block);
 }
 
-
-std::string ExpressionActions::getID() const
-{
-    std::stringstream ss;
-
-    for (size_t i = 0; i < actions.size(); ++i)
-    {
-        if (i)
-            ss << ", ";
-        if (actions[i].type == ExpressionAction::APPLY_FUNCTION)
-            ss << actions[i].result_name;
-        if (actions[i].type == ExpressionAction::ARRAY_JOIN)
-        {
-            ss << (actions[i].array_join_is_left ? "LEFT ARRAY JOIN" : "ARRAY JOIN") << "{";
-            for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
-                 it != actions[i].array_joined_columns.end(); ++it)
-            {
-                if (it != actions[i].array_joined_columns.begin())
-                    ss << ", ";
-                ss << *it;
-            }
-            ss << "}";
-        }
-
-        /// TODO JOIN
-    }
-
-    ss << ": {";
-    NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
-    for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
-    {
-        if (it != output_columns.begin())
-            ss << ", ";
-        ss << it->name;
-    }
-    ss << "}";
-
-    return ss.str();
-}
 
 std::string ExpressionActions::dumpActions() const
 {
@@ -1056,19 +991,11 @@ void ExpressionActions::optimizeArrayJoin()
 }
 
 
-BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(size_t max_block_size) const
+BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const
 {
     for (const auto & action : actions)
-    {
         if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
-        {
-            Block left_sample_block;
-            for (const auto & input_elem : input_columns)
-                left_sample_block.insert({ nullptr, input_elem.type, input_elem.name });
-
-            return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
-        }
-    }
+            return action.join->createStreamWithNonJoinedRows(source_header, max_block_size);
 
     return {};
 }

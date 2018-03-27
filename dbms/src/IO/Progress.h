@@ -13,6 +13,19 @@ class ReadBuffer;
 class WriteBuffer;
 
 
+/// See Progress.
+struct ProgressValues
+{
+    size_t rows;
+    size_t bytes;
+    size_t total_rows;
+
+    void read(ReadBuffer & in, UInt64 server_revision);
+    void write(WriteBuffer & out, UInt64 client_revision) const;
+    void writeJSON(WriteBuffer & out) const;
+};
+
+
 /** Progress of query execution.
   * Values, transferred over network are deltas - how much was done after previously sent value.
   * The same struct is also used for summarized values.
@@ -20,7 +33,7 @@ class WriteBuffer;
 struct Progress
 {
     std::atomic<size_t> rows {0};        /// Rows (source) processed.
-    std::atomic<size_t> bytes {0};        /// Bytes (uncompressed, source) processed.
+    std::atomic<size_t> bytes {0};       /// Bytes (uncompressed, source) processed.
 
     /** How much rows must be processed, in total, approximately. Non-zero value is sent when there is information about some new part of job.
       * Received values must be summed to get estimate of total rows to process.
@@ -53,9 +66,20 @@ struct Progress
         total_rows = 0;
     }
 
-    Progress fetchAndResetPiecewiseAtomically()
+    ProgressValues getValues() const
     {
-        Progress res;
+        ProgressValues res;
+
+        res.rows = rows.load(std::memory_order_relaxed);
+        res.bytes = bytes.load(std::memory_order_relaxed);
+        res.total_rows = total_rows.load(std::memory_order_relaxed);
+
+        return res;
+    }
+
+    ProgressValues fetchAndResetPiecewiseAtomically()
+    {
+        ProgressValues res;
 
         res.rows = rows.fetch_and(0);
         res.bytes = bytes.fetch_and(0);

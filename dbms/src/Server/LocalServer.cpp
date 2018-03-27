@@ -14,7 +14,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -161,18 +161,8 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
 #undef DECLARE_SETTING
     nullptr};
 
-    static const char * limits_names[] = {
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) #NAME,
-    APPLY_FOR_LIMITS(DECLARE_SETTING)
-#undef DECLARE_SETTING
-    nullptr};
-
     for (const char ** name = settings_names; *name; ++name)
         _options.addOption(Poco::Util::Option(*name, "", "Settings.h").required(false).argument("<value>")
-        .repeatable(false).binding(*name));
-
-    for (const char ** name = limits_names; *name; ++name)
-        _options.addOption(Poco::Util::Option(*name, "", "Limits.h").required(false).argument("<value>")
         .repeatable(false).binding(*name));
 }
 
@@ -187,12 +177,6 @@ void LocalServer::applyOptions()
             context->setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
-
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context->getSettingsRef().limits.NAME.changed) \
-            context->setSetting(#NAME, config().getString(#NAME));
-        APPLY_FOR_LIMITS(EXTRACT_LIMIT)
-#undef EXTRACT_LIMIT
 }
 
 
@@ -291,7 +275,7 @@ try
 
     /// Maybe useless
     if (config().has("macros"))
-        context->setMacros(Macros(config(), "macros"));
+        context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
     /// Skip networking
 
@@ -427,6 +411,7 @@ void LocalServer::processQueries()
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
+    context->setCurrentQueryId("");
 
     for (const auto & query : queries)
     {

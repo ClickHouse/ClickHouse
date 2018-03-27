@@ -586,6 +586,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->order_by)
             primary_expr_list = extractKeyExpressionList(*args.storage_def->order_by);
+        else
+            throw Exception("You must provide an ORDER BY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY tuple()",
+                ErrorCodes::BAD_ARGUMENTS);
 
         if (args.storage_def->sample_by)
             sampling_expression = args.storage_def->sample_by->ptr();
@@ -624,14 +628,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
-            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
+            args.columns,
             args.context, primary_expr_list, secondary_sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
-            args.data_path, args.database_name, args.table_name,
-            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults, args.attach,
+            args.data_path, args.database_name, args.table_name, args.columns, args.attach,
             args.context, primary_expr_list, secondary_sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);

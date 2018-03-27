@@ -41,8 +41,7 @@ Tables DatabaseDictionary::loadTables()
         {
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[name] = StorageDictionary::create(name,
-                columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, dictionary_structure, name);
+            tables[name] = StorageDictionary::create(name, ColumnsDescription{columns}, dictionary_structure, name);
         }
     }
 
@@ -76,8 +75,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
             {
                 const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
                 auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-                return StorageDictionary::create(table_name,
-                    columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, dictionary_structure, table_name);
+                return StorageDictionary::create(table_name, ColumnsDescription{columns}, dictionary_structure, table_name);
             }
         }
     }
@@ -142,10 +140,7 @@ void DatabaseDictionary::renameTable(
 void DatabaseDictionary::alterTable(
     const Context &,
     const String &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
-    const ColumnDefaults &,
+    const ColumnsDescription &,
     const ASTModifier &)
 {
     throw Exception("DatabaseDictionary: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -172,11 +167,6 @@ void DatabaseDictionary::shutdown()
 void DatabaseDictionary::drop()
 {
     /// Additional actions to delete database are not required.
-}
-
-String DatabaseDictionary::getDataPath(const Context &) const
-{
-    return {};
 }
 
 }

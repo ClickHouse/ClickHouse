@@ -1,6 +1,6 @@
 #pragma once
 
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
+#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
@@ -160,7 +160,7 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
             const auto it = promises.find(id);
             if (it == std::end(promises))
             {
-                LOG_CRITICAL(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << id);
+                LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << id);
                 continue;
             }
 

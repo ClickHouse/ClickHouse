@@ -31,11 +31,6 @@ public:
         return table_name;
     }
 
-    const NamesAndTypesList & getColumnsListImpl() const override
-    {
-        return columns;
-    }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -52,6 +47,8 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
+    String getDataPath() const override { return path; }
+
 protected:
     friend class StorageFileBlockInputStream;
     friend class StorageFileBlockOutputStream;
@@ -59,7 +56,7 @@ protected:
     /** there are three options (ordered by priority):
     - use specified file descriptor if (fd >= 0)
     - use specified table_path if it isn't empty
-    - create own tabale inside data/db/table/
+    - create own table inside data/db/table/
     */
     StorageFile(
         const std::string & table_path_,
@@ -67,10 +64,7 @@ protected:
         const std::string & db_dir_path,
         const std::string & table_name_,
         const std::string & format_name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         Context & context_);
 
 private:

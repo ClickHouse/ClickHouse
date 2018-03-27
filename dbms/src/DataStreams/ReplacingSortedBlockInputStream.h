@@ -24,23 +24,6 @@ public:
 
     String getName() const override { return "ReplacingSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "ReplacingSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ", version_column, " << version_column << ")";
-        return res.str();
-    }
-
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;
@@ -54,14 +37,17 @@ private:
     /// All data has been read.
     bool finished = false;
 
-    RowRef current_key;            /// Primary key of current row.
-    RowRef next_key;            /// Primary key of next row.
+    /// Primary key of current row.
+    RowRef current_key;
+    /// Primary key of next row.
+    RowRef next_key;
+    /// Last row with maximum version for current primary key.
+    RowRef selected_row;
+    /// The position (into current_row_sources) of the row with the highest version.
+    size_t max_pos = 0;
 
-    RowRef selected_row;        /// Last row with maximum version for current primary key.
-
-    UInt64 max_version = 0;        /// Max version for current primary key.
-
-    PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
+    /// Sources of rows with the current primary key.
+    PODArray<RowSourcePart> current_row_sources;
 
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 

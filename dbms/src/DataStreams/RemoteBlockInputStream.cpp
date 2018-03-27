@@ -2,6 +2,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Common/NetException.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Storages/IStorage.h>
 
 
@@ -17,9 +18,9 @@ namespace ErrorCodes
 
 RemoteBlockInputStream::RemoteBlockInputStream(
         Connection & connection,
-        const String & query_, const Context & context_, const Settings * settings,
+        const String & query_, const Block & header_, const Context & context_, const Settings * settings,
         const ThrottlerPtr & throttler, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : query(query_), context(context_), external_tables(external_tables_), stage(stage_)
+    : header(header_), query(query_), context(context_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -32,9 +33,9 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 
 RemoteBlockInputStream::RemoteBlockInputStream(
         std::vector<IConnectionPool::Entry> && connections,
-        const String & query_, const Context & context_, const Settings * settings,
+        const String & query_, const Block & header_, const Context & context_, const Settings * settings,
         const ThrottlerPtr & throttler, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : query(query_), context(context_), external_tables(external_tables_), stage(stage_)
+    : header(header_), query(query_), context(context_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -48,9 +49,9 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 
 RemoteBlockInputStream::RemoteBlockInputStream(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Context & context_, const Settings * settings,
+        const String & query_, const Block & header_, const Context & context_, const Settings * settings,
         const ThrottlerPtr & throttler, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : query(query_), context(context_), external_tables(external_tables_), stage(stage_)
+    : header(header_), query(query_), context(context_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -96,8 +97,11 @@ void RemoteBlockInputStream::readPrefix()
         sendQuery();
 }
 
-void RemoteBlockInputStream::cancel()
+void RemoteBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
+
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
@@ -109,7 +113,7 @@ void RemoteBlockInputStream::cancel()
         for (auto & vec : external_tables_data)
             for (auto & elem : vec)
                 if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(elem.first.get()))
-                    stream->cancel();
+                    stream->cancel(kill);
     }
 
     if (!isQueryPending() || hasThrownException())
@@ -134,7 +138,7 @@ void RemoteBlockInputStream::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-                BlockInputStreams input = cur->read(cur->getColumnNamesList(), {}, context,
+                BlockInputStreams input = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
                     stage, DEFAULT_BLOCK_SIZE, 1);
                 if (input.size() == 0)
                     res.push_back(std::make_pair(std::make_shared<OneBlockInputStream>(cur->getSampleBlock()), table.first));
@@ -148,6 +152,25 @@ void RemoteBlockInputStream::sendExternalTables()
     multiplexed_connections->sendExternalTablesData(external_tables_data);
 }
 
+
+/** If we receive a block with slightly different column types, or with excessive columns,
+  *  we will adapt it to expected structure.
+  */
+static Block adaptBlockStructure(const Block & block, const Block & header, const Context & context)
+{
+    /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
+    if (!header)
+        return block;
+
+    Block res;
+    res.info = block.info;
+
+    for (const auto & elem : header)
+        res.insert({ castColumn(block.getByName(elem.name), elem.type, context), elem.type, elem.name });
+    return res;
+}
+
+
 Block RemoteBlockInputStream::readImpl()
 {
     if (!sent_query)
@@ -160,7 +183,7 @@ Block RemoteBlockInputStream::readImpl()
 
     while (true)
     {
-        if (isCancelled())
+        if (isCancelledOrThrowIfKilled())
             return Block();
 
         Connection::Packet packet = multiplexed_connections->receivePacket();
@@ -170,7 +193,7 @@ Block RemoteBlockInputStream::readImpl()
             case Protocol::Server::Data:
                 /// If the block is not empty and is not a header block
                 if (packet.block && (packet.block.rows() > 0))
-                    return packet.block;
+                    return adaptBlockStructure(packet.block, header, context);
                 break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
             case Protocol::Server::Exception:

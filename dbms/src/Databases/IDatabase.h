@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
 #include <ctime>
 #include <memory>
 #include <functional>
@@ -113,10 +113,7 @@ public:
     virtual void alterTable(
         const Context & context,
         const String & name,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
+        const ColumnsDescription & columns,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
@@ -130,7 +127,11 @@ public:
         const String & name) const = 0;
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
-    virtual String getDataPath(const Context & context) const = 0;
+    virtual String getDataPath() const { return {}; }
+    /// Returns metadata path if the database supports it, empty string otherwise
+    virtual String getMetadataPath() const { return {}; }
+    /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
+    virtual String getTableMetadataPath(const String & /*table_name*/) const { return {}; }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;

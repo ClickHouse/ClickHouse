@@ -84,7 +84,8 @@ public:
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
     bool supportsReplication() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
+    const ColumnsDescription & getColumns() const override { return data.getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -170,6 +171,8 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
+    String getDataPath() const override { return full_path; }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
@@ -238,6 +241,9 @@ private:
 
     zkutil::LeaderElectionPtr leader_election;
 
+    /// When activated, replica is initialized and startup() method could exit
+    Poco::Event startup_event;
+
     /// Do I need to complete background threads (except restarting_thread)?
     std::atomic<bool> shutdown_called {false};
     Poco::Event shutdown_event;
@@ -282,8 +288,6 @@ private:
 
     Logger * log;
 
-    pcg64 rng{randomSeed()};
-
     /// Initialization.
 
     /** Creates the minimum set of nodes in ZooKeeper.
@@ -316,7 +320,14 @@ private:
       * Adds actions to `ops` that add data about the part into ZooKeeper.
       * Call under TableStructureLock.
       */
-    void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
+    void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
+                                           zkutil::Ops & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+
+    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums);
+
+    /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
+    MergeTreeData::DataPartsVector checkPartChecksumsAndCommit(MergeTreeData::Transaction & transaction,
+                                                               const MergeTreeData::DataPartPtr & part);
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
@@ -443,10 +454,7 @@ protected:
         const String & replica_name_,
         bool attach,
         const String & path_, const String & database_name_, const String & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
         const ASTPtr & secondary_sorting_expr_list_,

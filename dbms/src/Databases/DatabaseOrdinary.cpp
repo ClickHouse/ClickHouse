@@ -39,10 +39,12 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 
-
-static String getTableMetadataPath(const String & base_path, const String & table_name)
+namespace detail
 {
-    return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+    String getTableMetadataPath(const String & base_path, const String & table_name)
+    {
+        return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+    }
 }
 
 static void loadTable(
@@ -145,9 +147,9 @@ void DatabaseOrdinary::loadTables(
     size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
 
-    String data_path = context.getPath() + "/data/" + escapeForFileName(name) + "/";
+    String data_path = context.getPath() + "data/" + escapeForFileName(name) + "/";
 
-    StopwatchWithLock watch;
+    AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
 
     auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
@@ -158,7 +160,7 @@ void DatabaseOrdinary::loadTables(
 
             /// Messages, so that it's not boring to wait for the server to load for a long time.
             if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
-                || watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+                || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
             {
                 LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
                 watch.restart();
@@ -198,7 +200,7 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
 
-    StopwatchWithLock watch;
+    AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
     size_t total_tables = tables.size();
 
@@ -207,7 +209,7 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
         for (auto it = begin; it != end; ++it)
         {
             if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
-                || watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+                || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
             {
                 LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
                 watch.restart();
@@ -271,7 +273,7 @@ void DatabaseOrdinary::createTable(
             throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
 
-    String table_metadata_path = getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement;
 
@@ -314,7 +316,7 @@ void DatabaseOrdinary::removeTable(
 {
     StoragePtr res = detachTable(table_name);
 
-    String table_metadata_path = getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
 
     try
     {
@@ -330,7 +332,7 @@ void DatabaseOrdinary::removeTable(
 
 static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 {
-    String table_metadata_path = getTableMetadataPath(path, table_name);
+    String table_metadata_path = detail::getTableMetadataPath(path, table_name);
 
     String query;
     {
@@ -390,7 +392,7 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
     const Context & /*context*/,
     const String & table_name)
 {
-    String table_metadata_path = getTableMetadataPath(metadata_path, table_name);
+    String table_metadata_path = getTableMetadataPath(table_name);
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())
@@ -460,10 +462,7 @@ void DatabaseOrdinary::drop()
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & name,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
-    const ColumnDefaults & column_defaults,
+    const ColumnsDescription & columns,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -484,7 +483,7 @@ void DatabaseOrdinary::alterTable(
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ast_create_query.replace(ast_create_query.columns, new_columns);
 
     if (storage_modifier)
@@ -513,9 +512,19 @@ void DatabaseOrdinary::alterTable(
     }
 }
 
-String DatabaseOrdinary::getDataPath(const Context &) const
+String DatabaseOrdinary::getDataPath() const
 {
     return data_path;
+}
+
+String DatabaseOrdinary::getMetadataPath() const
+{
+    return metadata_path;
+}
+
+String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const
+{
+    return detail::getTableMetadataPath(metadata_path, table_name);
 }
 
 }

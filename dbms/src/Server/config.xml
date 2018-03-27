@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
     <logger>
+        <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
@@ -8,7 +9,7 @@
         <count>10</count>
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
     </logger>
-
+    <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
 
@@ -18,7 +19,7 @@
     <tcp_ssl_port>9440</tcp_ssl_port>
     -->
 
-    <!-- Used with https_port and tcp_ssl_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
+    <!-- Used with https_port and tcp_ssl_port. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
@@ -137,7 +138,7 @@
     <!-- <umask>022</umask> -->
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.yandex/reference_en.html#Distributed
+         https://clickhouse.yandex/docs/en/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
@@ -160,14 +161,14 @@
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/reference_en.html#Data%20replication
+         See https://clickhouse.yandex/docs/en/table_engines/replication/
       -->
     <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/reference_en.html#Creating%20replicated%20tables
+         See https://clickhouse.yandex/docs/en/table_engines/replication/#creating-replicated-tables
       -->
     <macros incl="macros" optional="true" />
 
@@ -198,7 +199,7 @@
         <timeout>0.1</timeout>
         <interval>60</interval>
         <root_path>one_min</root_path>
-        <hostname_in_path>true<hostname_in_path>
+        <hostname_in_path>true</hostname_in_path>
 
         <metrics>true</metrics>
         <events>true</events>
@@ -226,7 +227,15 @@
         -->
         <database>system</database>
         <table>query_log</table>
-
+        <!--
+            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            Example:
+                event_date
+                toMonday(event_date)
+                toYYYYMM(event_date)
+                toStartOfHour(event_time)
+        -->
+        <partition_by>toYYYYMM(event_date)</partition_by>
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
@@ -243,7 +252,7 @@
 
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.yandex/reference_en.html#Internal%20dictionaries
+         See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
@@ -254,7 +263,7 @@
 
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.yandex/reference_en.html#External%20Dictionaries
+         https://clickhouse.yandex/docs/en/dicts/external_dicts/
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 

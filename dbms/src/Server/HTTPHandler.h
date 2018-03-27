@@ -55,6 +55,9 @@ private:
     IServer & server;
     Poco::Logger * log;
 
+    /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name. 
+    String server_display_name;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
     /// Also initializes 'used_output'.

@@ -18,7 +18,7 @@ namespace DB
 
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
-    stream << "IBlockInputStream(id = " << what.getID() << ", name = " << what.getName() << ")";
+    stream << "IBlockInputStream(name = " << what.getName() << ")";
     //what.dumpTree(stream); // todo: set const
     return stream;
 }
@@ -44,7 +44,7 @@ std::ostream & operator<<(std::ostream & stream, const IDataType & what)
 std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
-           << what.getColumnsList().toString()
+           << what.getColumns().getAllPhysical().toString()
            << "}";
     // isRemote supportsSampling supportsFinal supportsPrewhere
     return stream;
@@ -115,7 +115,6 @@ std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what
 std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
 {
     stream << "SubqueryForSet(source = " << what.source
-    << ", source_sample = " <<  what.source_sample
     // TODO: << ", set = " <<  what.set << ", join = " <<  what.join
     << ", table = " << what.table
     << ")";
@@ -124,9 +123,7 @@ std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
 
 std::ostream & operator<<(std::ostream & stream, const IAST & what)
 {
-    stream << "IAST("
-           << "query_string = " << what.query_string
-           <<"){";
+    stream << "IAST{";
     what.dumpTree(stream);
     stream << "}";
     return stream;
@@ -136,10 +133,8 @@ std::ostream & operator<<(std::ostream & stream, const ExpressionAnalyzer & what
 {
     stream << "ExpressionAnalyzer{"
            << "hasAggregation=" << what.hasAggregation()
-           << ", RequiredColumns=" << what.getRequiredColumns()
            << ", SubqueriesForSet=" << what.getSubqueriesForSets()
            << ", ExternalTables=" << what.getExternalTables()
-           // TODO
            << "}";
     return stream;
 }

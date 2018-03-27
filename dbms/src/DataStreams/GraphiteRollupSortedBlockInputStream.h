@@ -135,23 +135,6 @@ public:
 
     String getName() const override { return "GraphiteRollupSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "GraphiteRollupSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
-
     ~GraphiteRollupSortedBlockInputStream()
     {
         if (aggregate_state_created)
@@ -201,7 +184,6 @@ private:
 
     /// Last row with maximum version for current primary key (time bucket).
     RowRef current_subgroup_newest_row;
-    UInt64 current_subgroup_max_version = 0;
 
     /// Time of last read row
     time_t current_time = 0;

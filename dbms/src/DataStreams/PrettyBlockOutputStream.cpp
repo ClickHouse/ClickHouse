@@ -1,6 +1,5 @@
 #include <sys/ioctl.h>
-#include <unistd.h>
-
+#include <port/unistd.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -17,8 +16,9 @@ namespace ErrorCodes
 }
 
 
-PrettyBlockOutputStream::PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_, size_t max_rows_, const Context & context_)
-     : ostr(ostr_), max_rows(max_rows_), no_escapes(no_escapes_), context(context_)
+PrettyBlockOutputStream::PrettyBlockOutputStream(
+    WriteBuffer & ostr_, const Block & header_, bool no_escapes_, size_t max_rows_, const Context & context_)
+     : ostr(ostr_), header(header_), max_rows(max_rows_), no_escapes(no_escapes_), context(context_)
 {
     struct winsize w;
     if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))

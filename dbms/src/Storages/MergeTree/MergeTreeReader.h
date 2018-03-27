@@ -44,7 +44,11 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// If at least one column was added, reorders all columns in the block according to ordered_names.
-    void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder = false);
+    /// Rows is the number of rows will be used to create default columns. It's res.rows() when all columns in block has the same size.
+    /// This function may be used in order to create default columns in nested structures. In that case block may has
+    /// columns with different size, and default columns can't be evaluated, so never_evaluate_defaults = false is used.
+    void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder,
+                            size_t rows, bool never_evaluate_defaults = false);
 
 private:
     class Stream

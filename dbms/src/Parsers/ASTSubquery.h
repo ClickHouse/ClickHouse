@@ -12,9 +12,6 @@ namespace DB
 class ASTSubquery : public ASTWithAlias
 {
 public:
-    ASTSubquery() = default;
-    ASTSubquery(const StringRange range_) : ASTWithAlias(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return "Subquery"; }
 
@@ -44,6 +41,7 @@ protected:
         children[0]->formatImpl(settings, state, frame_nested);
         settings.ostr << nl_or_nothing << indent_str << ")";
     }
+
     String getColumnNameImpl() const override;
 };
 

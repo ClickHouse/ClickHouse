@@ -18,7 +18,7 @@ namespace DB
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
@@ -28,7 +28,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
-    };
+    }));
 }
 
 
@@ -114,7 +114,7 @@ BlockInputStreams StorageSystemColumns::read(
 
         NamesAndTypesList columns;
         ColumnDefaults column_defaults;
-        MergeTreeData::ColumnSizes column_sizes;
+        MergeTreeData::ColumnSizeByName column_sizes;
 
         {
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -137,9 +137,8 @@ BlockInputStreams StorageSystemColumns::read(
                     throw;
             }
 
-            columns = storage->getColumnsList();
-            columns.insert(std::end(columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
-            column_defaults = storage->column_defaults;
+            columns = storage->getColumns().getAll();
+            column_defaults = storage->getColumns().defaults;
 
             /** Info about sizes of columns for tables of MergeTree family.
               * NOTE: It is possible to add getter for this info to IStorage interface.
@@ -172,7 +171,7 @@ BlockInputStreams StorageSystemColumns::read(
                 }
                 else
                 {
-                    res_columns[i++]->insert(toString(it->second.type));
+                    res_columns[i++]->insert(toString(it->second.kind));
                     res_columns[i++]->insert(queryToString(it->second.expression));
                 }
             }

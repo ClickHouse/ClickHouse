@@ -1,5 +1,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
+#include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <Storages/IStorage.h>
@@ -21,7 +22,7 @@ Block CreatingSetsBlockInputStream::readImpl()
 
     createAll();
 
-    if (isCancelled())
+    if (isCancelledOrThrowIfKilled())
         return res;
 
     return children.back()->read();
@@ -34,7 +35,7 @@ void CreatingSetsBlockInputStream::readPrefixImpl()
 }
 
 
-const Block & CreatingSetsBlockInputStream::getTotals()
+Block CreatingSetsBlockInputStream::getTotals()
 {
     auto input = dynamic_cast<IProfilingBlockInputStream *>(children.back().get());
 
@@ -53,7 +54,7 @@ void CreatingSetsBlockInputStream::createAll()
         {
             if (elem.second.source) /// There could be prepared in advance Set/Join - no source is specified for them.
             {
-                if (isCancelled())
+                if (isCancelledOrThrowIfKilled())
                     return;
 
                 createOne(elem.second);
@@ -108,36 +109,20 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_table)
         {
+            block = materializeBlock(block);
             table_out->write(block);
 
             rows_to_transfer += block.rows();
             bytes_to_transfer += block.bytes();
 
-            if ((max_rows_to_transfer && rows_to_transfer > max_rows_to_transfer)
-                || (max_bytes_to_transfer && bytes_to_transfer > max_bytes_to_transfer))
-            {
-                switch (transfer_overflow_mode)
-                {
-                    case OverflowMode::THROW:
-                        throw Exception("IN/JOIN external table size limit exceeded."
-                            " Rows: " + toString(rows_to_transfer)
-                            + ", limit: " + toString(max_rows_to_transfer)
-                            + ". Bytes: " + toString(bytes_to_transfer)
-                            + ", limit: " + toString(max_bytes_to_transfer) + ".",
-                            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-                    case OverflowMode::BREAK:
-                        done_with_table = true;
-                        break;
-                    default:
-                        throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-                }
-            }
+            if (!network_transfer_limits.check(rows_to_transfer, bytes_to_transfer, "IN/JOIN external table", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+                done_with_table = true;
         }
 
         if (done_with_set && done_with_join && done_with_table)
         {
             if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
-                profiling_in->cancel();
+                profiling_in->cancel(false);
 
             break;
         }
@@ -146,24 +131,20 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     if (table_out)
         table_out->writeSuffix();
 
-    /// We will display information about how many rows and bytes are read.
-    size_t rows = 0;
-    size_t bytes = 0;
-
     watch.stop();
-
-    subquery.source->getLeafRowsBytes(rows, bytes);
 
     size_t head_rows = 0;
     if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
     {
-        head_rows = profiling_in->getProfileInfo().rows;
+        const BlockStreamProfileInfo & profile_info = profiling_in->getProfileInfo();
+
+        head_rows = profile_info.rows;
 
         if (subquery.join)
             subquery.join->setTotals(profiling_in->getTotals());
     }
 
-    if (rows != 0)
+    if (head_rows != 0)
     {
         std::stringstream msg;
         msg << std::fixed << std::setprecision(3);
@@ -176,9 +157,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         if (subquery.table)
             msg << "Table with " << head_rows << " rows. ";
 
-        msg << "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
-            << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.";
-
+        msg << "In " << watch.elapsedSeconds() << " sec.";
         LOG_DEBUG(log, msg.rdbuf());
     }
     else

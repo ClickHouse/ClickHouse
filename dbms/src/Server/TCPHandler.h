@@ -2,6 +2,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 
+#include <Common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <IO/Progress.h>
@@ -81,6 +82,7 @@ public:
         , connection_context(server.context())
         , query_context(server.context())
     {
+        server_display_name =  server.config().getString("display_name", getFQDNOrHostName());
     }
 
     void run();
@@ -111,7 +113,9 @@ private:
     QueryState state;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
-
+    
+    /// It is the name of the server that will be sent to the client. 
+    String server_display_name;
 
     void runImpl();
 
@@ -130,7 +134,7 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(Block & block);    /// Write a block to the network.
+    void sendData(const Block & block);    /// Write a block to the network.
     void sendException(const Exception & e);
     void sendProgress();
     void sendEndOfStream();
@@ -140,7 +144,7 @@ private:
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
-    void initBlockOutput();
+    void initBlockOutput(const Block & block);
 
     bool isQueryCancelled();
 

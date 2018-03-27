@@ -3,6 +3,7 @@
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
+#include <Common/Throttler.h>
 #include <common/ThreadPool.h>
 #include <atomic>
 #include <memory>
@@ -35,40 +36,18 @@ public:
     DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
                                  const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_);
 
+    Block getHeader() const override;
     void write(const Block & block) override;
-
     void writePrefix() override;
 
+    void writeSuffix() override;
+
 private:
+
+    IColumn::Selector createSelector(const Block & source_block);
+
+
     void writeAsync(const Block & block);
-
-    /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
-    void writeSync(const Block & block);
-
-    void calculateJobsCount();
-
-    struct WritingJobContext
-    {
-        /// Remote job per replica.
-        std::vector<char> done_remote_jobs;
-        /// Local job per shard.
-        std::vector<char> done_local_jobs;
-        std::atomic<unsigned> finished_jobs_count;
-        std::mutex mutex;
-        std::condition_variable cond_var;
-    };
-
-    ThreadPool::Job createWritingJob(WritingJobContext & context, const Block & block,
-                                     const Cluster::Address & address, size_t shard_id, size_t job_id);
-
-    void createWritingJobs(WritingJobContext & context, const Blocks & blocks);
-
-    void waitForUnfinishedJobs(WritingJobContext & context);
-
-    /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
-    std::string getCurrentStateDescription(const WritingJobContext & context);
-
-    IColumn::Selector createSelector(Block block);
 
     /// Split block between shards.
     Blocks splitBlock(const Block & block);
@@ -82,21 +61,76 @@ private:
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
-    /// Performs synchronous insertion to remote node.
-    void writeToShardSync(const Block & block, const std::string & connection_pool_name);
+
+    /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
+    void writeSync(const Block & block);
+
+    void initWritingJobs(const Block & first_block);
+
+    struct JobReplica;
+    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block);
+
+    void waitForJobs();
+
+    /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
+    std::string getCurrentStateDescription();
 
 private:
     StorageDistributed & storage;
     ASTPtr query_ast;
     ClusterPtr cluster;
     const Settings & settings;
+    size_t inserted_blocks = 0;
+    size_t inserted_rows = 0;
+
     bool insert_sync;
-    UInt64 insert_timeout;
-    size_t blocks_inserted = 0;
-    std::chrono::steady_clock::time_point deadline;
-    size_t remote_jobs_count;
-    size_t local_jobs_count;
+
+    /// Sync-related stuff
+    UInt64 insert_timeout; // in seconds
+    Stopwatch watch;
+    Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
+    ThrottlerPtr throttler;
+    String query_string;
+
+    struct JobReplica
+    {
+        JobReplica() = default;
+        JobReplica(size_t shard_index, size_t replica_index, bool is_local_job, const Block & sample_block)
+            : shard_index(shard_index), replica_index(replica_index), is_local_job(is_local_job), current_shard_block(sample_block.cloneEmpty()) {}
+
+        size_t shard_index = 0;
+        size_t replica_index = 0;
+        bool is_local_job = false;
+
+        Block current_shard_block;
+
+        ConnectionPool::Entry connection_entry;
+        std::unique_ptr<Context> local_context;
+        BlockOutputStreamPtr stream;
+
+        UInt64 blocks_written = 0;
+        UInt64 rows_written = 0;
+
+        UInt64 blocks_started = 0;
+        UInt64 elapsed_time_ms = 0;
+        UInt64 max_elapsed_time_for_block_ms = 0;
+    };
+
+    struct JobShard
+    {
+        std::list<JobReplica> replicas_jobs;
+        IColumn::Permutation shard_current_block_permuation;
+    };
+
+    std::vector<JobShard> per_shard_jobs;
+
+    size_t remote_jobs_count = 0;
+    size_t local_jobs_count = 0;
+    
+    std::atomic<unsigned> finished_jobs_count{0};
+
+    Poco::Logger * log;
 };
 
 }

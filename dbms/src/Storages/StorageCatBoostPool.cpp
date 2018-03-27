@@ -36,12 +36,7 @@ public:
 
     String getName() const override
     {
-        return "CatBoostDatasetBlockInputStream";
-    }
-
-    String getID() const override
-    {
-        return "CatBoostDataset(" + format_name + ", " + file_name + ")";
+        return "CatBoostDataset";
     }
 
     Block readImpl() override
@@ -58,6 +53,8 @@ public:
     {
         reader->readSuffix();
     }
+
+    Block getHeader() const override { return sample_block; };
 
 private:
     Block sample_block;
@@ -223,7 +220,7 @@ void StorageCatBoostPool::parseColumnDescription()
 
 void StorageCatBoostPool::createSampleBlockAndColumns()
 {
-    columns.clear();
+    ColumnsDescription columns;
     NamesAndTypesList cat_columns;
     NamesAndTypesList num_columns;
     sample_block.clear();
@@ -242,20 +239,21 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
         else if (desc.column_type == DatasetColumnType::Num)
             num_columns.emplace_back(desc.column_name, type);
         else
-            materialized_columns.emplace_back(desc.column_name, type);
+            columns.materialized.emplace_back(desc.column_name, type);
 
         if (!desc.alias.empty())
         {
-            auto alias = std::make_shared<ASTIdentifier>();
-            alias->name = desc.column_name;
-            column_defaults[desc.alias] = {ColumnDefaultType::Alias, alias};
-            alias_columns.emplace_back(desc.alias, type);
+            auto alias = std::make_shared<ASTIdentifier>(desc.column_name);
+            columns.defaults[desc.alias] = {ColumnDefaultKind::Alias, alias};
+            columns.aliases.emplace_back(desc.alias, type);
         }
 
-        sample_block.insert(ColumnWithTypeAndName(type->createColumn(), type, desc.column_name));
+        sample_block.insert(ColumnWithTypeAndName(type, desc.column_name));
     }
-    columns.insert(columns.end(), num_columns.begin(), num_columns.end());
-    columns.insert(columns.end(), cat_columns.begin(), cat_columns.end());
+    columns.ordinary.insert(columns.ordinary.end(), num_columns.begin(), num_columns.end());
+    columns.ordinary.insert(columns.ordinary.end(), cat_columns.begin(), cat_columns.end());
+
+    setColumns(columns);
 }
 
 BlockInputStreams StorageCatBoostPool::read(const Names & column_names,

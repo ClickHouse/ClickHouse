@@ -10,19 +10,20 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 
-/** For a given value, Field returns the minimum data type that allows this value to be stored.
-  * In case Field is an array, converts all elements to a common type.
+/** For a given Field returns the minimum data type that allows this value to be stored.
+  * Note that you still have to convert Field to corresponding data type before inserting to columns
+  *  (for example, this is necessary to convert elements of Array to common type).
   */
 class FieldToDataType : public StaticVisitor<DataTypePtr>
 {
 public:
-    DataTypePtr operator() (Null & x) const;
-    DataTypePtr operator() (UInt64 & x) const;
-    DataTypePtr operator() (Int64 & x) const;
-    DataTypePtr operator() (Float64 & x) const;
-    DataTypePtr operator() (String & x) const;
-    DataTypePtr operator() (Array & x) const;
-    DataTypePtr operator() (Tuple & x) const;
+    DataTypePtr operator() (const Null & x) const;
+    DataTypePtr operator() (const UInt64 & x) const;
+    DataTypePtr operator() (const Int64 & x) const;
+    DataTypePtr operator() (const Float64 & x) const;
+    DataTypePtr operator() (const String & x) const;
+    DataTypePtr operator() (const Array & x) const;
+    DataTypePtr operator() (const Tuple & x) const;
 };
 
 }

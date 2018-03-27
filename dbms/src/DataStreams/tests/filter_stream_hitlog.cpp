@@ -101,12 +101,11 @@ int main(int, char **)
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
-        std::cerr << ast->getTreeID() << std::endl;
 
         /// create an object of an existing hit log table
 
-        StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-            NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+        StoragePtr table = StorageLog::create(
+            "./", "HitLog", ColumnsDescription{names_and_types_list}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
         table->startup();
 
         /// read from it, apply the expression, filter, and write in tsv form to the console
@@ -134,7 +133,7 @@ int main(int, char **)
 
         WriteBufferFromOStream ob(std::cout);
         RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
-        BlockOutputStreamFromRowOutputStream out(out_);
+        BlockOutputStreamFromRowOutputStream out(out_, in->getHeader());
 
         copyData(*in, out);
     }

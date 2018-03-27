@@ -32,6 +32,7 @@
 
 #include <Common/NetException.h>
 
+
 namespace DB
 {
 
@@ -287,7 +288,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     state.io.out->writePrefix();
 
     /// Send block to the client - table structure.
-    Block block = state.io.out_sample;
+    Block block = state.io.out->getHeader();
     sendData(block);
 
     readData(global_settings);
@@ -302,8 +303,11 @@ void TCPHandler::processOrdinaryQuery()
     if (state.io.in)
     {
         /// Send header-block, to allow client to prepare output format for data to send.
-        if (state.io.in_sample)
-            sendData(state.io.in_sample);
+        {
+            Block header = state.io.in->getHeader();
+            if (header)
+                sendData(header);
+        }
 
         AsynchronousBlockInputStream async_in(state.io.in);
         async_in.readPrefix();
@@ -317,7 +321,7 @@ void TCPHandler::processOrdinaryQuery()
                 if (isQueryCancelled())
                 {
                     /// A packet was received requesting to stop execution of the request.
-                    async_in.cancel();
+                    async_in.cancel(false);
                     break;
                 }
                 else
@@ -338,12 +342,12 @@ void TCPHandler::processOrdinaryQuery()
                 }
             }
 
-        /** If data has run out, we will send the profiling data and total values to
-          * the last zero block to be able to use
-          * this information in the suffix output of stream.
-          * If the request was interrupted, then `sendTotals` and other methods could not be called,
-          *  because we have not read all the data yet,
-          *  and there could be ongoing calculations in other threads at the same time.
+            /** If data has run out, we will send the profiling data and total values to
+              * the last zero block to be able to use
+              * this information in the suffix output of stream.
+              * If the request was interrupted, then `sendTotals` and other methods could not be called,
+              *  because we have not read all the data yet,
+              *  and there could be ongoing calculations in other threads at the same time.
               */
             if (!block && !isQueryCancelled())
             {
@@ -396,7 +400,7 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::sendProfileInfo()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(state.io.in.get()))
     {
         writeVarUInt(Protocol::Server::ProfileInfo, *out);
         input->getProfileInfo().write(*out);
@@ -407,13 +411,13 @@ void TCPHandler::sendProfileInfo()
 
 void TCPHandler::sendTotals()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&*state.io.in))
+    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
     {
         const Block & totals = input->getTotals();
 
         if (totals)
         {
-            initBlockOutput();
+            initBlockOutput(totals);
 
             writeVarUInt(Protocol::Server::Totals, *out);
             writeStringBinary("", *out);
@@ -428,13 +432,13 @@ void TCPHandler::sendTotals()
 
 void TCPHandler::sendExtremes()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(&*state.io.in))
+    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
     {
-        const Block & extremes = input->getExtremes();
+        Block extremes = input->getExtremes();
 
         if (extremes)
         {
-            initBlockOutput();
+            initBlockOutput(extremes);
 
             writeVarUInt(Protocol::Server::Extremes, *out);
             writeStringBinary("", *out);
@@ -503,6 +507,10 @@ void TCPHandler::sendHello()
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
     {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
+    }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+    {
+        writeStringBinary(server_display_name, *out);
     }
     out->next();
 }
@@ -626,7 +634,8 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context.tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+                storage = StorageMemory::create(external_table_name,
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }
@@ -658,7 +667,7 @@ void TCPHandler::initBlockInput()
 }
 
 
-void TCPHandler::initBlockOutput()
+void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
@@ -670,7 +679,8 @@ void TCPHandler::initBlockOutput()
 
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
-            client_revision);
+            client_revision,
+            block.cloneEmpty());
     }
 }
 
@@ -709,9 +719,9 @@ bool TCPHandler::isQueryCancelled()
 }
 
 
-void TCPHandler::sendData(Block & block)
+void TCPHandler::sendData(const Block & block)
 {
-    initBlockOutput();
+    initBlockOutput(block);
 
     writeVarUInt(Protocol::Server::Data, *out);
     writeStringBinary("", *out);
@@ -747,7 +757,7 @@ void TCPHandler::updateProgress(const Progress & value)
 void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
-    Progress increment = state.progress.fetchAndResetPiecewiseAtomically();
+    auto increment = state.progress.fetchAndResetPiecewiseAtomically();
     increment.write(*out, client_revision);
     out->next();
 }

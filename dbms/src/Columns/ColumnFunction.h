@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
 class IFunctionBase;

@@ -16,38 +16,43 @@ namespace DB
 
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
-        : StorageSystemPartsBase(name,
-              {
-                      {"partition",           std::make_shared<DataTypeString>()},
-                      {"name",                std::make_shared<DataTypeString>()},
-                      {"active",              std::make_shared<DataTypeUInt8>()},
-                      {"marks",               std::make_shared<DataTypeUInt64>()},
-                      {"marks_bytes_in_block",        std::make_shared<DataTypeUInt64>()},
-                      {"rows",                std::make_shared<DataTypeUInt64>()},
-                      {"bytes",               std::make_shared<DataTypeUInt64>()},
-                      {"modification_time",   std::make_shared<DataTypeDateTime>()},
-                      {"remove_time",         std::make_shared<DataTypeDateTime>()},
-                      {"refcount",            std::make_shared<DataTypeUInt32>()},
-                      {"min_date",            std::make_shared<DataTypeDate>()},
-                      {"max_date",            std::make_shared<DataTypeDate>()},
-                      {"min_block_number",    std::make_shared<DataTypeInt64>()},
-                      {"max_block_number",    std::make_shared<DataTypeInt64>()},
-                      {"level",               std::make_shared<DataTypeUInt32>()},
-                      {"primary_key_bytes_in_memory", std::make_shared<DataTypeUInt64>()},
-                      {"primary_key_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>()},
+    : StorageSystemPartsBase(name,
+    {
+        {"partition",                                  std::make_shared<DataTypeString>()},
+        {"name",                                       std::make_shared<DataTypeString>()},
+        {"active",                                     std::make_shared<DataTypeUInt8>()},
+        {"marks",                                      std::make_shared<DataTypeUInt64>()},
+        {"rows",                                       std::make_shared<DataTypeUInt64>()},
+        {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>()},
+        {"data_compressed_bytes",                      std::make_shared<DataTypeUInt64>()},
+        {"data_uncompressed_bytes",                    std::make_shared<DataTypeUInt64>()},
+        {"marks_bytes",                                std::make_shared<DataTypeUInt64>()},
+        {"modification_time",                          std::make_shared<DataTypeDateTime>()},
+        {"remove_time",                                std::make_shared<DataTypeDateTime>()},
+        {"refcount",                                   std::make_shared<DataTypeUInt32>()},
+        {"min_date",                                   std::make_shared<DataTypeDate>()},
+        {"max_date",                                   std::make_shared<DataTypeDate>()},
+        {"min_block_number",                           std::make_shared<DataTypeInt64>()},
+        {"max_block_number",                           std::make_shared<DataTypeInt64>()},
+        {"level",                                      std::make_shared<DataTypeUInt32>()},
+        {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
+        {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
 
-                      {"database",            std::make_shared<DataTypeString>()},
-                      {"table",               std::make_shared<DataTypeString>()},
-                      {"engine",              std::make_shared<DataTypeString>()},
-                      {"column",              std::make_shared<DataTypeString>()},
-                      { "type",               std::make_shared<DataTypeString>() },
-                      { "default_kind",       std::make_shared<DataTypeString>() },
-                      { "default_expression", std::make_shared<DataTypeString>() },
-                      { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
-                      { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
-                      { "marks_bytes_in_column",      std::make_shared<DataTypeUInt64>() },
-              }
-        )
+        {"database",                                   std::make_shared<DataTypeString>()},
+        {"table",                                      std::make_shared<DataTypeString>()},
+        {"engine",                                     std::make_shared<DataTypeString>()},
+        {"path",                                       std::make_shared<DataTypeString>()},
+
+        {"column",                                     std::make_shared<DataTypeString>()},
+        {"type",                                       std::make_shared<DataTypeString>() },
+        {"default_kind",                               std::make_shared<DataTypeString>() },
+        {"default_expression",                         std::make_shared<DataTypeString>() },
+        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>() },
+        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>() },
+        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>() },
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>() },
+    }
+    )
 {
 }
 
@@ -60,9 +65,8 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         String default_expression;
     };
 
-    NamesAndTypesList columns_list = info.storage->getColumnsList();
-    columns_list.insert(std::end(columns_list), std::begin(info.storage->alias_columns), std::end(info.storage->alias_columns));
-    column_defaults = info.storage->column_defaults;
+    NamesAndTypesList columns_list = info.storage->getColumns().getAll();
+    const auto & column_defaults = info.storage->getColumns().defaults;
     std::unordered_map<String, ColumnInfo> columns_info;
 
     for (const auto & column : columns_list)
@@ -72,7 +76,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         const auto it = column_defaults.find(column.name);
         if (it != std::end(column_defaults))
         {
-            column_info.default_kind = toString(it->second.type);
+            column_info.default_kind = toString(it->second.kind);
             column_info.default_expression = queryToString(it->second.expression);
         }
 
@@ -84,8 +88,8 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
     {
         const auto & part = info.all_parts[part_number];
         auto part_state = info.all_parts_state[part_number];
+        auto columns_size = part->getTotalColumnsSize();
 
-        auto total_mrk_size_in_bytes = part->getTotalMrkSizeInBytes();
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
         auto use_count = part.use_count() - 1;
         auto min_date = part->getMinDate();
@@ -106,12 +110,14 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             columns[j++]->insert(part->name);
             columns[j++]->insert(static_cast<UInt64>(part_state == State::Committed));
             columns[j++]->insert(static_cast<UInt64>(part->marks_count));
-            columns[j++]->insert(static_cast<UInt64>(total_mrk_size_in_bytes));
 
             columns[j++]->insert(static_cast<UInt64>(part->rows_count));
-            columns[j++]->insert(static_cast<UInt64>(part->size_in_bytes));
+            columns[j++]->insert(static_cast<UInt64>(part->bytes_on_disk));
+            columns[j++]->insert(static_cast<UInt64>(columns_size.data_compressed));
+            columns[j++]->insert(static_cast<UInt64>(columns_size.data_uncompressed));
+            columns[j++]->insert(static_cast<UInt64>(columns_size.marks));
             columns[j++]->insert(static_cast<UInt64>(part->modification_time));
-            columns[j++]->insert(static_cast<UInt64>(part->remove_time));
+            columns[j++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
 
             columns[j++]->insert(static_cast<UInt64>(use_count));
 
@@ -126,6 +132,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             columns[j++]->insert(info.database);
             columns[j++]->insert(info.table);
             columns[j++]->insert(info.engine);
+            columns[j++]->insert(part->getFullPath());
             columns[j++]->insert(column.name);
             columns[j++]->insert(column.type->getName());
 
@@ -141,9 +148,11 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
                 columns[j++]->insertDefault();
             }
 
-            columns[j++]->insert(static_cast<UInt64>(part->getColumnCompressedSize(column.name)));
-            columns[j++]->insert(static_cast<UInt64>(part->getColumnUncompressedSize(column.name)));
-            columns[j++]->insert(static_cast<UInt64>(part->getColumnMrkSize(column.name)));
+            MergeTreeDataPart::ColumnSize column_size = part->getColumnSize(column.name, *column.type);
+            columns[j++]->insert(static_cast<UInt64>(column_size.data_compressed + column_size.marks));
+            columns[j++]->insert(static_cast<UInt64>(column_size.data_compressed));
+            columns[j++]->insert(static_cast<UInt64>(column_size.data_uncompressed));
+            columns[j++]->insert(static_cast<UInt64>(column_size.marks));
 
             if (has_state_column)
                 columns[j++]->insert(part->stateString());

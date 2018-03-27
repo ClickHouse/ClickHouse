@@ -1,4 +1,4 @@
-#Queries
+# Queries
 
 ## CREATE DATABASE
 
@@ -10,6 +10,9 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 
 `A database` is just a directory for tables.
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
+
+
+<a name="query_language-queries-create_table"></a>
 
 ## CREATE TABLE
 
@@ -181,7 +184,7 @@ Deletes all tables inside the 'db' database, then deletes the 'db' database itse
 If `IF EXISTS` is specified, it doesn't return an error if the database doesn't exist.
 
 ```sql
-DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Deletes the table.
@@ -449,7 +452,7 @@ See also the section "Formats".
 ## SHOW TABLES
 
 ```sql
-SHOW TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
+SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Displays a list of tables
@@ -496,7 +499,7 @@ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ## SHOW CREATE TABLE
 
 ```sql
-SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
@@ -514,7 +517,7 @@ Nested data structures are output in "expanded" format. Each column is shown sep
 ## EXISTS
 
 ```sql
-EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
+EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn't exist, or `1` if the table exists in the specified database.
@@ -1476,34 +1479,34 @@ In all other cases, we don't recommend using the asterisk, since it only gives y
 ## KILL QUERY
 
 ```sql
-KILL QUERY WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
+KILL QUERY
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
 ```
 
 Attempts to terminate queries currently running.
-The queries to terminate are selected from the system.processes table for which expression_for_system.processes is true.
+The queries to terminate are selected from the system.processes table for which `WHERE` expression is true.
 
 Examples:
 
 ```sql
+-- Terminates all queries with the specified query_id.
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
-```
 
-Terminates all queries with the specified query_id.
-
-```sql
+-- Synchronously terminates all queries run by `username`.
 KILL QUERY WHERE user='username' SYNC
 ```
 
-Synchronously terminates all queries run by `username`.
-
 Readonly-users can only terminate their own requests.
-By default, the asynchronous version of queries is used (`ASYNC`), which terminates without waiting for queries to complete.
-The synchronous version (`SYNC`) waits for all queries to be completed and displays information about each process as it terminates.
+
+By default, the asynchronous version of queries is used (`ASYNC`), which doesn't wait for query termination.
+
+The synchronous version (`SYNC`) waits for all queries to be killed and displays information about each process as it terminates.
 The response contains the `kill_status` column, which can take the following values:
 
-1. 'finished' – The query completed successfully.
+1. 'finished' – The query terminated successfully.
 2. 'waiting' – Waiting for the query to finish after sending it a signal to terminate.
 3. The other values ​​explain why the query can't be terminated.
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to terminate.
-

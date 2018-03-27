@@ -19,9 +19,6 @@ public:
     String database;
     String table;
 
-    ASTDropQuery() = default;
-    explicit ASTDropQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; };
 

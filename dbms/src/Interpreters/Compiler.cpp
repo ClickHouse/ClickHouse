@@ -59,7 +59,7 @@ static Compiler::HashedKey getHash(const std::string & key)
     SipHash hash;
 
     auto revision = ClickHouseRevision::get();
-    hash.update(reinterpret_cast<const char *>(&revision), sizeof(revision));
+    hash.update(revision);
     hash.update(key.data(), key.size());
 
     Compiler::HashedKey res;
@@ -185,9 +185,12 @@ SharedLibraryPtr Compiler::getOrCount(
 static void addCodeToAssertHeadersMatch(WriteBuffer & out)
 {
     out <<
+        "#define STRING2(x) #x\n"
+        "#define STRING(x) STRING2(x)\n"
         "#include <Common/config_version.h>\n"
         "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
-        "#error \"ClickHouse headers revision doesn't match runtime revision of the server.\"\n"
+        "#pragma message \"ClickHouse headers revision = \" STRING(VERSION_REVISION) \n"
+        "#error \"ClickHouse headers revision doesn't match runtime revision of the server (" << ClickHouseRevision::get() << ").\"\n"
         "#endif\n\n";
 }
 

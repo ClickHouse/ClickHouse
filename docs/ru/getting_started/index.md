@@ -16,15 +16,14 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 В целях тестирования и разработки, система может быть установлена на один сервер или на рабочий компьютер.
 
-### Установка из пакетов
+### Установка из пакетов для Debian/Ubuntu 
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
 
 ```text
-deb http://repo.yandex.ru/clickhouse/trusty stable main
+deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
-На других версиях Ubuntu, замените `trusty` на `xenial` или `precise`.
 Если вы хотите использовать наиболее свежую тестовую версию, замените stable на testing.
 
 Затем выполните:
@@ -35,10 +34,7 @@ sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server-common
 ```
 
-Также можно скачать и установить пакеты вручную, отсюда:
-<http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/>,
-<http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/>,
-<http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/>.
+Также можно скачать и установить пакеты вручную, отсюда: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
 
 ClickHouse содержит настройки ограничения доступа. Они расположены в файле users.xml (рядом с config.xml).
 По умолчанию, разрешён доступ отовсюду для пользователя default без пароля. См. секцию users/default/networks.
@@ -135,11 +131,4 @@ SELECT 1
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить из тестовых наборов данных:
-
-```eval_rst
-.. toctree::
-    :glob:
-
-    example_datasets/*
-```
+Для дальнейших экспериментов можно попробовать загрузить из тестовых наборов данных.

@@ -45,10 +45,7 @@ public:
     void alterTable(
         const Context & context,
         const String & name,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
+        const ColumnsDescription & columns,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(
@@ -59,7 +56,9 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    String getDataPath(const Context & context) const override;
+    String getDataPath() const override;
+    String getMetadataPath() const override;
+    String getTableMetadataPath(const String & table_name) const override;
 
     void shutdown() override;
     void drop() override;

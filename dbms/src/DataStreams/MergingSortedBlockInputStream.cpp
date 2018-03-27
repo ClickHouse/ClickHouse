@@ -11,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -22,28 +21,6 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     , source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
-}
-
-String MergingSortedBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "MergingSorted(";
-
-    Strings children_ids(children.size());
-    for (size_t i = 0; i < children.size(); ++i)
-        children_ids[i] = children[i]->getID();
-
-    /// The order does not matter.
-    std::sort(children_ids.begin(), children_ids.end());
-
-    for (size_t i = 0; i < children_ids.size(); ++i)
-        res << (i == 0 ? "" : ", ") << children_ids[i];
-
-    for (size_t i = 0; i < description.size(); ++i)
-        res << ", " << description[i].getID();
-
-    res << ")";
-    return res.str();
 }
 
 void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged_columns)
@@ -114,19 +91,7 @@ void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged
         if (!*shared_block_ptr)
             continue;
 
-        size_t src_columns = shared_block_ptr->columns();
-        size_t dst_columns = header.columns();
-
-        if (src_columns != dst_columns)
-            throw Exception("Merging blocks have different number of columns ("
-                + toString(src_columns) + " and " + toString(dst_columns) + ")",
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-
-        for (size_t i = 0; i < src_columns; ++i)
-            if (!blocksHaveEqualStructure(*shared_block_ptr, header))
-                throw Exception("Merging blocks have different names or types of columns:\n"
-                    + shared_block_ptr->dumpStructure() + "\nand\n" + header.dumpStructure(),
-                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+        assertBlocksHaveEqualStructure(*shared_block_ptr, header, getName());
     }
 
     merged_columns.resize(num_columns);
@@ -211,7 +176,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         if (limit && total_merged_rows == limit)
         {
     //        std::cerr << "Limit reached\n";
-            cancel();
+            cancel(false);
             finished = true;
             return true;
         }
@@ -271,7 +236,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                         column = column->cut(0, merged_rows);
                     }
 
-                    cancel();
+                    cancel(false);
                     finished = true;
                 }
 
@@ -339,7 +304,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             return;
     }
 
-    cancel();
+    cancel(false);
     finished = true;
 }
 

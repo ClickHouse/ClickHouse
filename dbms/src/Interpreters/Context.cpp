@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionSettingsSelector.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
@@ -45,7 +46,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
@@ -75,6 +76,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int THERE_IS_NO_SESSION;
+    extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
@@ -93,7 +95,7 @@ struct ContextShared
     std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     /// For access of most of shared objects. Recursive mutex.
-    mutable Poco::Mutex mutex;
+    mutable std::recursive_mutex mutex;
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
@@ -128,7 +130,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
-    Macros macros;                                          /// Substitutions extracted from config.
+    MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -183,6 +185,8 @@ struct ContextShared
 
     pcg64 rng{randomSeed()};
 
+    Context::ConfigReloadCallback config_reload_callback;
+
     ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
         : runtime_components_factory(std::move(runtime_components_factory_))
     {
@@ -229,7 +233,7 @@ struct ContextShared
         Databases current_databases;
 
         {
-            Poco::ScopedLock<Poco::Mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             current_databases = databases;
         }
 
@@ -237,7 +241,7 @@ struct ContextShared
             database.second->shutdown();
 
         {
-            Poco::ScopedLock<Poco::Mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             databases.clear();
         }
     }
@@ -259,7 +263,6 @@ Context Context::createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime
     res.runtime_components_factory = runtime_components_factory;
     res.shared = std::make_shared<ContextShared>(runtime_components_factory);
     res.quota = std::make_shared<QuotaForIntervals>();
-    res.system_logs = std::make_shared<SystemLogs>();
     return res;
 }
 
@@ -282,19 +285,19 @@ Context::~Context()
 }
 
 
-InterserverIOHandler & Context::getInterserverIOHandler()                       { return shared->interserver_io_handler; }
+InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
 
-std::unique_lock<Poco::Mutex> Context::getLock() const
+std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
     ProfileEvents::increment(ProfileEvents::ContextLock);
     CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    return std::unique_lock<Poco::Mutex>(shared->mutex);
+    return std::unique_lock(shared->mutex);
 }
 
-ProcessList & Context::getProcessList()                                         { return shared->process_list; }
-const ProcessList & Context::getProcessList() const                             { return shared->process_list; }
-MergeList & Context::getMergeList()                                             { return shared->merge_list; }
-const MergeList & Context::getMergeList() const                                 { return shared->merge_list; }
+ProcessList & Context::getProcessList() { return shared->process_list; }
+const ProcessList & Context::getProcessList() const { return shared->process_list; }
+MergeList & Context::getMergeList() { return shared->merge_list; }
+const MergeList & Context::getMergeList() const { return shared->merge_list; }
 
 
 const Databases Context::getDatabases() const
@@ -671,6 +674,11 @@ bool Context::isDatabaseExist(const String & database_name) const
     return shared->databases.end() != shared->databases.find(db);
 }
 
+bool Context::isExternalTableExist(const String & table_name) const
+{
+    return external_tables.end() != external_tables.find(table_name);
+}
+
 
 void Context::assertTableExists(const String & database_name, const String & table_name) const
 {
@@ -731,7 +739,10 @@ Tables Context::getExternalTables() const
 {
     auto lock = getLock();
 
-    Tables res = external_tables;
+    Tables res;
+    for (auto & table : external_tables)
+        res[table.first] = table.second.first;
+
     if (session_context && session_context != this)
     {
         Tables buf = session_context->getExternalTables();
@@ -748,13 +759,11 @@ Tables Context::getExternalTables() const
 
 StoragePtr Context::tryGetExternalTable(const String & table_name) const
 {
-    auto lock = getLock();
-
-    Tables::const_iterator jt = external_tables.find(table_name);
+    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
     if (external_tables.end() == jt)
         return StoragePtr();
 
-    return jt->second;
+    return jt->second.first;
 }
 
 
@@ -808,34 +817,47 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 }
 
 
-void Context::addExternalTable(const String & table_name, const StoragePtr & storage)
+void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
     if (external_tables.end() != external_tables.find(table_name))
         throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-    external_tables[table_name] = storage;
-
-    if (process_list_elem)
-    {
-        auto lock = getLock();
-        shared->process_list.addTemporaryTable(*process_list_elem, table_name, storage);
-    }
+    external_tables[table_name] = std::pair(storage, ast);
 }
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {
-    auto lock = getLock();
+    TableAndCreateASTs::const_iterator it = external_tables.find(table_name);
 
-    Tables::const_iterator it = external_tables.find(table_name);
     if (external_tables.end() == it)
         return StoragePtr();
 
-    auto storage = it->second;
+    auto storage = it->second.first;
     external_tables.erase(it);
     return storage;
-
-    return {};
 }
+
+
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
+{
+    /// Slightly suboptimal.
+    auto hash = table_expression->getTreeHash();
+    String key = toString(hash.first) + '_' + toString(hash.second);
+
+    StoragePtr & res = table_function_results[key];
+
+    if (!res)
+    {
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
+            typeid_cast<const ASTFunction *>(table_expression.get())->name, *this);
+
+        /// Run it and remember the result
+        res = table_function_ptr->execute(table_expression, *this);
+    }
+
+    return res;
+}
+
 
 DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && /*lock*/, const String & elem, const String & message)
     : map(map_), mutex(mutex_)
@@ -900,33 +922,35 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
     return shared->databases[db]->getCreateQuery(*this, table_name);
 }
 
-
-Settings Context::getSettings() const
+ASTPtr Context::getCreateExternalQuery(const String & table_name) const
 {
-    auto lock = getLock();
-    return settings;
+    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
+    if (external_tables.end() == jt)
+        throw Exception("Temporary Table" + table_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
+
+    return jt->second.second;
 }
 
 
-Limits Context::getLimits() const
+Settings Context::getSettings() const
 {
-    auto lock = getLock();
-    return settings.limits;
+    return settings;
 }
 
 
 void Context::setSettings(const Settings & settings_)
 {
-    auto lock = getLock();
     settings = settings_;
 }
 
 
 void Context::setSetting(const String & name, const Field & value)
 {
-    auto lock = getLock();
     if (name == "profile")
+    {
+        auto lock = getLock();
         settings.setProfile(value.safeGet<String>(), *shared->users_config);
+    }
     else
         settings.set(name, value);
 }
@@ -934,9 +958,11 @@ void Context::setSetting(const String & name, const Field & value)
 
 void Context::setSetting(const String & name, const std::string & value)
 {
-    auto lock = getLock();
     if (name == "profile")
+    {
+        auto lock = getLock();
         settings.setProfile(value, *shared->users_config);
+    }
     else
         settings.set(name, value);
 }
@@ -944,14 +970,12 @@ void Context::setSetting(const String & name, const std::string & value)
 
 String Context::getCurrentDatabase() const
 {
-    auto lock = getLock();
     return current_database;
 }
 
 
 String Context::getCurrentQueryId() const
 {
-    auto lock = getLock();
     return client_info.current_query_id;
 }
 
@@ -966,8 +990,6 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
-    auto lock = getLock();
-
     if (!client_info.current_query_id.empty())
         throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
@@ -990,8 +1012,12 @@ void Context::setCurrentQueryId(const String & query_id)
             };
         } random;
 
-        random.a = shared->rng();
-        random.b = shared->rng();
+        {
+            auto lock = getLock();
+
+            random.a = shared->rng();
+            random.b = shared->rng();
+        }
 
         /// Use protected constructor.
         struct UUID : Poco::UUID
@@ -1009,26 +1035,37 @@ void Context::setCurrentQueryId(const String & query_id)
 
 String Context::getDefaultFormat() const
 {
-    auto lock = getLock();
     return default_format.empty() ? "TabSeparated" : default_format;
 }
 
 
 void Context::setDefaultFormat(const String & name)
 {
-    auto lock = getLock();
     default_format = name;
 }
 
-const Macros& Context::getMacros() const
+MultiVersion<Macros>::Version Context::getMacros() const
 {
-    return shared->macros;
+    return shared->macros.get();
 }
 
-void Context::setMacros(Macros && macros)
+void Context::setMacros(std::unique_ptr<Macros> && macros)
 {
-    /// We assume that this assignment occurs once when the server starts. If this is not the case, you need to use a mutex.
-    shared->macros = macros;
+    shared->macros.set(std::move(macros));
+}
+
+const Context & Context::getQueryContext() const
+{
+    if (!query_context)
+        throw Exception("There is no query", ErrorCodes::THERE_IS_NO_QUERY);
+    return *query_context;
+}
+
+Context & Context::getQueryContext()
+{
+    if (!query_context)
+        throw Exception("There is no query", ErrorCodes::THERE_IS_NO_QUERY);
+    return *query_context;
 }
 
 const Context & Context::getSessionContext() const
@@ -1406,12 +1443,19 @@ Compiler & Context::getCompiler()
 }
 
 
-QueryLog & Context::getQueryLog()
+void Context::initializeSystemLogs()
+{
+    auto lock = getLock();
+    system_logs = std::make_shared<SystemLogs>();
+}
+
+
+QueryLog * Context::getQueryLog()
 {
     auto lock = getLock();
 
     if (!system_logs)
-        throw Exception("Query log have been already shutdown", ErrorCodes::LOGICAL_ERROR);
+        return nullptr;
 
     if (!system_logs->query_log)
     {
@@ -1423,20 +1467,21 @@ QueryLog & Context::getQueryLog()
 
         auto & config = getConfigRef();
 
-        String database = config.getString("query_log.database", "system");
-        String table = config.getString("query_log.table", "query_log");
-        size_t flush_interval_milliseconds = config.getUInt64(
-                "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
+        String database     = config.getString("query_log.database",     "system");
+        String table        = config.getString("query_log.table",        "query_log");
+        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
+        size_t flush_interval_milliseconds = config.getUInt64("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
-        system_logs->query_log = std::make_unique<QueryLog>(
-            *global_context, database, table, "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+
+        system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
     }
 
-    return *system_logs->query_log;
+    return system_logs->query_log.get();
 }
 
 
-PartLog * Context::getPartLog(const String & database, const String & table)
+PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
@@ -1444,16 +1489,16 @@ PartLog * Context::getPartLog(const String & database, const String & table)
     if (!config.has("part_log"))
         return nullptr;
 
-    /// System logs are shutdown
+    /// System logs are shutting down.
     if (!system_logs)
         return nullptr;
 
-    String part_log_database = config.getString("part_log.database", "system");
-    String part_log_table = config.getString("part_log.table", "part_log");
+    String database = config.getString("part_log.database", "system");
 
-    /// Will not log system.part_log itself.
-    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing
-    if (database == part_log_database && table == part_log_table)
+    /// Will not log operations on system tables (including part_log itself).
+    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
+    /// and also make troubles on startup.
+    if (part_database == database)
         return nullptr;
 
     if (!system_logs->part_log)
@@ -1464,11 +1509,13 @@ PartLog * Context::getPartLog(const String & database, const String & table)
         if (!global_context)
             throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
 
-        size_t flush_interval_milliseconds = config.getUInt64(
-                "part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-        system_logs->part_log = std::make_unique<PartLog>(
-            *global_context, part_log_database, part_log_table,
-            "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        String table = config.getString("part_log.table", "part_log");
+        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
+        size_t flush_interval_milliseconds = config.getUInt64("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
+
+        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+
+        system_logs->part_log = std::make_unique<PartLog>(*global_context, database, table, engine, flush_interval_milliseconds);
     }
 
     return system_logs->part_log.get();
@@ -1573,6 +1620,22 @@ time_t Context::getUptimeSeconds() const
 {
     auto lock = getLock();
     return shared->uptime_watch.elapsedSeconds();
+}
+
+
+void Context::setConfigReloadCallback(ConfigReloadCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->config_reload_callback = std::move(callback);
+}
+
+void Context::reloadConfig() const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->config_reload_callback)
+        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->config_reload_callback();
 }
 
 

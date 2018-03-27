@@ -24,13 +24,10 @@ namespace ErrorCodes
 
 StorageDictionary::StorageDictionary(
     const String & table_name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     const DictionaryStructure & dictionary_structure_,
     const String & dictionary_name_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
+    : IStorage{columns_}, table_name(table_name_),
     dictionary_name(dictionary_name_),
     logger(&Poco::Logger::get("StorageDictionary"))
 {
@@ -75,7 +72,7 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
     auto dictionary_names_and_types = getNamesAndTypes(dictionary_structure);
     std::set<NameAndTypePair> namesAndTypesSet(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
-    for (auto & column : columns)
+    for (auto & column : getColumns().ordinary)
     {
         if (namesAndTypesSet.find(column) == namesAndTypesSet.end())
         {
@@ -105,8 +102,7 @@ void registerStorageDictionary(StorageFactory & factory)
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
 
         return StorageDictionary::create(
-            args.table_name, args.columns, args.materialized_columns, args.alias_columns,
-            args.column_defaults, dictionary_structure, dictionary_name);
+            args.table_name, args.columns, dictionary_structure, dictionary_name);
     });
 }
 

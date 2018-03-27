@@ -413,7 +413,8 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder)
+void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder,
+                                         size_t rows, bool never_evaluate_defaults)
 {
     if (!res)
         throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
@@ -422,7 +423,6 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
     {
         /// For a missing column of a nested data structure we must create not a column of empty
         /// arrays, but a column of arrays of correct length.
-        /// NOTE: Similar, but slightly different code is present in Block::addDefaults.
 
         /// First, collect offset columns for all arrays in the block.
         OffsetColumns offset_columns;
@@ -445,8 +445,6 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
         bool should_evaluate_defaults = false;
         bool should_sort = always_reorder;
 
-        size_t rows = res.rows();
-
         /// insert default values only for columns without default expressions
         for (const auto & requested_column : columns)
         {
@@ -464,7 +462,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
             if (!has_column)
             {
                 should_sort = true;
-                if (storage.column_defaults.count(requested_column.name) != 0)
+                if (storage.getColumns().defaults.count(requested_column.name) != 0)
                 {
                     should_evaluate_defaults = true;
                     continue;
@@ -498,11 +496,11 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
         }
 
         /// evaluate defaulted columns if necessary
-        if (should_evaluate_defaults)
-            evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+        if (!never_evaluate_defaults && should_evaluate_defaults)
+            evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.context);
 
         /// sort columns to ensure consistent order among all blocks
-        if (should_sort)
+        if (!never_evaluate_defaults && should_sort)
         {
             Block ordered_block;
 

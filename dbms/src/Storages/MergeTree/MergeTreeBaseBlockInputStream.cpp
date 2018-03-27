@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -215,7 +216,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             }
 
             progressImpl({ res.rows(), res.bytes() });
-            pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
+            pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder, res.rows());
 
             /// Compute the expression in PREWHERE.
             prewhere_actions->execute(res);
@@ -337,11 +338,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         const size_t limit = std::min(pre_filter.size(), pre_filter_pos + unread_rows_in_current_granule);
                         bool will_read_until_mark = unread_rows_in_current_granule == limit - pre_filter_pos;
 
-                        UInt8 nonzero = 0;
-                        for (size_t row = pre_filter_pos; row < limit; ++row)
-                            nonzero |= pre_filter[row];
-
-                        if (!nonzero)
+                        if (memoryIsZero(&pre_filter[pre_filter_pos], (limit - pre_filter_pos) * sizeof(pre_filter[0])))
                         {
                             /// Zero! Prewhere condition is false for all (limit - pre_filter_pos) rows.
                             readRows();
@@ -395,16 +392,21 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 post_filter.resize(post_filter_pos);
 
+                /// At this point we may have arrays with non-zero offsets but with empty data,
+                ///  as a result of reading components of Nested data structures with no data in filesystem.
+                /// We must fill these arrays to filter them correctly.
+
+                reader->fillMissingColumns(res, task->ordered_names, task->should_reorder, post_filter.size(), true);
+
                 /// Filter the columns related to PREWHERE using pre_filter,
                 ///  other columns - using post_filter.
                 size_t rows = 0;
                 for (const auto i : ext::range(0, res.columns()))
                 {
-                    auto & col = res.safeGetByPosition(i);
+                    auto & col = res.getByPosition(i);
                     if (col.name == prewhere_column_name && res.columns() > 1)
                         continue;
-                    col.column =
-                        col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
+                    col.column = col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
                     rows = col.column->size();
                 }
                 if (task->size_predictor)
@@ -412,8 +414,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)
-                    res.getByName(prewhere_column_name).column = DataTypeUInt8().createColumnConst(rows, UInt64(1));
-
+                    res.getByName(prewhere_column_name).column = DataTypeUInt8().createColumnConst(rows, UInt64(1))->convertToFullColumnIfConst();
             }
 
             if (res)
@@ -421,7 +422,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 if (task->size_predictor)
                     task->size_predictor->update(res);
 
-                reader->fillMissingColumns(res, task->ordered_names, true);
+                reader->fillMissingColumns(res, task->ordered_names, true, res.rows());
 
                 res.checkNumberOfRows();
             }
@@ -463,14 +464,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             return res;
 
         progressImpl({ res.rows(), res.bytes() });
-        reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
+        reader->fillMissingColumns(res, task->ordered_names, task->should_reorder, res.rows());
     }
 
     return res;
 }
 
 
-void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
+void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 {
     const auto rows = block.rows();
 
@@ -482,17 +483,23 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
         {
             if (virt_column_name == "_part")
             {
-                block.insert(ColumnWithTypeAndName{
-                    DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeString>(),
-                    virt_column_name});
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeString().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeString>(), virt_column_name});
             }
             else if (virt_column_name == "_part_index")
             {
-                block.insert(ColumnWithTypeAndName{
-                    DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeUInt64>(),
-                    virt_column_name});
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUInt64().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
             }
         }
     }

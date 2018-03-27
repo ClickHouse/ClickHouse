@@ -81,7 +81,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 
     ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
-    auto literal = std::make_shared<ASTLiteral>(StringRange(), value);
+    auto literal = std::make_shared<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
     with.children.push_back(literal);
@@ -105,7 +105,7 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
 static void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
-    const ASTFunction * function = typeid_cast<const ASTFunction *>(&*expression);
+    const ASTFunction * function = typeid_cast<const ASTFunction *>(expression.get());
     if (function && function->name == "and")
     {
         for (size_t i = 0; i < function->arguments->children.size(); ++i)
@@ -133,11 +133,11 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
     return new_query;
 }
 
-bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
 {
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery & >(*query);
     if (!select.where_expression && !select.prewhere_expression)
-        return false;
+        return;
 
     NameSet columns;
     for (const auto & it : block.getNamesAndTypesList())
@@ -149,32 +149,30 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         extractFunctions(select.where_expression, columns, functions);
     if (select.prewhere_expression)
         extractFunctions(select.prewhere_expression, columns, functions);
+
     ASTPtr expression_ast = buildWhereExpression(functions);
     if (!expression_ast)
-        return false;
+        return;
 
     /// Let's analyze and calculate the expression.
     ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
-    actions->execute(block);
+
+    Block block_with_filter = block;
+    actions->execute(block_with_filter);
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block.getByName(filter_column_name).column;
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column;
     if (ColumnPtr converted = filter_column->convertToFullColumnIfConst())
         filter_column = converted;
     const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
-
-    if (countBytesInFilter(filter) == 0)
-        return false;
 
     for (size_t i = 0; i < block.columns(); ++i)
     {
         ColumnPtr & column = block.safeGetByPosition(i).column;
         column = column->filter(filter, -1);
     }
-
-    return true;
 }
 
 }

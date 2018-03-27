@@ -441,14 +441,14 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Настройки клиента/сервера SSL.
 
-Поддержку SSL обеспечивает библиотека ``libpoco``. Описание интерфейса находится в файле [SSLManager.h](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Поддержку SSL обеспечивает библиотека ``libpoco``. Описание интерфейса находится в файле [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
 
 Ключи настроек сервера/клиента:
 
 - privateKeyFile - Путь к файлу с секретным ключем сертификата в формате PEM. Файл может содержать ключ и сертификат одновременно.
 - certificateFile - Путь к файлу сертификата клиента/сервера в формате PEM. Можно не указывать, если ``privateKeyFile`` содержит сертификат.
 - caConfig - Путь к файлу или каталогу, которые содержат доверенные корневые сертификаты.
-- verificationMode - Способ проверки сертификатов узла. Подробности находятся в описании класса [Context](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/Context.h). Допустимые значения: ``none``, ``relaxed``, ``strict``, ``once``.
+- verificationMode - Способ проверки сертификатов узла. Подробности находятся в описании класса [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Допустимые значения: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth - Максимальная длина верификационой цепи. Верификация завершится ошибкой, если длина цепи сертификатов превысит установленное значение.
 - loadDefaultCAFile - Признак того, что будут использоваться встроенные CA-сертификаты для OpenSSL. Допустимые значения: ``true``, ``false``.  |
 - cipherList - Поддерживаемые OpenSSL-шифры. Например, ``ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
@@ -520,6 +520,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
 
 
@@ -529,6 +530,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <part_log>
     <database>system</database>
     <table>part_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </part_log>
 ```
@@ -563,6 +565,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
@@ -573,6 +576,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <query_log>
     <database>system</database>
     <table>query_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
 ```

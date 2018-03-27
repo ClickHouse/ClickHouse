@@ -105,10 +105,7 @@ void DatabaseMemory::renameTable(
 void DatabaseMemory::alterTable(
     const Context &,
     const String &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
-    const NamesAndTypesList &,
-    const ColumnDefaults &,
+    const ColumnsDescription &,
     const ASTModifier &)
 {
     throw Exception("DatabaseMemory: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -151,11 +148,6 @@ void DatabaseMemory::shutdown()
 void DatabaseMemory::drop()
 {
     /// Additional actions to delete database are not required.
-}
-
-String DatabaseMemory::getDataPath(const Context &) const
-{
-    return {};
 }
 
 }

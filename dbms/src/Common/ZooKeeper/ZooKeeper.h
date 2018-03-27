@@ -8,10 +8,10 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unistd.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <port/unistd.h>
 
 
 namespace ProfileEvents
@@ -56,7 +56,7 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const std::string & hosts, const std::string & identity = "",
-              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT, bool check_root_exists = false);
+              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT, const std::string & chroot = "");
 
     /** Config of the form:
         <zookeeper>
@@ -196,14 +196,16 @@ public:
     /// Performs several operations in a transaction.
     /// Throws on every error.
     OpResultsPtr multi(const Ops & ops);
-
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
     int32_t tryMulti(const Ops & ops, OpResultsPtr * out_results = nullptr);
-    /// Like previous one, but does not throw any ZooKeeper exceptions
-    int32_t tryMultiUnsafe(const Ops & ops, MultiTransactionInfo & info);
     /// Use only with read-only operations.
     int32_t tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results = nullptr, size_t * attempt = nullptr);
+    /// Throws nothing, just alias of multiImpl
+    int32_t tryMultiNoThrow(const Ops & ops, OpResultsPtr * out_op_results = nullptr, MultiTransactionInfo * out_info = nullptr)
+    {
+        return multiImpl(ops, out_op_results, out_info);
+    }
 
     Int64 getClientID();
 
@@ -366,9 +368,10 @@ public:
 private:
     friend struct WatchContext;
     friend class EphemeralNodeHolder;
+    friend struct OpResult;
 
-    void init(const std::string & hosts, const std::string & identity,
-              int32_t session_timeout_ms, bool check_root_exists);
+    void init(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms, const std::string & chroot);
+
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
 
@@ -391,7 +394,7 @@ private:
             /// If the connection has been lost, wait timeout/3 hoping for connection re-establishment.
             static const int MAX_SLEEP_TIME = 10;
             if (code == ZCONNECTIONLOSS)
-                usleep(std::min(session_timeout_ms * 1000 / 3, MAX_SLEEP_TIME * 1000 * 1000));
+                usleep(std::min(session_timeout_ms * 1000u / 3, MAX_SLEEP_TIME * 1000u * 1000u));
 
             LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
             code = operation();
@@ -406,7 +409,7 @@ private:
     int32_t getImpl(const std::string & path, std::string & res, Stat * stat, WatchCallback watch_callback);
     int32_t setImpl(const std::string & path, const std::string & data, int32_t version = -1, Stat * stat = nullptr);
     int32_t getChildrenImpl(const std::string & path, Strings & res, Stat * stat, WatchCallback watch_callback);
-    int32_t multiImpl(const Ops & ops, OpResultsPtr * out_results = nullptr);
+    int32_t multiImpl(const Ops & ops, OpResultsPtr * out_op_results = nullptr, MultiTransactionInfo * out_info = nullptr);
     int32_t existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback);
 
     MultiFuture asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception);
@@ -414,6 +417,7 @@ private:
     std::string hosts;
     std::string identity;
     int32_t session_timeout_ms;
+    std::string chroot;
 
     std::mutex mutex;
     ACLPtr default_acl;
@@ -492,42 +496,5 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
-
-
-/// Simple structure to handle transaction execution results
-struct MultiTransactionInfo
-{
-    MultiTransactionInfo() = default;
-
-    const Ops * ops = nullptr;
-    int32_t code = ZOK;
-    OpResultsPtr op_results;
-
-    bool empty() const
-    {
-        return ops == nullptr;
-    }
-
-    bool hasFailedOp() const
-    {
-        return zkutil::isUserError(code);
-    }
-
-    const Op & getFailedOp() const
-    {
-        return *ops->at(getFailedOpIndex(op_results, code));
-    }
-
-    KeeperException getException() const
-    {
-        if (hasFailedOp())
-        {
-            size_t i = getFailedOpIndex(op_results, code);
-            return KeeperException("Transaction failed at op #" + std::to_string(i) + ": " + ops->at(i)->describe(), code);
-        }
-        else
-            return KeeperException(code);
-    }
-};
 
 }

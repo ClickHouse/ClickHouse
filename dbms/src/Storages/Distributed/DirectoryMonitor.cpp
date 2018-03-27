@@ -150,7 +150,7 @@ void StorageDistributedDirectoryMonitor::run()
 
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
-    auto timeouts = ConnectionTimeouts::getTCPTimeouts(storage.context.getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.context.getSettingsRef());
     const auto pool_factory = [&storage, &name, &timeouts] (const std::string & host, const UInt16 port,
                                                  const std::string & user, const std::string & password,
                                                  const std::string & default_database)
@@ -468,7 +468,7 @@ bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & f
 
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
-    return storage.name + '.' + storage.getName() + ".DirectoryMonitor";
+    return storage.table_name + '.' + storage.getName() + ".DirectoryMonitor";
 }
 
 }

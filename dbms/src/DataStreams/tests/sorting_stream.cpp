@@ -107,8 +107,8 @@ try
 
     /// create an object of an existing hit log table
 
-    StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    StoragePtr table = StorageLog::create(
+        "./", "HitLog", ColumnsDescription{names_and_types_list}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
     table->startup();
 
     /// read from it, sort it, and write it in tsv form to the console
@@ -152,7 +152,7 @@ try
 
     WriteBufferFromOStream ob(std::cout);
     RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, sample);
-    BlockOutputStreamFromRowOutputStream out(out_);
+    BlockOutputStreamFromRowOutputStream out(out_, sample);
 
     copyData(*in, out);
 

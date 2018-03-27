@@ -19,23 +19,22 @@ class StorageSetOrJoinBase : public IStorage
     friend class SetOrJoinBlockOutputStream;
 
 public:
-    String getTableName() const override { return name; }
+    String getTableName() const override { return table_name; }
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
+    String getDataPath() const override { return path; }
+
 protected:
     StorageSetOrJoinBase(
         const String & path_,
-        const String & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
+        const String & table_name_,
+        const ColumnsDescription & columns_);
 
     String path;
-    String name;
+    String table_name;
 
     UInt64 increment = 0;    /// For the backup file names.
 
@@ -76,10 +75,7 @@ protected:
     StorageSet(
         const String & path_,
         const String & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
+        const ColumnsDescription & columns_);
 };
 
 }

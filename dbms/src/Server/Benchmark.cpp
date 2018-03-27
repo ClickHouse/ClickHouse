@@ -1,31 +1,24 @@
-#include <unistd.h>
+#include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <time.h>
-
 #include <iostream>
 #include <fstream>
 #include <iomanip>
 #include <random>
 #include <pcg_random.hpp>
-
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-
 #include <Common/Stopwatch.h>
 #include <common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-
 #include <boost/program_options.hpp>
-
 #include <Common/ConcurrentBoundedQueue.h>
-
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Core/Types.h>
-
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -33,13 +26,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-
 #include <DataStreams/RemoteBlockInputStream.h>
-
 #include <Interpreters/Context.h>
-
 #include <Client/Connection.h>
-
 #include "InterruptListener.h"
 
 
@@ -303,7 +292,7 @@ private:
     void execute(ConnectionPool::Entry & connection, Query & query)
     {
         Stopwatch watch;
-        RemoteBlockInputStream stream(*connection, query, global_context, &settings, nullptr, Tables(), query_processing_stage);
+        RemoteBlockInputStream stream(*connection, query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -440,12 +429,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("database",        value<std::string>()->default_value("default"),     "")
             ("stacktrace",                                                            "print stack traces of exceptions")
 
-        #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-        #define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+        #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
-            APPLY_FOR_LIMITS(DECLARE_LIMIT)
         #undef DECLARE_SETTING
-        #undef DECLARE_LIMIT
         ;
 
         boost::program_options::variables_map options;
@@ -467,7 +453,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (options.count(#NAME)) \
             settings.set(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-        APPLY_FOR_LIMITS(EXTRACT_SETTING)
         #undef EXTRACT_SETTING
 
         Benchmark benchmark(
@@ -483,7 +468,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
-            ConnectionTimeouts::getTCPTimeouts(settings),
+            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings),
             settings);
     }
     catch (...)

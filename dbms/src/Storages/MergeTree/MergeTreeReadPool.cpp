@@ -117,6 +117,12 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
 }
 
 
+Block MergeTreeReadPool::getHeader() const
+{
+    return data.getSampleBlockForColumns(column_names);
+}
+
+
 void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
 {
     if (backoff_settings.min_read_latency_ms == 0 || do_not_steal_tasks)
@@ -232,8 +238,9 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
             if (!required_column_names.empty())
                 data.check(part.data_part->columns, required_column_names);
 
-            per_part_pre_columns.push_back(data.getColumnsList().addTypes(required_pre_column_names));
-            per_part_columns.push_back(data.getColumnsList().addTypes(required_column_names));
+            const NamesAndTypesList & physical_columns = data.getColumns().getAllPhysical();
+            per_part_pre_columns.push_back(physical_columns.addTypes(required_pre_column_names));
+            per_part_columns.push_back(physical_columns.addTypes(required_column_names));
         }
         else
         {

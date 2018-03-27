@@ -26,5 +26,5 @@ if (ENABLE_TESTS)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CTestCustom.cmake ${CMAKE_BINARY_DIR})
 
     # maybe add --no-long ?
-    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} TEST_OPT='--skip 00281' ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
+    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} TEST_OPT0='--skip compile' ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
 endif ()

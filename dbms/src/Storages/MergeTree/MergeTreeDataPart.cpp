@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/CompressedStream.h>
@@ -20,7 +22,7 @@
 
 #include <common/logger_useful.h>
 
-#define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
+#define MERGE_TREE_MARK_SIZE (2 * sizeof(UInt64))
 
 
 namespace DB
@@ -28,272 +30,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CHECKSUM_DOESNT_MATCH;
     extern const int FILE_DOESNT_EXIST;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;
-    extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int CORRUPTED_DATA;
-    extern const int FORMAT_VERSION_TOO_OLD;
-    extern const int UNKNOWN_FORMAT;
-    extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
+    extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 }
 
-
-void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const
-{
-    if (is_compressed && have_uncompressed)
-    {
-        if (!rhs.is_compressed)
-            throw Exception("No uncompressed checksum for file " + name, ErrorCodes::CHECKSUM_DOESNT_MATCH);
-        if (rhs.uncompressed_size != uncompressed_size)
-            throw Exception("Unexpected uncompressed size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-        if (rhs.uncompressed_hash != uncompressed_hash)
-            throw Exception("Checksum mismatch for uncompressed file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
-        return;
-    }
-    if (rhs.file_size != file_size)
-        throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-    if (rhs.file_hash != file_hash)
-        throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
-}
-
-void MergeTreeDataPartChecksum::checkSize(const String & path) const
-{
-    Poco::File file(path);
-    if (!file.exists())
-        throw Exception(path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    size_t size = file.getSize();
-    if (size != file_size)
-        throw Exception(path + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
-            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-}
-
-
-void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const
-{
-    for (const auto & it : rhs.files)
-    {
-        const String & name = it.first;
-
-        if (!files.count(name))
-            throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
-    }
-
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-
-        auto jt = rhs.files.find(name);
-        if (jt == rhs.files.end())
-            throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
-
-        it.second.checkEqual(jt->second, have_uncompressed, name);
-    }
-}
-
-void MergeTreeDataPartChecksums::checkSizes(const String & path) const
-{
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-        it.second.checkSize(path + name);
-    }
-}
-
-bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
-{
-    files.clear();
-
-    assertString("checksums format version: ", in);
-    int format_version;
-    readText(format_version, in);
-    assertChar('\n', in);
-
-    switch (format_version)
-    {
-        case 1:
-            return false;
-        case 2:
-            return read_v2(in);
-        case 3:
-            return read_v3(in);
-        case 4:
-            return read_v4(in);
-        default:
-            throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
-    }
-}
-
-bool MergeTreeDataPartChecksums::read_v2(ReadBuffer & in)
-{
-    size_t count;
-
-    readText(count, in);
-    assertString(" files:\n", in);
-
-    for (size_t i = 0; i < count; ++i)
-    {
-        String name;
-        Checksum sum;
-
-        readString(name, in);
-        assertString("\n\tsize: ", in);
-        readText(sum.file_size, in);
-        assertString("\n\thash: ", in);
-        readText(sum.file_hash.first, in);
-        assertString(" ", in);
-        readText(sum.file_hash.second, in);
-        assertString("\n\tcompressed: ", in);
-        readText(sum.is_compressed, in);
-        if (sum.is_compressed)
-        {
-            assertString("\n\tuncompressed size: ", in);
-            readText(sum.uncompressed_size, in);
-            assertString("\n\tuncompressed hash: ", in);
-            readText(sum.uncompressed_hash.first, in);
-            assertString(" ", in);
-            readText(sum.uncompressed_hash.second, in);
-        }
-        assertChar('\n', in);
-
-        files.insert(std::make_pair(name, sum));
-    }
-
-    return true;
-}
-
-bool MergeTreeDataPartChecksums::read_v3(ReadBuffer & in)
-{
-    size_t count;
-
-    readVarUInt(count, in);
-
-    for (size_t i = 0; i < count; ++i)
-    {
-        String name;
-        Checksum sum;
-
-        readBinary(name, in);
-        readVarUInt(sum.file_size, in);
-        readPODBinary(sum.file_hash, in);
-        readBinary(sum.is_compressed, in);
-
-        if (sum.is_compressed)
-        {
-            readVarUInt(sum.uncompressed_size, in);
-            readPODBinary(sum.uncompressed_hash, in);
-        }
-
-        files.emplace(std::move(name), sum);
-    }
-
-    return true;
-}
-
-bool MergeTreeDataPartChecksums::read_v4(ReadBuffer & from)
-{
-    CompressedReadBuffer in{from};
-    return read_v3(in);
-}
-
-void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
-{
-    writeString("checksums format version: 4\n", to);
-
-    CompressedWriteBuffer out{to, CompressionSettings(CompressionMethod::LZ4), 1 << 16};
-    writeVarUInt(files.size(), out);
-
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-        const Checksum & sum = it.second;
-
-        writeBinary(name, out);
-        writeVarUInt(sum.file_size, out);
-        writePODBinary(sum.file_hash, out);
-        writeBinary(sum.is_compressed, out);
-
-        if (sum.is_compressed)
-        {
-            writeVarUInt(sum.uncompressed_size, out);
-            writePODBinary(sum.uncompressed_hash, out);
-        }
-    }
-}
-
-void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_size, MergeTreeDataPartChecksum::uint128 file_hash)
-{
-    files[file_name] = Checksum(file_size, file_hash);
-}
-
-void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
-{
-    for (auto & checksum : rhs_checksums.files)
-        files[std::move(checksum.first)] = std::move(checksum.second);
-
-    rhs_checksums.files.clear();
-}
-
-/// Checksum computed from the set of control sums of .bin files.
-void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
-{
-    /// We use fact that iteration is in deterministic (lexicographical) order.
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-        const Checksum & sum = it.second;
-
-        if (!endsWith(name, ".bin"))
-            continue;
-
-        size_t len = name.size();
-        hash.update(reinterpret_cast<const char *>(&len), sizeof(len));
-        hash.update(name.data(), len);
-        hash.update(reinterpret_cast<const char *>(&sum.uncompressed_size), sizeof(sum.uncompressed_size));
-        hash.update(reinterpret_cast<const char *>(&sum.uncompressed_hash), sizeof(sum.uncompressed_hash));
-    }
-}
-
-String MergeTreeDataPartChecksums::toString() const
-{
-    WriteBufferFromOwnString out;
-    write(out);
-    return out.str();
-}
-
-MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
-{
-    ReadBufferFromString in(s);
-    MergeTreeDataPartChecksums res;
-    if (!res.read(in))
-        throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
-    assertEOF(in);
-    return res;
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetChecksum(const String & name, const String & ext) const
-{
-    if (checksums.empty())
-        return nullptr;
-
-    const auto & files = checksums.files;
-    const auto file_name = escapeForFileName(name) + ext;
-    auto it = files.find(file_name);
-
-    return (it == files.end()) ? nullptr : &it->second;
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksum(const String & name) const
-{
-    return tryGetChecksum(name, ".bin");
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetMrkChecksum(const String & name) const
-{
-    return tryGetChecksum(name, ".mrk");
-}
 
 static ReadBufferFromFile openForReading(const String & path)
 {
@@ -390,26 +134,51 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-/// Returns the size of .bin file for column `name` if found, zero otherwise.
-size_t MergeTreeDataPart::getColumnCompressedSize(const String & name) const
+/// Takes into account the fact that several columns can e.g. share their .size substreams.
+/// When calculating totals these should be counted only once.
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
 {
-    const Checksum * checksum = tryGetBinChecksum(name);
+    ColumnSize size;
+    if (checksums.empty())
+        return size;
 
-    /// Probably a logic error, not sure if this can ever happen if checksums are not empty
-    return checksum ? checksum->file_size : 0;
+    type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        String file_name = IDataType::getFileNameForStream(name, substream_path);
+
+        if (processed_substreams && !processed_substreams->insert(file_name).second)
+            return;
+
+        auto bin_checksum = checksums.files.find(file_name + ".bin");
+        if (bin_checksum != checksums.files.end())
+        {
+            size.data_compressed += bin_checksum->second.file_size;
+            size.data_uncompressed += bin_checksum->second.uncompressed_size;
+        }
+
+        auto mrk_checksum = checksums.files.find(file_name + ".mrk");
+        if (mrk_checksum != checksums.files.end())
+            size.marks += mrk_checksum->second.file_size;
+    }, {});
+
+    return size;
 }
 
-size_t MergeTreeDataPart::getColumnUncompressedSize(const String & name) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSize(const String & name, const IDataType & type) const
 {
-    const Checksum * checksum = tryGetBinChecksum(name);
-    return checksum ? checksum->uncompressed_size : 0;
+    return getColumnSizeImpl(name, type, nullptr);
 }
 
-
-size_t MergeTreeDataPart::getColumnMrkSize(const String & name) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
 {
-    const Checksum * checksum = tryGetMrkChecksum(name);
-    return checksum ? checksum->file_size : 0;
+    ColumnSize totals;
+    std::unordered_set<String> processed_substreams;
+    for (const NameAndTypePair & column : columns)
+    {
+        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
+        totals.add(size);
+    }
+    return totals;
 }
 
 
@@ -418,16 +187,16 @@ size_t MergeTreeDataPart::getColumnMrkSize(const String & name) const
   */
 String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
-    const auto & columns = storage.getColumnsList();
+    const auto & columns = storage.getColumns().getAllPhysical();
     const std::string * minimum_size_column = nullptr;
-    size_t minimum_size = std::numeric_limits<size_t>::max();
+    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
     for (const auto & column : columns)
     {
         if (!hasColumnFiles(column.name))
             continue;
 
-        const auto size = getColumnCompressedSize(column.name);
+        const auto size = getColumnSize(column.name, *column.type).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -507,16 +276,16 @@ MergeTreeDataPart::~MergeTreeDataPart()
     }
 }
 
-size_t MergeTreeDataPart::calculateTotalSize(const String & from)
+UInt64 MergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
 {
     Poco::File cur(from);
     if (cur.isFile())
         return cur.getSize();
     std::vector<std::string> files;
     cur.list(files);
-    size_t res = 0;
+    UInt64 res = 0;
     for (const auto & file : files)
-        res += calculateTotalSize(from + file);
+        res += calculateTotalSizeOnDisk(from + file);
     return res;
 }
 
@@ -676,7 +445,7 @@ void MergeTreeDataPart::loadIndex()
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 
-    size_in_bytes = calculateTotalSize(getFullPath());
+    bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
 }
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
@@ -740,20 +509,21 @@ void MergeTreeDataPart::loadRowsCount()
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
-            const auto checksum = tryGetBinChecksum(column.name);
+            if (!column_col->isFixedAndContiguous())
+                continue;
 
-            /// Should be fixed non-nullable column
-            if (!checksum || !column_col->isFixedAndContiguous())
+            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
+            if (!column_size)
                 continue;
 
             size_t sizeof_field = column_col->sizeOfValueIfFixed();
-            rows_count = checksum->uncompressed_size / sizeof_field;
+            rows_count = column_size / sizeof_field;
 
-            if (checksum->uncompressed_size % sizeof_field != 0)
+            if (column_size % sizeof_field != 0)
             {
                 throw Exception(
-                    "Column " + column.name + " has indivisible uncompressed size " + toString(checksum->uncompressed_size)
-                    + ", sizeof " + toString(sizeof_field),
+                    "Uncompressed size of column " + column.name + "(" + toString(column_size)
+                    + ") is not divisible by the size of value (" + toString(sizeof_field) + ")",
                     ErrorCodes::LOGICAL_ERROR);
             }
 
@@ -774,7 +544,7 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 {
     std::shared_lock<std::shared_mutex> part_lock(columns_lock);
 
-    for (const NameAndTypePair & name_type : storage.columns)
+    for (const NameAndTypePair & name_type : storage.getColumns().getAllPhysical())
     {
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {
@@ -794,7 +564,7 @@ void MergeTreeDataPart::loadColumns(bool require)
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
-        for (const NameAndTypePair & column : storage.getColumnsList())
+        for (const NameAndTypePair & column : storage.getColumns().getAllPhysical())
             if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
                 columns.push_back(column);
 
@@ -886,7 +656,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
         /// Check that all marks are nonempty and have the same size.
 
-        std::optional<size_t> marks_size;
+        std::optional<UInt64> marks_size;
         for (const NameAndTypePair & name_type : columns)
         {
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
@@ -896,7 +666,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
                 /// Missing file is Ok for case when new column was added.
                 if (file.exists())
                 {
-                    size_t file_size = file.getSize();
+                    UInt64 file_size = file.getSize();
 
                     if (!file_size)
                         throw Exception("Part " + path + " is broken: " + file.path() + " is empty.",
@@ -926,31 +696,19 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
 }
 
 
-size_t MergeTreeDataPart::getIndexSizeInBytes() const
+UInt64 MergeTreeDataPart::getIndexSizeInBytes() const
 {
-    size_t res = 0;
+    UInt64 res = 0;
     for (const ColumnPtr & column : index)
         res += column->byteSize();
     return res;
 }
 
-size_t MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
+UInt64 MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
-    size_t res = 0;
+    UInt64 res = 0;
     for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
-    return res;
-}
-
-size_t MergeTreeDataPart::getTotalMrkSizeInBytes() const
-{
-    size_t res = 0;
-    for (const NameAndTypePair & it : columns)
-    {
-        const Checksum * checksum = tryGetMrkChecksum(it.name);
-        if (checksum)
-            res += checksum->file_size;
-    }
     return res;
 }
 

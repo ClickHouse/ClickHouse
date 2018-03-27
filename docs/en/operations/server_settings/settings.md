@@ -67,7 +67,7 @@ ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes th
 
 The default database.
 
-Use a [ SHOW DATABASES](../query_language/queries.md#query_language_queries_show_databases) query to get a list of databases.
+Use a [ SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases) query to get a list of databases.
 
 **Example**
 
@@ -439,14 +439,14 @@ For more information, see the MergeTreeSettings.h header file.
 
 SSL client/server configuration.
 
-Support for SSL is provided by the `` libpoco`` library. The description of the interface is in the [ SSLManager.h file.](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Support for SSL is provided by the `` libpoco`` library. The description of the interface is in the [ SSLManager.h file.](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
 
 Keys for server/client settings:
 
 - privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 - certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `` privateKeyFile`` contains the certificate.
 - caConfig – The path to the file or directory that contains trusted root certificates.
-- verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Acceptable values: ``none``, ``relaxed``, ``strict``, ``once``.
+- verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Acceptable values: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `` true``, `` false``.  |
 - cipherList - Supported OpenSSL-ciphers. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
@@ -518,6 +518,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
+- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 **Example**
@@ -526,6 +527,7 @@ Use the following parameters to configure logging:
 <part_log>
     <database>system</database>
     <table>part_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </part_log>
 ```
@@ -560,6 +562,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
+- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -570,6 +573,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 <query_log>
     <database>system</database>
     <table>query_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
 ```
@@ -589,22 +593,6 @@ For more information, see the section "[Duplicated table engine](../../table_eng
 ```
 
 For the value of the `incl` attribute, see the section "[Configuration files](../configuration_files.md#configuration_files)".
-
-<a name="server_settings-resharding"></a>
-
-## resharding
-
-The ZooKeeper path to the task queue.
-
-For more information, see "[Resharding](../../table_engines/resharding.md#table_engines-resharding)".
-
-**Example**
-
-```xml
-<resharding>
-    <task_queue_path>/clickhouse/task_queue</task_queue_path>
-</resharding>
-```
 
 <a name="server_settings-timezone"></a>
 
@@ -702,4 +690,3 @@ For more information, see the section "[Replication](../../table_engines/replica
 ```xml
 <zookeeper incl="zookeeper-servers" optional="true" />
 ```
-
