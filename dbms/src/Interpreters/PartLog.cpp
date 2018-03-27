@@ -108,7 +108,7 @@ bool PartLog::addNewPartToTheLog(Context & context, const MergeTreeDataPart & pa
         elem.table_name = part.storage.getTableName();
         elem.part_name = part.name;
 
-        elem.bytes_compressed_on_disk = part.size_in_bytes;
+        elem.bytes_compressed_on_disk = part.bytes_on_disk;
         elem.rows = part.rows_count;
 
         elem.error = static_cast<UInt16>(execution_status.code);
