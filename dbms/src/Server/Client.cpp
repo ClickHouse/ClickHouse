@@ -33,6 +33,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
@@ -109,6 +110,7 @@ private:
     winsize terminal_size {};            /// Terminal size is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
+    String query_id;                     /// Current query_id.
     String query;                        /// Current query.
 
     String format;                       /// Query results output format.
@@ -166,6 +168,49 @@ private:
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
+
+
+    struct ConnectionParameters
+    {
+        String host;
+        UInt16 port;
+        String default_database;
+        String user;
+        String password;
+        Protocol::Encryption security;
+        Protocol::Compression compression;
+        ConnectionTimeouts timeouts;
+
+        ConnectionParameters() {}
+
+        ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
+        {
+            bool is_secure = config.getBool("secure", false);
+            security = is_secure
+                ? Protocol::Encryption::Enable
+                : Protocol::Encryption::Disable;
+
+            host = config.getString("host", "localhost");
+            port = config.getInt("port",
+                config.getInt(is_secure ? "tcp_secure_port" : "tcp_port",
+                    is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+
+            default_database = config.getString("database", "");
+            user = config.getString("user", "");
+            password = config.getString("password", "");
+
+            compression = config.getBool("compression", true)
+                ? Protocol::Compression::Enable
+                : Protocol::Compression::Disable;
+
+            timeouts = ConnectionTimeouts(
+                Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
+                Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
+                Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+        }
+    };
+
+    ConnectionParameters connection_parameters;
 
 
     void initialize(Poco::Util::Application & self)
@@ -309,6 +354,7 @@ private:
             echo_queries = config().getBool("echo", false);
         }
 
+        connection_parameters = ConnectionParameters(config());
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -340,45 +386,44 @@ private:
 
         Strings keys;
 
-        prompt_by_server_display_name = config().getString("prompt_by_server_display_name.default", "{display_name} :) ");
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
 
         config().keys("prompt_by_server_display_name", keys);
 
         for (const String & key : keys)
         {
-            if (key != "default" && server_display_name.find(key) != std::string::npos) 
+            if (key != "default" && server_display_name.find(key) != std::string::npos)
             {
-                prompt_by_server_display_name = config().getString("prompt_by_server_display_name." + key);
+                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
                 break;
             }
         }
 
-        std::map<String, String> terminalCharacters = {
-            { "\\e[",   "\e["  },
-            { "\\33[",  "\33[" },
-            { "\\033[", "\033["},
-            { "\\x1B[", "\x1B["},
-        };
-
-        for (const auto & [key, value]: terminalCharacters)
+        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
         {
-            boost::replace_all(prompt_by_server_display_name, key, value);
+            String unescaped_prompt_by_server_display_name;
+            ReadBufferFromString in(prompt_by_server_display_name);
+            readEscapedString(unescaped_prompt_by_server_display_name, in);
+            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
         }
 
-        std::map<String, String> environment = {
-            {"host",         config().getString("host", "localhost")},
-            {"port",         config().getString("port", "9000")},
-            {"user",         config().getString("user", "default")},
+        /// Prompt may contain the following substitutions in a form of {name}.
+        std::map<String, String> prompt_substitutions
+        {
+            {"host", connection_parameters.host},
+            {"port", toString(connection_parameters.port)},
+            {"user", connection_parameters.user},
             {"display_name", server_display_name},
         };
 
-        for (const auto & [key, value]: environment)
-        {
+        /// Quite suboptimal.
+        for (const auto & [key, value]: prompt_substitutions)
             boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-        }
 
         if (is_interactive)
         {
+            if (!query_id.empty())
+                throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
@@ -413,6 +458,7 @@ private:
         }
         else
         {
+            query_id = config().getString("query_id", "");
             nonInteractive();
 
             if (last_exception)
@@ -425,34 +471,23 @@ private:
 
     void connect()
     {
-        auto encryption = config().getBool("ssl", false)
-            ? Protocol::Encryption::Enable
-            : Protocol::Encryption::Disable;
-
-        String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
-        String default_database = config().getString("database", "");
-        String user = config().getString("user", "");
-        String password = config().getString("password", "");
-
-        auto compression = config().getBool("compression", true)
-            ? Protocol::Compression::Enable
-            : Protocol::Compression::Disable;
-
         if (is_interactive)
             std::cout << "Connecting to "
-                << (!default_database.empty() ? "database " + default_database + " at " : "")
-                << host << ":" << port
-                << (!user.empty() ? " as user " + user : "")
+                << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at " : "")
+                << connection_parameters.host << ":" << connection_parameters.port
+                << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "")
                 << "." << std::endl;
 
-        ConnectionTimeouts timeouts(
-            Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-
         connection = std::make_unique<Connection>(
-            host, port, default_database, user, password, timeouts, "client", compression, encryption);
+            connection_parameters.host,
+            connection_parameters.port,
+            connection_parameters.default_database,
+            connection_parameters.user,
+            connection_parameters.password,
+            connection_parameters.timeouts,
+            "client",
+            connection_parameters.compression,
+            connection_parameters.security);
 
         String server_name;
         UInt64 server_version_major = 0;
@@ -785,7 +820,7 @@ private:
     /// Process the query that doesn't require transfering data blocks to the server.
     void processOrdinaryQuery()
     {
-        connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
     }
@@ -803,7 +838,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1339,6 +1374,7 @@ public:
             ("ssl,s", "ssl")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
+            ("query_id", boost::program_options::value<std::string>(), "query_id")
             ("query,q", boost::program_options::value<std::string>(), "query")
             ("database,d", boost::program_options::value<std::string>(), "database")
             ("pager", boost::program_options::value<std::string>(), "pager")
@@ -1427,6 +1463,8 @@ public:
             config().setString("config-file", options["config-file"].as<std::string>());
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
+        if (options.count("query_id"))
+            config().setString("query_id", options["query_id"].as<std::string>());
         if (options.count("query"))
             config().setString("query", options["query"].as<std::string>());
         if (options.count("database"))

@@ -1,4 +1,5 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
@@ -35,8 +36,14 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
             auto query = materialized_view.getInnerQuery();
-            auto out = std::make_shared<PushingToViewsBlockOutputStream>(
+            BlockOutputStreamPtr out;
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
                 database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
+            /// Squashing is needed here because the materialized view query can generate a lot of blocks
+            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+            /// and two-level aggregation is triggered).
+            out = std::make_shared<SquashingBlockOutputStream>(
+                out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
             views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
         }
     }
