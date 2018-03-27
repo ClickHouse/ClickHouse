@@ -29,21 +29,30 @@ struct MergeTreeDataPart
 
     MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
 
-    const Checksum * tryGetChecksum(const String & name, const String & ext) const;
-    /// Returns checksum of column's binary file.
-    const Checksum * tryGetBinChecksum(const String & name) const;
-    /// Returns checksum of column's mrk file.
-    const Checksum * tryGetMrkChecksum(const String & name) const;
-
-    /// Returns the size of .bin file for column `name` if found, zero otherwise
-    UInt64 getColumnCompressedSize(const String & name) const;
-    UInt64 getColumnUncompressedSize(const String & name) const;
-    /// Returns the size of .mrk file for column `name` if found, zero otherwise
-    UInt64 getColumnMrkSize(const String & name) const;
-
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
+
+    struct ColumnSize
+    {
+        size_t marks = 0;
+        size_t data_compressed = 0;
+        size_t data_uncompressed = 0;
+
+        void add(const ColumnSize & other)
+        {
+            marks += other.marks;
+            data_compressed += other.data_compressed;
+            data_uncompressed += other.data_uncompressed;
+        }
+    };
+
+    /// NOTE: Returns zeros if column files are not found in checksums.
+    /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
+    ///   (either by locking columns_lock, or by locking table structure).
+    ColumnSize getColumnSize(const String & name, const IDataType & type) const;
+
+    ColumnSize getTotalColumnsSize() const;
 
     /// Returns full path to part dir
     String getFullPath() const;
@@ -68,8 +77,8 @@ struct MergeTreeDataPart
 
     size_t rows_count = 0;
     size_t marks_count = 0;
-    std::atomic<UInt64> size_in_bytes {0};  /// size in bytes, 0 - if not counted;
-                                            ///  is used from several threads without locks (it is changed with ALTER).
+    std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
+                                            /// Is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
@@ -208,7 +217,7 @@ struct MergeTreeDataPart
     ~MergeTreeDataPart();
 
     /// Calculate the total size of the entire directory with all the files
-    static UInt64 calculateTotalSize(const String & from);
+    static UInt64 calculateTotalSizeOnDisk(const String & from);
 
     void remove() const;
 
@@ -232,8 +241,6 @@ struct MergeTreeDataPart
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
-    /// Total size of *.mrk files
-    UInt64 getTotalMrkSizeInBytes() const;
 
 private:
     /// Reads columns names and types from columns.txt
@@ -252,6 +259,8 @@ private:
     void loadPartitionAndMinMaxIndex();
 
     void checkConsistency(bool require_part_metadata);
+
+    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
 };
 
 

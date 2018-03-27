@@ -39,7 +39,7 @@ Accepts an empty array and returns a one-element array that is equal to the defa
 Returns an array of numbers from 0 to N-1.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
-## array(x1, ...), оператор \[x1, ...\]
+## array(x1, ...), operator \[x1, ...\]
 
 Creates an array from the function arguments.
 The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn't clear which type of array to create. That is, you can't use this function to create an empty array (to do that, use the 'emptyArray\*' function described above).
@@ -62,6 +62,7 @@ arrayConcat(arrays)
 ```sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
+
 ```
 ┌─res───────────┐
 │ [1,2,3,4,5,6] │
@@ -202,6 +203,7 @@ arrayPopBack(array)
 ```sql
 SELECT arrayPopBack([1, 2, 3]) AS res
 ```
+
 ```
 ┌─res───┐
 │ [1,2] │
@@ -243,13 +245,14 @@ arrayPushBack(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about ClickHouse data types, read the section "[Data types](../data_types/index.md#data_types)".
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../data_types/index.md#data_types)".
 
 **Example**
 
 ```sql
 SELECT arrayPushBack(['a'], 'b') AS res
 ```
+
 ```
 ┌─res───────┐
 │ ['a','b'] │
@@ -267,7 +270,7 @@ arrayPushFront(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about ClickHouse data types, read the section "[Data types](../data_types/index.md#data_types)".
+- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about the types of data in ClickHouse, see "[Data types](../data_types/index.md#data_types)".
 
 **Example**
 
@@ -292,7 +295,7 @@ arraySlice(array, offset[, length])
 **Arguments**
 
 - `array` –  Array of data.
-- `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
+- `offset` – Offset from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
 - `length` - The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
 
 **Example**
@@ -300,6 +303,7 @@ arraySlice(array, offset[, length])
 ```sql
 SELECT arraySlice([1, 2, 3, 4, 5], 2, 3) AS res
 ```
+
 ```
 ┌─res─────┐
 │ [2,3,4] │
