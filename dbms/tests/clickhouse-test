@@ -81,9 +81,12 @@ def main(args):
     # TODO ! use clickhouse-extract-from-config here:
     if args.zookeeper is None:
         code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
-        if int(out) > 0:
-            args.zookeeper = True
-        else:
+        try:
+            if int(out) > 0:
+                args.zookeeper = True
+            else:
+                args.zookeeper = False
+        except ValueError:
             args.zookeeper = False
 
     if args.shard is None:
