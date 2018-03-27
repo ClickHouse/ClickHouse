@@ -333,6 +333,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         file_indices.clear();
         total_rows = 0;
         total_bytes = 0;
+        recovered = false;
 
         Poco::File{parent.current_batch_file_path}.setSize(0);
     }
@@ -381,21 +382,20 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         if (file_indices_to_skip.count(file_idx))
             continue;
 
-        ReadBufferFromFile in{file_path};
-        String insert_query;
-        readStringBinary(insert_query, in);
-
-        CompressedReadBuffer decompressing_in(in);
-        NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
-
         size_t total_rows = 0;
         size_t total_bytes = 0;
         Block sample_block;
-
-        block_in.readPrefix();
+        String insert_query;
         try
         {
-            /// Determine size of the current file and check if it is not broken.
+            /// Determine metadata of the current file and check if it is not broken.
+            ReadBufferFromFile in{file_path};
+            readStringBinary(insert_query, in);
+
+            CompressedReadBuffer decompressing_in(in);
+            NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
+            block_in.readPrefix();
+
             while (Block block = block_in.read())
             {
                 total_rows += block.rows();
@@ -404,6 +404,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 if (!sample_block)
                     sample_block = block.cloneEmpty();
             }
+            block_in.readSuffix();
         }
         catch (const Exception & e)
         {
@@ -415,7 +416,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             else
                 throw;
         }
-        block_in.readSuffix();
 
         BatchHeader batch_header(std::move(insert_query), std::move(sample_block));
         Batch & batch = header_to_batch.try_emplace(batch_header, *this).first->second;
