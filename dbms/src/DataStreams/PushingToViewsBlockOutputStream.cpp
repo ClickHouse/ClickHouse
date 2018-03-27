@@ -74,7 +74,8 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
             InterpreterSelectQuery select(view.query, *views_context, {}, QueryProcessingStage::Complete, 0, from);
             BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-            copyData(*data, *view.out);
+            while (Block result_block = data->read())
+                view.out->write(result_block);
         }
         catch (Exception & ex)
         {
