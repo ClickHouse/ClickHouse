@@ -127,11 +127,6 @@ protected:
     void threadFunction();
     void flush();
 
-    /** Creates new table if it does not exist.
-      * Renames old table if its structure is not suitable.
-      * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
-      */
-    bool is_prepared = false;
     void prepareTable();
 };
 
@@ -233,8 +228,7 @@ void SystemLog<LogElement>::flush()
     {
         LOG_TRACE(log, "Flushing system log");
 
-        if (!is_prepared)    /// BTW, flush method is called from single thread.
-            prepareTable();
+        prepareTable();
 
         Block block = LogElement::createBlock();
         for (const LogElement & elem : data)
@@ -267,7 +261,10 @@ void SystemLog<LogElement>::flush()
     }
 }
 
-
+/** Creates new table if it does not exist.
+ * Renames old table if its structure is not suitable.
+ * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
+ */
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
@@ -341,7 +338,6 @@ void SystemLog<LogElement>::prepareTable()
         table = context.getTable(database_name, table_name);
     }
 
-    is_prepared = true;
 }
 
 
