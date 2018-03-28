@@ -32,7 +32,7 @@ if [ "$1" = configure ]; then
                 --shell /bin/false clickhouse > /dev/null
         else
             adduser --system --disabled-login --no-create-home --home /nonexistent \
-                --shell /bin/false --group --gecos "Clickhouse server" clickhouse > /dev/null
+                --shell /bin/false --group --gecos "ClickHouse server" clickhouse > /dev/null
         fi
     fi
 
