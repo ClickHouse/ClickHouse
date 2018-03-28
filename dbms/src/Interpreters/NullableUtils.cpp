@@ -31,7 +31,7 @@ void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & nul
                 }
                 else
                 {
-                    MutableColumnPtr mutable_null_map_holder = null_map_holder->mutate();
+                    MutableColumnPtr mutable_null_map_holder = (*std::move(null_map_holder)).mutate();
 
                     PaddedPODArray<UInt8> & mutable_null_map = static_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
                     const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMapData();

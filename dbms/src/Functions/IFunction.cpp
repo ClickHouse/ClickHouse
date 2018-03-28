@@ -63,7 +63,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
             }
             else
             {
-                MutableColumnPtr mutable_result_null_map_column = result_null_map_column->mutate();
+                MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
 
                 NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
