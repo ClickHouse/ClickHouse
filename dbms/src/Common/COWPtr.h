@@ -68,10 +68,9 @@
   * of this shared state.
   *
   * Caveats:
-  * - after a call to 'mutate' method, you can still have a reference to immutable ptr somewhere
-  *   and it can still become shared. Also it would be better to make 'mutate' method rvalue-qualified.
+  * - after a call to 'mutate' method, you can still have a reference to immutable ptr somewhere.
   * - as 'mutable_ptr' should be unique, it's refcount is redundant - probably it would be better
-  *   to use std::unique_ptr for it, but see above.
+  *   to use std::unique_ptr for it somehow.
   */
 template <typename Derived>
 class COWPtr : public boost::intrusive_ref_counter<Derived>
