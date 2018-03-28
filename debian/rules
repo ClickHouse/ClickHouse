@@ -100,6 +100,9 @@ override_dh_install:
 
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 
+override_dh_auto_install:
+	env DESTDIR=$(DESTDIR) ninja -C $(BUILDDIR) install
+
 override_dh_shlibdeps:
 	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.
 
