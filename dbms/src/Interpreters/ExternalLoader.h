@@ -104,6 +104,7 @@ public:
     void reload(const std::string & name);
 
     LoadablePtr getLoadable(const std::string & name) const;
+    LoadablePtr tryGetLoadable(const std::string & name) const;
 
 protected:
     virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
@@ -172,6 +173,8 @@ private:
     void reloadAndUpdate(bool throw_on_error = false);
 
     void reloadPeriodically();
+
+    LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
 };
 
 }

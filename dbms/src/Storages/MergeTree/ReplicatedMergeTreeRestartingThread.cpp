@@ -94,16 +94,22 @@ void ReplicatedMergeTreeRestartingThread::run()
                         /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                         tryLogCurrentException(__PRETTY_FUNCTION__);
 
+                        if (first_time)
+                            storage.startup_event.set();
                         wakeup_event.tryWait(retry_period_ms);
                         continue;
                     }
 
                     if (!need_stop && !tryStartup())
                     {
+                        if (first_time)
+                            storage.startup_event.set();
                         wakeup_event.tryWait(retry_period_ms);
                         continue;
                     }
 
+                    if (first_time)
+                        storage.startup_event.set();
                     break;
                 }
 
@@ -150,6 +156,7 @@ void ReplicatedMergeTreeRestartingThread::run()
         }
         catch (...)
         {
+            storage.startup_event.set();
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
