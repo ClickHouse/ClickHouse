@@ -206,9 +206,9 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
     void insertDefault() override
     {
@@ -239,7 +239,7 @@ public:
     /// Sorting with respect of collation.
     void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
-    MutableColumnPtr replicate(const Offsets & replicate_offsets) const override;
+    ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {

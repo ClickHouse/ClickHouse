@@ -52,9 +52,15 @@ public:
         const Context & context,
         const String & table_name) override;
 
-    ASTPtr getCreateQuery(
+    ASTPtr getCreateTableQuery(
         const Context & context,
         const String & table_name) const override;
+
+    ASTPtr tryGetCreateTableQuery(
+        const Context & context,
+        const String & table_name) const override;
+
+    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     String getDataPath() const override;
     String getMetadataPath() const override;
@@ -65,6 +71,8 @@ public:
 
 private:
     void startupTables(ThreadPool * thread_pool);
+
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 
 }

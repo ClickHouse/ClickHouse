@@ -57,7 +57,8 @@ FilterDescription::FilterDescription(const IColumn & column)
 
     if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(&column))
     {
-        MutableColumnPtr mutable_holder = nullable_column->getNestedColumn().mutate();
+        ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
+        MutableColumnPtr mutable_holder = (*std::move(nested_column)).mutate();
 
         ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
         if (!concrete_column)
