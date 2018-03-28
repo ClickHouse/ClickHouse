@@ -9,7 +9,8 @@ export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
 
 # because copy_headers.sh have hardcoded path to build/include_directories.txt
 BUILDDIR = build
-DESTDIR = debian/tmp
+CURDIR = $(shell pwd)
+DESTDIR = $(CURDIR)/debian/tmp
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
@@ -41,6 +42,8 @@ endif
 endif
 
 CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
+CMAKE_FLAGS += -GNinja
+export MAKE=ninja
 
 ifndef DH_VERBOSE
     CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
@@ -92,11 +95,14 @@ override_dh_install:
 	CLANG=$(DESTDIR)/usr/bin/clickhouse-clang ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
 	# fake metrika files when private dir is empty
-	mkdir -p debian/tmp/etc/clickhouse-server/metrika
-	touch debian/tmp/etc/clickhouse-server/metrika/config.xml
-	touch debian/tmp/etc/clickhouse-server/metrika/users.xml
+	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika
+	touch $(DESTDIR)/etc/clickhouse-server/metrika/config.xml
+	touch $(DESTDIR)/etc/clickhouse-server/metrika/users.xml
 
 	dh_install --list-missing --sourcedir=$(DESTDIR)
+
+override_dh_auto_install:
+	env DESTDIR=$(DESTDIR) ninja -C $(BUILDDIR) install
 
 override_dh_shlibdeps:
 	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.
