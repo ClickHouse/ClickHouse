@@ -41,6 +41,8 @@ endif
 endif
 
 CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
+CMAKE_FLAGS += -GNinja
+export MAKE=ninja
 
 ifndef DH_VERBOSE
     CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
