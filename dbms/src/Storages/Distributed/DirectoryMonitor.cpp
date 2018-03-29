@@ -53,10 +53,10 @@ namespace
             const char * address_end = address_begin + address.size();
 
             Protocol::Secure secure = Protocol::Secure::Disable;
-            std::string secure_tag = "+secure";
-            if (address.rfind(secure_tag) != std::string::npos)
+            const char * secure_tag = "+secure";
+            if (endsWith(address, secure_tag))
             {
-                address_end -= secure_tag.size();
+                address_end -= strlen(secure_tag);
                 secure = Protocol::Secure::Enable;
             }
 
@@ -169,8 +169,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             user, password, timeouts,
             storage.getName() + '_' + name,
             Protocol::Compression::Enable,
-            secure
-            );
+            secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
