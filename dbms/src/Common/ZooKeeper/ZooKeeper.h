@@ -8,10 +8,10 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <unistd.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <port/unistd.h>
 
 
 namespace ProfileEvents

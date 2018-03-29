@@ -233,8 +233,7 @@ void SystemLog<LogElement>::flush()
     {
         LOG_TRACE(log, "Flushing system log");
 
-        if (!is_prepared)    /// BTW, flush method is called from single thread.
-            prepareTable();
+        prepareTable();
 
         Block block = LogElement::createBlock();
         for (const LogElement & elem : data)
@@ -311,7 +310,7 @@ void SystemLog<LogElement>::prepareTable()
             /// The required table will be created.
             table = nullptr;
         }
-        else
+        else if (!is_prepared)
             LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
     }
 
