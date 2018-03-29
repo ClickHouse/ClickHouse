@@ -29,6 +29,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/formatReadable.h>
+#include <Common/DNSCache.h>
 #include <Common/escapeForFileName.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
@@ -64,6 +65,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Server/StatusFile.h>
+#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB
@@ -610,7 +612,7 @@ static ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, co
     res.is_remote = 1;
     for (auto & replica : replicas)
     {
-        if (isLocalAddress(replica.resolved_address))
+        if (isLocalAddress(DNSCache::instance().resolveHost(replica.host_name)))
         {
             res.is_remote = 0;
             break;

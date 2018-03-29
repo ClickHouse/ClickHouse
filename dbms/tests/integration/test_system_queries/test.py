@@ -75,22 +75,6 @@ def test_DROP_DNS_CACHE(started_cluster):
     assert TSV(instance.query("SELECT DISTINCT host_name, host_address FROM system.clusters WHERE cluster='lost_host_cluster'")) == TSV("lost_host\t127.0.0.1\n")
 
 
-def test_automatic_DROP_DNS_CACHE(started_cluster):
-    instance = cluster.instances['ch1']
-
-    instance.exec_in_container(['bash', '-c', 'echo 127.255.255.255 lost_host > /etc/hosts'], privileged=True, user='root')
-    instance.query("SYSTEM DROP DNS CACHE")
-
-    for i in xrange(5):
-        with pytest.raises(QueryRuntimeException):
-            instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
-
-    time.sleep(20)
-
-    # DNS cache should be automatically updated after this delay
-    instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
-
-
 def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
 
     macros = "<yandex><macros><mac>ro</mac></macros></yandex>"

@@ -11,6 +11,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/DNSCache.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -325,8 +326,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
-    /// Initialize a watcher updating DNS cache in case of network errors
-    DNSCacheUpdater dns_cache_updater(*global_context);
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSCache::instance().setDisableFlag();
+    }
+    else
+    {
+        /// Initialize a watcher updating DNS cache in case of network errors
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+    }
 
     {
         Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
