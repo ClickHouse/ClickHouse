@@ -107,7 +107,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
-    else if (typeid_cast<ASTShowCreateQuery *>(query.get()))
+    else if (typeid_cast<ASTShowCreateTableQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (typeid_cast<ASTShowCreateDatabaseQuery *>(query.get()))
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }

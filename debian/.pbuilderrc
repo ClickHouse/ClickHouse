@@ -188,7 +188,7 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
 [ -n "$CCACHEDIR" ] && sudo mkdir -p $CCACHEDIR
-[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR
+[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR || true
 # chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
 

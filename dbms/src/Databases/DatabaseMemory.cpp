@@ -65,11 +65,17 @@ time_t DatabaseMemory::getTableMetadataModificationTime(
     return static_cast<time_t>(0);
 }
 
-ASTPtr DatabaseMemory::getCreateQuery(
+ASTPtr DatabaseMemory::getCreateTableQuery(
     const Context &,
     const String &) const
 {
     throw Exception("There is no CREATE TABLE query for DatabaseMemory tables", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+}
+
+ASTPtr DatabaseMemory::getCreateDatabaseQuery(
+    const Context &) const
+{
+    throw Exception("There is no CREATE DATABASE query for DatabaseMemory", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 }
 
 void DatabaseMemory::drop()
