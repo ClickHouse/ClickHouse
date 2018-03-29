@@ -936,7 +936,7 @@ public:
             }
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the block.
-            auto replicated_column_function_ptr = column_function->replicate(column_first_array->getOffsets());
+            auto replicated_column_function_ptr = (*column_function->replicate(column_first_array->getOffsets())).mutate();
             auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
             replicated_column_function->appendArguments(arrays);
 

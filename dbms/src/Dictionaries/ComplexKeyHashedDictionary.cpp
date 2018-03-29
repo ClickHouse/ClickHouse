@@ -289,7 +289,7 @@ void ComplexKeyHashedDictionary::updateData()
             for (const auto attribute_idx : ext::range(0, keys_size + attributes_size))
             {
                 const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
-                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->mutate();
+                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }

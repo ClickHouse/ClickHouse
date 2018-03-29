@@ -13,7 +13,11 @@
 /* #undef ENABLE_SIZED_DELETE */
 
 /* Define to 1 if compiler supports __builtin_expect */
+#if _MSC_VER
+#define HAVE_BUILTIN_EXPECT 0
+#else
 #define HAVE_BUILTIN_EXPECT 1
+#endif
 
 /* Define to 1 if compiler supports __builtin_stack_pointer */
 /* #undef HAVE_BUILTIN_STACK_POINTER */
