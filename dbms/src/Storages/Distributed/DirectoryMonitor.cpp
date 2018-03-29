@@ -54,7 +54,8 @@ namespace
 
             Protocol::Secure secure = Protocol::Secure::Disable;
             std::string secure_tag = "+secure";
-            if (address.rfind(secure_tag) != std::string::npos) {
+            if (address.rfind(secure_tag) != std::string::npos)
+            {
                 address_end -= secure_tag.size();
                 secure = Protocol::Secure::Enable;
             }
