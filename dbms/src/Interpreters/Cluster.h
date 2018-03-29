@@ -48,7 +48,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database> if needed -->
+        *         <!-- <user>, <password>, <default_database>. <secure> if needed -->
         *    </replica>
         * </shard>
         */
@@ -60,6 +60,8 @@ public:
         String default_database;    /// this database is selected when no database is specified for Distributed table
         UInt32 replica_num;
         bool is_local;
+        Protocol::Compression compression = Protocol::Compression::Enable;
+        Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);

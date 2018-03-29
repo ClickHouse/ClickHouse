@@ -62,7 +62,7 @@ void SquashingTransform::append(Block && block)
 
     for (size_t i = 0; i < columns; ++i)
     {
-        MutableColumnPtr mutable_column = accumulated_block.getByPosition(i).column->mutate();
+        MutableColumnPtr mutable_column = (*std::move(accumulated_block.getByPosition(i).column)).mutate();
         mutable_column->insertRangeFrom(*block.getByPosition(i).column, 0, rows);
         accumulated_block.getByPosition(i).column = std::move(mutable_column);
     }

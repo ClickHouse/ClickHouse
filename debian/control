@@ -4,6 +4,7 @@ Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake3 | cmake,
+               ninja-build,
                gcc-7, g++-7,
                libc6-dev,
                libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,

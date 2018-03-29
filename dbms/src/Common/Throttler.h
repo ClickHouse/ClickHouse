@@ -27,6 +27,9 @@ namespace ErrorCodes
 class Throttler
 {
 public:
+    Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent = nullptr)
+            : max_speed(max_speed_), limit_exceeded_exception_message(""), parent(parent) {}
+
     Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
               const std::shared_ptr<Throttler> & parent = nullptr)
         : max_speed(max_speed_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), parent(parent) {}
@@ -74,6 +77,12 @@ public:
 
         if (parent)
             parent->add(amount);
+    }
+
+    /// Not thread safe
+    void setParent(const std::shared_ptr<Throttler> & parent_)
+    {
+        parent = parent_;
     }
 
     void reset()

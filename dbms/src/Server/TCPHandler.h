@@ -11,6 +11,7 @@
 #include <DataStreams/BlockIO.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
 
@@ -58,6 +59,9 @@ struct QueryState
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
+
+    /// Timeouts setter for current query
+    std::unique_ptr<TimeoutSetter> timeout_setter;
 
 
     void reset()

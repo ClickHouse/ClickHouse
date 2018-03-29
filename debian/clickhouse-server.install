@@ -2,6 +2,7 @@ usr/bin/clickhouse-server
 usr/bin/clickhouse-clang
 usr/bin/clickhouse-lld
 usr/bin/clickhouse-copier
+usr/bin/clickhouse-report
 etc/clickhouse-server/config.xml
 etc/clickhouse-server/users.xml
 etc/systemd/system/clickhouse-server.service
