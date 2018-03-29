@@ -79,6 +79,9 @@ public:
             NullMap,
 
             TupleElement,
+
+            DictionaryElements,
+            DictionaryIndexes,
         };
         Type type;
 

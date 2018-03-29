@@ -1,3 +1,4 @@
+#pragma once
 #include <Columns/IColumn.h>
 
 namespace DB
@@ -8,7 +9,7 @@ class IColumnUnique : public IColumn
 public:
     /// Column always contains Null if it's Nullable and empty string if it's String or Nullable(String).
     /// So, size may be greater than the number of inserted unique values.
-    virtual ColumnPtr getNestedColumn() const = 0;
+    virtual const ColumnPtr & getNestedColumn() const = 0;
     size_t size() const override { return getNestedColumn()->size(); }
 
     /// Appends new value at the end of column (column's size is increased by 1).
@@ -39,17 +40,17 @@ public:
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
 
-    void insert(const Field & x) override
+    void insert(const Field &) override
     {
         throw Exception("Method insert is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
+    void insertRangeFrom(const IColumn &, size_t, size_t) override
     {
         throw Exception("Method insertRangeFrom is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void insertData(const char * pos, size_t length) override
+    void insertData(const char *, size_t) override
     {
         throw Exception("Method insertData is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -59,14 +60,19 @@ public:
         throw Exception("Method insertDefault is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void popBack() override
+    void popBack(size_t) override
     {
         throw Exception("Method popBack is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void gather(ColumnGathererStream & gatherer_stream) override
+    void gather(ColumnGathererStream &) override
     {
         throw Exception("Method gather is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    const char * deserializeAndInsertFromArena(const char *) override
+    {
+        throw Exception("Method deserializeAndInsertFromArena is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

@@ -1876,5 +1876,9 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionRunningDifference>();
     factory.registerFunction<FunctionRunningIncome>();
     factory.registerFunction<FunctionFinalizeAggregation>();
+
+    factory.registerFunction<FunctionMakeDictionary>();
+    factory.registerFunction<FunctionDictionaryIndexes>();
+    factory.registerFunction<FunctionDictionaryValues>();
 }
 }

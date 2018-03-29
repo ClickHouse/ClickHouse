@@ -6,6 +6,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Columns/ColumnFunction.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 namespace DB
 {
@@ -35,6 +37,99 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
+class FunctionMakeDictionary: public IFunction
+{
+public:
+    static constexpr auto name = "makeDictionary";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMakeDictionary>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return std::make_shared<DataTypeWithDictionary>(arguments[0], std::make_shared<DataTypeUInt16>());
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+        auto column = res.type->createColumn();
+        column->insertRangeFrom(*arg.column, 0, arg.column->size());
+        res.column = std::move(column);
+    }
+};
+
+class FunctionDictionaryIndexes: public IFunction
+{
+public:
+    static constexpr auto name = "dictionaryIndexes";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDictionaryIndexes>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
+        if (!type)
+            throw Exception("First first argument of function dictionaryIndexes must be ColumnWithDictionary, but got"
+                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return type->getIndexesType();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+        res.column = typeid_cast<const ColumnWithDictionary *>(arg.column.get())->getIndexesPtr();
+    }
+};
+
+class FunctionDictionaryValues: public IFunction
+{
+public:
+    static constexpr auto name = "dictionaryValues";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDictionaryValues>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
+        if (!type)
+            throw Exception("First first argument of function dictionaryValues must be ColumnWithDictionary, but got"
+                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return type->getDictionaryType();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+        const auto * column_with_dictionary = typeid_cast<const ColumnWithDictionary *>(arg.column.get());
+        res.column = column_with_dictionary->getUnique()->getNestedColumn()->cloneResized(arg.column->size());
+    }
+};
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
 class FunctionExpression : public IFunctionBase, public IPreparedFunction,

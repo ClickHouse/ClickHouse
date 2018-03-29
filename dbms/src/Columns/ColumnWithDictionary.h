@@ -1,3 +1,4 @@
+#pragma once
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
 
@@ -11,8 +12,11 @@ namespace ErrorCodes
 
 class ColumnWithDictionary final : public COWPtrHelper<IColumn, ColumnWithDictionary>
 {
-    ColumnWithDictionary(const ColumnPtr & column_unique, const ColumnPtr & indexes);
+    friend class COWPtrHelper<IColumn, ColumnWithDictionary>;
+
+    ColumnWithDictionary(MutableColumnPtr && column_unique, MutableColumnPtr && indexes);
     ColumnWithDictionary(const ColumnWithDictionary & other);
+
 public:
     std::string getName() const override { return "ColumnWithDictionary"; }
     const char * getFamilyName() const override { return "ColumnWithDictionary"; }
@@ -20,7 +24,8 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override
     {
-        return ColumnWithDictionary::create(column_unique, indexes->cloneResized(size));
+        auto unique_ptr = column_unique;
+        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->cloneResized(size));
     }
 
     size_t size() const override { return indexes->size(); }
@@ -43,33 +48,34 @@ public:
     bool isNullAt(size_t n) const override { return column_unique->isNullAt(indexes->getUInt(n)); }
     MutableColumnPtr cut(size_t start, size_t length) const override
     {
-        return ColumnWithDictionary::create(column_unique, indexes->cut(start, length));
+        auto unique_ptr = column_unique;
+        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->cut(start, length));
     }
 
-    void insert(const Field & x) override { indexes->insert(Field(UInt64(getUnique()->uniqueInsert(x)))); }
-    void insertFrom(const IColumn & src, size_t n) override { indexes->insert(getUnique()->uniqueInsertFrom(src, n)); }
+    void insert(const Field & x) override { getIndexes()->insert(Field(UInt64(getUnique()->uniqueInsert(x)))); }
+    void insertFrom(const IColumn & src, size_t n) override { getIndexes()->insert(getUnique()->uniqueInsertFrom(src, n)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
     {
         auto inserted_indexes = getUnique()->uniqueInsertRangeFrom(src, start, length);
-        indexes->insertRangeFrom(*inserted_indexes, 0, length);
+        getIndexes()->insertRangeFrom(*inserted_indexes, 0, length);
     }
 
     void insertData(const char * pos, size_t length) override
     {
-        indexes->insert(Field(UInt64(getUnique()->uniqueInsertData(pos, length))));
+        getIndexes()->insert(Field(UInt64(getUnique()->uniqueInsertData(pos, length))));
     }
 
     void insertDataWithTerminatingZero(const char * pos, size_t length) override
     {
-        indexes->insert(Field(UInt64(getUnique()->uniqueInsertDataWithTerminatingZero(pos, length))));
+        getIndexes()->insert(Field(UInt64(getUnique()->uniqueInsertDataWithTerminatingZero(pos, length))));
     }
 
     void insertDefault() override
     {
-        indexes->insert(getUnique()->getDefaultValueIndex());
+        getIndexes()->insert(getUnique()->getDefaultValueIndex());
     }
 
-    void popBack(size_t n) override { indexes->popBack(n); }
+    void popBack(size_t n) override { getIndexes()->popBack(n); }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
     {
@@ -79,7 +85,7 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
         const char * new_pos;
-        indexes->insert(getUnique()->uniqueDeserializeAndInsertFromArena(pos, new_pos));
+        getIndexes()->insert(getUnique()->uniqueDeserializeAndInsertFromArena(pos, new_pos));
         return new_pos;
     }
 
@@ -90,12 +96,14 @@ public:
 
     MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return ColumnWithDictionary::create(column_unique, indexes->filter(filt, result_size_hint));
+        auto unique_ptr = column_unique;
+        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->filter(filt, result_size_hint));
     }
 
     MutableColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return ColumnWithDictionary::create(column_unique, indexes->permute(perm, limit));
+        auto unique_ptr = column_unique;
+        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->permute(perm, limit));
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
@@ -140,14 +148,18 @@ public:
 
     MutableColumnPtr replicate(const Offsets & offsets) const override
     {
-        return ColumnWithDictionary::create(column_unique, indexes->replicate(offsets));
+        auto unique_ptr = column_unique;
+        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->replicate(offsets));
     }
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         auto columns = indexes->scatter(num_columns, selector);
         for (auto & column : columns)
-            column = ColumnWithDictionary::create(column_unique, column);
+        {
+            auto unique_ptr = column_unique;
+            column = ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), std::move(column));
+        }
 
         return columns;
     }
@@ -155,7 +167,7 @@ public:
     void gather(ColumnGathererStream & gatherer_stream) override ;
     void getExtremes(Field & min, Field & max) const override { return column_unique->getExtremes(min, max); }
 
-    void reserve(size_t n) override { indexes->reserve(n); }
+    void reserve(size_t n) override { getIndexes()->reserve(n); }
 
     size_t byteSize() const override { return indexes->byteSize() + column_unique->byteSize(); }
     size_t allocatedBytes() const override { return indexes->allocatedBytes() + column_unique->allocatedBytes(); }
@@ -171,12 +183,18 @@ public:
     size_t sizeOfValueIfFixed() const override { return column_unique->sizeOfValueIfFixed(); }
     bool isNumeric() const override { return column_unique->isNumeric(); }
 
+    IColumnUnique * getUnique() { return static_cast<IColumnUnique *>(column_unique->assumeMutable().get()); }
+    const IColumnUnique * getUnique() const { return static_cast<const IColumnUnique *>(column_unique->assumeMutable().get()); }
+    const ColumnPtr & getUniquePtr() const { return column_unique; }
+
+    IColumn * getIndexes() { return indexes->assumeMutable().get(); }
+    const IColumn * getIndexes() const { return indexes.get(); }
+    const ColumnPtr & getIndexesPtr() const { return indexes; }
+
 private:
     ColumnPtr column_unique;
     ColumnPtr indexes;
 
-    IColumnUnique * getUnique() { return static_cast<IColumnUnique *>(column_unique->assumeMutable().get()); }
-    const IColumnUnique * getUnique() const { return static_cast<const IColumnUnique *>(column_unique->assumeMutable().get()); }
 };
 
 

@@ -13,7 +13,7 @@ class DataTypeNullable final : public IDataType
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeNullable(const DataTypePtr & nested_data_type_);
+    explicit DataTypeNullable(const DataTypePtr & nested_data_type_);
     std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
 
