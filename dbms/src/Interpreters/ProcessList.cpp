@@ -101,10 +101,17 @@ ProcessList::EntryPtr ProcessList::insert(
             user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
         }
 
-        if (settings.max_network_bandwidth_for_user && !user_process_list.user_throttler)
+        if (!total_network_throttler && settings.max_network_bandwidth_for_all_users)
         {
-            user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, 0,
-                "Network bandwidth limit for a user exceeded.");
+            total_network_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_all_users);
+        }
+
+        if (!user_process_list.user_throttler)
+        {
+            if (settings.max_network_bandwidth_for_user)
+                user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, total_network_throttler);
+            else if (settings.max_network_bandwidth_for_all_users)
+                user_process_list.user_throttler = total_network_throttler;
         }
 
         res->get().user_process_list = &user_process_list;
@@ -173,6 +180,7 @@ ProcessListEntry::~ProcessListEntry()
         /// Reset MemoryTracker, similarly (see above).
         parent.total_memory_tracker.logPeakMemoryUsage();
         parent.total_memory_tracker.reset();
+        parent.total_network_throttler.reset();
     }
 }
 
