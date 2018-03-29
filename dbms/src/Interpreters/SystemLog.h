@@ -308,8 +308,6 @@ void SystemLog<LogElement>::prepareTable()
             /// The required table will be created.
             table = nullptr;
         }
-        else
-            LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
     }
 
     if (!table)
