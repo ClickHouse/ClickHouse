@@ -89,7 +89,13 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
-    void insert(const Field & x) override
+/// Suppress gcc7 warnings: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
+        void insert(const Field & x) override
     {
         const String & s = DB::get<const String &>(x);
         const size_t old_size = chars.size();
@@ -101,7 +107,11 @@ public:
         offsets.push_back(new_size);
     }
 
-    void insertFrom(const IColumn & src_, size_t n) override
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+
+        void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = static_cast<const ColumnString &>(src_);
 
