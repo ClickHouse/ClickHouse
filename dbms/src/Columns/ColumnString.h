@@ -95,7 +95,7 @@ public:
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
-        void insert(const Field & x) override
+    void insert(const Field & x) override
     {
         const String & s = DB::get<const String &>(x);
         const size_t old_size = chars.size();
