@@ -3,6 +3,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <memory>
 #include <ext/singleton.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -20,7 +21,12 @@ public:
     Poco::Net::IPAddress resolveHost(const std::string & host);
 
     /// Accepts host names like 'example.com:port' or '127.0.0.1:port' or '[::1]:port' and resolve its IP and port
-    Poco::Net::SocketAddress resolveHostAndPort(const std::string & host_and_port);
+    Poco::Net::SocketAddress resolveAddress(const std::string & host_and_port);
+
+    Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
+
+    /// Disables caching
+    void setDisableFlag(bool is_disabled = true);
 
     /// Drops all caches
     void drop();

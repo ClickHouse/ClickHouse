@@ -94,7 +94,7 @@ struct HostID
     {
         try
         {
-            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port), clickhouse_port);
+            return DB::isLocalAddress(DNSCache::instance().resolveAddress(host_name, port), clickhouse_port);
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -481,7 +481,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.resolved_address, context.getTCPPort()))
+            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort()))
             {
                 if (found_via_resolving)
                 {
@@ -651,7 +651,7 @@ void DDLWorker::processTaskAlter(
         /// FIXME: this replica_name could be changed after replica restart
         Strings replica_names;
         for (const Cluster::Address & address : task.cluster->getShardsAddresses().at(task.host_shard_num))
-            replica_names.emplace_back(address.resolved_address.host().toString());
+            replica_names.emplace_back(address.getResolvedAddress().host().toString());
         std::sort(replica_names.begin(), replica_names.end());
 
         String shard_node_name;

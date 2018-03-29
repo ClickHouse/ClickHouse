@@ -29,7 +29,7 @@ namespace
 /// Default shard weight.
 static constexpr UInt32 default_weight = 1;
 
-inline bool isLocal(const Cluster::Address & address, UInt16 clickhouse_port)
+inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
 {
     ///    If there is replica, for which:
     /// - its port is the same that the server is listening;
@@ -41,7 +41,7 @@ inline bool isLocal(const Cluster::Address & address, UInt16 clickhouse_port)
     /// Also, replica is considered non-local, if it has default database set
     ///  (only reason is to avoid query rewrite).
 
-    return address.default_database.empty() && isLocalAddress(address.resolved_address, clickhouse_port);
+    return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
 }
 
 
@@ -56,15 +56,15 @@ Poco::Net::SocketAddress resolveSocketAddress(const String & host, UInt16 port)
 
 Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    UInt16 clickhouse_port = config.getInt("tcp_port", 0);
+    UInt16 clickhouse_port = static_cast<UInt16>(config.getInt("tcp_port", 0));
 
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
-    resolved_address = resolveSocketAddress(host_name, port);
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    is_local = isLocal(*this, clickhouse_port);
+    initially_resolved_address = resolveSocketAddress(host_name, port);
+    is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 }
@@ -74,11 +74,11 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     : user(user_), password(password_)
 {
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
-
-    resolved_address = resolveSocketAddress(parsed_host_port.first, parsed_host_port.second);
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
-    is_local = isLocal(*this, clickhouse_port);
+
+    initially_resolved_address = resolveSocketAddress(parsed_host_port.first, parsed_host_port.second);
+    is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
 }
 
 
@@ -113,8 +113,8 @@ String Cluster::Address::toStringFull() const
     return
         escapeForFileName(user) +
         (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' +
-        escapeForFileName(resolved_address.host().toString()) + ':' +
-        std::to_string(resolved_address.port()) +
+        escapeForFileName(initially_resolved_address.host().toString()) + ':' +
+        std::to_string(initially_resolved_address.port()) +
         (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
         + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
@@ -220,7 +220,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             {
                 ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
                     settings.distributed_connections_pool_size,
-                    address.host_name, address.port, address.resolved_address,
+                    address.host_name, address.port,
                     address.default_database, address.user, address.password,
                     ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings).getSaturated(settings.max_execution_time),
                     "server", address.compression, address.secure);
@@ -303,7 +303,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 {
                     auto replica_pool = std::make_shared<ConnectionPool>(
                         settings.distributed_connections_pool_size,
-                        replica.host_name, replica.port, replica.resolved_address,
+                        replica.host_name, replica.port,
                         replica.default_database, replica.user, replica.password,
                         ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings.max_execution_time),
                         "server", replica.compression, replica.secure);
@@ -367,7 +367,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
             {
                 auto replica_pool = std::make_shared<ConnectionPool>(
                         settings.distributed_connections_pool_size,
-                        replica.host_name, replica.port, replica.resolved_address,
+                        replica.host_name, replica.port,
                         replica.default_database, replica.user, replica.password,
                         ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings.max_execution_time),
                         "server", replica.compression, replica.secure);
