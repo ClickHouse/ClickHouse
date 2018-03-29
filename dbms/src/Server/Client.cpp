@@ -177,7 +177,7 @@ private:
         String default_database;
         String user;
         String password;
-        Protocol::Encryption security;
+        Protocol::Secure security;
         Protocol::Compression compression;
         ConnectionTimeouts timeouts;
 
@@ -187,8 +187,8 @@ private:
         {
             bool is_secure = config.getBool("secure", false);
             security = is_secure
-                ? Protocol::Encryption::Enable
-                : Protocol::Encryption::Disable;
+                ? Protocol::Secure::Enable
+                : Protocol::Secure::Disable;
 
             host = config.getString("host", "localhost");
             port = config.getInt("port",
@@ -1371,7 +1371,7 @@ public:
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
             ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
             ("port", boost::program_options::value<int>()->default_value(9000), "server port")
-            ("ssl,s", "ssl")
+            ("secure,s", "secure")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
             ("query_id", boost::program_options::value<std::string>(), "query_id")
@@ -1474,8 +1474,8 @@ public:
 
         if (options.count("port") && !options["port"].defaulted())
             config().setInt("port", options["port"].as<int>());
-        if (options.count("ssl"))
-            config().setBool("ssl", true);
+        if (options.count("secure"))
+            config().setBool("secure", true);
         if (options.count("user"))
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
