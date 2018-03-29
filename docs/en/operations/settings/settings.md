@@ -338,15 +338,3 @@ It works for JSONEachRow and TSKV formats.
 ## output_format_json_quote_64bit_integers
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats  (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
-
-<a name="settings-strict_insert_defaults"></a>
-
-## strict_insert_defaults
-
-Strictly assigns default values when adding data.
-
-If data is not specified for a column when running an [ INSERT](../../query_language/queries.md#queries-insert)  query, ClickHouse assigns default values to the fields. Default values are defined in the ` DEFAULT` property for each column in the table settings. If ` DEFAULT` is not defined for a column:
-
-- `If strict_insert_defaults = 0`, column fields are assigned zeros and empty strings.
-- `If strict_insert_defaults = 1`, ClickHouse throws an exception and requires the user to pass data to the column.
-

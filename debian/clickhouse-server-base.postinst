@@ -27,8 +27,13 @@ if [ "$1" = configure ]; then
 
     # Make sure the administrative user exists
     if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
-        adduser --system --disabled-login --no-create-home --home /nonexistent \
-            --shell /bin/false --group --gecos "Clickhouse server" clickhouse > /dev/null
+        if [ "$OS" == "rhel" ] || [ "$OS" == "centos" ] || [ "$OS" == "fedora" ]; then
+            adduser --system --no-create-home --home /nonexistent \
+                --shell /bin/false clickhouse > /dev/null
+        else
+            adduser --system --disabled-login --no-create-home --home /nonexistent \
+                --shell /bin/false --group --gecos "ClickHouse server" clickhouse > /dev/null
+        fi
     fi
 
     # if the user was created manually, make sure the group is there as well

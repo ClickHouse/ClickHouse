@@ -241,6 +241,9 @@ private:
 
     zkutil::LeaderElectionPtr leader_election;
 
+    /// When activated, replica is initialized and startup() method could exit
+    Poco::Event startup_event;
+
     /// Do I need to complete background threads (except restarting_thread)?
     std::atomic<bool> shutdown_called {false};
     Poco::Event shutdown_event;
@@ -317,7 +320,14 @@ private:
       * Adds actions to `ops` that add data about the part into ZooKeeper.
       * Call under TableStructureLock.
       */
-    void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
+    void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
+                                           zkutil::Ops & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+
+    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums);
+
+    /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
+    MergeTreeData::DataPartsVector checkPartChecksumsAndCommit(MergeTreeData::Transaction & transaction,
+                                                               const MergeTreeData::DataPartPtr & part);
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
