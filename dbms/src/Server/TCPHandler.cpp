@@ -608,8 +608,10 @@ void TCPHandler::receiveQuery()
     settings.deserialize(*in);
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
+    /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
+    ///  because settings.send_timeout is client-side setting which has opposite meaning on the server side.
     /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
-    state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.send_timeout, settings.receive_timeout);
+    state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.receive_timeout, settings.send_timeout);
 
     readVarUInt(stage, *in);
     state.stage = QueryProcessingStage::Enum(stage);
