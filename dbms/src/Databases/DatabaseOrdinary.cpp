@@ -25,7 +25,6 @@ namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
-    extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
@@ -101,8 +100,11 @@ static void loadTable(
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context)
-    : DatabaseMemory(name_), metadata_path(metadata_path_), data_path(context.getPath() + "data/" + escapeForFileName(name_) + "/")
+DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context)
+    : DatabaseWithOwnTablesBase(std::move(name_))
+    , metadata_path(metadata_path_)
+    , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
+    , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
 {
     Poco::File(data_path).createDirectories();
 }
@@ -113,8 +115,6 @@ void DatabaseOrdinary::loadTables(
     ThreadPool * thread_pool,
     bool has_force_restore_data_flag)
 {
-    log = &Logger::get("DatabaseOrdinary (" + name + ")");
-
     using FileNames = std::vector<std::string>;
     FileNames file_names;
 
@@ -512,7 +512,6 @@ void DatabaseOrdinary::drop()
 {
     /// No additional removal actions are required.
 }
-
 
 void DatabaseOrdinary::alterTable(
     const Context & context,

@@ -41,7 +41,8 @@ BlockIO InterpreterDropQuery::execute()
 
     if (drop_database && drop.detach)
     {
-        context.detachDatabase(drop.database);
+        auto database = context.detachDatabase(drop.database);
+        database->shutdown();
         return {};
     }
 

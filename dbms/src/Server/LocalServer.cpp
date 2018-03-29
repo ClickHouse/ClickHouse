@@ -6,7 +6,7 @@
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
-#include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
