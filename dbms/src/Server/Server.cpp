@@ -230,6 +230,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::move(main_config_zk_node_cache),
         [&](ConfigurationPtr config)
         {
+            buildLoggers(*config);
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
