@@ -6,6 +6,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
 #include <arpa/inet.h>
+#include <atomic>
 
 
 namespace DB
@@ -77,6 +78,9 @@ static Poco::Net::IPAddress resolveIPAddressImpl(const std::string & host)
 struct DNSCache::Impl
 {
     SimpleCache<decltype(resolveIPAddressImpl), &resolveIPAddressImpl> cache_host;
+
+    /// If disabled, will not make cache lookups, will resolve addresses manually on each call
+    std::atomic<bool> is_disabled{false};
 };
 
 
@@ -84,21 +88,31 @@ DNSCache::DNSCache() : impl(std::make_unique<DNSCache::Impl>()) {}
 
 Poco::Net::IPAddress DNSCache::resolveHost(const std::string & host)
 {
-    return impl->cache_host(host);
+    return !impl->is_disabled ? impl->cache_host(host) : resolveIPAddressImpl(host);
 }
 
-Poco::Net::SocketAddress DNSCache::resolveHostAndPort(const std::string & host_and_port)
+Poco::Net::SocketAddress DNSCache::resolveAddress(const std::string & host_and_port)
 {
     String host;
     UInt16 port;
     splitHostAndPort(host_and_port, host, port);
 
-    return Poco::Net::SocketAddress(impl->cache_host(host), port);
+    return !impl->is_disabled ? Poco::Net::SocketAddress(impl->cache_host(host), port) : Poco::Net::SocketAddress(host_and_port);
+}
+
+Poco::Net::SocketAddress DNSCache::resolveAddress(const std::string & host, UInt16 port)
+{
+    return !impl->is_disabled ?  Poco::Net::SocketAddress(impl->cache_host(host), port) : Poco::Net::SocketAddress(host, port);
 }
 
 void DNSCache::drop()
 {
     impl->cache_host.drop();
+}
+
+void DNSCache::setDisableFlag(bool is_disabled)
+{
+    impl->is_disabled = is_disabled;
 }
 
 DNSCache::~DNSCache() = default;

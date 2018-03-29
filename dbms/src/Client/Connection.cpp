@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DNSCache.h>
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
@@ -66,7 +67,10 @@ void Connection::connect()
         {
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
-        socket->connect(resolved_address, timeouts.connection_timeout);
+
+        current_resolved_address = DNSCache::instance().resolveAddress(host, port);
+
+        socket->connect(current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -462,6 +466,14 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
+Poco::Net::SocketAddress Connection::getResolvedAddress() const
+{
+    if (connected)
+        return current_resolved_address;
+
+    return DNSCache::instance().resolveAddress(host, port);
+}
+
 
 bool Connection::poll(size_t timeout_microseconds)
 {
@@ -571,6 +583,7 @@ void Connection::initBlockInput()
 
 void Connection::setDescription()
 {
+    auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
     auto ip_address =  resolved_address.host().toString();
 
@@ -610,7 +623,7 @@ void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
 {
     info.is_valid = true;
     info.host = host;
-    info.resolved_address = resolved_address.toString();
+    info.resolved_address = getResolvedAddress().toString();
     info.port = port;
     info.user = user;
 }

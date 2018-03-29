@@ -35,7 +35,7 @@ private:
     time_t last_update_time = 0;
 
     static constexpr size_t min_errors_to_update_cache = 3;
-    static constexpr time_t min_update_period_seconds = 10;
+    static constexpr time_t min_update_period_seconds = 45;
 };
 
 
