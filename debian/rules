@@ -42,8 +42,12 @@ endif
 endif
 
 CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
-CMAKE_FLAGS += -GNinja
-export MAKE=ninja
+
+NINJA=$(shell which ninja)
+ifneq ($(NINJA),)
+    CMAKE_FLAGS += -GNinja
+    export MAKE=$(NINJA)
+endif
 
 ifndef DH_VERBOSE
     CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
@@ -102,7 +106,7 @@ override_dh_install:
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 
 override_dh_auto_install:
-	env DESTDIR=$(DESTDIR) ninja -C $(BUILDDIR) install
+	env DESTDIR=$(DESTDIR) $(MAKE) -C $(BUILDDIR) install
 
 override_dh_shlibdeps:
 	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.
