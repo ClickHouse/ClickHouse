@@ -89,7 +89,7 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
-/// Suppress gcc7 warnings: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
+/// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
