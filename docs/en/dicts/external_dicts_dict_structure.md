@@ -25,8 +25,8 @@ Overall structure:
 
 Columns are described in the structure:
 
-- `<id>` – [Key column](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-key).
-- `<attribute>` – [Data column](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). There can be a large number of columns.
+- `<id>` - [key column](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-key).
+- `<attribute>` - [data column](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). There can be a large number of columns.
 
 <a name="dicts-external_dicts_dict_structure-key"></a>
 
@@ -63,12 +63,10 @@ Configuration fields:
 
 ### Composite key
 
-The key can be a `tuple` from any types of fields. The [ layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout)  in this case must be `complex_key_hashed`  or `complex_key_cache`.
+The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
 <div class="admonition tip">
-
-A composite key can also consist of a single element, which makes it possible to use a string as the key, for instance.
-
+A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
 </div>
 
 The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Example:
@@ -119,6 +117,6 @@ Configuration fields:
 - `null_value` – The default value for a non-existing element. In the example, it is an empty string.
 - `expression` – The attribute can be an expression. The tag is not required.
 - `hierarchical` – Hierarchical support. Mirrored to the parent identifier. By default, ` false`.
-- `injective` Whether the `id -> attribute` image is injective. If ` true`, then you can optimize the ` GROUP BY` clause. By default, `false`.
-- `is_object_id` - Used for query mongo documents by ObjectId
+- `injective` – Whether the `id -> attribute` image is injective. If ` true`, then you can optimize the ` GROUP BY` clause. By default, `false`.
+- `is_object_id` – Whether the query is executed for a MongoDB document by `ObjectID`.
 
