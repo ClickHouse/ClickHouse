@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <Storages/MergeTree/MergeTreeMutation.h>
 #include <Common/SimpleIncrement.h>
 
 
@@ -106,8 +107,9 @@ private:
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
 
-    MergeTreeData::DataParts currently_merging;
     std::mutex currently_merging_mutex;
+    MergeTreeData::DataParts currently_merging;
+    std::multimap<Int64, MergeTreeMutation> current_mutations_by_version;
 
     Logger * log;
 
@@ -125,6 +127,10 @@ private:
                String * out_disable_reason = nullptr);
 
     bool mergeTask();
+
+    Int64 getCurrentMutationVersion(
+        const MergeTreeData::DataPartPtr & part,
+        std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
