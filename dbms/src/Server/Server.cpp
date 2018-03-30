@@ -369,10 +369,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                if (secure)
                    /// Bug in old poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
                    /// https://github.com/pocoproject/poco/pull/2257
-                   socket.bind(address, true);
+                   socket.bind(address, /* reuseAddress = */ true);
                else
 #endif
+#if POCO_VERSION < 0x01080000
+                   socket.bind(address, /* reuseAddress = */ true);
+#else
                    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
+#endif
 
                socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
 
