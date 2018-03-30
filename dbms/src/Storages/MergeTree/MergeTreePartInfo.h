@@ -16,17 +16,24 @@ struct MergeTreePartInfo
     Int64 min_block = 0;
     Int64 max_block = 0;
     UInt32 level = 0;
+    Int64 version = 0;
 
     MergeTreePartInfo() = default;
+
     MergeTreePartInfo(String partition_id_, Int64 min_block_, Int64 max_block_, UInt32 level_)
         : partition_id(std::move(partition_id_)), min_block(min_block_), max_block(max_block_), level(level_)
     {
     }
 
+    MergeTreePartInfo(String partition_id_, Int64 min_block_, Int64 max_block_, UInt32 level_, Int64 version_)
+        : partition_id(std::move(partition_id_)), min_block(min_block_), max_block(max_block_), level(level_), version(version_)
+    {
+    }
+
     bool operator<(const MergeTreePartInfo & rhs) const
     {
-        return std::forward_as_tuple(partition_id, min_block, max_block, level)
-            < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level);
+        return std::forward_as_tuple(partition_id, min_block, max_block, level, version)
+            < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.version);
     }
 
     bool operator==(const MergeTreePartInfo & rhs) const

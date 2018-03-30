@@ -72,11 +72,13 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
     if (parts_.empty())
         return;
 
-    for (size_t i = 0; i < parts_.size(); ++i)
+    for (const MergeTreeData::DataPartPtr & part : parts_)
     {
-        if (parts_[i]->partition.value != parts_[0]->partition.value)
+        const MergeTreeData::DataPartPtr & first_part = parts_.front();
+
+        if (part->partition.value != first_part->partition.value)
             throw Exception(
-                "Attempting to merge parts " + parts_[i]->name + " and " + parts_[0]->name + " that are in different partitions",
+                "Attempting to merge parts " + first_part->name + " and " + part->name + " that are in different partitions",
                 ErrorCodes::LOGICAL_ERROR);
     }
 

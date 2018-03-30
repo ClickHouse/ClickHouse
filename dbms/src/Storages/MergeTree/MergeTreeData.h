@@ -158,10 +158,8 @@ public:
 
         void rollback();
 
-        bool isEmpty() const
-        {
-            return precommitted_parts.empty();
-        }
+        size_t size() const { return precommitted_parts.size(); }
+        bool isEmpty() const { return precommitted_parts.empty(); }
 
         ~Transaction()
         {
@@ -302,7 +300,7 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const;
 
-    Int64 getMaxDataPartIndex();
+    Int64 getMaxBlockID();
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
