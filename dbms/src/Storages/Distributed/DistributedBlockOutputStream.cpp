@@ -28,6 +28,7 @@
 #include <ext/scope_guard.h>
 
 #include <Poco/DirectoryIterator.h>
+#include <Poco/DateTimeFormatter.h>
 
 #include <future>
 #include <condition_variable>
@@ -353,35 +354,53 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
     inserted_blocks += 1;
     inserted_rows += block.rows();
+    last_block_finish_time = time(nullptr);
 }
 
 
 void DistributedBlockOutputStream::writeSuffix()
 {
+    auto log_performance = [this] ()
+    {
+        double elapsed = watch.elapsedSeconds();
+        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
+                   << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
+                   << ". " << getCurrentStateDescription());
+    };
+
     if (insert_sync && pool)
     {
+        auto format_ts = [] (time_t ts) {
+            WriteBufferFromOwnString wb;
+            writeDateTimeText(ts, wb);
+            return wb.str();
+        };
+
+        LOG_DEBUG(log, "Writing suffix, the last block was at " << format_ts(last_block_finish_time));
+
         finished_jobs_count = 0;
         for (auto & shard_jobs : per_shard_jobs)
             for (JobReplica & job : shard_jobs.replicas_jobs)
             {
                 if (job.stream)
-                    pool->schedule([&job] () { job.stream->writeSuffix(); });
+                {
+                    pool->schedule([&job] () {
+                        job.stream->writeSuffix();
+                    });
+                }
             }
 
         try
         {
             pool->wait();
+            log_performance();
         }
         catch (Exception & exception)
         {
+            log_performance();
             exception.addMessage(getCurrentStateDescription());
             throw;
         }
-
-        double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
-                       << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
-                       << ". " << getCurrentStateDescription());
     }
 }
 

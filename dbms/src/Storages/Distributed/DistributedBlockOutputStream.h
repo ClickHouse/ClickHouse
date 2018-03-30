@@ -10,6 +10,8 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
+#include "../../../../contrib/poco/Foundation/include/Poco/Timestamp.h"
+
 
 namespace Poco
 {
@@ -92,6 +94,7 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
     String query_string;
+    time_t last_block_finish_time = 0;
 
     struct JobReplica
     {
