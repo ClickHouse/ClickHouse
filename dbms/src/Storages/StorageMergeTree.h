@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
@@ -70,6 +71,8 @@ public:
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
+    void mutate(const MutationCommands & commands, const Context & context) override;
+
     void drop() override;
     void truncate(const ASTPtr &) override;
 
@@ -98,7 +101,7 @@ private:
     MergeTreeData data;
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
-    MergeTreeDataMergerMutator merger;
+    MergeTreeDataMergerMutator merger_mutator;
 
     /// For block numbers.
     SimpleIncrement increment{0};
@@ -106,8 +109,9 @@ private:
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
 
-    MergeTreeData::DataParts currently_merging;
     std::mutex currently_merging_mutex;
+    MergeTreeData::DataParts currently_merging;
+    std::multimap<Int64, MergeTreeMutationEntry> current_mutations_by_version;
 
     Logger * log;
 
@@ -123,6 +127,10 @@ private:
                String * out_disable_reason = nullptr);
 
     bool mergeTask();
+
+    Int64 getCurrentMutationVersion(
+        const MergeTreeData::DataPartPtr & part,
+        std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
