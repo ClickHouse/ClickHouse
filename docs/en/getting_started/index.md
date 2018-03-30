@@ -34,7 +34,8 @@ sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
 
-You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/deb/stable/main/>
+You can also download and install packages manually from here:
+<https://repo.yandex.ru/clickhouse/deb/stable/main/>
 
 ClickHouse contains access restriction settings. They are located in the 'users.xml' file (next to 'config.xml').
 By default, access is allowed from anywhere for the 'default' user, without a password. See 'user/default/networks'.
@@ -100,7 +101,8 @@ clickhouse-client
 ```
 
 The default parameters indicate connecting with localhost:9000 on behalf of the user 'default' without a password.
-The client can be used for connecting to a remote server. Example:
+The client can be used for connecting to a remote server.
+Example:
 
 ```bash
 clickhouse-client --host=example.com

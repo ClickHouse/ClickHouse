@@ -26,7 +26,7 @@ if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZOOKEEPER_LIBRARY)
-    add_subdirectory (zookeeper/src/c)
+    add_subdirectory (zookeeper-cmake)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
