@@ -699,15 +699,19 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     if (config.has(prefix + "settings_push"))
         settings_push.loadSettingsFromConfig(prefix + "settings_push", config);
 
-    /// Override important settings
-    settings_pull.load_balancing = LoadBalancing::NEAREST_HOSTNAME;
-    settings_pull.readonly = 1;
-    settings_pull.max_threads = 1;
-    settings_pull.max_block_size = settings_pull.max_block_size.changed ? settings_pull.max_block_size.value : 8192UL;
-    settings_pull.preferred_block_size_bytes = 0;
+    auto set_default_value = [] (auto && setting, auto && default_value)
+    {
+        setting = setting.changed ? setting.value : default_value;
+    };
 
-    settings_push.insert_distributed_timeout = 0;
+    /// Override important settings
+    settings_pull.readonly = 1;
     settings_push.insert_distributed_sync = 1;
+    set_default_value(settings_pull.load_balancing, LoadBalancing::NEAREST_HOSTNAME);
+    set_default_value(settings_pull.max_threads, 1);
+    set_default_value(settings_pull.max_block_size, 8192UL);
+    set_default_value(settings_pull.preferred_block_size_bytes, 0);
+    set_default_value(settings_push.insert_distributed_timeout, 0);
 }
 
 
@@ -1097,22 +1101,27 @@ protected:
             status_paths.emplace_back(task_shard_partition.getShardStatusPath());
         }
 
-        zkutil::Stat stat;
         std::vector<int64_t> zxid1, zxid2;
 
         try
         {
-            // Check that state is Finished and remember zxid
+            std::vector<zkutil::ZooKeeper::GetFuture> get_futures;
             for (const String & path : status_paths)
+                get_futures.emplace_back(zookeeper->asyncGet(path));
+
+            // Check that state is Finished and remember zxid
+            for (auto & future : get_futures)
             {
-                TaskStateWithOwner status = TaskStateWithOwner::fromString(zookeeper->get(path, &stat));
+                auto res = future.get();
+
+                TaskStateWithOwner status = TaskStateWithOwner::fromString(res.value);
                 if (status.state != TaskState::Finished)
                 {
-                    LOG_INFO(log, "The task " << path << " is being rewritten by " << status.owner
-                                               << ". Partition will be rechecked");
+                    LOG_INFO(log, "The task " << res.value << " is being rewritten by " << status.owner << ". Partition will be rechecked");
                     return false;
                 }
-                zxid1.push_back(stat.pzxid);
+
+                zxid1.push_back(res.stat.pzxid);
             }
 
             // Check that partition is not dirty
@@ -1122,11 +1131,15 @@ protected:
                 return false;
             }
 
+            get_futures.clear();
+            for (const String & path : status_paths)
+                get_futures.emplace_back(zookeeper->asyncGet(path));
+
             // Remember zxid of states again
-            for (const auto & path : status_paths)
+            for (auto & future : get_futures)
             {
-                zookeeper->exists(path, &stat);
-                zxid2.push_back(stat.pzxid);
+                auto res = future.get();
+                zxid2.push_back(res.stat.pzxid);
             }
         }
         catch (const zkutil::KeeperException & e)
@@ -1664,7 +1677,7 @@ protected:
                     BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
                     BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
-                    input = std::make_shared<AsynchronousBlockInputStream>(io_select.in);
+                    input = io_select.in;
                     output = io_insert.out;
                 }
 

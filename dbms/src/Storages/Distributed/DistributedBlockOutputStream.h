@@ -12,6 +12,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 
+
 namespace Poco
 {
     class Logger;
@@ -93,6 +94,7 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
     String query_string;
+    time_t last_block_finish_time = 0;
 
     struct JobReplica
     {
