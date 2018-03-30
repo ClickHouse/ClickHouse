@@ -180,7 +180,7 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 Если указано `IF EXISTS` - не выдавать ошибку, если база данных не существует.
 
 ```sql
-DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Удаляет таблицу.
@@ -444,7 +444,7 @@ SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ## SHOW TABLES
 
 ```sql
-SHOW TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
+SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Выводит список таблиц
@@ -491,7 +491,7 @@ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ## SHOW CREATE TABLE
 
 ```sql
-SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Возвращает один столбец statement типа `String`, содержащий одно значение - запрос `CREATE`, с помощью которого создана указанная таблица.
@@ -509,7 +509,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ## EXISTS
 
 ```sql
-EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
+EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Возвращает один столбец типа `UInt8`, содержащий одно значение - `0`, если таблицы или БД не существует и `1`, если таблица в указанной БД существует.
@@ -1430,7 +1430,7 @@ SELECT UserID FROM distributed_table WHERE CounterID = 34
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
-, и вместе с запросом, на каждый удалённый сервер будет отправлена временная таблица _data1 (имя временной таблицы - implementation defined).
+, и вместе с запросом, на каждый удалённый сервер будет отправлена временная таблица `_data1` (имя временной таблицы - implementation defined).
 
 Это гораздо более оптимально, чем при использовании обычного IN. Но при этом, следует помнить о нескольких вещах:
 

@@ -18,18 +18,20 @@ For information on connecting and configuring external dictionaries, see "[Exter
 
 `dictGetT('dict_name', 'attr_name', id)`
 
-- Get the value of the attr_name attribute  from the dict_name dictionary using the 'id' key.`dict_name`  and `attr_name`  are constant strings.`id`must be UInt64.
+- Get the value of the attr_name attribute  from the dict_name dictionary using the 'id' key.
+`dict_name`  and `attr_name`  are constant strings.
+`id`must be UInt64.
 If there is no `id` key in the dictionary, it returns the default value specified in the dictionary description.
 
 ## dictGetTOrDefault
 
 `dictGetT('dict_name', 'attr_name', id, default)`
 
-Similar to the functions dictGetT, but the default value is taken from the last argument of the function.
+The same as the `dictGetT` functions, but the default value is taken from the function's last argument.
 
 ## dictIsIn
 
-`dictIsIn ('dict_name', child_id, ancestor_id)`
+`dictIsIn('dict_name', child_id, ancestor_id)`
 
 - For the 'dict_name' hierarchical dictionary, finds out whether the 'child_id' key is located inside 'ancestor_id' (or matches 'ancestor_id'). Returns UInt8.
 

@@ -1,6 +1,5 @@
-# ClickHouse utilites
+# ClickHouse utility
 
-There are several ClickHouse utilites that are separate executable files:
+* [clickhouse-local](clickhouse-local.md#utils-clickhouse-local) — Allows running SQL queries on data without stopping the ClickHouse server, similar to how `awk` does this.
+* [clickhouse-copier](clickhouse-copier.md#utils-clickhouse-copier) — Copies (and reshards) data from one cluster to another cluster.
 
-* `clickhouse-local` allows to execute SQL queries on a local data like `awk`
-* `clickhouse-copier` copies (and reshards) immutable data from one cluster to another in a fault-tolerant manner.
