@@ -66,7 +66,7 @@ void ExternalResultDescription::init(const Block & sample_block_)
         /// If default value for column was not provided, use default from data type.
         if (sample_columns.back()->empty())
         {
-            MutableColumnPtr mutable_column = sample_columns.back()->mutate();
+            MutableColumnPtr mutable_column = (*std::move(sample_columns.back())).mutate();
             column.type->insertDefaultInto(*mutable_column);
             sample_columns.back() = std::move(mutable_column);
         }

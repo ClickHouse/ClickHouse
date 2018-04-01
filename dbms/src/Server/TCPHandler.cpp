@@ -31,6 +31,7 @@
 #include "TCPHandler.h"
 
 #include <Common/NetException.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -138,6 +139,9 @@ void TCPHandler::runImpl()
         {
             /// Restore context of request.
             query_context = connection_context;
+
+            /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
+            SCOPE_EXIT({state.timeout_setter.reset();});
 
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
@@ -600,7 +604,14 @@ void TCPHandler::receiveQuery()
     }
 
     /// Per query settings.
-    query_context.getSettingsRef().deserialize(*in);
+    Settings & settings = query_context.getSettingsRef();
+    settings.deserialize(*in);
+
+    /// Sync timeouts on client and server during current query to avoid dangling queries on server
+    /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
+    ///  because settings.send_timeout is client-side setting which has opposite meaning on the server side.
+    /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
+    state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.receive_timeout, settings.send_timeout);
 
     readVarUInt(stage, *in);
     state.stage = QueryProcessingStage::Enum(stage);

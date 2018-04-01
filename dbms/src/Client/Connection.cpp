@@ -12,6 +12,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
+#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -50,14 +51,15 @@ void Connection::connect()
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
+        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed") );
 
-        if (static_cast<bool>(encryption))
+        if (static_cast<bool>(secure))
         {
 #if Poco_NetSSL_FOUND
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
-            throw Exception{"tcp_ssl protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         }
         else
@@ -227,32 +229,6 @@ void Connection::forceConnected()
         connect();
     }
 }
-
-struct TimeoutSetter
-{
-    TimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & timeout_)
-        : socket(socket_), timeout(timeout_)
-    {
-        old_send_timeout = socket.getSendTimeout();
-        old_receive_timeout = socket.getReceiveTimeout();
-
-        if (old_send_timeout > timeout)
-            socket.setSendTimeout(timeout);
-        if (old_receive_timeout > timeout)
-            socket.setReceiveTimeout(timeout);
-    }
-
-    ~TimeoutSetter()
-    {
-        socket.setSendTimeout(old_send_timeout);
-        socket.setReceiveTimeout(old_receive_timeout);
-    }
-
-    Poco::Net::StreamSocket & socket;
-    Poco::Timespan timeout;
-    Poco::Timespan old_send_timeout;
-    Poco::Timespan old_receive_timeout;
-};
 
 bool Connection::ping()
 {

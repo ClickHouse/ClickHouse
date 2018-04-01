@@ -58,14 +58,14 @@ public:
         const ConnectionTimeouts & timeouts_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
-        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
+        Protocol::Secure secure_ = Protocol::Secure::Disable,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(host, port),
         client_name(client_name_),
         compression(compression_),
-        encryption(encryption_),
+        secure(secure_),
         timeouts(timeouts_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
@@ -84,7 +84,7 @@ public:
         const ConnectionTimeouts & timeouts_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
-        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
+        Protocol::Secure secure_ = Protocol::Secure::Disable,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_),
@@ -93,7 +93,7 @@ public:
         resolved_address(resolved_address_),
         client_name(client_name_),
         compression(compression_),
-        encryption(encryption_),
+        secure(secure_),
         timeouts(timeouts_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
@@ -222,7 +222,7 @@ private:
 
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
-    Protocol::Encryption encryption;             /// Enable data encryption for communication.
+    Protocol::Secure secure;             /// Enable data encryption for communication.
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionSettings compression_settings;

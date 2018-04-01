@@ -276,6 +276,8 @@ void ConfigProcessor::doIncludesRecursive(
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
 
+    bool included_something = false;
+
     auto process_include = [&](const Node * include_attr, const std::function<const Node * (const std::string &)> & get_node, const char * error_msg)
     {
         std::string name = include_attr->getNodeValue();
@@ -316,6 +318,8 @@ void ConfigProcessor::doIncludesRecursive(
             {
                 element->setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
             }
+
+            included_something = true;
         }
     };
 
@@ -348,11 +352,14 @@ void ConfigProcessor::doIncludesRecursive(
         }
     }
 
-    NodeListPtr children = node->childNodes();
-    Node * child = nullptr;
-    for (size_t i = 0; (child = children->item(i)); ++i)
+    if (included_something)
+        doIncludesRecursive(config, include_from, node, zk_node_cache, contributing_zk_paths);
+    else
     {
-        doIncludesRecursive(config, include_from, child, zk_node_cache, contributing_zk_paths);
+        NodeListPtr children = node->childNodes();
+        Node * child = nullptr;
+        for (size_t i = 0; (child = children->item(i)); ++i)
+            doIncludesRecursive(config, include_from, child, zk_node_cache, contributing_zk_paths);
     }
 }
 

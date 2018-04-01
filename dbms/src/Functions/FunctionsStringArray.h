@@ -128,7 +128,7 @@ public:
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[0]->isString())
+        if (!arguments[1]->isString())
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

@@ -114,7 +114,7 @@ BlockInputStreams StorageSystemColumns::read(
 
         NamesAndTypesList columns;
         ColumnDefaults column_defaults;
-        MergeTreeData::ColumnSizes column_sizes;
+        MergeTreeData::ColumnSizeByName column_sizes;
 
         {
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));

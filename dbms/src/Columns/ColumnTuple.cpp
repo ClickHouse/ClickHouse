@@ -31,21 +31,38 @@ std::string ColumnTuple::getName() const
     return res.str();
 }
 
-ColumnTuple::ColumnTuple(const Columns & columns) : columns(columns)
+ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
+{
+    columns.reserve(mutable_columns.size());
+    for (auto & column : mutable_columns)
+    {
+        if (column->isColumnConst())
+            throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
+
+        columns.push_back(std::move(column));
+    }
+}
+
+ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
     for (const auto & column : columns)
         if (column->isColumnConst())
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
+
+    auto column_tuple = ColumnTuple::create(MutableColumns());
+    column_tuple->columns = columns;
+
+    return std::move(column_tuple);
 }
 
 MutableColumnPtr ColumnTuple::cloneEmpty() const
 {
     const size_t tuple_size = columns.size();
-    Columns new_columns(tuple_size);
+    MutableColumns new_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->cloneEmpty();
 
-    return ColumnTuple::create(new_columns);
+    return ColumnTuple::create(std::move(new_columns));
 }
 
 Field ColumnTuple::operator[](size_t n) const
@@ -140,7 +157,7 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
             start, length);
 }
 
-MutableColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -151,7 +168,7 @@ MutableColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hi
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -162,7 +179,7 @@ MutableColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) co
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
+ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -185,10 +202,10 @@ MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & se
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {
-        Columns new_columns(tuple_size);
+        MutableColumns new_columns(tuple_size);
         for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
             new_columns[tuple_element_idx] = std::move(scattered_tuple_elements[tuple_element_idx][scattered_idx]);
-        res[scattered_idx] = ColumnTuple::create(new_columns);
+        res[scattered_idx] = ColumnTuple::create(std::move(new_columns));
     }
 
     return res;
