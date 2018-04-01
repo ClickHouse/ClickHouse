@@ -482,7 +482,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(res.rows())->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));
@@ -521,7 +521,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block & res)
 {
     try
     {
-        DB::evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.context);
     }
     catch (Exception & e)
     {
