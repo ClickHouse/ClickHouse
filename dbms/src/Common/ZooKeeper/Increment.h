@@ -29,11 +29,11 @@ public:
             if (zookeeper->tryGet(path, result_str, &stat))
             {
                 result = std::stol(result_str) + 1;
-                success = zookeeper->trySet(path, std::to_string(result), stat.version) == ZOK;
+                success = zookeeper->trySet(path, std::to_string(result), stat.version) == ZooKeeperImpl::ZooKeeper::ZOK;
             }
             else
             {
-                success = zookeeper->tryCreate(path, std::to_string(result), zkutil::CreateMode::Persistent) == ZOK;
+                success = zookeeper->tryCreate(path, std::to_string(result), zkutil::CreateMode::Persistent) == ZooKeeperImpl::ZooKeeper::ZOK;
             }
         }
         while (!success);

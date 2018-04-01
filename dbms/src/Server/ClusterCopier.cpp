@@ -354,24 +354,26 @@ struct TaskCluster
 };
 
 
+struct MultiTransactionInfo
+{
+    int32_t code;
+    zkutil::Requests requests;
+    zkutil::Responses responses;
+};
+
+
 /// Atomically checks that is_dirty node is not exists, and made the remaining op
 /// Returns relative number of failed operation in the second field (the passed op has 0 index)
-static zkutil::MultiTransactionInfo checkNoNodeAndCommit(
+static MultiTransactionInfo checkNoNodeAndCommit(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & checking_node_path,
-    zkutil::OpPtr && op)
+    zkutil::RequestPtr && op)
 {
-    zkutil::Ops ops;
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(checking_node_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_shared<zkutil::Op::Remove>(checking_node_path, -1));
-    ops.emplace_back(std::move(op));
-
-    zkutil::MultiTransactionInfo info;
-    zookeeper->tryMultiNoThrow(ops, nullptr, &info);
-
-    if (info.code != ZOK && !zkutil::isUserError(info.code))
-        throw zkutil::KeeperException(info.code);
-
+    MultiTransactionInfo info;
+    info.requests.emplace_back(zkutil::makeCreateRequest(checking_node_path, "", zkutil::CreateMode::Persistent));
+    info.requests.emplace_back(zkutil::makeRemoveRequest(checking_node_path, -1));
+    info.requests.emplace_back(std::move(op));
+    info.code = zookeeper->tryMulti(info.requests, info.responses);
     return info;
 }
 
@@ -732,7 +734,7 @@ public:
     {
         auto zookeeper = getZooKeeper();
 
-        task_description_watch_callback = [this] (zkutil::ZooKeeper &, int, int, const char *)
+        task_description_watch_callback = [this] (const ZooKeeperImpl::ZooKeeper::WatchResponse &)
         {
             UInt64 version = ++task_descprtion_version;
             LOG_DEBUG(log, "Task description should be updated, local version " << version);
@@ -896,7 +898,7 @@ public:
         int code;
 
         zookeeper->tryGetWatch(task_description_path, task_config_str, &stat, task_description_watch_callback, &code);
-        if (code != ZOK)
+        if (code)
             throw Exception("Can't get description node " + task_description_path, ErrorCodes::BAD_ARGUMENTS);
 
         LOG_DEBUG(log, "Loading description, zxid=" << task_descprtion_current_stat.czxid);
@@ -1050,15 +1052,16 @@ protected:
             }
             else
             {
-                zkutil::Ops ops;
-                ops.emplace_back(new zkutil::Op::SetData(workers_version_path, description, version));
-                ops.emplace_back(new zkutil::Op::Create(current_worker_path, description, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-                auto code = zookeeper->tryMulti(ops);
+                zkutil::Requests ops;
+                ops.emplace_back(zkutil::makeSetRequest(workers_version_path, description, version));
+                ops.emplace_back(zkutil::makeCreateRequest(current_worker_path, description, zkutil::CreateMode::Ephemeral));
+                zkutil::Responses responses;
+                auto code = zookeeper->tryMulti(ops, responses);
 
-                if (code == ZOK || code == ZNODEEXISTS)
+                if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
                     return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
 
-                if (code == ZBADVERSION)
+                if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
                 {
                     LOG_DEBUG(log, "A concurrent worker has just been added, will check free worker slots again");
                 }
@@ -1212,7 +1215,7 @@ protected:
         }
         catch (zkutil::KeeperException & e)
         {
-            if (e.code == ZNODEEXISTS)
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             {
                 LOG_DEBUG(log, "Partition " << task_partition.name << " is cleaning now by somebody, sleep");
                 std::this_thread::sleep_for(default_sleep_time);
@@ -1457,7 +1460,6 @@ protected:
         ClusterPartition & cluster_partition = task_table.getClusterPartition(task_partition.name);
 
         auto zookeeper = getZooKeeper();
-        auto acl = zookeeper->getDefaultACL();
 
         String is_dirty_flag_path = task_partition.getCommonPartitionIsDirtyPath();
         String current_task_is_active_path = task_partition.getActiveWorkerPath();
@@ -1469,7 +1471,7 @@ protected:
         auto create_is_dirty_node = [&] ()
         {
             auto code = zookeeper->tryCreate(is_dirty_flag_path, current_task_status_path, zkutil::CreateMode::Persistent);
-            if (code != ZOK && code != ZNODEEXISTS)
+            if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
                 throw zkutil::KeeperException(code, is_dirty_flag_path);
         };
 
@@ -1520,7 +1522,7 @@ protected:
         }
         catch (const zkutil::KeeperException & e)
         {
-            if (e.code == ZNODEEXISTS)
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             {
                 LOG_DEBUG(log, "Someone is already processing " << current_task_is_active_path);
                 return PartitionTaskStatus::Active;
@@ -1589,18 +1591,20 @@ protected:
         /// Try start processing, create node about it
         {
             String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
-            auto op_create = std::make_shared<zkutil::Op::Create>(current_task_status_path, start_state, acl, zkutil::CreateMode::Persistent);
-            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create));
+            auto op_create = zkutil::makeCreateRequest(current_task_status_path, start_state, zkutil::CreateMode::Persistent);
+            MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_create));
 
-            if (info.code != ZOK)
+            if (info.code)
             {
-                if (info.getFailedOp().getPath() == is_dirty_flag_path)
+                zkutil::KeeperMultiException exception(info.code, info.requests, info.responses);
+
+                if (exception.getPathForFirstFailedOp() == is_dirty_flag_path)
                 {
                     LOG_INFO(log, "Partition " << task_partition.name << " is dirty and will be dropped and refilled");
                     return PartitionTaskStatus::Error;
                 }
 
-                throw zkutil::KeeperException(info.code, current_task_status_path);
+                throw exception;
             }
         }
 
@@ -1663,7 +1667,7 @@ protected:
                     output = io_insert.out;
                 }
 
-                using ExistsFuture = zkutil::ZooKeeper::ExistsFuture;
+                using ExistsFuture = std::future<zkutil::ExistsResponse>;
                 std::unique_ptr<ExistsFuture> future_is_dirty_checker;
 
                 Stopwatch watch(CLOCK_MONOTONIC_COARSE);
@@ -1682,7 +1686,7 @@ protected:
                     /// Otherwise, the insertion will slow a little bit
                     if (watch.elapsedMilliseconds() >= check_period_milliseconds)
                     {
-                        zkutil::ZooKeeper::StatAndExists status;
+                        zkutil::ExistsResponse status;
 
                         try
                         {
@@ -1692,14 +1696,10 @@ protected:
                         catch (zkutil::KeeperException & e)
                         {
                             future_is_dirty_checker.reset();
-
-                            if (e.isTemporaryError())
-                                LOG_INFO(log, "ZooKeeper is lagging: " << e.displayText());
-                            else
-                                throw;
+                            throw;
                         }
 
-                        if (status.exists)
+                        if (status.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
                             throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
                     }
 
@@ -1735,12 +1735,14 @@ protected:
         /// Finalize the processing, change state of current partition task (and also check is_dirty flag)
         {
             String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-            auto op_set = std::make_shared<zkutil::Op::SetData>(current_task_status_path, state_finished, 0);
-            zkutil::MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set));
+            auto op_set = zkutil::makeSetRequest(current_task_status_path, state_finished, 0);
+            MultiTransactionInfo info = checkNoNodeAndCommit(zookeeper, is_dirty_flag_path, std::move(op_set));
 
-            if (info.code != ZOK)
+            if (info.code)
             {
-                if (info.getFailedOp().getPath() == is_dirty_flag_path)
+                zkutil::KeeperMultiException exception(info.code, info.requests, info.responses);
+
+                if (exception.getPathForFirstFailedOp() == is_dirty_flag_path)
                     LOG_INFO(log, "Partition " << task_partition.name << " became dirty and will be dropped and refilled");
                 else
                     LOG_INFO(log, "Someone made the node abandoned. Will refill partition. " << zkutil::ZooKeeper::error2string(info.code));
