@@ -1262,10 +1262,10 @@ protected:
         }
 
         /// Remove the locking node
-        zkutil::Ops ops;
-        ops.emplace_back(new zkutil::Op::Remove(dirt_cleaner_path, -1));
-        ops.emplace_back(new zkutil::Op::Remove(is_dirty_flag_path, -1));
-        zookeeper->multi(ops);
+        zkutil::Requests requests;
+        requests.emplace_back(zkutil::makeRemoveRequest(dirt_cleaner_path, -1));
+        requests.emplace_back(zkutil::makeRemoveRequest(is_dirty_flag_path, -1));
+        zookeeper->multi(requests);
 
         LOG_INFO(log, "Partition " << task_partition.name << " was dropped on cluster " << task_table.cluster_push_name);
         return true;
