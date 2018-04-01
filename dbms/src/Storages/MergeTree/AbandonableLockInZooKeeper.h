@@ -30,7 +30,7 @@ public:
     };
 
     AbandonableLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, zkutil::Ops * precheck_ops = nullptr)
+        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, zkutil::Requests * precheck_ops = nullptr)
         : zookeeper(&zookeeper_), path_prefix(path_prefix_)
     {
         String abandonable_path = temp_path + "/abandonable_lock-";
@@ -42,12 +42,9 @@ public:
         }
         else
         {
-            precheck_ops->emplace_back(std::make_shared<zkutil::Op::Create>(
-                abandonable_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::EphemeralSequential));
-
-            zkutil::OpResultsPtr op_results = zookeeper->multi(*precheck_ops);
-
-            holder_path = op_results->back().value;
+            precheck_ops->emplace_back(zkutil::makeCreateRequest(abandonable_path, "", zkutil::CreateMode::EphemeralSequential));
+            zkutil::Responses op_results = zookeeper->multi(*precheck_ops);
+            holder_path = dynamic_cast<const zkutil::CreateResponse &>(*op_results.back()).path_created;
         }
 
         /// Write the path to the secondary node in the main node.
@@ -101,11 +98,11 @@ public:
     }
 
     /// Adds actions equivalent to `unlock()` to the list.
-    void getUnlockOps(zkutil::Ops & ops)
+    void getUnlockOps(zkutil::Requests & ops)
     {
         checkCreated();
-        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(path, -1));
-        ops.emplace_back(std::make_shared<zkutil::Op::Remove>(holder_path, -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(holder_path, -1));
     }
 
     /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
@@ -128,7 +125,7 @@ public:
 
         try
         {
-            zookeeper->tryRemoveEphemeralNodeWithRetries(holder_path);
+            zookeeper->tryRemove(holder_path);
             zookeeper->trySet(path, ""); /// It's not necessary.
         }
         catch (...)
@@ -156,7 +153,7 @@ public:
         /// If there is no secondary node, you need to test again the existence of the main node,
         /// because during this time you might have time to call unlock().
         /// At the same time, we will remove the path to the secondary node from there.
-        if (zookeeper.trySet(path, "") == ZOK)
+        if (zookeeper.trySet(path, "") == ZooKeeperImpl::ZooKeeper::ZOK)
             return ABANDONED;
 
         return UNLOCKED;

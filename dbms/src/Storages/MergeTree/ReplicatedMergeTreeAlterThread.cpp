@@ -140,10 +140,10 @@ void ReplicatedMergeTreeAlterThread::run()
                         ++changed_parts;
 
                         /// Update part metadata in ZooKeeper.
-                        zkutil::Ops ops;
-                        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+                        zkutil::Requests ops;
+                        ops.emplace_back(zkutil::makeSetRequest(
                             storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-                        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+                        ops.emplace_back(zkutil::makeSetRequest(
                             storage.replica_path + "/parts/" + part->name + "/checksums",
                             storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
                             -1));
@@ -155,7 +155,7 @@ void ReplicatedMergeTreeAlterThread::run()
                         catch (const zkutil::KeeperException & e)
                         {
                             /// The part does not exist in ZK. We will add to queue for verification - maybe the part is superfluous, and it must be removed locally.
-                            if (e.code == ZNONODE)
+                            if (e.code == ZooKeeperImpl::ZooKeeper::ZNONODE)
                                 storage.enqueuePartForCheck(part->name);
 
                             throw;

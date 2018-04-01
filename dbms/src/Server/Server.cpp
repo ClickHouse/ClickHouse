@@ -230,6 +230,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::move(main_config_zk_node_cache),
         [&](ConfigurationPtr config)
         {
+            buildLoggers(*config);
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
@@ -325,7 +326,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
-        bool listen_try = config().getUInt("listen_try", false);
+        bool listen_try = config().getBool("listen_try", false);
         if (listen_hosts.empty())
         {
             listen_hosts.emplace_back("::1");
@@ -361,6 +362,27 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, bool secure = 0)
+        {
+               auto address = make_socket_address(host, port);
+#if !POCO_CLICKHOUSE_PATCH || POCO_VERSION <= 0x02000000 // TODO: fill correct version
+               if (secure)
+                   /// Bug in old poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
+                   /// https://github.com/pocoproject/poco/pull/2257
+                   socket.bind(address, /* reuseAddress = */ true);
+               else
+#endif
+#if POCO_VERSION < 0x01080000
+                   socket.bind(address, /* reuseAddress = */ true);
+#else
+                   socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
+#endif
+
+               socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+
+               return address;
+        };
+
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
@@ -369,18 +391,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// HTTP
                 if (config().has("http_port"))
                 {
-                    Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("http_port"));
-                    Poco::Net::ServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
-                    http_socket.setSendTimeout(settings.http_send_timeout);
-
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("http_port"));
+                    socket.setReceiveTimeout(settings.http_receive_timeout);
+                    socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
                         server_pool,
-                        http_socket,
+                        socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening http://" + http_socket_address.toString());
+                    LOG_INFO(log, "Listening http://" + address.toString());
                 }
 
                 /// HTTPS
@@ -388,18 +409,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if Poco_NetSSL_FOUND
                     std::call_once(ssl_init_once, SSLInit);
-                    Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
-                    Poco::Net::SecureServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
-                    http_socket.setSendTimeout(settings.http_send_timeout);
 
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
+                    socket.setReceiveTimeout(settings.http_receive_timeout);
+                    socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
-                        http_socket,
+                        socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening https://" + http_socket_address.toString());
+                    LOG_INFO(log, "Listening https://" + address.toString());
 #else
                     throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
@@ -410,33 +431,33 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("tcp_port"))
                 {
                     std::call_once(ssl_init_once, SSLInit);
-                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_port"));
-                    Poco::Net::ServerSocket tcp_socket(tcp_address);
-                    tcp_socket.setReceiveTimeout(settings.receive_timeout);
-                    tcp_socket.setSendTimeout(settings.send_timeout);
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
+                    socket.setReceiveTimeout(settings.receive_timeout);
+                    socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
                         new TCPHandlerFactory(*this),
                         server_pool,
-                        tcp_socket,
+                        socket,
                         new Poco::Net::TCPServerParams));
 
-                    LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
+                    LOG_INFO(log, "Listening tcp: " + address.toString());
                 }
 
                 /// TCP with SSL
-                if (config().has("tcp_ssl_port"))
+                if (config().has("tcp_port_secure"))
                 {
 #if Poco_NetSSL_FOUND
-                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_ssl_port"));
-                    Poco::Net::SecureServerSocket tcp_socket(tcp_address);
-                    tcp_socket.setReceiveTimeout(settings.receive_timeout);
-                    tcp_socket.setSendTimeout(settings.send_timeout);
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
+                    socket.setReceiveTimeout(settings.receive_timeout);
+                    socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
                         new TCPHandlerFactory(*this, /* secure= */ true ),
                                                                   server_pool,
-                                                                  tcp_socket,
+                                                                  socket,
                                                                   new Poco::Net::TCPServerParams));
-                    LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
+                    LOG_INFO(log, "Listening tcp_secure: " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
@@ -450,17 +471,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// Interserver IO HTTP
                 if (config().has("interserver_http_port"))
                 {
-                    Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_http_port"));
-                    Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
-                    interserver_io_http_socket.setReceiveTimeout(settings.http_receive_timeout);
-                    interserver_io_http_socket.setSendTimeout(settings.http_send_timeout);
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_http_port"));
+                    socket.setReceiveTimeout(settings.http_receive_timeout);
+                    socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
-                        interserver_io_http_socket,
+                        socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
+                    LOG_INFO(log, "Listening interserver http: " + address.toString());
                 }
             }
             catch (const Poco::Net::NetException & e)

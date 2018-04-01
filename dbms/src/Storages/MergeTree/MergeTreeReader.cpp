@@ -105,7 +105,8 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
                 /// share offsets in all elements of nested structure
                 if (!append)
-                    column = ColumnArray::create(type_arr->getNestedType()->createColumn(), it_inserted.first->second);
+                    column = ColumnArray::create(type_arr->getNestedType()->createColumn(),
+                                                 it_inserted.first->second)->assumeMutable();
             }
 
             try
