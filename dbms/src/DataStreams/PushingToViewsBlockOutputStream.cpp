@@ -1,4 +1,5 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DataStreams/SquashingBlockInputStream.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
@@ -35,7 +36,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
             auto query = materialized_view.getInnerQuery();
-            auto out = std::make_shared<PushingToViewsBlockOutputStream>(
+            BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
                 database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
             views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
         }
@@ -66,8 +67,19 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         {
             BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
             InterpreterSelectQuery select(view.query, *views_context, {}, QueryProcessingStage::Complete, 0, from);
-            BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-            copyData(*data, *view.out);
+            BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+            /// Squashing is needed here because the materialized view query can generate a lot of blocks
+            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+            /// and two-level aggregation is triggered).
+            in = std::make_shared<SquashingBlockInputStream>(
+                in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+
+            in->readPrefix();
+
+            while (Block result_block = in->read())
+                view.out->write(result_block);
+
+            in->readSuffix();
         }
         catch (Exception & ex)
         {

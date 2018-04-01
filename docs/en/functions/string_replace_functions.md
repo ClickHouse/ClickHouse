@@ -76,4 +76,3 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 │ here: Hello, World! │
 └─────────────────────┘
 ```
-

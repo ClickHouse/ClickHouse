@@ -259,11 +259,11 @@ Block SummingSortedBlockInputStream::readImpl()
         if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
             size_t tuple_size = desc.column_numbers.size();
-            Columns tuple_columns(tuple_size);
+            MutableColumns tuple_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = header.safeGetByPosition(desc.column_numbers[i]).column;
+                tuple_columns[i] = header.safeGetByPosition(desc.column_numbers[i]).column->assumeMutable();
 
-            desc.merged_column = ColumnTuple::create(tuple_columns);
+            desc.merged_column = ColumnTuple::create(std::move(tuple_columns));
         }
         else
             desc.merged_column = header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty();
