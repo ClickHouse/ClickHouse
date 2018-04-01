@@ -179,7 +179,7 @@ struct IndexIdentity
 /// For countEqual.
 struct IndexCount
 {
-    using ResultType = UInt32;
+    using ResultType = UInt64;
     static bool apply(size_t, ResultType & current) { ++current; return true; }
 };
 
