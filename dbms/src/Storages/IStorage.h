@@ -35,6 +35,7 @@ class ASTCreateQuery;
 class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
+using StorageWeakPtr = std::weak_ptr<IStorage>;
 
 struct Settings;
 

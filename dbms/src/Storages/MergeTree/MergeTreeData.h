@@ -452,18 +452,6 @@ public:
     /// Returns the size of partition in bytes.
     size_t getPartitionSize(const std::string & partition_id) const;
 
-    struct ColumnSize
-    {
-        size_t marks = 0;
-        size_t data_compressed = 0;
-        size_t data_uncompressed = 0;
-
-        size_t getTotalCompressedSize() const
-        {
-            return marks + data_compressed;
-        }
-    };
-
     size_t getColumnCompressedSize(const std::string & name) const
     {
         std::lock_guard<std::mutex> lock{data_parts_mutex};
@@ -472,23 +460,11 @@ public:
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
-    using ColumnSizes = std::unordered_map<std::string, ColumnSize>;
-    ColumnSizes getColumnSizes() const
+    using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
+    ColumnSizeByName getColumnSizes() const
     {
         std::lock_guard<std::mutex> lock{data_parts_mutex};
         return column_sizes;
-    }
-
-    /// NOTE Could be off after DROPped and MODIFYed columns in ALTER. Doesn't include primary.idx.
-    size_t getTotalCompressedSize() const
-    {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
-        size_t total_size = 0;
-
-        for (const auto & col : column_sizes)
-            total_size += col.second.getTotalCompressedSize();
-
-        return total_size;
     }
 
     /// Calculates column sizes in compressed form for the current state of data_parts.
@@ -555,7 +531,7 @@ private:
     String full_path;
 
     /// Current column sizes in compressed and uncompressed form.
-    ColumnSizes column_sizes;
+    ColumnSizeByName column_sizes;
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;

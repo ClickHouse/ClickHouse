@@ -9,7 +9,7 @@ Kafka позволяет:
 - Обрабатывать потоки по мере их появления.
 
 ```
-Kafka(broker_list, topic_list, group_name, format[, schema])
+Kafka(broker_list, topic_list, group_name, format[, schema, num_consumers])
 ```
 
 Параметры:
@@ -19,6 +19,7 @@ Kafka(broker_list, topic_list, group_name, format[, schema])
 - `group_name` - Группа потребителя Kafka (`group1`). Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
 - `format` - Формат сообщений. Имеет те же обозначения, что выдает SQL-выражение `FORMAT`, например, `JSONEachRow`. Подробнее смотрите в разделе "Форматы".
 - `schema` - Опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap'n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
+- `num_consumers` - Количество потребителей (consumer) на таблицу. По умолчанию `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
 
 Пример:
 
@@ -76,3 +77,24 @@ Kafka(broker_list, topic_list, group_name, format[, schema])
 ```
 
 Если необходимо изменить целевую таблицу с помощью `ALTER`, то материализованное представление рекомендуется отключить, чтобы избежать несостыковки между целевой таблицей и данными от представления.
+
+
+## Конфигурация
+
+Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать - глобальный (`kafka`) и по топикам (`kafka_topic_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
+
+```xml
+  <!--  Global configuration options for all tables of Kafka engine type -->
+  <kafka>
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+  </kafka>
+
+  <!-- Configuration specific for topic "logs" -->
+  <kafka_topic_logs>
+    <retry_backoff_ms>250</retry_backoff_ms>
+    <fetch_min_bytes>100000</fetch_min_bytes>
+  </kafka_topic_logs>
+```
+
+В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчёркивания (`_`) вместо точек в конфигурации ClickHouse, например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.

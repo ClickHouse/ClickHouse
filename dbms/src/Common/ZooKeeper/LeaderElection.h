@@ -76,39 +76,7 @@ private:
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
-        cleanOldEphemeralNodes();
-
         thread = std::thread(&LeaderElection::threadFunction, this);
-    }
-
-    void cleanOldEphemeralNodes()
-    {
-        if (identifier.empty())
-            return;
-
-        /** If there are nodes with same identifier, remove them.
-          * Such nodes could still be alive after failed attempt of removal,
-          *  if it was temporary communication failure, that was continued for more than session timeout,
-          *  but ZK session is still alive for unknown reason, and someone still holds that ZK session.
-          * See comments in destructor of EphemeralNodeHolder.
-          */
-        Strings brothers = zookeeper.getChildren(path);
-        for (const auto & brother : brothers)
-        {
-            if (brother == node_name)
-                continue;
-
-            std::string brother_path = path + "/" + brother;
-            std::string brother_identifier = zookeeper.get(brother_path);
-
-            if (brother_identifier == identifier)
-            {
-                ProfileEvents::increment(ProfileEvents::ObsoleteEphemeralNode);
-                LOG_WARNING(&Logger::get("LeaderElection"), "Found obsolete ephemeral node for identifier "
-                    + identifier + ", removing: " + brother_path);
-                zookeeper.tryRemoveWithRetries(brother_path);
-            }
-        }
     }
 
     void releaseNode()

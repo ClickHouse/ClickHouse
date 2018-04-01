@@ -180,7 +180,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
         }
 
         IMergeSelector::Part part_info;
-        part_info.size = part->size_in_bytes;
+        part_info.size = part->bytes_on_disk;
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -266,7 +266,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
             return false;
         }
 
-        sum_bytes += (*it)->size_in_bytes;
+        sum_bytes += (*it)->bytes_on_disk;
 
         prev_it = it;
         ++it;
@@ -532,7 +532,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     {
         std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
-        merge_entry->total_size_bytes_compressed += part->size_in_bytes;
+        merge_entry->total_size_bytes_compressed += part->bytes_on_disk;
         merge_entry->total_size_marks += part->marks_count;
     }
 
@@ -883,7 +883,7 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 {
     size_t res = 0;
     for (const MergeTreeData::DataPartPtr & part : parts)
-        res += part->size_in_bytes;
+        res += part->bytes_on_disk;
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
