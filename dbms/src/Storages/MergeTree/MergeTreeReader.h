@@ -38,17 +38,16 @@ public:
 
     const ValueSizeMap & getAvgValueSizeHints() const;
 
-    /// Create MergeTreeRangeReader iterator, which allows reading arbitrary number of rows from range.
-    MergeTreeRangeReader readRange(size_t from_mark, size_t to_mark);
-
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// If at least one column was added, reorders all columns in the block according to ordered_names.
-    /// Rows is the number of rows will be used to create default columns. It's res.rows() when all columns in block has the same size.
-    /// This function may be used in order to create default columns in nested structures. In that case block may has
-    /// columns with different size, and default columns can't be evaluated, so never_evaluate_defaults = false is used.
-    void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder,
-                            size_t rows, bool never_evaluate_defaults = false);
+    void fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults);
+    /// Sort columns to ensure consistent order among all blocks.
+    void reorderColumns(Block & res, const Names & ordered_names);
+    /// Evaluate defaulted columns if necessary.
+    void evaluateMissingDefaults(Block & res);
+
+    const NamesAndTypesList & getColumns() const { return columns; }
 
 private:
     class Stream
@@ -121,7 +120,7 @@ private:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
-    friend class MergeTreeRangeReader;
+    friend class MergeTreeRangeReader::DelayedStream;
 };
 
 }
