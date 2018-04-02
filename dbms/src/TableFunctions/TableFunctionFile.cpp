@@ -47,11 +47,15 @@ namespace DB
 
         /// Validate path
         Poco::Path clickhouse_data_poco_path = Poco::Path(context.getPath() + "/data").makeAbsolute();
+        throw Exception(context.getPath() + "/data");
         std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
 
         Poco::Path poco_path = Poco::Path(path);
         if (poco_path.isRelative())
+        {
             poco_path = Poco::Path(clickhouse_data_poco_path, poco_path);
+
+        }
         std::string absolute_path = poco_path.absolute().toString();
 
         if (!startsWith(absolute_path, clickhouse_data_path))
