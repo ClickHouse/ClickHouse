@@ -6,8 +6,13 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Storages/StorageMemory.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-
+#include <IO/copyData.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Poco/Path.h>
 
 namespace DB
 {
@@ -20,6 +25,7 @@ namespace DB
 
     StoragePtr TableFunctionFile::executeImpl(const ASTPtr & ast_function, const Context & context) const
     {
+        /// Parse args
         ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
         if (args_func.size() != 3)
@@ -35,13 +41,54 @@ namespace DB
         for (size_t i = 0; i < 3; ++i)
             args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
+        std::string path = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+        std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
-//        UInt64 limit = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<UInt64>();
-//
-//        auto res = StorageSystemNumbers::create(getName(), false, limit);
-//        res->startup();
+        /// Validate path
+        std::string clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
+        std::string absolute_path = Poco::Path(path).absolute().toString();
 
-//        return res;
+        if (!startsWith(absolute_path, clickhouse_path))
+            throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
+
+        // Create sample block
+        std::vector<std::string> structure_vals = split(argument, " ,");
+
+        if (structure_vals.size() & 1)
+            throw Exception("Odd number of attributes in section structure", ErrorCodes::LOGICAL_ERROR);
+
+        Block sample_block = Block();
+        const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
+        for (size_t i = 0; i < structure_vals.size(); i += 2)
+        {
+            ColumnWithTypeAndName column;
+            column.name = structure_vals[i];
+            column.type = data_type_factory.get(structure_vals[i + 1]);
+            column.column = column.type->createColumn();
+            sample_block.insert(std::move(column));
+        }
+
+        /// Create table
+        NamesAndTypesList columns = sample_block.getNamesAndTypesList();
+        StoragePtr storage = StorageMemory::create(getName(), ColumnsDescription{columns});
+        storage->startup();
+        BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
+
+        /// Write data
+        std::unique_ptr<ReadBuffer> read_buffer = std::make_unique<ReadBufferFromFile>(absolute_path);
+        BlockInputStreamPtr data = std::make_shared<AsynchronousBlockInputStream>(context.getInputFormat(
+                format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE));
+
+        data->readPrefix();
+        output->writePrefix();
+        while(Block block = data->read())
+            output->write(block);
+        data->readSuffix();
+        output->writeSuffix();
+
+        return storage;
     }
 
 
