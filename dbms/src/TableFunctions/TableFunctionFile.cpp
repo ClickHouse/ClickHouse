@@ -29,8 +29,8 @@ namespace DB
         /// Parse args
         ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
-        if (!args_func.arguments)
-            throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        if (args_func.size() != 1)
+            throw Exception("Table function 'file' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
         ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
