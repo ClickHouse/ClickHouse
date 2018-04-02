@@ -23,32 +23,23 @@ namespace zkutil
 
 
 /// You should reinitialize ZooKeeper session in case of these errors
-inline bool isUnrecoverableErrorCode(int32_t zk_return_code)
+inline bool isHardwareError(int32_t zk_return_code)
 {
-    return zk_return_code == ZINVALIDSTATE || zk_return_code == ZSESSIONEXPIRED || zk_return_code == ZSESSIONMOVED;
-}
-
-/// Errors related with temporary network problems
-inline bool isTemporaryErrorCode(int32_t zk_return_code)
-{
-    return zk_return_code == ZCONNECTIONLOSS || zk_return_code == ZOPERATIONTIMEOUT;
-}
-
-/// Any error related with network or master election
-/// In case of these errors you should retry the query or reinitialize ZooKeeper session (see isUnrecoverable())
-inline bool isHardwareErrorCode(int32_t zk_return_code)
-{
-    return isUnrecoverableErrorCode(zk_return_code) || isTemporaryErrorCode(zk_return_code);
+    return zk_return_code == ZooKeeperImpl::ZooKeeper::ZINVALIDSTATE
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZSESSIONMOVED
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZOPERATIONTIMEOUT;
 }
 
 /// Valid errors sent from server
 inline bool isUserError(int32_t zk_return_code)
 {
-    return zk_return_code == ZNONODE
-           || zk_return_code == ZBADVERSION
-           || zk_return_code == ZNOCHILDRENFOREPHEMERALS
-           || zk_return_code == ZNODEEXISTS
-           || zk_return_code == ZNOTEMPTY;
+    return zk_return_code == ZooKeeperImpl::ZooKeeper::ZNONODE
+           || zk_return_code == ZooKeeperImpl::ZooKeeper::ZBADVERSION
+           || zk_return_code == ZooKeeperImpl::ZooKeeper::ZNOCHILDRENFOREPHEMERALS
+           || zk_return_code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS
+           || zk_return_code == ZooKeeperImpl::ZooKeeper::ZNOTEMPTY;
 }
 
 
@@ -60,12 +51,11 @@ private:
         : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code) { incrementEventCounter(); }
 
 public:
-    explicit KeeperException(const std::string & msg) : KeeperException(msg, ZOK, 0) {}
     KeeperException(const std::string & msg, const int32_t code)
-        : KeeperException(msg + " (" + zerror(code) + ")", code, 0) {}
-    explicit KeeperException(const int32_t code) : KeeperException(zerror(code), code, 0) {}
+        : KeeperException(msg + " (" + ZooKeeperImpl::ZooKeeper::errorMessage(code) + ")", code, 0) {}
+    explicit KeeperException(const int32_t code) : KeeperException(ZooKeeperImpl::ZooKeeper::errorMessage(code), code, 0) {}
     KeeperException(const int32_t code, const std::string & path)
-        : KeeperException(std::string{zerror(code)} + ", path: " + path, code, 0) {}
+        : KeeperException(std::string{ZooKeeperImpl::ZooKeeper::errorMessage(code)} + ", path: " + path, code, 0) {}
 
     KeeperException(const KeeperException & exc) : DB::Exception(exc), code(exc.code) { incrementEventCounter(); }
 
@@ -73,23 +63,11 @@ public:
     const char * className() const throw() override { return "zkutil::KeeperException"; }
     KeeperException * clone() const override { return new KeeperException(*this); }
 
-    /// You should reinitialize ZooKeeper session in case of these errors
-    bool isUnrecoverable() const
-    {
-        return isUnrecoverableErrorCode(code);
-    }
-
-    /// Errors related with temporary network problems
-    bool isTemporaryError() const
-    {
-        return isTemporaryErrorCode(code);
-    }
-
     /// Any error related with network or master election
-    /// In case of these errors you should retry the query or reinitialize ZooKeeper session (see isUnrecoverable())
+    /// In case of these errors you should reinitialize ZooKeeper session.
     bool isHardwareError() const
     {
-        return isHardwareErrorCode(code);
+        return zkutil::isHardwareError(code);
     }
 
     const int32_t code;
@@ -106,15 +84,20 @@ private:
 class KeeperMultiException : public KeeperException
 {
 public:
-    MultiTransactionInfo info;
+    Requests requests;
+    Responses responses;
+    size_t failed_op_index = 0;
+
+    std::string getPathForFirstFailedOp() const;
 
     /// If it is user error throws KeeperMultiException else throws ordinary KeeperException
     /// If it is ZOK does nothing
-    static void check(const MultiTransactionInfo & info);
-    static void check(int code, const Ops & ops, const OpResultsPtr & op_results);
+    static void check(int32_t code, const Requests & requests, const Responses & responses);
 
-protected:
-    KeeperMultiException(const MultiTransactionInfo & info, size_t failed_op_index);
+    KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses);
+
+private:
+    size_t getFailedOpIndex(int32_t code, const Responses & responses) const;
 };
 
 };

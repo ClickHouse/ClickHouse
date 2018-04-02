@@ -449,7 +449,7 @@ deb http://repo.yandex.ru/clickhouse/trusty stable main
 %%
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server-common
+sudo apt-get install -y clickhouse-client clickhouse-server
 %%
 
 Также можно скачать и установить пакеты вручную, отсюда:
@@ -725,7 +725,7 @@ echo 'DROP TABLE t' | POST 'http://localhost:8123/'
 
 Для запросов, которые не возвращают таблицу с данными, в случае успеха, выдаётся пустое тело ответа.
 
-Вы можете использовать сжатие при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу compressor (%%sudo apt-get install clickhouse-compressor%%).
+Вы можете использовать сжатие при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу clickhouse-compressor (%%sudo apt-get install clickhouse-utils%%).
 
 Если вы указали в URL compress=1, то сервер будет сжимать отправляемые вам данные.
 Если вы указали в URL decompress=1, то сервер будет разжимать те данные, которые вы передаёте ему POST-ом.
