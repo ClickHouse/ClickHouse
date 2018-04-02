@@ -46,11 +46,16 @@ namespace DB
         std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
         /// Validate path
-        std::string clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
-        std::string absolute_path = Poco::Path(path).absolute().toString();
+        Poco::Path clickhouse_data_poco_path = Poco::Path(context.getPath() + '/data').makeAbsolute();
+        std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
 
-        if (!startsWith(absolute_path, clickhouse_path))
-            throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
+        Poco::Path poco_path = Poco::Path(path);
+        if (poco_path.isRelative())
+            poco_path = Poco::Path(clickhouse_data_poco_path, poco_path);
+        std::string absolute_path = poco_path.absolute().toString();
+
+        if (!startsWith(absolute_path, clickhouse_data_path))
+            throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::LOGICAL_ERROR);
 
         // Create sample block
         std::vector<std::string> structure_vals;
