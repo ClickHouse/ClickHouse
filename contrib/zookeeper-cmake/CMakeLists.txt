@@ -192,9 +192,11 @@ endif()
 # cli executable
 add_executable(cli ${LIBRARY_DIR}/src/cli.c)
 target_link_libraries(cli zookeeper)
+target_link_libraries(cli $<$<PLATFORM_ID:Linux>:m>)
 
 # load_gen executable
 if(WANT_SYNCAPI AND NOT WIN32)
   add_executable(load_gen ${LIBRARY_DIR}/src/load_gen.c)
   target_link_libraries(load_gen zookeeper)
+  target_link_libraries(load_gen $<$<PLATFORM_ID:Linux>:m>)
 endif()
