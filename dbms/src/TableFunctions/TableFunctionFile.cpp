@@ -46,7 +46,7 @@ namespace DB
         std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
         /// Validate path
-        Poco::Path clickhouse_data_poco_path = Poco::Path(context.getPath() + '/data').makeAbsolute();
+        Poco::Path clickhouse_data_poco_path = Poco::Path(context.getPath() + "/data").makeAbsolute();
         std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
 
         Poco::Path poco_path = Poco::Path(path);
