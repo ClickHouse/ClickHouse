@@ -1,5 +1,7 @@
 #include <Common/isLocalAddress.h>
 
+#include <Interpreters/Context.h>
+
 #include <cstring>
 #include <Core/Types.h>
 #include <Poco/Util/Application.h>
@@ -12,6 +14,19 @@ namespace DB
 
 bool isLocalAddress(const Poco::Net::SocketAddress & address)
 {
+    const auto & config = context.getConfigRef();
+    // If the host specificed matches "interserver_http_host" configuration we can be sure
+    // that it's the local address
+    String this_host = config().getString("interserver_http_host", "");
+
+    if (!this_host.empty()) {
+        if (address.host().length() == this_host.length()) {
+            if (0 == memcmp(this_host, address.host().addr(), address.host().length())) {
+                return true;
+            }
+        }
+    }
+
     static auto interfaces = Poco::Net::NetworkInterface::list();
 
     return interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
