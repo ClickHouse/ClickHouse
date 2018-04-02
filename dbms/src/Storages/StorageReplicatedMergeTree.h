@@ -27,7 +27,7 @@
 namespace DB
 {
 
-template <typename Key> struct CachedMergingPredicate;
+class ReplicatedMergeTreeMergeSelectingThread;
 
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
@@ -188,6 +188,7 @@ private:
     friend class ReplicatedMergeTreeRestartingThread;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
+    friend class ReplicatedMergeTreeMergeSelectingThread;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -262,12 +263,9 @@ private:
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHandle merge_selecting_task_handle;
-    bool merge_sel_deduplicate;
-    std::function<bool(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> merge_sel_uncached_merging_predicate;
-    std::function<std::pair<String, String>(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> merge_sel_merging_predicate_args_to_key;
-    std::chrono::steady_clock::time_point merge_sel_now;
-    std::unique_ptr<CachedMergingPredicate<std::pair<std::string, std::string>> > merge_sel_cached_merging_predicate;
-    std::function<bool(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)> merge_sel_can_merge;
+
+    /// State for merge selecting thread
+    std::unique_ptr<ReplicatedMergeTreeMergeSelectingThread> merge_sel_state;
 
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
@@ -291,10 +289,6 @@ private:
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
     Logger * log;
-
-    /// Initialization.
-
-    void initMergeSelectSession();
 
     /** Creates the minimum set of nodes in ZooKeeper.
       */
