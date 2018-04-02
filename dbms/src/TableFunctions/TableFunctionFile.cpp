@@ -13,6 +13,7 @@
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/Path.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -53,7 +54,8 @@ namespace DB
             throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
 
         // Create sample block
-        std::vector<std::string> structure_vals = split(argument, " ,");
+        std::vector<std::string> structure_vals;
+        boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
 
         if (structure_vals.size() & 1)
             throw Exception("Odd number of attributes in section structure", ErrorCodes::LOGICAL_ERROR);
