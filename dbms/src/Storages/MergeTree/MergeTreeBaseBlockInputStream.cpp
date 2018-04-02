@@ -168,7 +168,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             task->size_predictor->update(read_result.block);
     }
 
-    if (prewhere_actions && !task->remove_prewhere_column)
+    if (read_result.block && prewhere_actions && !task->remove_prewhere_column)
     {
         /// Convert const column to full here because it's cheaper to filter const column than full.
         auto & column = read_result.block.getByName(prewhere_column_name);
