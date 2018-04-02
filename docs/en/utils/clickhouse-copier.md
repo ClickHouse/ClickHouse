@@ -1,40 +1,54 @@
-# clickhouse-copier util
+<a name="utils-clickhouse-copier"></a>
 
-The util copies tables data from one cluster to new tables of other (possibly the same) cluster in distributed and fault-tolerant manner.
+# clickhouse-copier
 
-Configuration of copying tasks is set in special ZooKeeper node (called the `/description` node).
-A ZooKeeper path to the description node is specified via `--task-path </task/path>` parameter.
-So, node `/task/path/description` should contain special XML content describing copying tasks.
+Copies data from the tables in one cluster to tables in another (or the same) cluster.
 
-Simultaneously many `clickhouse-copier` processes located on any servers could execute the same task.
-ZooKeeper node `/task/path/` is used by the processes to coordinate their work.
-You must not add additional child nodes to `/task/path/`.
+You can run multiple `clickhouse-copier` instances on different servers to perform the same job. ZooKeeper is used for syncing the processes.
 
-Currently you are responsible for manual launching of all `cluster-copier` processes.
-You can launch as many processes as you want, whenever and wherever you want.
-Each process try to select the nearest available shard of source cluster and copy some part of data (partition) from it to the whole
-destination cluster (with resharding).
-Therefore it makes sense to launch cluster-copier processes on the source cluster nodes to reduce the network usage.
+After starting, `clickhouse-copier`:
 
-Since the workers coordinate their work via ZooKeeper, in addition to `--task-path </task/path>` you have to specify ZooKeeper
-cluster configuration via `--config-file <zookeeper.xml>` parameter. Example of `zookeeper.xml`:
+- Connects to ZooKeeper and receives:
+   - Copying jobs.
+   - The state of the copying jobs.
+
+- It performs the jobs.
+
+   Each running process chooses the "closest" shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
+
+`clickhouse-copier` tracks the changes in ZooKeeper and applies them on the fly.
+
+To reduce network traffic, we recommend running `clickhouse-copier` on the same server where the source data is located.
+
+## Running clickhouse-copier
+
+The utility should be run manually:
+
+```bash
+clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+```
+
+Parameters:
+
+- `daemon` — Starts `clickhouse-copier` in daemon mode.
+- `config` — The path to the `zookeeper.xml` file with the parameters for the connection to ZooKeeper.
+- `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
+- `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
+
+## Format of zookeeper.xml
 
 ```xml
-   <yandex>
+<yandex>
     <zookeeper>
         <node index="1">
             <host>127.0.0.1</host>
             <port>2181</port>
         </node>
     </zookeeper>
-   </yandex>
+</yandex>
 ```
 
-When you run `clickhouse-copier --config-file <zookeeper.xml> --task-path </task/path>` the process connects to ZooKeeper cluster, reads tasks config from `/task/path/description` and executes them.
-
-## Format of task config
-
-Here is an example of `/task/path/description` content:
+## Configuration of copying tasks
 
 ```xml
 <yandex>
@@ -69,62 +83,62 @@ Here is an example of `/task/path/description` content:
         <readonly>0</readonly>
     </settings_push>
 
-    <!-- Common setting for fetch (pull) and insert (push) operations. Also, copier process context uses it.
+    <!-- Common setting for fetch (pull) and insert (push) operations. The copier process context also uses it.
          They are overlaid by <settings_pull/> and <settings_push/> respectively. -->
     <settings>
         <connect_timeout>3</connect_timeout>
-        <!-- Sync insert is set forcibly, leave it here just in case. -->
+        <!-- Sync insert is set forcibly, but leave it here just in case. -->
         <insert_distributed_sync>1</insert_distributed_sync>
     </settings>
 
-    <!-- Copying tasks description.
-         You could specify several table task in the same task description (in the same ZooKeeper node), they will be performed
+    <!-- Copying task descriptions.
+         You can specify several table tasks in the same task description (in the same ZooKeeper node), and they will be performed
          sequentially.
     -->
     <tables>
-        <!-- A table task, copies one table. -->
+        <!-- A table task that copies one table. -->
         <table_hits>
-            <!-- Source cluster name (from <remote_servers/> section) and tables in it that should be copied -->
+            <!-- Source cluster name (from the <remote_servers/> section) and tables in it that should be copied. -->
             <cluster_pull>source_cluster</cluster_pull>
             <database_pull>test</database_pull>
             <table_pull>hits</table_pull>
 
-            <!-- Destination cluster name and tables in which the data should be inserted -->
+            <!-- Destination cluster name and tables where the data should be inserted. -->
             <cluster_push>destination_cluster</cluster_push>
             <database_push>test</database_push>
             <table_push>hits2</table_push>
 
-            <!-- Engine of destination tables.
-                 If destination tables have not be created, workers create them using columns definition from source tables and engine
+            <!-- Engine for destination tables.
+                 If the destination tables have not been created yet, workers create them using column definitions from source tables and the engine
                  definition from here.
 
-                 NOTE: If the first worker starts insert data and detects that destination partition is not empty then the partition will
-                 be dropped and refilled, take it into account if you already have some data in destination tables. You could directly
-                 specify partitions that should be copied in <enabled_partitions/>, they should be in quoted format like partition column of
+                 NOTE: If the first worker starts to insert data and detects that the destination partition is not empty, then the partition will
+                 be dropped and refilled. Take this into account if you already have some data in destination tables. You can directly
+                 specify partitions that should be copied in <enabled_partitions/>. They should be in quoted format like the partition column in the
                  system.parts table.
             -->
-            <engine>ENGINE=ReplicatedMergeTree('/clickhouse/tables/{cluster}/{shard}/hits2', '{replica}')
+            <engine>
+            ENGINE=ReplicatedMergeTree('/clickhouse/tables/{cluster}/{shard}/hits2', '{replica}')
             PARTITION BY toMonday(date)
             ORDER BY (CounterID, EventDate)
             </engine>
 
-            <!-- Sharding key used to insert data to destination cluster -->
+            <!-- The sharding key used to insert data to the destination cluster. -->
             <sharding_key>jumpConsistentHash(intHash64(UserID), 2)</sharding_key>
 
-            <!-- Optional expression that filter data while pull them from source servers -->
+            <!-- Optional expression that filters data while pulling it from source servers. -->
             <where_condition>CounterID != 0</where_condition>
 
-            <!-- This section specifies partitions that should be copied, other partition will be ignored.
+            <!-- This section specifies partitions that should be copied. Other partitions will be ignored.
                  Partition names should have the same format as
-                 partition column of system.parts table (i.e. a quoted text).
-                 Since partition key of source and destination cluster could be different,
-                 these partition names specify destination partitions.
+                the partition column in the system.parts table (i.e. quoted text).
+                 Since the partition key might be different for the source and destination cluster,
+                 these partition names specify the destination partitions.
 
-                 NOTE: In spite of this section is optional (if it is not specified, all partitions will be copied),
-                 it is strictly recommended to specify them explicitly.
-                 If you already have some ready paritions on destination cluster they
-                 will be removed at the start of the copying since they will be interpeted
-                 as unfinished data from the previous copying!!!
+                 Note: Although this section is optional (if it omitted, all partitions will be copied), it is strongly recommended to specify the partitions explicitly.
+                 If you already have some partitions ready on the destination cluster, they
+                 will be removed at the start of the copying, because they will be interpreted
+                 as unfinished data from the previous copying.
             -->
             <enabled_partitions>
                 <partition>'2018-02-26'</partition>
@@ -133,7 +147,7 @@ Here is an example of `/task/path/description` content:
             </enabled_partitions>
         </table_hits>
 
-        <!-- Next table to copy. It is not copied until previous table is copying. -->
+        <!-- Next table to copy. It is not copied until the previous table is copying. -->
         </table_visits>
         ...
         </table_visits>
@@ -142,15 +156,5 @@ Here is an example of `/task/path/description` content:
 </yandex>
 ```
 
-cluster-copier processes watch for `/task/path/description` node update.
-So, if you modify the config settings or `max_workers` params, they will be updated.
+`clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
 
-## Example
-
-```bash
-clickhouse-copier copier --daemon --config /path/to/copier/zookeeper.xml --task-path /clickhouse-copier/cluster1_tables_hits --base-dir /path/to/copier_logs
-```
-
-`--base-dir /path/to/copier_logs` specifies where auxilary and log files of the copier process will be saved.
-In this case it will create `/path/to/copier_logs/clickhouse-copier_YYYYMMHHSS_<PID>/` dir with log and status-files.
-If it is not specified it will use current dir (`/clickhouse-copier_YYYYMMHHSS_<PID>/` if it is run as a `--daemon`).

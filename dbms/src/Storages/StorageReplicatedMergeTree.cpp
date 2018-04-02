@@ -838,7 +838,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         LOG_ERROR(log, "Adding unexpected local part to ZooKeeper: " << part->name);
 
         zkutil::Ops ops;
-        checkPartAndAddToZooKeeper(part, ops);
+        checkPartChecksumsAndAddCommitOps(zookeeper, part, ops);
         zookeeper->multi(ops);
     }
 
@@ -878,11 +878,9 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 }
 
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
-    const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
+void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper,
+    const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name, NameSet * absent_replicas_paths)
 {
-    auto zookeeper = getZooKeeper();
-
     if (part_name.empty())
         part_name = part->name;
 
@@ -892,24 +890,34 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
     std::shuffle(replicas.begin(), replicas.end(), rng);
     String expected_columns_str = part->columns.toString();
+    bool has_been_alredy_added = false;
 
     for (const String & replica : replicas)
     {
         zkutil::Stat stat_before, stat_after;
+        String current_part_path = zookeeper_path + "/replicas/" + replica + "/parts/" + part_name;
+
         String columns_str;
-        if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name + "/columns", columns_str, &stat_before))
+        if (!zookeeper->tryGet(current_part_path + "/columns", columns_str, &stat_before))
+        {
+            if (absent_replicas_paths)
+                absent_replicas_paths->emplace(current_part_path);
+
             continue;
+        }
+
         if (columns_str != expected_columns_str)
         {
             LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica
                 << " because columns are different");
             continue;
         }
+
         String checksums_str;
         /// Let's check that the node's version with the columns did not change while we were reading the checksums.
         /// This ensures that the columns and the checksum refer to the same data.
-        if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name + "/checksums", checksums_str) ||
-            !zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name + "/columns", &stat_after) ||
+        if (!zookeeper->tryGet(current_part_path + "/checksums", checksums_str) ||
+            !zookeeper->exists(current_part_path + "/columns", &stat_after) ||
             stat_before.version != stat_after.version)
         {
             LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica
@@ -917,36 +925,90 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
             continue;
         }
 
-        auto checksums = MergeTreeData::DataPart::Checksums::parse(checksums_str);
-        checksums.checkEqual(part->checksums, true);
+        auto zk_checksums = MinimalisticDataPartChecksums::deserializeFrom(checksums_str);
+        zk_checksums.checkEqual(part->checksums, true);
+
+        if (replica == replica_name)
+            has_been_alredy_added = true;
     }
 
-    if (zookeeper->exists(replica_path + "/parts/" + part_name))
+    if (!has_been_alredy_added)
     {
-        LOG_ERROR(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part_name << " already exists");
-        return;
+        auto acl = zookeeper->getDefaultACL();
+        String part_path = replica_path + "/parts/" + part_name;
+
+        ops.emplace_back(std::make_shared<zkutil::Op::Check>(
+            zookeeper_path + "/columns", expected_columns_version));
+        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
+            part_path, "", acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
+            part_path + "/columns", part->columns.toString(), acl, zkutil::CreateMode::Persistent));
+        ops.emplace_back(std::make_shared<zkutil::Op::Create>(
+            part_path + "/checksums", getChecksumsForZooKeeper(part->checksums), acl, zkutil::CreateMode::Persistent));
     }
+    else
+    {
+        LOG_WARNING(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part_name << " already exists."
+            << " Will not commit any nodes.");
+    }
+}
 
-    auto acl = zookeeper->getDefaultACL();
+MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(MergeTreeData::Transaction & transaction,
+    const MergeTreeData::DataPartPtr & part)
+{
+    auto zookeeper = getZooKeeper();
 
-    ops.emplace_back(std::make_shared<zkutil::Op::Check>(
-        zookeeper_path + "/columns",
-        expected_columns_version));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
-        replica_path + "/parts/" + part_name,
-        "",
-        acl,
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
-        replica_path + "/parts/" + part_name + "/columns",
-        part->columns.toString(),
-        acl,
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_shared<zkutil::Op::Create>(
-        replica_path + "/parts/" + part_name + "/checksums",
-        part->checksums.toString(),
-        acl,
-        zkutil::CreateMode::Persistent));
+    while (true)
+    {
+        zkutil::Ops ops;
+        NameSet absent_part_paths_on_replicas;
+
+        /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
+        checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, &absent_part_paths_on_replicas);
+
+        /// Do not commit if the part is obsolete, we have just briefly checked its checksums
+        if (transaction.isEmpty())
+            return {};
+
+        /// Will check that the part did not suddenly appear on skipped replicas
+        if (!absent_part_paths_on_replicas.empty())
+        {
+            zkutil::Ops new_ops;
+            for (const String & part_path : absent_part_paths_on_replicas)
+            {
+                new_ops.emplace_back(std::make_shared<zkutil::Op::Create>(part_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+                new_ops.emplace_back(std::make_shared<zkutil::Op::Remove>(part_path, -1));
+            }
+
+            /// Add check ops at the beginning
+            new_ops.insert(new_ops.end(), ops.begin(), ops.end());
+            ops = std::move(new_ops);
+        }
+
+        try
+        {
+            zookeeper->multi(ops);
+            return transaction.commit();
+        }
+        catch (zkutil::KeeperMultiException & e)
+        {
+            size_t num_check_ops = 2 * absent_part_paths_on_replicas.size();
+            size_t failed_op_index = zkutil::getFailedOpIndex(e.info.op_results, e.info.code);
+
+            if (failed_op_index < num_check_ops && e.info.code == ZNODEEXISTS)
+            {
+                LOG_INFO(log, "The part " << e.info.getFailedOp().describe() << " on a replica suddenly appeared, will recheck checksums");
+            }
+            else
+                throw;
+        }
+    }
+}
+
+String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums)
+{
+    return MinimalisticDataPartChecksums::getSerializedString(checksums,
+                                                              static_cast<bool>(data.settings.use_minimalistic_checksums_in_zookeeper));
 }
 
 
@@ -1080,11 +1142,11 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         /// If entry is old enough, and have enough size, and part are exists in any replica,
         ///  then prefer fetching of merged part from replica.
 
-        size_t sum_parts_size_in_bytes = 0;
+        size_t sum_parts_bytes_on_disk = 0;
         for (const auto & part : parts)
-            sum_parts_size_in_bytes += part->size_in_bytes;
+            sum_parts_bytes_on_disk += part->bytes_on_disk;
 
-        if (sum_parts_size_in_bytes >= data.settings.prefer_fetch_merged_part_size_threshold)
+        if (sum_parts_bytes_on_disk >= data.settings.prefer_fetch_merged_part_size_threshold)
         {
             String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
             if (!replica.empty())
@@ -1143,7 +1205,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
             part_log_elem.part_name = entry.new_part_name;
 
             if (part)
-                part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+                part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
 
             part_log_elem.source_part_names.reserve(parts.size());
             for (const auto & source_part : parts)
@@ -1171,22 +1233,18 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         part = merger.mergePartsToTemporaryPart(
             future_merged_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
-        zkutil::Ops ops;
+        merger.renameMergedTemporaryPart(part, parts, &transaction);
 
         try
         {
-            /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
-            checkPartAndAddToZooKeeper(part, ops, entry.new_part_name);
+            checkPartChecksumsAndCommit(transaction, part);
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH
-                || e.code() == ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART
-                || e.code() == ErrorCodes::NO_FILE_IN_DATA_PART
-                || e.code() == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART)
+            if (MergeTreeDataPartChecksums::isBadChecksumsErrorCode(e.code()))
             {
                 do_fetch = true;
-                part->remove();
+                transaction.rollback();
 
                 ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
@@ -1208,15 +1266,6 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
             }
 
             throw;
-        }
-
-        merger.renameMergedTemporaryPart(part, parts, &transaction);
-
-        /// Do not commit if the part is obsolete
-        if (!transaction.isEmpty())
-        {
-            getZooKeeper()->multi(ops); /// After long merge, get fresh ZK handle, because previous session may be expired.
-            transaction.commit();
         }
 
         /** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
@@ -1526,7 +1575,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
         ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
             replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
         ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
-            replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
+            replica_path + "/parts/" + part->name + "/checksums", getChecksumsForZooKeeper(transaction->getNewChecksums()), -1));
 
         zookeeper->multi(ops);
 
@@ -2244,7 +2293,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
             if (part)
             {
-                part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+                part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
                 part_log_elem.rows = part->rows_count; /// Could be approximate (?)
             }
 
@@ -2269,24 +2318,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
         if (!to_detached)
         {
-            zkutil::Ops ops;
+            MergeTreeData::Transaction transaction;
+            data.renameTempPartAndReplace(part, nullptr, &transaction);
 
             /** NOTE
               * Here, an error occurs if ALTER occurred with a change in the column type or column deletion,
               *  and the part on remote server has not yet been modified.
               * After a while, one of the following attempts to make `fetchPart` succeed.
               */
-            checkPartAndAddToZooKeeper(part, ops, part_name);
-
-            MergeTreeData::Transaction transaction;
-            data.renameTempPartAndReplace(part, nullptr, &transaction);
-
-            /// Do not commit if the part is obsolete
-            if (!transaction.isEmpty())
-            {
-                getZooKeeper()->multi(ops);
-                replaced_parts = transaction.commit();
-            }
+            replaced_parts = checkPartChecksumsAndCommit(transaction, part);
 
             /** If a quorum is tracked for this part, you must update it.
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
@@ -2346,6 +2386,9 @@ void StorageReplicatedMergeTree::startup()
 
     /// In this thread replica will be activated.
     restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
+
+    /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
+    startup_event.wait();
 }
 
 
@@ -2906,7 +2949,7 @@ bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
     /// Consider only synchronized data
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
+    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
     return true;
 }
 
@@ -3730,6 +3773,5 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 
     LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
 }
-
 
 }

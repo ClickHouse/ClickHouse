@@ -94,7 +94,12 @@ void ReplicatedMergeTreeQueue::initialize(
 void ReplicatedMergeTreeQueue::insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &)
 {
     virtual_parts.add(entry->new_part_name);
-    queue.push_back(entry);
+
+    /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
+    if (entry->type != LogEntry::DROP_RANGE)
+        queue.push_back(entry);
+    else
+        queue.push_front(entry);
 
     if (entry->type == LogEntry::GET_PART)
     {
@@ -634,7 +639,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
-                sum_parts_size_in_bytes += part->size_in_bytes;
+                sum_parts_size_in_bytes += part->bytes_on_disk;
         }
 
         if (merger.merges_blocker.isCancelled())

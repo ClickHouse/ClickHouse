@@ -56,7 +56,7 @@ In this example, the index can't be used:
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when executing the query, use the settings [ force_index_by_date](../operations/settings/settings.md#settings-settings-force_index_by_date)  and [ force_primary_key](../operations/settings/settings.md#settings-settings-force_primary_key).
+To check whether ClickHouse can use the index when executing the query, use the settings  [force_index_by_date](../operations/settings/settings.md#settings-settings-force_index_by_date)and[force_primary_key](../operations/settings/settings.md#settings-settings-force_primary_key).
 
 The index by date only allows reading those parts that contain dates from the desired range. However, a data part may contain data for many dates (up to an entire month), while within a single part the data is ordered by the primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 

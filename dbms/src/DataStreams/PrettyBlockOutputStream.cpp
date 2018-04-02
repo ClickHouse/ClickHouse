@@ -1,6 +1,5 @@
 #include <sys/ioctl.h>
-#include <unistd.h>
-
+#include <port/unistd.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
