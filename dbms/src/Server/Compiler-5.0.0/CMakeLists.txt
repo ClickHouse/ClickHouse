@@ -51,3 +51,8 @@ libtinfo.a
 
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
+
+if (MAKE_STATIC_LIBRARIES)
+    # fix strange static error: undefined reference to 'std::error_category::~error_category()'
+    target_link_libraries(clickhouse-compiler-lib PUBLIC stdc++)
+endif ()
