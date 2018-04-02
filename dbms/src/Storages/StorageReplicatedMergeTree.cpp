@@ -102,6 +102,26 @@ namespace ErrorCodes
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
 static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
 
+template <typename Key> struct CachedMergingPredicate;
+
+class ReplicatedMergeTreeMergeSelectingThread
+{
+public:
+
+    ReplicatedMergeTreeMergeSelectingThread(StorageReplicatedMergeTree* storage_);
+    void clearState();
+
+    bool deduplicate;
+    std::chrono::steady_clock::time_point now;
+    std::function<bool(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)> can_merge;
+
+private:
+
+    StorageReplicatedMergeTree* storage;
+    std::function<bool(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> uncached_merging_predicate;
+    std::function<std::pair<String, String>(const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> merging_predicate_args_to_key;
+    std::unique_ptr<CachedMergingPredicate<std::pair<std::string, std::string>> > cached_merging_predicate;
+};
 
 /** There are three places for each part, where it should be
   * 1. In the RAM, MergeTreeData::data_parts, all_data_parts.
@@ -210,7 +230,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
-    initMergeSelectSession();
+    merge_sel_state.reset(new ReplicatedMergeTreeMergeSelectingThread(this));
     merge_selecting_task_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree::mergeSelectingThread", [this] { mergeSelectingThread(); });
 
     bool skip_sanity_checks = false;
@@ -1815,33 +1835,6 @@ namespace
     template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::max_delay;
     template <typename Key> constexpr double CachedMergingPredicate<Key>::Expiration::exponent_base;
 
-
-void StorageReplicatedMergeTree::initMergeSelectSession()
-{
-    merge_sel_deduplicate = false;  /// TODO: read deduplicate option from table config
-
-    merge_sel_uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-    {
-        return canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data);
-    };
-
-    merge_sel_merging_predicate_args_to_key = [](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-    {
-        return std::make_pair(left->name, right->name);
-    };
-
-    merge_sel_cached_merging_predicate.reset(new CachedMergingPredicate<std::pair<std::string, std::string>>());
-
-    /// Will be updated below.
-    merge_sel_now = std::chrono::steady_clock::time_point();
-
-    merge_sel_can_merge = [&] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
-    {
-        return partsWillNotBeMergedOrDisabled(left, right, queue)
-               && merge_sel_cached_merging_predicate->get(merge_sel_now, merge_sel_uncached_merging_predicate, merge_sel_merging_predicate_args_to_key, left, right);
-    };
-}
-
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
     if (shutdown_called || !is_leader_node)
@@ -1879,13 +1872,13 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
             size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
 
-            merge_sel_now = std::chrono::steady_clock::now();
+            merge_sel_state->now = std::chrono::steady_clock::now();
 
             if (max_parts_size_for_merge > 0
-                && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, merge_sel_can_merge))
+                && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, merge_sel_state->can_merge))
             {
                 merge_selecting_logs_pulling_is_required = true;
-                success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, merge_sel_deduplicate);
+                success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, merge_sel_state->deduplicate);
             }
         }
     }
@@ -2008,7 +2001,7 @@ void StorageReplicatedMergeTree::becomeLeader()
     LOG_INFO(log, "Became leader");
     is_leader_node = false;
     merge_selecting_task_handle->activate();
-    initMergeSelectSession();
+    merge_sel_state->clearState();
     is_leader_node = true;
     merge_selecting_task_handle->schedule();
 }
@@ -3726,5 +3719,37 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
 }
 
+ReplicatedMergeTreeMergeSelectingThread::ReplicatedMergeTreeMergeSelectingThread(StorageReplicatedMergeTree* storage_) :
+	storage(storage_)
+{
+    clearState();
+}
+
+void ReplicatedMergeTreeMergeSelectingThread::clearState()
+{
+    deduplicate = false;  /// TODO: read deduplicate option from table config
+
+    uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    {
+        return canMergePartsAccordingToZooKeeperInfo(left, right, storage->getZooKeeper(), storage->zookeeper_path, storage->data);
+    };
+
+    merging_predicate_args_to_key = [](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
+    {
+        return std::make_pair(left->name, right->name);
+    };
+
+    cached_merging_predicate.reset(new CachedMergingPredicate<std::pair<std::string, std::string>>());
+
+    /// Will be updated below.
+
+    now = std::chrono::steady_clock::time_point();
+
+    can_merge = [&] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
+    {
+        return partsWillNotBeMergedOrDisabled(left, right, storage->queue)
+        && cached_merging_predicate->get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
+    };
+}
 
 }
