@@ -382,15 +382,17 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         Poco::File merge_dir(merge_dir_name);
         if (!merge_dir.exists() || !merge_dir.isDirectory())
             continue;
+
         for (Poco::DirectoryIterator it(merge_dir_name); it != Poco::DirectoryIterator(); ++it)
         {
             Poco::File & file = *it;
-            if (file.isFile()
-                && (endsWith(file.path(), ".xml") || endsWith(file.path(), ".conf"))
-                && !startsWith(file.path(), ".")) // skip temporary files
-            {
+            Poco::Path path(file.path());
+            std::string extension = path.getExtension();
+            std::string base_name = path.getBaseName();
+
+            // Skip non-config and temporary files
+            if (file.isFile() && (extension == "xml" || extension == "conf") && !startsWith(base_name, "."))
                 files.push_back(file.path());
-            }
         }
     }
 

@@ -33,18 +33,18 @@ int main(int argc, char ** argv)
         while (true)
         {
             {
-                zkutil::Ops ops;
-                ops.emplace_back(std::make_shared<zkutil::Op::Create>("/test/zk_expiration_test", "hello", zk.getDefaultACL(), zkutil::CreateMode::Persistent));
-                ops.emplace_back(std::make_shared<zkutil::Op::Remove>("/test/zk_expiration_test", -1));
+                zkutil::Requests ops;
+                ops.emplace_back(zkutil::makeCreateRequest("/test/zk_expiration_test", "hello", zkutil::CreateMode::Persistent));
+                ops.emplace_back(zkutil::makeRemoveRequest("/test/zk_expiration_test", -1));
 
-                zkutil::MultiTransactionInfo info;
-                zk.tryMultiNoThrow(ops, nullptr, &info);
+                zkutil::Responses responses;
+                int32_t code = zk.tryMultiNoThrow(ops, responses);
 
-                std::cout << time(nullptr) - time0 << "s: " << zkutil::ZooKeeper::error2string(info.code) << std::endl;
+                std::cout << time(nullptr) - time0 << "s: " << zkutil::ZooKeeper::error2string(code) << std::endl;
                 try
                 {
-                    if (info.code != ZOK)
-                        std::cout << "Path: " << info.getFailedOp().getPath() << std::endl;
+                    if (code)
+                        std::cout << "Path: " << zkutil::KeeperMultiException(code, ops, responses).getPathForFirstFailedOp() << std::endl;
                 }
                 catch (...)
                 {
