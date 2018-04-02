@@ -1,17 +1,12 @@
 #pragma once
 
+#include <Poco/Data/SessionPool.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/DictionaryStructure.h>
 
-
 namespace Poco
 {
-    namespace Data
-    {
-        class SessionPool;
-    }
-
     namespace Util
     {
         class AbstractConfiguration;
