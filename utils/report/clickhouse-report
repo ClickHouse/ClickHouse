@@ -1,0 +1,30 @@
+#!/bin/sh -x
+# Usages:
+# sh -x clickhouse-report > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+
+# Also dump some system info (can contain some private data)
+# sh -x clickhouse-report system > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report system | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+
+clickhouse-client -q 'SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.metrics FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.asynchronous_metrics FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.build_options FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.processes FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.merges FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.parts FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.replication_queue FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.replicas FORMAT PrettyCompactNoEscapes'
+clickhouse-client -q 'SELECT * FROM system.dictionaries FORMAT PrettyCompactNoEscapes'
+tail -n200 /var/log/clickhouse-server/clickhouse-server.err.log
+tail -n200 /var/log/clickhouse-server/clickhouse-server.log
+tail -n100 /var/log/clickhouse-server/stderr
+
+if [ "$1" = "system" ]; then
+    uname -a
+    cat /etc/lsb-release
+    df -h
+    top -bn1
+    ps auxw
+fi

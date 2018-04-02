@@ -74,7 +74,6 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
-    extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -82,6 +81,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 
@@ -130,7 +130,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
-    Macros macros;                                          /// Substitutions extracted from config.
+    MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -184,6 +184,8 @@ struct ContextShared
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     pcg64 rng{randomSeed()};
+
+    Context::ConfigReloadCallback config_reload_callback;
 
     ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
         : runtime_components_factory(std::move(runtime_components_factory_))
@@ -910,17 +912,17 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 }
 
 
-ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
+ASTPtr Context::getCreateTableQuery(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
     assertDatabaseExists(db);
 
-    return shared->databases[db]->getCreateQuery(*this, table_name);
+    return shared->databases[db]->getCreateTableQuery(*this, table_name);
 }
 
-ASTPtr Context::getCreateExternalQuery(const String & table_name) const
+ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
     TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
     if (external_tables.end() == jt)
@@ -929,6 +931,15 @@ ASTPtr Context::getCreateExternalQuery(const String & table_name) const
     return jt->second.second;
 }
 
+ASTPtr Context::getCreateDatabaseQuery(const String & database_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    assertDatabaseExists(db);
+
+    return shared->databases[db]->getCreateDatabaseQuery(*this);
+}
 
 Settings Context::getSettings() const
 {
@@ -1042,15 +1053,14 @@ void Context::setDefaultFormat(const String & name)
     default_format = name;
 }
 
-const Macros & Context::getMacros() const
+MultiVersion<Macros>::Version Context::getMacros() const
 {
-    return shared->macros;
+    return shared->macros.get();
 }
 
-void Context::setMacros(Macros && macros)
+void Context::setMacros(std::unique_ptr<Macros> && macros)
 {
-    /// We assume that this assignment occurs once when the server starts. If this is not the case, you need to use a mutex.
-    shared->macros = macros;
+    shared->macros.set(std::move(macros));
 }
 
 const Context & Context::getQueryContext() const
@@ -1619,6 +1629,22 @@ time_t Context::getUptimeSeconds() const
 {
     auto lock = getLock();
     return shared->uptime_watch.elapsedSeconds();
+}
+
+
+void Context::setConfigReloadCallback(ConfigReloadCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->config_reload_callback = std::move(callback);
+}
+
+void Context::reloadConfig() const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->config_reload_callback)
+        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->config_reload_callback();
 }
 
 

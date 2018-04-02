@@ -14,10 +14,10 @@ namespace DB
 StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         {"metric", std::make_shared<DataTypeString>()},
         {"value",  std::make_shared<DataTypeInt64>()},
-    };
+    }));
 }
 
 

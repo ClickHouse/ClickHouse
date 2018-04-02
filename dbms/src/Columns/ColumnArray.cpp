@@ -31,10 +31,10 @@ namespace ErrorCodes
 }
 
 
-ColumnArray::ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
-    : data(nested_column), offsets(offsets_column)
+ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
+    : data(std::move(nested_column)), offsets(std::move(offsets_column))
 {
-    if (!typeid_cast<const ColumnOffsets *>(offsets_column.get()))
+    if (!typeid_cast<const ColumnOffsets *>(offsets.get()))
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
 
     /** NOTE
@@ -43,8 +43,8 @@ ColumnArray::ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offs
       */
 }
 
-ColumnArray::ColumnArray(const ColumnPtr & nested_column)
-    : data(nested_column)
+ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
+    : data(std::move(nested_column))
 {
     if (!data->empty())
         throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::ILLEGAL_COLUMN);
@@ -317,7 +317,7 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 }
 
 
-MutableColumnPtr ColumnArray::convertToFullColumnIfConst() const
+ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
     ColumnPtr new_data;
 
@@ -391,7 +391,7 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 }
 
 
-MutableColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (typeid_cast<const ColumnUInt8 *>(data.get()))      return filterNumber<UInt8>(filt, result_size_hint);
     if (typeid_cast<const ColumnUInt16 *>(data.get()))     return filterNumber<UInt16>(filt, result_size_hint);
@@ -410,7 +410,7 @@ MutableColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hi
 }
 
 template <typename T>
-MutableColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
         return ColumnArray::create(data);
@@ -424,7 +424,7 @@ MutableColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_s
     return std::move(res);
 }
 
-MutableColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint) const
 {
     size_t col_size = getOffsets().size();
     if (col_size != filt.size())
@@ -492,7 +492,7 @@ MutableColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_s
     return std::move(res);
 }
 
-MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = getOffsets().size();
     if (size != filt.size())
@@ -537,7 +537,7 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
     return std::move(res);
 }
 
-MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
         return ColumnArray::create(data);
@@ -560,7 +560,7 @@ MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result
         filtered_offsets);
 }
 
-MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().size() == 0)
         return ColumnArray::create(data);
@@ -576,7 +576,8 @@ MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_si
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsPtr()).filter(filt, result_size_hint);
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()->assumeMutable())
+                .filter(filt, result_size_hint);
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -588,7 +589,7 @@ MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_si
 }
 
 
-MutableColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = getOffsets().size();
 
@@ -652,7 +653,7 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 }
 
 
-MutableColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
+ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
     if (typeid_cast<const ColumnUInt8 *>(data.get()))     return replicateNumber<UInt8>(replicate_offsets);
     if (typeid_cast<const ColumnUInt16 *>(data.get()))    return replicateNumber<UInt16>(replicate_offsets);
@@ -673,7 +674,7 @@ MutableColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 
 
 template <typename T>
-MutableColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
+ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
@@ -721,7 +722,7 @@ MutableColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets)
 }
 
 
-MutableColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
+ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
@@ -796,7 +797,7 @@ MutableColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets)
 }
 
 
-MutableColumnPtr ColumnArray::replicateConst(const Offsets & replicate_offsets) const
+ColumnPtr ColumnArray::replicateConst(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
@@ -834,7 +835,7 @@ MutableColumnPtr ColumnArray::replicateConst(const Offsets & replicate_offsets) 
 }
 
 
-MutableColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets) const
+ColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
@@ -860,25 +861,27 @@ MutableColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets
 }
 
 
-MutableColumnPtr ColumnArray::replicateNullable(const Offsets & replicate_offsets) const
+ColumnPtr ColumnArray::replicateNullable(const Offsets & replicate_offsets) const
 {
     const ColumnNullable & nullable = static_cast<const ColumnNullable &>(*data);
 
     /// Make temporary arrays for each components of Nullable. Then replicate them independently and collect back to result.
     /// NOTE Offsets are calculated twice and it is redundant.
 
-    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr(), getOffsetsPtr()).replicate(replicate_offsets);
-    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr(), getOffsetsPtr()).replicate(replicate_offsets);
+    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable())
+            .replicate(replicate_offsets);
+    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable())
+            .replicate(replicate_offsets);
 
     return ColumnArray::create(
         ColumnNullable::create(
-            static_cast<ColumnArray &>(*array_of_nested).getDataPtr(),
-            static_cast<ColumnArray &>(*array_of_null_map).getDataPtr()),
-        static_cast<ColumnArray &>(*array_of_nested).getOffsetsPtr());
+            static_cast<const ColumnArray &>(*array_of_nested).getDataPtr(),
+            static_cast<const ColumnArray &>(*array_of_null_map).getDataPtr()),
+        static_cast<const ColumnArray &>(*array_of_nested).getOffsetsPtr());
 }
 
 
-MutableColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
+ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 {
     const ColumnTuple & tuple = static_cast<const ColumnTuple &>(*data);
 
@@ -891,7 +894,8 @@ MutableColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) 
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsPtr()).replicate(replicate_offsets);
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()->assumeMutable())
+                .replicate(replicate_offsets);
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)

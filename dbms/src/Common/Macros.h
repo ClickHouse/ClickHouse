@@ -1,8 +1,16 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <map>
+
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
 
 
 namespace DB
@@ -21,10 +29,12 @@ public:
       */
     String expand(const String & s, size_t level = 0) const;
 
-private:
     using MacroMap = std::map<String, String>;
+    const MacroMap getMacroMap() const { return macros; }
 
+private:
     MacroMap macros;
 };
+
 
 }

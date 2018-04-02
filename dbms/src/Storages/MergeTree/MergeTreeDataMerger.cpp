@@ -180,7 +180,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
         }
 
         IMergeSelector::Part part_info;
-        part_info.size = part->size_in_bytes;
+        part_info.size = part->bytes_on_disk;
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -266,7 +266,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
             return false;
         }
 
-        sum_bytes += (*it)->size_in_bytes;
+        sum_bytes += (*it)->bytes_on_disk;
 
         prev_it = it;
         ++it;
@@ -330,12 +330,12 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     NamesAndTypesList & merging_columns, Names & merging_column_names
 )
 {
-    Names primary_key_columns_dup = primary_key_expressions->getRequiredColumns();
-    std::set<String> key_columns(primary_key_columns_dup.cbegin(), primary_key_columns_dup.cend());
+    Names primary_key_columns_vec = primary_key_expressions->getRequiredColumns();
+    std::set<String> key_columns(primary_key_columns_vec.cbegin(), primary_key_columns_vec.cend());
     if (secondary_key_expressions)
     {
-        Names secondary_key_columns_dup = secondary_key_expressions->getRequiredColumns();
-        key_columns.insert(secondary_key_columns_dup.begin(), secondary_key_columns_dup.end());
+        Names secondary_key_columns_vec = secondary_key_expressions->getRequiredColumns();
+        key_columns.insert(secondary_key_columns_vec.begin(), secondary_key_columns_vec.end());
     }
 
     /// Force sign column for Collapsing mode
@@ -349,6 +349,10 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         key_columns.emplace(merging_params.sign_column);
+
+    /// Force to merge at least one column in case of empty key
+    if (key_columns.empty())
+        key_columns.emplace(all_columns.front().name);
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
@@ -528,7 +532,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     {
         std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
-        merge_entry->total_size_bytes_compressed += part->size_in_bytes;
+        merge_entry->total_size_bytes_compressed += part->bytes_on_disk;
         merge_entry->total_size_marks += part->marks_count;
     }
 
@@ -536,8 +540,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     for (const MergeTreeData::DataPartPtr & part : parts)
         part->accumulateColumnSizes(merged_column_to_size);
 
-    Names all_column_names = data.getColumnNamesList();
-    NamesAndTypesList all_columns = data.getColumnsList();
+    Names all_column_names = data.getColumns().getNamesOfPhysical();
+    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
     const SortDescription sort_desc = data.getSortDescription();
 
     NamesAndTypesList gathering_columns, merging_columns;
@@ -879,7 +883,7 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 {
     size_t res = 0;
     for (const MergeTreeData::DataPartPtr & part : parts)
-        res += part->size_in_bytes;
+        res += part->bytes_on_disk;
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }

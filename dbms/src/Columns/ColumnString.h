@@ -89,6 +89,12 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
+/// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
     void insert(const Field & x) override
     {
         const String & s = DB::get<const String &>(x);
@@ -101,7 +107,11 @@ public:
         offsets.push_back(new_size);
     }
 
-    void insertFrom(const IColumn & src_, size_t n) override
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+
+        void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = static_cast<const ColumnString &>(src_);
 
@@ -206,9 +216,9 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
     void insertDefault() override
     {
@@ -239,7 +249,7 @@ public:
     /// Sorting with respect of collation.
     void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
-    MutableColumnPtr replicate(const Offsets & replicate_offsets) const override;
+    ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
