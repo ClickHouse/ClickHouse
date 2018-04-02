@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -x
 set -o errexit
 set -o pipefail
 
@@ -24,21 +25,38 @@ export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xm
 rm -rf $DATA_DIR
 mkdir -p $LOG_DIR
 
+openssl dhparam -out `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.dhParamsFile` 256
+openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile` -out `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.certificateFile`
+
+if [ "$TEST_GDB" ]; then
+    echo -e "run \nset pagination off \nset logging file $DATA_DIR/gdb.log \nset logging on \nthread apply all backtrace \ndetach \nquit " > $DATA_DIR/gdb.cmd
+    GDB="gdb -x $DATA_DIR/gdb.cmd --args "
+fi
 
 # Start a local clickhouse server which will be used to run tests
 #PATH=$PATH:$BIN_DIR \
-${BIN_DIR}clickhouse-server --config-file=${CLICKHOUSE_CONFIG} > $LOG_DIR/stdout 2>&1 &
+$GDB ${BIN_DIR}clickhouse-server --config-file=${CLICKHOUSE_CONFIG} > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
 
+if [ "$GDB" ]; then
+    # Long symbols read
+    sleep 40
+fi
+
+tail -n50 $LOG_DIR/*
+
 # Define needed stuff to kill test clickhouse server after tests completion
 function finish {
-  kill $CH_PID || true
-  wait
-  tail -n 50 $LOG_DIR/stdout
-  rm -rf $DATA_DIR
+    kill $CH_PID || true
+    wait
+    tail -n 50 $LOG_DIR/*
+    if [ "$GDB" ]; then
+        cat $DATA_DIR/gdb.log || true
+    fi
+    rm -rf $DATA_DIR
 }
-trap finish EXIT
+trap finish EXIT SIGINT SIGQUIT SIGTERM
 
 # Do tests
 if [ -n "$*" ]; then
@@ -46,5 +64,5 @@ if [ -n "$*" ]; then
 else
     ${BIN_DIR}clickhouse-client --config ${CONFIG_CLIENT} -q 'SELECT * from system.build_options;'
     PATH=$PATH:$BIN_DIR \
-      ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient ${CONFIG_CLIENT} --configserver ${CLICKHOUSE_CONFIG} --tmp $DATA_DIR/tmp --queries ${QUERIES_DIR} $TEST_OPT
+      ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient ${CONFIG_CLIENT} --configserver ${CLICKHOUSE_CONFIG} --tmp $DATA_DIR/tmp --queries ${QUERIES_DIR} $TEST_OPT0 $TEST_OPT
 fi

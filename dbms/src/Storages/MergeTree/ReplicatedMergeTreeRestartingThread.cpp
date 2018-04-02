@@ -94,16 +94,22 @@ void ReplicatedMergeTreeRestartingThread::run()
                         /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                         tryLogCurrentException(__PRETTY_FUNCTION__);
 
+                        if (first_time)
+                            storage.startup_event.set();
                         wakeup_event.tryWait(retry_period_ms);
                         continue;
                     }
 
                     if (!need_stop && !tryStartup())
                     {
+                        if (first_time)
+                            storage.startup_event.set();
                         wakeup_event.tryWait(retry_period_ms);
                         continue;
                     }
 
+                    if (first_time)
+                        storage.startup_event.set();
                     break;
                 }
 
@@ -150,6 +156,7 @@ void ReplicatedMergeTreeRestartingThread::run()
         }
         catch (...)
         {
+            storage.startup_event.set();
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
@@ -322,9 +329,9 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
     /// Simultaneously declare that this replica is active, and update the host.
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(is_active_path,
+    ops.emplace_back(std::make_shared<zkutil::Op::Create>(is_active_path,
         active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(std::make_unique<zkutil::Op::SetData>(storage.replica_path + "/host", address.toString(), -1));
+    ops.emplace_back(std::make_shared<zkutil::Op::SetData>(storage.replica_path + "/host", address.toString(), -1));
 
     try
     {

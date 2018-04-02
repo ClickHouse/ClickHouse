@@ -2,6 +2,7 @@
 
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/IStorage.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
@@ -19,7 +20,7 @@ class Service final : public InterserverIOEndpoint
 {
 public:
     Service(MergeTreeData & data_, StoragePtr & storage_) : data(data_),
-        owned_storage(storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+        storage(storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
@@ -32,7 +33,7 @@ private:
 
 private:
     MergeTreeData & data;
-    StoragePtr owned_storage;
+    StorageWeakPtr storage;
     Logger * log;
 };
 

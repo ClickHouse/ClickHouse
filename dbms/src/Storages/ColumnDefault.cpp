@@ -6,12 +6,12 @@ namespace DB
 {
 
 
-ColumnDefaultType columnDefaultTypeFromString(const std::string & str)
+ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
 {
-    static const std::unordered_map<std::string, ColumnDefaultType> map{
-        { "DEFAULT", ColumnDefaultType::Default },
-        { "MATERIALIZED", ColumnDefaultType::Materialized },
-        { "ALIAS", ColumnDefaultType::Alias }
+    static const std::unordered_map<std::string, ColumnDefaultKind> map{
+        { "DEFAULT", ColumnDefaultKind::Default },
+        { "MATERIALIZED", ColumnDefaultKind::Materialized },
+        { "ALIAS", ColumnDefaultKind::Alias }
     };
 
     const auto it = map.find(str);
@@ -19,22 +19,22 @@ ColumnDefaultType columnDefaultTypeFromString(const std::string & str)
 }
 
 
-std::string toString(const ColumnDefaultType type)
+std::string toString(const ColumnDefaultKind kind)
 {
-    static const std::unordered_map<ColumnDefaultType, std::string> map{
-        { ColumnDefaultType::Default, "DEFAULT" },
-        { ColumnDefaultType::Materialized, "MATERIALIZED" },
-        { ColumnDefaultType::Alias, "ALIAS" }
+    static const std::unordered_map<ColumnDefaultKind, std::string> map{
+        { ColumnDefaultKind::Default, "DEFAULT" },
+        { ColumnDefaultKind::Materialized, "MATERIALIZED" },
+        { ColumnDefaultKind::Alias, "ALIAS" }
     };
 
-    const auto it = map.find(type);
-    return it != std::end(map) ? it->second : throw Exception{"Invalid ColumnDefaultType"};
+    const auto it = map.find(kind);
+    return it != std::end(map) ? it->second : throw Exception{"Invalid ColumnDefaultKind"};
 }
 
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {
-    return lhs.type == rhs.type && queryToString(lhs.expression) == queryToString(rhs.expression);
+    return lhs.kind == rhs.kind && queryToString(lhs.expression) == queryToString(rhs.expression);
 }
 
 }

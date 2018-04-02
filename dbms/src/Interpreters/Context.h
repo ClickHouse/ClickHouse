@@ -7,6 +7,7 @@
 #include <mutex>
 #include <thread>
 
+#include <common/MultiVersion.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Settings.h>
@@ -79,7 +80,6 @@ using Dependencies = std::vector<DatabaseAndTableName>;
 
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
-
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -206,8 +206,8 @@ public:
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 
-    const Macros & getMacros() const;
-    void setMacros(Macros && macros);
+    MultiVersion<Macros>::Version getMacros() const;
+    void setMacros(std::unique_ptr<Macros> && macros);
 
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
@@ -241,8 +241,9 @@ public:
     UInt16 getTCPPort() const;
 
     /// Get query for the CREATE table.
-    ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
-    ASTPtr getCreateExternalQuery(const String & table_name) const;
+    ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
+    ASTPtr getCreateExternalTableQuery(const String & table_name) const;
+    ASTPtr getCreateDatabaseQuery(const String & database_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
@@ -359,6 +360,10 @@ public:
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
+
+    using ConfigReloadCallback = std::function<void()>;
+    void setConfigReloadCallback(ConfigReloadCallback && callback);
+    void reloadConfig() const;
 
     void shutdown();
 

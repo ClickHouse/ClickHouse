@@ -1,4 +1,4 @@
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
+#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
 
 #include <IO/ReadBufferAIO.h>
 #include <Common/ProfileEvents.h>

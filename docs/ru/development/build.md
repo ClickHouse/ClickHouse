@@ -52,7 +52,7 @@ export CXX=g++-7
 ## Install required libraries from packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev
+sudo apt-get install libicu-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev ninja-build
 ```
 
 ## Checkout ClickHouse sources

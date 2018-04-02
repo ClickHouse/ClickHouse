@@ -138,4 +138,14 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
     return res;
 }
 
+bool NamesAndTypesList::contains(const String & name) const
+{
+    for (const NameAndTypePair & column : *this)
+    {
+        if (column.name == name)
+            return true;
+    }
+    return false;
+}
+
 }

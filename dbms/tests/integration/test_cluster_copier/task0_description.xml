@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
     <!-- How many simualteneous workers are posssible -->
-    <max_workers>4</max_workers>
+    <max_workers>3</max_workers>
 
     <!-- Common setting for pull and push operations -->
     <settings>

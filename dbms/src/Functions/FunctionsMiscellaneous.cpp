@@ -1750,9 +1750,8 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
         auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort(), false);
-        auto names_and_types_list = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
-        const auto & names = names_and_types_list.getNames();
-        has_column = std::find(names.begin(), names.end(), column_name) != names.end();
+        auto remote_columns = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
+        has_column = remote_columns.hasPhysical(column_name);
     }
 
     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(has_column));

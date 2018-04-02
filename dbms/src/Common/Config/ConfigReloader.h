@@ -42,6 +42,9 @@ public:
     /// Call this method to run the backround thread.
     void start();
 
+    /// Reload immediately. For SYSTEM RELOAD CONFIG query.
+    void reload() { reloadIfNewer(/* force */ true, /* throw_on_error */ true, /* fallback_to_preprocessed */ false); }
+
 private:
     void run();
 
@@ -74,6 +77,9 @@ private:
 
     std::atomic<bool> quit{false};
     std::thread thread;
+
+    /// Locked inside reloadIfNewer.
+    std::mutex reload_mutex;
 };
 
 }
