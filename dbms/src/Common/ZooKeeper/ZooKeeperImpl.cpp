@@ -25,6 +25,17 @@ namespace DB
 namespace ProfileEvents
 {
     extern const Event ZooKeeperExceptions;
+    extern const Event ZooKeeperInit;
+    extern const Event ZooKeeperTransactions;
+    extern const Event ZooKeeperCreate;
+    extern const Event ZooKeeperRemove;
+    extern const Event ZooKeeperExists;
+    extern const Event ZooKeeperMulti;
+    extern const Event ZooKeeperGet;
+    extern const Event ZooKeeperSet;
+    extern const Event ZooKeeperList;
+    extern const Event ZooKeeperCheck;
+    extern const Event ZooKeeperClose;
 }
 
 
@@ -519,6 +530,8 @@ ZooKeeper::ZooKeeper(
 
     send_thread = std::thread([this] { sendThread(); });
     receive_thread = std::thread([this] { receiveThread(); });
+
+    ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
 
 
@@ -1205,6 +1218,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             throw Exception("XID overflow", ZSESSIONEXPIRED);
     }
 
+    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
     {
         std::lock_guard lock(operations_mutex);
         operations[info.request->xid] = info;
@@ -1242,6 +1257,7 @@ void ZooKeeper::create(
     request_info.callback = [callback](const Response & response) { callback(typeid_cast<const CreateResponse &>(response)); };
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
 }
 
 
@@ -1259,6 +1275,7 @@ void ZooKeeper::remove(
     request_info.callback = [callback](const Response & response) { callback(typeid_cast<const RemoveResponse &>(response)); };
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 }
 
 
@@ -1276,6 +1293,7 @@ void ZooKeeper::exists(
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
 }
 
 
@@ -1293,6 +1311,7 @@ void ZooKeeper::get(
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
 }
 
 
@@ -1312,6 +1331,7 @@ void ZooKeeper::set(
     request_info.callback = [callback](const Response & response) { callback(typeid_cast<const SetResponse &>(response)); };
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
 }
 
 
@@ -1329,6 +1349,7 @@ void ZooKeeper::list(
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperList);
 }
 
 
@@ -1346,6 +1367,7 @@ void ZooKeeper::check(
     request_info.callback = [callback](const Response & response) { callback(typeid_cast<const CheckResponse &>(response)); };
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
 }
 
 
@@ -1366,6 +1388,7 @@ void ZooKeeper::multi(
     request_info.callback = [callback](const Response & response) { callback(typeid_cast<const MultiResponse &>(response)); };
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
 }
 
 
@@ -1378,6 +1401,7 @@ void ZooKeeper::close()
     request_info.request = std::make_shared<CloseRequest>(std::move(request));
 
     pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }
 
 

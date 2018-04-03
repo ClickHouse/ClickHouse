@@ -56,13 +56,15 @@
     \
     M(ZooKeeperInit) \
     M(ZooKeeperTransactions) \
-    M(ZooKeeperGetChildren) \
+    M(ZooKeeperList) \
     M(ZooKeeperCreate) \
     M(ZooKeeperRemove) \
     M(ZooKeeperExists) \
     M(ZooKeeperGet) \
     M(ZooKeeperSet) \
     M(ZooKeeperMulti) \
+    M(ZooKeeperCheck) \
+    M(ZooKeeperClose) \
     M(ZooKeeperExceptions) \
     \
     M(DistributedConnectionFailTry) \

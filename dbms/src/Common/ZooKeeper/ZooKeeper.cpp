@@ -7,32 +7,12 @@
 #include <boost/algorithm/string.hpp>
 
 #include <common/logger_useful.h>
-#include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/randomSeed.h>
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
 #define ZOOKEEPER_OPERATION_TIMEOUT_MS 1000
-
-
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperInit;
-    extern const Event ZooKeeperTransactions;
-    extern const Event ZooKeeperCreate;
-    extern const Event ZooKeeperRemove;
-    extern const Event ZooKeeperExists;
-    extern const Event ZooKeeperMulti;
-    extern const Event ZooKeeperGet;
-    extern const Event ZooKeeperSet;
-    extern const Event ZooKeeperGetChildren;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric ZooKeeperWatch;
-}
 
 
 namespace DB
@@ -84,8 +64,6 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
         Poco::Timespan(0, session_timeout_ms_ * 1000),
         Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
         Poco::Timespan(0, ZOOKEEPER_OPERATION_TIMEOUT_MS * 1000));
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 
     LOG_TRACE(log, "initialized, hosts: " << hosts << (chroot.empty() ? "" : ", chroot: " + chroot));
 
@@ -196,9 +174,6 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 
     impl->list(path, callback, watch_callback);
     event.wait();
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
@@ -236,9 +211,6 @@ int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data
 
     impl->create(path, data, mode & 1, mode & 2, {}, callback);  /// TODO better mode
     event.wait();
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
@@ -306,9 +278,6 @@ int32_t ZooKeeper::removeImpl(const std::string & path, int32_t version)
 
     impl->remove(path, version, callback);
     event.wait();
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
@@ -343,9 +312,6 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat, WatchCallba
 
     impl->exists(path, callback, watch_callback);
     event.wait();
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
@@ -384,9 +350,6 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 
     impl->get(path, callback, watch_callback);
     event.wait();
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
@@ -435,9 +398,6 @@ int32_t ZooKeeper::setImpl(const std::string & path, const std::string & data,
 
     impl->set(path, data, version, callback);
     event.wait();
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
@@ -487,9 +447,6 @@ int32_t ZooKeeper::multiImpl(const Requests & requests, Responses & responses)
 
     impl->multi(requests, callback);
     event.wait();
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
@@ -596,9 +553,6 @@ void ZooKeeper::waitForDisappear(const std::string & path)
         impl->exists(path, callback, watch);
         event.wait();
 
-        ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
-        ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
-
         if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
             return;
 
@@ -647,9 +601,6 @@ std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std
     };
 
     impl->get(path, std::move(callback), {});
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
@@ -668,9 +619,6 @@ std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncTryGet(const 
     };
 
     impl->get(path, std::move(callback), {});
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
@@ -688,9 +636,6 @@ std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ZooKeeper::asyncExists(con
     };
 
     impl->exists(path, std::move(callback), {});
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
@@ -709,9 +654,6 @@ std::future<ZooKeeperImpl::ZooKeeper::ListResponse> ZooKeeper::asyncGetChildren(
     };
 
     impl->list(path, std::move(callback), {});
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
@@ -729,9 +671,6 @@ std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncRemove(con
     };
 
     impl->remove(path, version, std::move(callback));
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
@@ -749,9 +688,6 @@ std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncTryRemove(
     };
 
     impl->remove(path, version, std::move(callback));
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
@@ -766,9 +702,6 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::tryAsyncMulti(co
     };
 
     impl->multi(ops, std::move(callback));
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
@@ -786,9 +719,6 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
     };
 
     impl->multi(ops, std::move(callback));
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return future;
 }
 
