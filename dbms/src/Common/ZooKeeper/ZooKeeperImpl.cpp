@@ -37,6 +37,8 @@ namespace ProfileEvents
     extern const Event ZooKeeperCheck;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperWaitMicroseconds;
+    extern const Event ZooKeeperBytesSent;
+    extern const Event ZooKeeperBytesReceived;
 }
 
 namespace CurrentMetrics
@@ -688,6 +690,8 @@ void ZooKeeper::sendThread()
     {
         while (!expired)
         {
+            auto prev_bytes_sent = out->count();
+
             auto now = clock::now();
             auto next_heartbeat_time = prev_heartbeat_time + std::chrono::milliseconds(session_timeout.totalMilliseconds() / 3);
 
@@ -716,6 +720,8 @@ void ZooKeeper::sendThread()
                 request.xid = ping_xid;
                 request.write(*out);
             }
+
+            ProfileEvents::increment(ProfileEvents::ZooKeeperBytesSent, out->count() - prev_bytes_sent);
         }
     }
     catch (...)
@@ -738,6 +744,8 @@ void ZooKeeper::receiveThread()
         Int64 waited = 0;
         while (!expired)
         {
+            auto prev_bytes_received = in->count();
+
             clock::time_point now = clock::now();
             UInt64 max_wait = operation_timeout.totalMicroseconds();
             bool has_operations = false;
@@ -772,6 +780,8 @@ void ZooKeeper::receiveThread()
                     throw Exception("Nothing is received in session timeout", ZOPERATIONTIMEOUT);
 
             }
+
+            ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived, in->count() - prev_bytes_received);
         }
     }
     catch (...)
