@@ -66,6 +66,7 @@
     M(ZooKeeperCheck) \
     M(ZooKeeperClose) \
     M(ZooKeeperExceptions) \
+    M(ZooKeeperWaitMicroseconds) \
     \
     M(DistributedConnectionFailTry) \
     M(DistributedConnectionMissingTable) \

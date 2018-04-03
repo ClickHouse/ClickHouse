@@ -36,6 +36,13 @@ namespace ProfileEvents
     extern const Event ZooKeeperList;
     extern const Event ZooKeeperCheck;
     extern const Event ZooKeeperClose;
+    extern const Event ZooKeeperWaitMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric ZooKeeperRequest;
+    extern const Metric ZooKeeperWatch;
 }
 
 
@@ -904,6 +911,7 @@ void ZooKeeper::receiveEvent()
                     if (callback)
                         callback(watch_response);   /// NOTE We may process callbacks not under mutex.
 
+                CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
                 watches.erase(it);
             }
         };
@@ -919,6 +927,7 @@ void ZooKeeper::receiveEvent()
 
             request_info = std::move(it->second);
             operations.erase(it);
+            CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
         response = request_info.request->makeResponse();
@@ -935,6 +944,9 @@ void ZooKeeper::receiveEvent()
     int32_t actual_length = in->count() - count_before_event;
     if (length != actual_length)
         throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
+
+    auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+    ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
 
     if (request_info.callback)
         request_info.callback(*response);
@@ -973,6 +985,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                         request_info.callback(*response);
                 }
 
+                CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest, operations.size());
                 operations.clear();
             }
 
@@ -991,6 +1004,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                             callback(response);
                 }
 
+                CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watches.size());
                 watches.clear();
             }
         }
@@ -1221,6 +1235,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
     {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
         std::lock_guard lock(operations_mutex);
         operations[info.request->xid] = info;
     }
@@ -1228,6 +1243,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     if (info.watch)
     {
         info.request->has_watch = true;
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
         std::lock_guard lock(watches_mutex);
         watches[info.request->getPath()].emplace_back(std::move(info.watch));
     }
