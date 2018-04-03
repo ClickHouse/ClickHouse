@@ -29,6 +29,26 @@ namespace ZooKeeperImpl
 using namespace DB;
 
 
+class Exception : public DB::Exception
+{
+private:
+    /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
+    Exception(const std::string & msg, const int32_t code, int);
+
+public:
+    explicit Exception(const int32_t code);
+    Exception(const std::string & msg, const int32_t code);
+    Exception(const int32_t code, const std::string & path);
+    Exception(const Exception & exc);
+
+    const char * name() const throw() override { return "ZooKeeperImpl::Exception"; }
+    const char * className() const throw() override { return "ZooKeeperImpl::Exception"; }
+    Exception * clone() const override { return new Exception(*this); }
+
+    const int32_t code;
+};
+
+
 /** Usage scenario:
   * - create an object and issue commands;
   * - you provide callbacks for your commands; callbacks are invoked in internal thread and must be cheap:
