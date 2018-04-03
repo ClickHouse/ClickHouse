@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/CurrentMetrics.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -21,6 +22,12 @@
 #include <cstdint>
 #include <optional>
 #include <functional>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric ZooKeeperSession;
+}
 
 
 namespace ZooKeeperImpl
@@ -563,6 +570,8 @@ private:
 
     template <typename T>
     void read(T &);
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperSession};
 };
 
 };
