@@ -515,12 +515,6 @@ void Context::setConfig(const ConfigurationPtr & config)
     shared->config = config;
 }
 
-ConfigurationPtr Context::getConfig() const
-{
-    auto lock = getLock();
-    return shared->config;
-}
-
 Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 {
     auto lock = getLock();
@@ -1326,21 +1320,13 @@ DDLWorker & Context::getDDLWorker() const
     return *shared->ddl_worker;
 }
 
-void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
-{
-    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
-
-    if (shared->zookeeper)
-        throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
-
-    shared->zookeeper = std::move(zookeeper);
-}
-
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
 
-    if (shared->zookeeper && shared->zookeeper->expired())
+    if (!shared->zookeeper)
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "zookeeper");
+    else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;

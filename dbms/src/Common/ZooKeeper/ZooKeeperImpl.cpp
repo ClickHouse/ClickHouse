@@ -345,7 +345,7 @@ void read(String & s, ReadBuffer & in)
     static constexpr int32_t max_string_size = 1 << 20;
     int32_t size = 0;
     read(size, in);
-    if (size < 0)    /// TODO Actually it means that zookeeper node have NULL value. Maybe better to treat it like empty string.
+    if (size < 0)    /// TODO Actually it means that zookeeper node has NULL value. Maybe better to treat it like empty string.
         throw Exception("Negative size while reading string from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
     if (size > max_string_size)
         throw Exception("Too large string size while reading from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
@@ -862,8 +862,6 @@ void ZooKeeper::receiveEvent()
             throw Exception("Received error in heartbeat response: " + String(errorMessage(err)), ZRUNTIMEINCONSISTENCY);
 
         response = std::make_shared<HeartbeatResponse>();
-
-//        std::cerr << "Received heartbeat\n";
     }
     else if (xid == watch_xid)
     {
@@ -896,8 +894,6 @@ void ZooKeeper::receiveEvent()
                 watches.erase(it);
             }
         };
-
-//        std::cerr << "Received watch\n";
     }
     else
     {
@@ -911,8 +907,6 @@ void ZooKeeper::receiveEvent()
             request_info = std::move(it->second);
             operations.erase(it);
         }
-
-//        std::cerr << "Received response: " << request_info.request->getOpNum() << "\n";
 
         response = request_info.request->makeResponse();
     }
