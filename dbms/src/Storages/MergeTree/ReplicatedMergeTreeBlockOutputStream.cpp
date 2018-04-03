@@ -5,7 +5,9 @@
 #include <Interpreters/PartLog.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Common/SipHash.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <IO/Operators.h>
+
 
 namespace ProfileEvents
 {

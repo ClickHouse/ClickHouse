@@ -3,6 +3,7 @@
 #include <boost/program_options.hpp>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
 
 int main(int argc, char ** argv)

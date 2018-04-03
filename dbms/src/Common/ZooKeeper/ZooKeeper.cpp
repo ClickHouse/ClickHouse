@@ -1,4 +1,5 @@
 #include "ZooKeeper.h"
+#include "KeeperException.h"
 
 #include <random>
 #include <pcg_random.hpp>
