@@ -65,6 +65,7 @@
     M(ZooKeeperMulti) \
     M(ZooKeeperCheck) \
     M(ZooKeeperClose) \
+    M(ZooKeeperWatchResponse) \
     M(ZooKeeperExceptions) \
     M(ZooKeeperWaitMicroseconds) \
     M(ZooKeeperBytesSent) \

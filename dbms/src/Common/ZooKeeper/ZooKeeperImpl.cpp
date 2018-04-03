@@ -39,6 +39,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
+    extern const Event ZooKeeperWatchResponse;
 }
 
 namespace CurrentMetrics
@@ -895,6 +896,7 @@ void ZooKeeper::receiveEvent()
     }
     else if (xid == watch_xid)
     {
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<WatchResponse>();
 
         request_info.callback = [this](const Response & response)
