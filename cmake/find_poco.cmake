@@ -9,7 +9,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/CMakeLists.txt")
 endif ()
 
 if (NOT USE_INTERNAL_POCO_LIBRARY)
-    find_package (Poco COMPONENTS Net NetSSL XML Data Crypto DataODBC MongoDB)
+    find_package (Poco COMPONENTS Net NetSSL XML SQL Data Crypto DataODBC MongoDB)
 endif ()
 
 if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
@@ -24,6 +24,15 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     set (ENABLE_DATA_SQLITE 0 CACHE BOOL "")
     set (ENABLE_DATA_MYSQL 0 CACHE BOOL "")
     set (ENABLE_DATA_POSTGRESQL 0 CACHE BOOL "")
+    # new after 2.0.0:
+    set (POCO_ENABLE_ZIP 0 CACHE BOOL "")
+    set (POCO_ENABLE_PAGECOMPILER 0 CACHE BOOL "")
+    set (POCO_ENABLE_PAGECOMPILER_FILE2PAGE 0 CACHE BOOL "")
+    set (POCO_ENABLE_REDIS 0 CACHE BOOL "")
+    set (POCO_ENABLE_SQL_SQLITE 0 CACHE BOOL "")
+    set (POCO_ENABLE_SQL_MYSQL 0 CACHE BOOL "")
+    set (POCO_ENABLE_SQL_POSTGRESQL 0 CACHE BOOL "")
+
     set (POCO_UNBUNDLED 1 CACHE BOOL "")
     set (POCO_UNBUNDLED_PCRE 0 CACHE BOOL "")
     set (POCO_UNBUNDLED_EXPAT 0 CACHE BOOL "")
@@ -44,9 +53,25 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     endif ()
 
     if (ODBC_FOUND)
-        set (Poco_DataODBC_FOUND 1)
-        set (Poco_DataODBC_LIBRARY PocoDataODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
-        set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
+        if (EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/")
+            set (Poco_SQL_FOUND 1)
+            set (Poco_SQLODBC_FOUND 1)
+            set (Poco_SQL_INCLUDE_DIRS
+                "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/include"
+                "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include"
+                )
+            set (Poco_SQLODBC_INCLUDE_DIRS
+                "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/"
+                "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
+                )
+            set (Poco_SQL_LIBRARY PocoSQL)
+            set (Poco_SQLODBC_LIBRARY PocoSQLODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
+        else ()
+            set (Poco_DataODBC_FOUND 1)
+            set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/" "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
+            set (Poco_Data_LIBRARY PocoData)
+            set (Poco_DataODBC_LIBRARY PocoDataODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
+        endif ()
     endif ()
 
     # TODO! fix internal ssl
@@ -66,7 +91,6 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     set (Poco_Foundation_LIBRARY PocoFoundation)
     set (Poco_Util_LIBRARY PocoUtil)
     set (Poco_Net_LIBRARY PocoNet)
-    set (Poco_Data_LIBRARY PocoData)
     set (Poco_XML_LIBRARY PocoXML)
 endif ()
 

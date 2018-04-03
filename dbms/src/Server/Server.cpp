@@ -102,12 +102,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setGlobalContext(*global_context);
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
-    bool has_zookeeper = false;
-    if (config().has("zookeeper"))
-    {
-        global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
-        has_zookeeper = true;
-    }
+    bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     if (loaded_config.has_zk_includes)

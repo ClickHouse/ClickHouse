@@ -32,6 +32,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Poco/Timestamp.h>
@@ -858,7 +859,7 @@ void DDLWorker::run()
             }
             catch (const zkutil::KeeperException & e)
             {
-                if (!e.isHardwareError())
+                if (!zkutil::isHardwareError(e.code))
                     throw;
             }
         }
@@ -886,7 +887,7 @@ void DDLWorker::run()
         }
         catch (zkutil::KeeperException & e)
         {
-            if (e.isHardwareError())
+            if (zkutil::isHardwareError(e.code))
             {
                 LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
 

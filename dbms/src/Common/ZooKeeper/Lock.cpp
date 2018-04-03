@@ -1,4 +1,6 @@
+#include "KeeperException.h"
 #include "Lock.h"
+
 
 using namespace zkutil;
 

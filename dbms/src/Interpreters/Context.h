@@ -140,7 +140,6 @@ public:
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
-    ConfigurationPtr getConfig() const;
     Poco::Util::AbstractConfiguration & getConfigRef() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
@@ -300,7 +299,6 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
