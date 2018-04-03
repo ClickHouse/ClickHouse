@@ -11,7 +11,7 @@ void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionShardByHash(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionCatBoostPool(TableFunctionFactory & factory);
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
 void registerTableFunctionODBC(TableFunctionFactory & factory);
 #endif
 
@@ -30,7 +30,7 @@ void registerTableFunctions()
     registerTableFunctionNumbers(factory);
     registerTableFunctionCatBoostPool(factory);
 
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
     registerTableFunctionODBC(factory);
 #endif
 
