@@ -17,10 +17,19 @@
 #include <boost/algorithm/string.hpp>
 #include <pcg_random.hpp>
 
+#include <common/logger_useful.h>
+#include <common/ThreadPool.h>
+#include <daemon/OwnPatternFormatter.h>
+
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
+#include <Common/typeid_cast.h>
+#include <Common/ClickHouseRevision.h>
+#include <Common/formatReadable.h>
+#include <Common/escapeForFileName.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -30,12 +39,6 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-
-#include <common/logger_useful.h>
-#include <common/ThreadPool.h>
-#include <Common/typeid_cast.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -61,8 +64,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Server/StatusFile.h>
-#include <Common/formatReadable.h>
-#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB
