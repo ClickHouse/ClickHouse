@@ -50,11 +50,14 @@ Description: Server binary for clickhouse
  .
  This package provides clickhouse common configuration files
 
-Package: clickhouse-common-dbg
+Package: clickhouse-common-static-dbg
 Architecture: any
 Section: debug
 Priority: extra
 Depends: ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
+Replaces: clickhouse-common-dbg
+Provides: clickhouse-common-dbg
+Conflicts: clickhouse-common-dbg
 Description: debugging symbols for clickhouse-common-static
  This package contains the debugging symbols for clickhouse-common.
 
