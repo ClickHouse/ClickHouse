@@ -6,8 +6,9 @@
 namespace DB
 {
 
-/* file(path, format, structure)
- * Creates a temporary StorageMemory from file
+/* file(path, format, structure) - creates a temporary StorageMemory from file
+ * The file must be in the data directory.
+ * The relative path begins with the data directory.
  */
     class TableFunctionFile : public ITableFunction
     {
