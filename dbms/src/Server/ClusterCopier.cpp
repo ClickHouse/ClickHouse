@@ -1213,7 +1213,7 @@ protected:
         {
             cleaner_holder = zkutil::EphemeralNodeHolder::create(dirt_cleaner_path, *zookeeper, host_id);
         }
-        catch (zkutil::KeeperException & e)
+        catch (const zkutil::KeeperException & e)
         {
             if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             {
@@ -1693,7 +1693,7 @@ protected:
                             status = future_is_dirty_checker->get();
                             future_is_dirty_checker.reset();
                         }
-                        catch (zkutil::KeeperException & e)
+                        catch (const zkutil::KeeperException & e)
                         {
                             future_is_dirty_checker.reset();
                             throw;
