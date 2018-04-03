@@ -42,7 +42,7 @@ Block IProfilingBlockInputStream::read()
     if (isCancelledOrThrowIfKilled())
         return res;
 
-    if (!checkTimeLimits())
+    if (!checkTimeLimit())
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
@@ -191,7 +191,7 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
 };
 
 
-bool IProfilingBlockInputStream::checkTimeLimits()
+bool IProfilingBlockInputStream::checkTimeLimit()
 {
     if (limits.max_execution_time != 0
         && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)

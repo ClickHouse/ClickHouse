@@ -79,6 +79,10 @@ Rounds down a date with time to the start of the minute.
 
 Rounds down a date with time to the start of the hour.
 
+## toStartOfFifteenMinutes
+
+Rounds down the date with time to the start of the fifteen-minute interval.
+
 Note: If you need to round a date with time to any other number of seconds, minutes, or hours, you can convert it into a number by using the toUInt32 function, then round the number using intDiv and multiplication, and convert it back using the toDateTime function.
 
 ## toStartOfHour

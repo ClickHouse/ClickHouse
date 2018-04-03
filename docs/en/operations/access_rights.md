@@ -2,14 +2,14 @@
 
 Users and access rights are set up in the user config. This is usually `users.xml`.
 
-Users are recorded in the 'users' section. We'll look at a fragment of the `users.xml` file:
+Users are recorded in the 'users' section. Here is a fragment of the `users.xml` file:
 
 ```xml
 <!-- Users and ACL. -->
 <users>
     <!-- If the user name is not specified, the 'default' user is used. -->
-        <default>
-            <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+    <default>
+                <!-- Password could be specified in plaintext or in SHA256 (in hex format).
 
              If you want to specify the password in plain text (not recommended), place it in the 'password' element.
              Example: <password>qwerty</password>.
@@ -17,13 +17,14 @@ Users are recorded in the 'users' section. We'll look at a fragment of the `user
 
              If you want to specify SHA256, place it in the 'password_sha256_hex' element.
              Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
-             How to generate a decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             The first line has the password and the second line has the corresponding SHA256.
-        -->
-        <password></password>        
+                          How to generate a decent password:             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'             
+                          The first line has the password and the second line has the corresponding SHA256.
+        -->        
+        <password></password>
+                
         <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:<ip>IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
+            Each list item has one of the following forms:
+            <ip>IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
             <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
             <host_regexp> Regular expression for host names. For example: ^example\d\d-\d\d-\d\.yandex\.ru$                
             For verification, a DNS PTR query is made for the customer's address and a regular expression is applied to the result.
@@ -31,34 +32,34 @@ Users are recorded in the 'users' section. We'll look at a fragment of the `user
             We strongly recommend that the regex ends with \.yandex\.ru$.
 
             If you are installing ClickHouse yourself, enter:
-                            <networks>                        
-                                    <ip>::/0</ip>
-                            </networks>        
-          -->        
-          <networks incl="networks" />
-  
-          <!-- Settings profile for the user. -->
-          <profile>default</profile>
-  
+                 <networks>                        
+                         <ip>::/0</ip>
+                </networks>
+         -->        
+         <networks incl="networks" />        
+         
+         <!-- Settings profile for the user. -->        
+         <profile>default</profile>        
+         
          <!-- Quota for the user. -->        
          <quota>default</quota>    
-     </default>    
-     
-     <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->    
-     <web>        
-         <password></password>        
-         <networks incl="networks" />        
-         <profile>web</profile>        
-         <quota>default</quota>        
-         <allow_databases>           
-            <database>test</database>
+         </default>    
+         
+         <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->    
+         <web>        
+             <password></password>        
+             <networks incl="networks" />        
+             <profile>web</profile>        
+             <quota>default</quota>        
+             <allow_databases>           
+             <database>test</database>
         </allow_databases>
     </web>
 ```
 
 You can see a declaration from two users: `default`and`web`. We added the `web` user separately.
 
-The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn't specify `user` and `password` (see the section on the [Distributed](../table_engines/distributed.md#distributed_distributed) engine).
+The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn't specify the `user` and `password` (see the section on the [Distributed](../table_engines/distributed.md#table_engines-distributed) engine).
 
 The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
 
