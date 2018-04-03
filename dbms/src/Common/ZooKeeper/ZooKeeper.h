@@ -280,7 +280,7 @@ public:
         {
             zookeeper.tryRemove(path);
         }
-        catch (const KeeperException & e)
+        catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
             DB::tryLogCurrentException(__PRETTY_FUNCTION__);
