@@ -737,7 +737,10 @@ void addRootPath(String & path, const String & root_path)
     if (root_path.empty())
         return;
 
-    path = root_path + path;
+    if (path.size() == 1)   /// "/"
+        path = root_path;
+    else
+        path = root_path + path;
 }
 
 void removeRootPath(String & path, const String & root_path)
