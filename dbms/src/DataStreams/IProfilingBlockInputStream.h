@@ -234,10 +234,10 @@ private:
 
     void updateExtremes(Block & block);
 
-    /** Check constraints and quotas.
-      * But only those that can be tested within each separate source.
+    /** Check limits and quotas.
+      * But only those that can be checked within each separate stream.
       */
-    bool checkTimeLimits();
+    bool checkTimeLimit();
     void checkQuota(Block & block);
 
 
