@@ -20,6 +20,7 @@ namespace DB
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
 friend class MergeTreeBlockOutputStream;
+friend class MergeTreeData;
 
 public:
     void startup() override;
@@ -69,6 +70,7 @@ public:
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
     void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void drop() override;

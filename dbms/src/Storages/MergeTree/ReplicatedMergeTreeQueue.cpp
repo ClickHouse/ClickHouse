@@ -491,7 +491,7 @@ ReplicatedMergeTreeQueue::Queue ReplicatedMergeTreeQueue::getConflictsForClearCo
     {
         if (elem->currently_executing && elem->znode_name != entry.znode_name)
         {
-            if (elem->type == LogEntry::MERGE_PARTS || elem->type == LogEntry::GET_PART || elem->type == LogEntry::ATTACH_PART)
+            if (elem->type == LogEntry::MERGE_PARTS || elem->type == LogEntry::GET_PART)
             {
                 if (MergeTreePartInfo::contains(entry.new_part_name, elem->new_part_name, format_version))
                     conflicts.emplace_back(elem);
@@ -591,7 +591,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::lock_guard<std::mutex> & lock) const
 {
-    if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
+    if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART)
     {
         if (!isNotCoveredByFuturePartsImpl(entry.new_part_name, out_postpone_reason, lock))
         {

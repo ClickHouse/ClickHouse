@@ -33,22 +33,27 @@ struct ReplicatedMergeTreeLogEntryData
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
-        ATTACH_PART,    /// Move a part from the `detached` directory. Obsolete. TODO: Remove after half year.
         CLEAR_COLUMN,   /// Drop specific column from specified partition.
+        REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
     };
 
-    String typeToString() const
+    static String typeToString(Type type)
     {
         switch (type)
         {
-            case ReplicatedMergeTreeLogEntryData::GET_PART:     return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:  return "MERGE_PARTS";
-            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:   return "DROP_RANGE";
-            case ReplicatedMergeTreeLogEntryData::ATTACH_PART:  return "ATTACH_PART";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN: return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
+            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
+            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
+    }
+
+    String typeToString() const
+    {
+        return typeToString(type);
     }
 
     void writeText(WriteBuffer & out) const;
@@ -72,6 +77,27 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
+
+    /// REPLACE PARTITION FROM stuff
+    struct ReplaceRangeEntry
+    {
+        String partition;
+
+        Int64 drop_range_start_block;
+        Int64 drop_range_end_block;
+
+        String from_database;
+        String from_table;
+        Strings src_part_names; // as in from_table
+        Strings new_part_names;
+        Strings part_names_checksums;
+        int columns_version;
+
+        void writeText(WriteBuffer & out) const;
+        void readText(ReadBuffer & in);
+    };
+
+    std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.

@@ -1,5 +1,6 @@
 #include <optional>
 #include <Common/FieldVisitors.h>
+#include <Common/localBackup.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
@@ -16,6 +17,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -28,6 +30,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 
@@ -407,7 +410,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
-    MergeTreeData::DataParts parts = data.getDataParts();
+    auto parts = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
@@ -422,7 +425,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     for (const auto & part : parts)
     {
         if (part->info.partition_id != partition_id)
-            continue;
+            throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false))
             transactions.push_back(std::move(transaction));
@@ -471,12 +474,12 @@ void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & pa
     String partition_id = data.getPartitionIDFromQuery(partition, context);
 
     size_t removed_parts = 0;
-    MergeTreeData::DataParts parts = data.getDataParts();
+    auto parts = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     for (const auto & part : parts)
     {
         if (part->info.partition_id != partition_id)
-            continue;
+            throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         LOG_DEBUG(log, "Removing part " << part->name);
         ++removed_parts;
@@ -549,6 +552,74 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
     data.freezePartition(partition, with_name, context);
+}
+
+void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
+{
+    auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock2 = source_table->lockStructure(false, __PRETTY_FUNCTION__);
+
+    MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);
+    String partition_id = data.getPartitionIDFromQuery(partition, context);
+
+    MergeTreeData::DataPartsVector src_parts = src_data->getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    MergeTreeData::MutableDataPartsVector dst_parts;
+
+    static const String TMP_PREFIX = "tmp_attach_from_";
+
+    for (const MergeTreeData::DataPartPtr & src_part : src_parts)
+    {
+        /// This will generate unique name in scope of current server process.
+        Int64 temp_index = data.insert_increment.get();
+
+        /// Use level=1 to distinguish these blocks from INSERTed blocks
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, 1);
+
+        dst_parts.emplace_back(data.cloneAndLoadDataPart(src_part, TMP_PREFIX, dst_part_info));
+    }
+
+    if (!replace && dst_parts.empty())
+        return;
+
+    /// Atomically add new parts and remove old ones
+    MergeTreeData::DataPartsVector covered_parts;
+    MergeTreeData::Transaction transaction;
+    std::unique_lock<std::mutex> lock(data.data_parts_mutex);
+
+    /// Populate transaction
+    for (MergeTreeData::MutableDataPartPtr & part : dst_parts)
+        data.renameTempPartAndReplaceImpl(part, &increment, &transaction, covered_parts, lock);
+
+    /// New parts added
+    transaction.commit(&lock);
+
+    /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
+    if (replace)
+    {
+        Int64 first_block_number = dst_parts.empty() ? 0 : dst_parts.front()->info.min_block;
+
+        for (auto it : data.getDataPartsPartitionRange(partition_id))
+        {
+            MergeTreeData::DataPartPtr & part = *it;
+
+            if (part->info.partition_id != partition_id)
+                throw Exception("Unexpected partition_id of part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+            if (part->info.min_block < first_block_number && part->info.max_block >= first_block_number)
+                throw Exception("Unexpectedly merged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+            /// Stop on new parts
+            if (part->info.min_block >= first_block_number)
+                break;
+
+            if (part->state != MergeTreeDataPartState::Outdated)
+            {
+                data.modifyPartState(part, MergeTreeDataPartState::Outdated);
+                data.removePartContributionToColumnSizes(part);
+                part->remove_time.store(time(nullptr));
+            }
+        }
+    }
 }
 
 }

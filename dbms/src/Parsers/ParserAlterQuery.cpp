@@ -42,8 +42,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserPartition parser_partition;
     ParserStringLiteral parser_string_literal;
 
-    ASTPtr table;
-    ASTPtr database;
     String cluster_str;
     ASTPtr col_type;
     ASTPtr col_after;
@@ -54,23 +52,34 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_alter_table.ignore(pos, expected))
         return false;
 
-    if (!table_parser.parse(pos, database, expected))
-        return false;
-
-    /// Parse [db].name
-    if (s_dot.ignore(pos))
+    /// Parses [db].name
+    auto parse_database_and_table = [&] (String & database_str, String & table_str)
     {
-        if (!table_parser.parse(pos, table, expected))
+        ASTPtr database;
+        ASTPtr table;
+
+        if (!table_parser.parse(pos, database, expected))
             return false;
 
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
-    }
-    else
-    {
-        table = database;
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
-    }
+        if (s_dot.ignore(pos))
+        {
+            if (!table_parser.parse(pos, table, expected))
+                return false;
+
+            database_str = typeid_cast<ASTIdentifier &>(*database).name;
+            table_str = typeid_cast<ASTIdentifier &>(*table).name;
+        }
+        else
+        {
+            database_str = "";
+            table_str = typeid_cast<ASTIdentifier &>(*database).name;
+        }
+
+        return true;
+    };
+
+    if (!parse_database_and_table(query->database, query->table))
+        return false;
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
@@ -139,7 +148,32 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!parser_partition.parse(pos, params.partition, expected))
                 return false;
 
-            params.type = ASTAlterQuery::ATTACH_PARTITION;
+            if (s_from.ignore(pos))
+            {
+                if (!parse_database_and_table(params.from_database, params.from_table))
+                    return false;
+
+                params.replace = true;
+                params.type = ASTAlterQuery::REPLACE_PARTITION;
+            }
+            else
+            {
+                params.type = ASTAlterQuery::ATTACH_PARTITION;
+            }
+        }
+        else if (ParserKeyword{"REPLACE PARTITION"}.ignore(pos, expected))
+        {
+            if (!parser_partition.parse(pos, params.partition, expected))
+                return false;
+
+            if (!s_from.ignore(pos, expected))
+                return false;
+
+            if (!parse_database_and_table(params.from_database, params.from_table))
+                return false;
+
+            params.replace = false;
+            params.type = ASTAlterQuery::REPLACE_PARTITION;
         }
         else if (s_attach_part.ignore(pos, expected))
         {

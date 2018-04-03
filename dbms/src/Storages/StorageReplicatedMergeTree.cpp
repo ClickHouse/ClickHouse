@@ -997,7 +997,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
     }
 }
 
-String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums)
+String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const
 {
     return MinimalisticDataPartChecksums::getSerializedString(checksums,
                                                               static_cast<bool>(data.settings.use_minimalistic_checksums_in_zookeeper));
@@ -1577,6 +1577,23 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     /// Recalculate columns size (not only for the modified column)
     data.recalculateColumnSizes();
+}
+
+
+void StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMergeTree::LogEntry & entry)
+{
+    auto & entry_replace = *entry.replace_range_entry;
+    auto source_table = context.tryGetTable(entry_replace.from_database, entry_replace.from_table);
+
+    auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);
+
+    MergeTreeData::MutableDataPartsVector dst_parts;
+
+    if (source_table)
+    {
+        auto lock2 = source_table->lockStructure(false, __PRETTY_FUNCTION__);
+
+    }
 }
 
 
@@ -3043,21 +3060,49 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
     return res;
 }
 
-
-AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                                           zkutil::Requests * precheck_ops)
+std::optional<AbandonableLockInZooKeeper>
+StorageReplicatedMergeTree::allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+                                                const String & zookeeper_block_id_path)
 {
-    String partition_path = zookeeper_path + "/block_numbers/" + partition_id;
-    if (!existsNodeCached(partition_path))
+    /// Lets check for duplicates in advance, to avoid superflous block numbers allocation
+    zkutil::Requests deduplication_check_ops;
+    if (!zookeeper_block_id_path.empty())
     {
-        int code = zookeeper->tryCreate(partition_path, "", zkutil::CreateMode::Persistent);
-        if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-            throw zkutil::KeeperException(code, partition_path);
+        deduplication_check_ops.emplace_back(zkutil::makeCreateRequest(zookeeper_block_id_path, "", zkutil::CreateMode::Persistent));
+        deduplication_check_ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_block_id_path, -1));
     }
 
-    return AbandonableLockInZooKeeper(
-        partition_path + "/block-",
-        zookeeper_path + "/temp", *zookeeper, precheck_ops);
+    String zookeeper_partition_path = zookeeper_path + "/block_numbers/" + partition_id;
+
+    AbandonableLockInZooKeeper res;
+
+    /// 2 RTT
+    try
+    {
+        if (!existsNodeCached(zookeeper_partition_path))
+        {
+            int code = zookeeper->tryCreate(zookeeper_partition_path, "", zkutil::CreateMode::Persistent);
+            if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+                throw zkutil::KeeperException(code, zookeeper_partition_path);
+        }
+
+        res = AbandonableLockInZooKeeper(
+        zookeeper_partition_path + "/block-",
+        zookeeper_path + "/temp", *zookeeper, &deduplication_check_ops);
+    }
+    catch (const zkutil::KeeperMultiException & e)
+    {
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && e.getPathForFirstFailedOp() == zookeeper_block_id_path)
+            return {};
+
+        throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
+    }
+
+    return {res};
 }
 
 
@@ -3780,6 +3825,117 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     }
 
     LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
+}
+
+void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,
+                                                      const Context & context)
+{
+    auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock2 = source_table->lockStructure(false, __PRETTY_FUNCTION__);
+
+    MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);
+    String partition_id = data.getPartitionIDFromQuery(partition, context);
+
+    MergeTreeData::DataPartsVector src_all_parts = src_data->getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    MergeTreeData::DataPartsVector src_parts;
+    MergeTreeData::MutableDataPartsVector dst_parts;
+    Strings block_id_paths;
+    Strings part_checksums;
+    std::vector<AbandonableLockInZooKeeper> abandonable_locks;
+
+    LOG_DEBUG(log, "Cloning " << src_all_parts.size() << " parts");
+
+    static const String TMP_PREFIX = "tmp_attach_from_";
+    auto zookeeper = getZooKeeper();
+
+    for (size_t i = 0; i < src_all_parts.size(); ++i)
+    {
+        /// We also make some kind of deduplication to avoid duplicated parts in case of ATTACH PARTITION
+        /// Assume that merges in the partiton are quite rare
+        /// Save deduplication block ids with special prefix replace_partition
+
+        auto & src_part = src_all_parts[i];
+        String hash_hex = src_part->checksums.getTotalChecksumHex();
+        String block_id_path = zookeeper_path + "blocks/" + partition_id + "_replace_partition_" + hash_hex;
+
+        auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
+        if (!lock)
+        {
+            LOG_INFO(log, "Part " << src_part->name << " (hash " << hash_hex << ") has been already attached");
+            continue;
+        }
+
+        UInt64 index = lock->getNumber();
+        MergeTreePartInfo dst_part_info(partition_id, index, index, 1);
+        auto dst_part = data.cloneAndLoadDataPart(src_part, TMP_PREFIX, dst_part_info);
+
+        src_parts.emplace_back(src_part);
+        dst_parts.emplace_back(dst_part);
+        abandonable_locks.emplace_back(std::move(*lock));
+        block_id_paths.emplace_back(block_id_path);
+        part_checksums.emplace_back(hash_hex);
+    }
+
+    if (!replace && dst_parts.empty())
+        return;
+
+    zkutil::Requests ops;
+    for (size_t i = 0; i < dst_parts.size(); ++i)
+        getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
+
+    ReplicatedMergeTreeLogEntryData entry;
+    entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
+    entry.source_replica = replica_name;
+    entry.create_time = time(nullptr);
+    entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
+    entry.replace_range_entry->partition = partition_id;
+    entry.replace_range_entry->drop_range_start_block = 0;
+    entry.replace_range_entry->drop_range_end_block = replace ? 0 : dst_parts.front()->info.min_block;
+    entry.replace_range_entry->from_database = src_data->database_name;
+    entry.replace_range_entry->from_table = src_data->table_name;
+    for (const auto & part : src_parts)
+        entry.replace_range_entry->src_part_names.emplace_back(part->name);
+    for (const auto & part : dst_parts)
+        entry.replace_range_entry->new_part_names.emplace_back(part->name);
+    for (const String & checksum : part_checksums)
+        entry.replace_range_entry->part_names_checksums.emplace_back(checksum);
+    entry.replace_range_entry->columns_version = columns_version;
+}
+
+void StorageReplicatedMergeTree::getCommitPartOps(
+    zkutil::Requests & ops,
+    MergeTreeData::MutableDataPartPtr & part,
+    const String & block_id_path) const
+{
+    const String & part_name = part->name;
+
+    if (!block_id_path.empty())
+    {
+        /// Make final duplicate check and commit block_id
+        ops.emplace_back(
+            zkutil::makeCreateRequest(
+                block_id_path,
+                part_name,  /// We will be able to know original part number for duplicate blocks, if we want.
+                zkutil::CreateMode::Persistent));
+    }
+
+    /// Information about the part, in the replica data.
+
+    ops.emplace_back(zkutil::makeCheckRequest(
+        zookeeper_path + "/columns",
+        columns_version));
+    ops.emplace_back(zkutil::makeCreateRequest(
+        replica_path + "/parts/" + part->name,
+        "",
+        zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(
+        replica_path + "/parts/" + part->name + "/columns",
+        part->columns.toString(),
+        zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(
+        replica_path + "/parts/" + part->name + "/checksums",
+        getChecksumsForZooKeeper(part->checksums),
+        zkutil::CreateMode::Persistent));
 }
 
 ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAddress() const

@@ -115,6 +115,7 @@ public:
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
     void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
@@ -186,6 +187,7 @@ private:
     friend class ReplicatedMergeTreeRestartingThread;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
+    friend class MergeTreeData;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -323,11 +325,16 @@ private:
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
                                            zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
 
-    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums);
+    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
     MergeTreeData::DataPartsVector checkPartChecksumsAndCommit(MergeTreeData::Transaction & transaction,
                                                                const MergeTreeData::DataPartPtr & part);
+
+    void getCommitPartOps(
+        zkutil::Requests & ops,
+        MergeTreeData::MutableDataPartPtr & part,
+        const String & block_id_path = "") const;
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
@@ -359,6 +366,8 @@ private:
     bool executeFetch(const LogEntry & entry);
 
     void executeClearColumnInPartition(const LogEntry & entry);
+
+    void executeReplaceRange(const LogEntry & entry);
 
     /** Updates the queue.
       */
@@ -419,9 +428,9 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    /// Creates new block number and additionally perform precheck_ops while creates 'abandoned node'
-    AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                   zkutil::Requests * precheck_ops = nullptr);
+    /// Creates new block number if block with such block_id does not exist
+    std::optional<AbandonableLockInZooKeeper> allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+                                                                  const String & zookeeper_block_id_path);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
