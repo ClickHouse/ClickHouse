@@ -2195,12 +2195,11 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
-            if (!isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
-                /// The tuple itself may be part of the primary key, so check that as a last resort.
-                return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+            if (isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+                return true;
 
-        /// tuple() is invalid but can still be found here since this method may be called before the arguments are validated.
-        return !left_in_operand_tuple->arguments->children.empty();
+        /// The tuple itself may be part of the primary key, so check that as a last resort.
+        return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
