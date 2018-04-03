@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Types.h"
-#include "KeeperException.h"
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>
@@ -280,7 +279,7 @@ public:
         {
             zookeeper.tryRemove(path);
         }
-        catch (const KeeperException & e)
+        catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
             DB::tryLogCurrentException(__PRETTY_FUNCTION__);
