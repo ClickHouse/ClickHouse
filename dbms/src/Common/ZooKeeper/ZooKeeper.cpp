@@ -195,6 +195,9 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 
     impl->list(path, callback, watch_callback);
     event.wait();
+
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
+    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
     return code;
 }
 
