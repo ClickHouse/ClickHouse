@@ -1181,8 +1181,6 @@ void ZooKeeper::MultiResponse::readImpl(ReadBuffer & in)
         ZooKeeperImpl::read(done, in);
         ZooKeeperImpl::read(op_error, in);
 
-//        std::cerr << "Received result for multi: " << op_num << "\n";
-
         if (done)
             throw Exception("Not enough results received for multi transaction", ZMARSHALLINGERROR);
 
