@@ -683,10 +683,10 @@ void Context::assertTableExists(const String & database_name, const String & tab
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() == it)
-        throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
     if (!it->second->isTableExist(*this, table_name))
-        throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 
@@ -700,7 +700,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
-        throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 
@@ -713,7 +713,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
         checkDatabaseAccessRights(db);
 
     if (shared->databases.end() == shared->databases.find(db))
-        throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 }
 
 
@@ -725,7 +725,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
     checkDatabaseAccessRights(db);
 
     if (shared->databases.end() != shared->databases.find(db))
-        throw Exception("Database " + db + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+        throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
 
 
@@ -795,7 +795,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     if (shared->databases.end() == it)
     {
         if (exception)
-            *exception = Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
         return {};
     }
 
@@ -803,7 +803,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     if (!table)
     {
         if (exception)
-            *exception = Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            *exception = Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 
@@ -814,7 +814,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
     if (external_tables.end() != external_tables.find(table_name))
-        throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     external_tables[table_name] = std::pair(storage, ast);
 }
@@ -920,7 +920,7 @@ ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
     TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
     if (external_tables.end() == jt)
-        throw Exception("Temporary Table" + table_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
     return jt->second.second;
 }
