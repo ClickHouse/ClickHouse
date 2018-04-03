@@ -749,17 +749,17 @@ void ZooKeeper::receiveThread()
 
             clock::time_point now = clock::now();
             UInt64 max_wait = operation_timeout.totalMicroseconds();
-            bool has_operations = false;
+            std::optional<RequestInfo> earliest_operation;
 
             {
                 std::lock_guard lock(operations_mutex);
                 if (!operations.empty())
                 {
                     /// Operations are ordered by xid (and consequently, by time).
-                    has_operations = true;
-                    auto earliest_operation_deadline = operations.begin()->second.time + std::chrono::microseconds(operation_timeout.totalMicroseconds());
+                    earliest_operation = operations.begin()->second;
+                    auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(operation_timeout.totalMicroseconds());
                     if (now > earliest_operation_deadline)
-                        throw Exception("Operation timeout", ZOPERATIONTIMEOUT);
+                        throw Exception("Operation timeout (deadline already expired) for path: " + earliest_operation->request->getPath(), ZOPERATIONTIMEOUT);
                     max_wait = std::chrono::duration_cast<std::chrono::microseconds>(earliest_operation_deadline - now).count();
                 }
             }
@@ -774,8 +774,8 @@ void ZooKeeper::receiveThread()
             }
             else
             {
-                if (has_operations)
-                    throw Exception("Operation timeout", ZOPERATIONTIMEOUT);
+                if (earliest_operation)
+                    throw Exception("Operation timeout (no response) for path: " + earliest_operation->request->getPath(), ZOPERATIONTIMEOUT);
                 waited += max_wait;
                 if (waited > session_timeout.totalMicroseconds())
                     throw Exception("Nothing is received in session timeout", ZOPERATIONTIMEOUT);
