@@ -1,17 +1,8 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-
 #include <Storages/IStorage.h>
-
-
-namespace Poco
-{
-    namespace Data
-    {
-        class SessionPool;
-    }
-}
+#include <Poco/Data/SessionPool.h>
 
 
 namespace DB
