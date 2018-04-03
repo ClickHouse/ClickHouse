@@ -19,7 +19,7 @@
 #if Poco_MongoDB_FOUND
     #include <Dictionaries/MongoDBDictionarySource.h>
 #endif
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
     #include <Poco/Data/ODBC/Connector.h>
@@ -89,7 +89,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 DictionarySourceFactory::DictionarySourceFactory()
     : log(&Poco::Logger::get("DictionarySourceFactory"))
 {
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
     Poco::Data::ODBC::Connector::registerConnector();
 #endif
 }
@@ -154,7 +154,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     }
     else if ("odbc" == source_type)
     {
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
         return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context);
 #else
         throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
