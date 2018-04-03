@@ -4,7 +4,6 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <Poco/Data/SessionPool.h>
 #pragma GCC diagnostic pop
-
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/DictionaryStructure.h>
