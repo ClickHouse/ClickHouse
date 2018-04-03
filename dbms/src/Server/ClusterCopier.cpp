@@ -716,13 +716,11 @@ class ClusterCopier
 {
 public:
 
-    ClusterCopier(const ConfigurationPtr & zookeeper_config_,
-                  const String & task_path_,
+    ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
                   Context & context_)
     :
-        zookeeper_config(zookeeper_config_),
         task_zookeeper_path(task_path_),
         host_id(host_id_),
         working_database_name(proxy_database_name_),
@@ -733,7 +731,7 @@ public:
 
     void init()
     {
-        auto zookeeper = getZooKeeper();
+        auto zookeeper = context.getZooKeeper();
 
         task_description_watch_callback = [this] (const ZooKeeperImpl::ZooKeeper::WatchResponse &)
         {
@@ -763,8 +761,8 @@ public:
 
         /// Do not initialize tables, will make deferred initialization in process()
 
-        getZooKeeper()->createAncestors(getWorkersPathVersion() + "/");
-        getZooKeeper()->createAncestors(getWorkersPath() + "/");
+        zookeeper->createAncestors(getWorkersPathVersion() + "/");
+        zookeeper->createAncestors(getWorkersPath() + "/");
     }
 
     template <typename T>
@@ -891,7 +889,7 @@ public:
 
     void reloadTaskDescription()
     {
-        auto zookeeper = getZooKeeper();
+        auto zookeeper = context.getZooKeeper();
         task_description_watch_zookeeper = zookeeper;
 
         String task_config_str;
@@ -1088,7 +1086,7 @@ protected:
     {
         LOG_DEBUG(log, "Check that all shards processed partition " << partition_name << " successfully");
 
-        auto zookeeper = getZooKeeper();
+        auto zookeeper = context.getZooKeeper();
 
         Strings status_paths;
         for (auto & shard : shards_with_partition)
@@ -1460,7 +1458,7 @@ protected:
         TaskTable & task_table = task_shard.task_table;
         ClusterPartition & cluster_partition = task_table.getClusterPartition(task_partition.name);
 
-        auto zookeeper = getZooKeeper();
+        auto zookeeper = context.getZooKeeper();
 
         String is_dirty_flag_path = task_partition.getCommonPartitionIsDirtyPath();
         String current_task_is_active_path = task_partition.getActiveWorkerPath();
@@ -1996,21 +1994,7 @@ protected:
         return successful_shards;
     }
 
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        auto zookeeper = context.getZooKeeper();
-
-        if (!zookeeper)
-        {
-            context.setZooKeeper(std::make_shared<zkutil::ZooKeeper>(*zookeeper_config, "zookeeper"));
-            zookeeper = context.getZooKeeper();
-        }
-
-        return zookeeper;
-    }
-
 private:
-    ConfigurationPtr zookeeper_config;
     String task_zookeeper_path;
     String task_description_path;
     String host_id;
@@ -2153,6 +2137,7 @@ void ClusterCopierApp::mainImpl()
     auto context = std::make_unique<Context>(Context::createGlobal());
     SCOPE_EXIT(context->shutdown());
 
+    context->setConfig(zookeeper_configuration);
     context->setGlobalContext(*context);
     context->setApplicationType(Context::ApplicationType::LOCAL);
     context->setPath(process_path);
@@ -2166,8 +2151,7 @@ void ClusterCopierApp::mainImpl()
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
 
-    std::unique_ptr<ClusterCopier> copier(new ClusterCopier(
-        zookeeper_configuration, task_path, host_id, default_database, *context));
+    std::unique_ptr<ClusterCopier> copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
 
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
