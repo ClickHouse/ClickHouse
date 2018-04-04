@@ -49,6 +49,9 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
     session_timeout_ms = session_timeout_ms_;
     chroot = chroot_;
 
+    if (hosts.empty())
+        throw KeeperException("No addresses passed to ZooKeeper constructor.", ZooKeeperImpl::ZooKeeper::ZBADARGUMENTS);
+
     std::vector<std::string> addresses_strings;
     boost::split(addresses_strings, hosts, boost::is_any_of(","));
     ZooKeeperImpl::ZooKeeper::Addresses addresses;

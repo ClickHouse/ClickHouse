@@ -532,9 +532,6 @@ ZooKeeper::ZooKeeper(
 
     connect(addresses, connection_timeout);
 
-    sendHandshake();
-    receiveHandshake();
-
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
 
@@ -549,6 +546,9 @@ void ZooKeeper::connect(
     const Addresses & addresses,
     Poco::Timespan connection_timeout)
 {
+    if (addresses.empty())
+        throw Exception("No addresses passed to ZooKeeperImpl constructor", ZBADARGUMENTS);
+
     static constexpr size_t num_tries = 3;
     bool connected = false;
 
@@ -560,6 +560,17 @@ void ZooKeeper::connect(
             try
             {
                 socket.connect(address, connection_timeout);
+
+                socket.setReceiveTimeout(operation_timeout);
+                socket.setSendTimeout(operation_timeout);
+                socket.setNoDelay(true);
+
+                in.emplace(socket);
+                out.emplace(socket);
+
+                sendHandshake();
+                receiveHandshake();
+
                 connected = true;
                 break;
             }
@@ -594,13 +605,6 @@ void ZooKeeper::connect(
         out << fail_reasons.str();
         throw Exception(out.str(), ZCONNECTIONLOSS);
     }
-
-    socket.setReceiveTimeout(operation_timeout);
-    socket.setSendTimeout(operation_timeout);
-    socket.setNoDelay(true);
-
-    in.emplace(socket);
-    out.emplace(socket);
 }
 
 
