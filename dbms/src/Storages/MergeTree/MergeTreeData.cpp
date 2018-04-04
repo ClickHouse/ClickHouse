@@ -2189,8 +2189,8 @@ bool MergeTreeData::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & 
 
 bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
 {
-    /// Make sure that the left side of the IN operator is part of the primary key.
-    /// If there is a tuple on the left side of the IN operator, each item of the tuple must be part of the primary key.
+    /// Make sure that the left side of the IN operator contain part of the primary key.
+    /// If there is a tuple on the left side of the IN operator, at least one item of the tuple must be part of the primary key (probably wrapped by a chain of some acceptable functions).
     const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
