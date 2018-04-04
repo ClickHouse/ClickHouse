@@ -1,6 +1,7 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
 #include <IO/WriteHelpers.h>
@@ -689,6 +690,8 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
 void ZooKeeper::sendThread()
 {
+    setThreadName("ZooKeeperSend");
+
     auto prev_heartbeat_time = clock::now();
 
     try
@@ -744,6 +747,8 @@ void ZooKeeper::sendThread()
 
 void ZooKeeper::receiveThread()
 {
+    setThreadName("ZooKeeperRecv");
+
     try
     {
         Int64 waited = 0;
