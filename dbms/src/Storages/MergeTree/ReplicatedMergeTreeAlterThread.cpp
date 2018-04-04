@@ -1,5 +1,6 @@
 #include <memory>
 #include <Common/setThreadName.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
