@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Types.h"
-#include "KeeperException.h"
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>
