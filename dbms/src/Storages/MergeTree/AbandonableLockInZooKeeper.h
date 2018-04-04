@@ -71,6 +71,16 @@ public:
         return *this;
     }
 
+    static AbandonableLockInZooKeeper createLocked(String path_prefix_, String path_, String holder_path_, zkutil::ZooKeeper & zookeeper_)
+    {
+        AbandonableLockInZooKeeper ret;
+        ret.zookeeper = &zookeeper_;
+        ret.path_prefix = std::move(path_prefix_);
+        ret.path = std::move(path_);
+        ret.holder_path = std::move(holder_path_);
+        return ret;
+    }
+
     bool isCreated() const
     {
         return zookeeper && !holder_path.empty() && !path.empty();

@@ -191,6 +191,15 @@ public:
 
     std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> asyncRemove(const std::string & path, int32_t version = -1);
 
+
+    /// TODO
+    /* using CreateFuture = Future<std::string, int, const char *>; */
+    /* CreateFuture asyncCreate(const std::string & path, const std::string & value, int32_t mode); */
+
+    /* using SetFuture = Future<Stat, int, const Stat *>; */
+    /* SetFuture asyncSet(const std::string & path, const std::string & value, int32_t version); */
+
+
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     /// * The versions do not match

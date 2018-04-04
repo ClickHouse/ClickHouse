@@ -674,6 +674,64 @@ std::future<ZooKeeperImpl::ZooKeeper::ListResponse> ZooKeeper::asyncGetChildren(
     return future;
 }
 
+// ZooKeeper::CreateFuture ZooKeeper::asyncCreate(const std::string & path, const std::string & value, int32_t mode)
+// {
+//     CreateFuture future {
+//         [path] (int rc, const char * created_path)
+//         {
+//             if (rc != ZOK)
+//                 throw KeeperException(rc, path);
+
+//             return std::string(created_path);
+//         }};
+
+//     int32_t code = zoo_acreate(
+//         impl, path.c_str(), value.data(), value.length(), getDefaultACL(), mode,
+//         [] (int rc, const char * created_path, const void * data)
+//         {
+//             CreateFuture::TaskPtr owned_task = std::move(const_cast<CreateFuture::TaskPtr &>(*static_cast<const CreateFuture::TaskPtr *>(data)));
+//             (*owned_task)(rc, created_path);
+//         },
+//         future.task.get());
+
+//     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
+//     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+//     if (code != ZOK)
+//         throw KeeperException(code, path);
+
+//     return future;
+// }
+
+// ZooKeeper::SetFuture ZooKeeper::asyncSet(const std::string & path, const std::string & value, int32_t version)
+// {
+//     SetFuture future {
+//         [path] (int rc, const Stat * stat)
+//         {
+//             if (rc != ZOK)
+//                 throw KeeperException(rc, path);
+
+//             return *stat;
+//         }};
+
+//     int32_t code = zoo_aset(
+//         impl, path.c_str(), value.data(), value.length(), version,
+//         [] (int rc, const Stat * stat, const void * data)
+//         {
+//             SetFuture::TaskPtr owned_task = std::move(const_cast<SetFuture::TaskPtr &>(*static_cast<const SetFuture::TaskPtr *>(data)));
+//             (*owned_task)(rc, stat);
+//         },
+//         future.task.get());
+
+//     ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
+//     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+//     if (code != ZOK)
+//         throw KeeperException(code, path);
+
+//     return future;
+// }
+
 std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> ZooKeeper::asyncRemove(const std::string & path, int32_t version)
 {
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::RemoveResponse>>();
