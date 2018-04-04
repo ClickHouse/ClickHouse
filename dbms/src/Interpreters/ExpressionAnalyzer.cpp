@@ -508,14 +508,12 @@ void ExpressionAnalyzer::analyzeAggregation()
         has_aggregation = true;
 
     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
-    std::unordered_map<String, DataTypePtr> aggregated_columns_map;
 
     if (select_query && select_query->array_join_expression_list())
     {
         getRootActions(select_query->array_join_expression_list(), true, false, temp_actions);
         addMultipleArrayJoinAction(temp_actions);
-        for (const auto & name_and_type : temp_actions->getSampleBlock().getNamesAndTypesList())
-            aggregated_columns_map.try_emplace(name_and_type.name, name_and_type.type);
+        array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
     }
 
     if (select_query)
@@ -539,7 +537,6 @@ void ExpressionAnalyzer::analyzeAggregation()
         /// Find out aggregation keys.
         if (select_query->group_expression_list)
         {
-            bool added_aggregation = false;
             NameSet unique_keys;
             ASTs & group_asts = select_query->group_expression_list->children;
             for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
@@ -577,31 +574,30 @@ void ExpressionAnalyzer::analyzeAggregation()
                 if (!unique_keys.count(key.name))
                 {
                     unique_keys.insert(key.name);
-
-                    aggregated_columns_map.try_emplace(key.name, key.type);
-                    added_aggregation = true;
+                    aggregation_keys.push_back(key);
 
                     /// Key is no longer needed, therefore we can save a little by moving it.
-                    aggregation_keys.push_back(std::move(key));
+                    aggregated_columns.push_back(std::move(key));
                 }
             }
 
             if (group_asts.empty())
             {
                 select_query->group_expression_list = nullptr;
-                has_aggregation = select_query->having_expression || added_aggregation;
+                has_aggregation = select_query->having_expression || aggregate_descriptions.size();
             }
         }
 
         for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
         {
             AggregateDescription & desc = aggregate_descriptions[i];
-            aggregated_columns_map.try_emplace(desc.column_name, desc.function->getReturnType());
+            aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
         }
     }
-
-    for (const auto & pair : aggregated_columns_map)
-        aggregated_columns.emplace_back(pair.first, pair.second);
+    else
+    {
+        aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+    }
 }
 
 
@@ -1525,7 +1521,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 else
                 {
                     NamesAndTypesList temp_columns = source_columns;
-                    temp_columns.insert(temp_columns.end(), aggregated_columns.begin(), aggregated_columns.end());
+                    temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
                     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, settings);
                     getRootActions(func->arguments->children.at(0), true, false, temp_actions);
 
