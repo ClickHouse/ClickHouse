@@ -1,0 +1,13 @@
+all
+1	[1]
+2	[2]
+key, arrayJoin(arr) in (1, 1)
+1	1
+key, arrayJoin(arr) in ((1, 1), (2, 2))
+1	1
+2	2
+(key, left array join arr) in (1, 1)
+1
+(key, left array join arr) in ((1, 1), (2, 2))
+1
+2
