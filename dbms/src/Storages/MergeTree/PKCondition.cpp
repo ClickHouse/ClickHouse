@@ -1006,6 +1006,10 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
                     rpn_stack.back() = !rpn_stack.back();
                 }
             }
+            else
+            {
+                throw Exception("Set for IN is not created yet!", ErrorCodes::LOGICAL_ERROR);
+            }
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
