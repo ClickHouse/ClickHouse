@@ -571,7 +571,7 @@ private:
     template <typename T>
     void read(T &);
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperSession};
+    CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
 };
 
 };
