@@ -980,6 +980,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
     bool expired_prev = false;
     if (expired.compare_exchange_strong(expired_prev, true))
     {
+        active_session_metric_increment.destroy();
+
         try
         {
             if (!error_send)
