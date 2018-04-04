@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/CurrentMetrics.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -23,10 +24,36 @@
 #include <functional>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric ZooKeeperSession;
+}
+
+
 namespace ZooKeeperImpl
 {
 
 using namespace DB;
+
+
+class Exception : public DB::Exception
+{
+private:
+    /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
+    Exception(const std::string & msg, const int32_t code, int);
+
+public:
+    explicit Exception(const int32_t code);
+    Exception(const std::string & msg, const int32_t code);
+    Exception(const int32_t code, const std::string & path);
+    Exception(const Exception & exc);
+
+    const char * name() const throw() override { return "ZooKeeperImpl::Exception"; }
+    const char * className() const throw() override { return "ZooKeeperImpl::Exception"; }
+    Exception * clone() const override { return new Exception(*this); }
+
+    const int32_t code;
+};
 
 
 /** Usage scenario:
@@ -543,6 +570,8 @@ private:
 
     template <typename T>
     void read(T &);
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperSession};
 };
 
 };
