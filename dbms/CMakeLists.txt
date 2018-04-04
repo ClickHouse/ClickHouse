@@ -167,6 +167,8 @@ if (Poco_SQLODBC_FOUND)
     target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
 endif()
+target_include_directories (clickhouse_common_io PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include)
+target_include_directories (dbms PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include)
 
 if (Poco_DataODBC_FOUND)
     target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
