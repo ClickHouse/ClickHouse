@@ -38,3 +38,8 @@ select 'max(key) from tab any left join (select key, arrayJoin(n.x) as val from 
 select max(key) from test.tab any left join (select key, arrayJoin(n.x) as val from test.tab) using key where (key, val) in (1, 1);
 select 'max(key) from tab any left join (select key, arrayJoin(n.x) as val from tab) using key where (key, val) in ((1, 1), (2, 2))';
 select max(key) from test.tab any left join (select key, arrayJoin(n.x) as val from test.tab) using key where (key, val) in ((1, 1), (2, 2));
+
+drop  table if exists test.tab;
+CREATE TABLE test.tab (key1 Int32, id1  Int64, c1 Int64) ENGINE = MergeTree  PARTITION BY id1 ORDER BY (key1) ;
+insert into test.tab values ( -1, 1, 0 );
+SELECT count(*) FROM  test.tab PREWHERE id1 IN (1);

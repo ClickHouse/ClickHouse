@@ -34,3 +34,4 @@ max(key) from tab any left join (select key, arrayJoin(n.x) as val from tab) usi
 1
 max(key) from tab any left join (select key, arrayJoin(n.x) as val from tab) using key where (key, val) in ((1, 1), (2, 2))
 2
+1
