@@ -943,6 +943,9 @@ void ZooKeeper::receiveEvent()
         }
 
         response = request_info.request->makeResponse();
+
+        auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
     if (err)
@@ -956,9 +959,6 @@ void ZooKeeper::receiveEvent()
     int32_t actual_length = in->count() - count_before_event;
     if (length != actual_length)
         throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
-
-    auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-    ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
 
     if (request_info.callback)
         request_info.callback(*response);
