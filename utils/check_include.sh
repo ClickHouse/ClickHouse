@@ -36,6 +36,7 @@ inc="-I. \
 -I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
+-I./libs/libconsistent-hashing \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
 
