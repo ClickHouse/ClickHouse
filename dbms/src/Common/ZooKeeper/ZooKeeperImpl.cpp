@@ -560,6 +560,7 @@ void ZooKeeper::connect(
         {
             try
             {
+                socket = Poco::Net::StreamSocket();     /// Reset the state of previous attempt.
                 socket.connect(address, connection_timeout);
 
                 socket.setReceiveTimeout(operation_timeout);
@@ -577,7 +578,7 @@ void ZooKeeper::connect(
             }
             catch (const Poco::Net::NetException & e)
             {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false);
+                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
             }
             catch (const Poco::TimeoutException & e)
             {
@@ -603,7 +604,7 @@ void ZooKeeper::connect(
             out << address.toString();
         }
 
-        out << fail_reasons.str();
+        out << fail_reasons.str() << "\n";
         throw Exception(out.str(), ZCONNECTIONLOSS);
     }
 }
