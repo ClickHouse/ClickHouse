@@ -603,9 +603,27 @@ Int64 ZooKeeper::getClientID()
 }
 
 
-std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std::string & path)
+std::future<ZooKeeperImpl::ZooKeeper::CreateResponse> ZooKeeper::asyncCreate(const std::string & path, const std::string & data, int32_t mode)
 {
     /// https://stackoverflow.com/questions/25421346/how-to-create-an-stdfunction-from-a-move-capturing-lambda-expression
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::CreateResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::CreateResponse & response) mutable
+    {
+        if (response.error)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
+    return future;
+}
+
+
+std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std::string & path)
+{
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::GetResponse>>();
     auto future = promise->get_future();
 
@@ -656,6 +674,22 @@ std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ZooKeeper::asyncExists(con
     return future;
 }
 
+std::future<ZooKeeperImpl::ZooKeeper::SetResponse> ZooKeeper::asyncSet(const std::string & path, const std::string & data, int32_t version)
+{
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::SetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::SetResponse & response) mutable
+    {
+        if (response.error)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->set(path, data, version, std::move(callback));
+    return future;
+}
 
 std::future<ZooKeeperImpl::ZooKeeper::ListResponse> ZooKeeper::asyncGetChildren(const std::string & path)
 {

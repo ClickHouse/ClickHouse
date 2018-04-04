@@ -2854,12 +2854,21 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, zkutil::Requests * precheck_ops)
 {
-    String partition_path = zookeeper_path + "/block_numbers/" + partition_id;
+    String block_numbers_path = zookeeper_path + "/block_numbers";
+    String partition_path = block_numbers_path + "/" + partition_id;
     if (!existsNodeCached(partition_path))
     {
-        int code = zookeeper->tryCreate(partition_path, "", zkutil::CreateMode::Persistent);
+        zkutil::Requests ops;
+        ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
+        /// We increment data version of the block_numbers node so that it becomes possible
+        /// to check in a ZK transaction that the set of partitions didn't change
+        /// (unfortunately there is no CheckChildren op).
+        ops.push_back(zkutil::makeSetRequest(block_numbers_path, "", -1));
+
+        zkutil::Responses responses;
+        int code = zookeeper->tryMulti(ops, responses);
         if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-            throw zkutil::KeeperException(code, partition_path);
+            zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
     return AbandonableLockInZooKeeper(

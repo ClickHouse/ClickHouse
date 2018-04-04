@@ -29,3 +29,6 @@ target_link_libraries (merge_selector2 dbms)
 
 add_executable (get_current_inserts_in_replicated get_current_inserts_in_replicated.cpp)
 target_link_libraries (get_current_inserts_in_replicated dbms)
+
+add_executable (get_abandonable_lock_in_all_partitions get_abandonable_lock_in_all_partitions.cpp)
+target_link_libraries (get_abandonable_lock_in_all_partitions dbms)
