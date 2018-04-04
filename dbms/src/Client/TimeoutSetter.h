@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Temporarily overrides socket send/recieve timeouts and reset them back into destructor
-/// Timeouts could be only decreased
+/// If "limit_max_timeout" is true, timeouts could be only decreased (maxed by previous value).
 struct TimeoutSetter
 {
     TimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & send_timeout_, const Poco::Timespan & recieve_timeout_,
