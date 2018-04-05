@@ -323,7 +323,7 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat, const EventPtr & w
     return existsWatch(path, stat, callbackForEvent(watch));
 }
 
-bool ZooKeeper::existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback)
+bool ZooKeeper::existsWatch(const std::string & path, Stat * stat, WatchCallback watch_callback)
 {
     int32_t code = existsImpl(path, stat, watch_callback);
 
@@ -372,7 +372,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat,
     return tryGetWatch(path, res, stat, callbackForEvent(watch), return_code);
 }
 
-bool ZooKeeper::tryGetWatch(const std::string & path, std::string & res, Stat * stat, const WatchCallback & watch_callback, int * return_code)
+bool ZooKeeper::tryGetWatch(const std::string & path, std::string & res, Stat * stat, WatchCallback watch_callback, int * return_code)
 {
     int32_t code = getImpl(path, res, stat, watch_callback);
 
