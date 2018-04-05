@@ -1272,21 +1272,29 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     if (expired && info.request->xid != close_xid)
         throw Exception("Session expired", ZSESSIONEXPIRED);
 
-    info.request->addRootPath(root_path);
-
-    info.time = clock::now();
-
-    if (!info.request->xid)
+    try
     {
-        info.request->xid = xid.fetch_add(1);
-        if (info.request->xid < 0)
-            throw Exception("XID overflow", ZSESSIONEXPIRED);
+        info.request->addRootPath(root_path);
+
+        info.time = clock::now();
+
+        if (!info.request->xid)
+        {
+            info.request->xid = xid.fetch_add(1);
+            if (info.request->xid < 0)
+                throw Exception("XID overflow", ZSESSIONEXPIRED);
+        }
+
+        ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+        if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
+            throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
     }
-
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
-
-    if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
+    catch (...)
+    {
+        finalize(false, false);
+        throw;
+    }
 }
 
 
