@@ -14,6 +14,9 @@
 #if ENABLE_CLICKHOUSE_LOCAL
 #include "LocalServer.h"
 #endif
+#if ENABLE_CLICKHOUSE_CLIENT
+#include <vector>
+#endif
 #include <Common/StringUtils/StringUtils.h>
 
 /// Universal executable for various clickhouse applications
