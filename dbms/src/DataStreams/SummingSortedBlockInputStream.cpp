@@ -14,6 +14,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 
+
 namespace DB
 {
 
@@ -94,9 +95,6 @@ Block SummingSortedBlockInputStream::readImpl()
 {
     if (finished)
         return Block();
-
-    if (children.size() == 1)
-        return children[0]->read();
 
     Block header;
     MutableColumns merged_columns;
@@ -339,7 +337,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             addRow(current);
 
             // Merge maps only for same rows
-            for (auto & desc : maps_to_sum)
+            for (const auto & desc : maps_to_sum)
             {
                 if (mergeMap(desc, current_row, current))
                     current_row_is_zero = false;
