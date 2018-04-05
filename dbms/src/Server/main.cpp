@@ -3,6 +3,7 @@
 #include <common/config_common.h>
 #include <Common/config.h>
 #include <config_tools.h>
+#include <vector>
 
 #if USE_TCMALLOC
 #include <gperftools/malloc_extension.h>
