@@ -67,6 +67,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int CYCLIC_ALIASES;

@@ -10,6 +10,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
@@ -41,6 +42,8 @@ namespace ErrorCodes
     extern const int FUNCTION_IS_SPECIAL;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_SLOW;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
