@@ -3,6 +3,7 @@
 #include <common/config_common.h>
 #include <Common/config.h>
 #include <config_tools.h>
+#include <vector>
 
 #if USE_TCMALLOC
 #include <gperftools/malloc_extension.h>
@@ -13,9 +14,6 @@
 #endif
 #if ENABLE_CLICKHOUSE_LOCAL
 #include "LocalServer.h"
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
-#include <vector>
 #endif
 #include <Common/StringUtils/StringUtils.h>
 
