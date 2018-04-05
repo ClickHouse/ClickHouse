@@ -440,7 +440,9 @@ public:
     using MultiCallback = std::function<void(const MultiResponse &)>;
 
     /// If the method will throw exception, callbacks won't be called.
-    /// After the method is executed successfully, you must wait for callbacks.
+    /// After the method is executed successfully, you must wait for callbacks
+    ///  (don't destroy callback data before it will be called).
+    /// All callbacks are executed sequentially.
 
     void create(
         const String & path,
