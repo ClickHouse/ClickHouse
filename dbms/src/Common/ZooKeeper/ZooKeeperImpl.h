@@ -439,6 +439,8 @@ public:
     using CheckCallback = std::function<void(const CheckResponse &)>;
     using MultiCallback = std::function<void(const MultiResponse &)>;
 
+    /// If the method will throw exception, callbacks won't be called.
+    /// After the method is executed successfully, you must wait for callbacks.
 
     void create(
         const String & path,
@@ -573,9 +575,9 @@ private:
         clock::time_point time;
     };
 
-    using RequestsQueue = ConcurrentBoundedQueue<RequestPtr>;
+    using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests{1};
+    RequestsQueue requests_queue{1};
     void pushRequest(RequestInfo && request);
 
     using Operations = std::map<XID, RequestInfo>;
