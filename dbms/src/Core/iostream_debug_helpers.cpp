@@ -5,6 +5,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/FieldVisitors.h>
 #include <Common/COWPtr.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/IDataType.h>
@@ -13,19 +14,19 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/IAST.h>
 
+
 namespace DB
 {
 
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
     stream << "IBlockInputStream(name = " << what.getName() << ")";
-    //what.dumpTree(stream); // todo: set const
     return stream;
 }
 
 std::ostream & operator<<(std::ostream & stream, const Field & what)
 {
-    stream << "Field(type = " << what.getTypeName() << ")";
+    stream << applyVisitor(FieldVisitorDump(), what);
     return stream;
 }
 
@@ -46,7 +47,6 @@ std::ostream & operator<<(std::ostream & stream, const IStorage & what)
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
            << what.getColumns().getAllPhysical().toString()
            << "}";
-    // isRemote supportsSampling supportsFinal supportsPrewhere
     return stream;
 }
 
