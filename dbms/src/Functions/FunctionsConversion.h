@@ -1097,30 +1097,6 @@ using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToIntMonotonici
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
 
-
-template <typename DataType> struct FunctionTo;
-
-template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
-template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
-template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
-template <> struct FunctionTo<DataTypeUInt64> { using Type = FunctionToUInt64; };
-template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
-template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
-template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
-template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
-template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
-template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
-template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
-template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
-template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
-template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
-template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
-
-template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
-    : FunctionTo<DataTypeNumber<FieldType>>
-{
-};
-
 struct NameToUInt8OrZero { static constexpr auto name = "toUInt8OrZero"; };
 struct NameToUInt16OrZero { static constexpr auto name = "toUInt16OrZero"; };
 struct NameToUInt32OrZero { static constexpr auto name = "toUInt32OrZero"; };
@@ -1176,6 +1152,54 @@ using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, Nam
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
 struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
+
+
+template <typename DataType> struct FunctionTo;
+
+template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
+template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
+template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
+template <> struct FunctionTo<DataTypeUInt64> { using Type = FunctionToUInt64; };
+template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
+template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
+template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
+template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
+template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
+template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
+template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
+template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
+template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
+template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
+
+template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
+    : FunctionTo<DataTypeNumber<FieldType>>
+{
+};
+
+template <typename DataType> struct FunctionToOrNull;
+
+template <> struct FunctionToOrNull<DataTypeUInt8> { using Type = FunctionToUInt8; };
+template <> struct FunctionToOrNull<DataTypeUInt16> { using Type = FunctionToUInt16; };
+template <> struct FunctionToOrNull<DataTypeUInt32> { using Type = FunctionToUInt32; };
+template <> struct FunctionToOrNull<DataTypeUInt64> { using Type = FunctionToUInt64; };
+template <> struct FunctionToOrNull<DataTypeInt8> { using Type = FunctionToInt8; };
+template <> struct FunctionToOrNull<DataTypeInt16> { using Type = FunctionToInt16; };
+template <> struct FunctionToOrNull<DataTypeInt32> { using Type = FunctionToInt32; };
+template <> struct FunctionToOrNull<DataTypeInt64> { using Type = FunctionToInt64; };
+template <> struct FunctionToOrNull<DataTypeFloat32> { using Type = FunctionToFloat32; };
+template <> struct FunctionToOrNull<DataTypeFloat64> { using Type = FunctionToFloat64; };
+template <> struct FunctionToOrNull<DataTypeDate> { using Type = FunctionToDate; };
+template <> struct FunctionToOrNull<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionToOrNull<DataTypeUUID> { using Type = FunctionToUUID; };
+template <> struct FunctionToOrNull<DataTypeString> { using Type = FunctionToString; };
+template <> struct FunctionToOrNull<DataTypeFixedString> { using Type = FunctionToFixedString; };
+
+template <typename FieldType> struct FunctionToOrNull<DataTypeEnum<FieldType>>
+    : FunctionToOrNull<DataTypeNumber<FieldType>>
+{
+};
+
 
 using FunctionParseDateTimeBestEffort = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
@@ -1257,10 +1281,10 @@ private:
     DataTypes argument_types;
     DataTypePtr return_type;
 
-    template <typename DataType>
+    template <typename DataType, bool OrNull>
     WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const) const
     {
-        using FunctionType = typename FunctionTo<DataType>::Type;
+        using FunctionType = std::conditional_t<OrNull, typename FunctionToOrNull<DataType>::Type, typename FunctionTo<DataType>::Type>;
 
         auto function = FunctionType::create(context);
 
@@ -1544,10 +1568,9 @@ private:
         DataTypePtr from_inner_type = removeNullable(from_type);
         DataTypePtr to_inner_type = removeNullable(to_type);
 
-        auto wrapper = prepareImpl(from_inner_type, to_inner_type);
-
         if (nullable_conversion.result_is_nullable)
         {
+            auto wrapper = prepareImpl<true>(from_inner_type, to_inner_type);
             return [wrapper, nullable_conversion] (Block & block, const ColumnNumbers & arguments, const size_t result)
             {
                 /// Create a temporary block on which to perform the operation.
@@ -1594,7 +1617,8 @@ private:
         {
             /// Conversion from Nullable to non-Nullable.
 
-            return [wrapper] (Block & block, const ColumnNumbers & arguments, const size_t result)
+            return [wrapper = prepareImpl<false>(from_inner_type, to_inner_type)]
+            (Block & block, const ColumnNumbers & arguments, const size_t result)
             {
                 Block tmp_block = createBlockWithNestedColumns(block, arguments, result);
 
@@ -1613,9 +1637,10 @@ private:
             };
         }
         else
-            return wrapper;
+            return prepareImpl<false>(from_inner_type, to_inner_type);
     }
 
+    template <bool OrNull>
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
         if (from_type->equals(*to_type))
@@ -1623,31 +1648,31 @@ private:
         else if (checkDataType<DataTypeNothing>(from_type.get()))
             return createNothingWrapper(to_type.get());
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeDate>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeString>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper<OrNull>(from_type, to_actual_type);
         else if (const auto type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type.get()))
             return createFixedStringWrapper(from_type, type_fixed_string->getN());
         else if (const auto type_array = checkAndGetDataType<DataTypeArray>(to_type.get()))
