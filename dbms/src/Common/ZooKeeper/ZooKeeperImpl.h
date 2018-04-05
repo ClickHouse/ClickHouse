@@ -24,6 +24,54 @@
 #include <functional>
 
 
+/** ZooKeeper C++ library, a replacement for libzookeeper.
+  *
+  * Motivation.
+  *
+  * libzookeeper has many bugs:
+  * - segfaults: for example, if zookeeper connection was interrupted while reading result of multi response;
+  * - memory corruption: for example, as a result of double free inside libzookeeper;
+  * - no timeouts for synchronous operations: they may stuck forever under simple Jepsen-like tests;
+  * - logical errors: for example, chroot prefix is not removed from the results of multi responses.
+  * - data races;
+  *
+  * The code of libzookeeper is over complicated:
+  * - memory ownership is unclear and bugs are very difficult to track and fix.
+  * - extremely creepy code for implementation of "chroot" feature.
+  *
+  * As of 2018, there are no active maintainers of libzookeeper:
+  * - bugs in JIRA are fixed only occasionaly with ad-hoc patches by library users.
+  *
+  * libzookeeper is a classical example of bad code written in C.
+  *
+  * In Go, Python and Rust programming languages,
+  *  there are separate libraries for ZooKeeper, not based on libzookeeper.
+  * Motivation is almost the same. Example:
+  * https://github.com/python-zk/kazoo/blob/master/docs/implementation.rst
+  *
+  * About "session restore" feature.
+  *
+  * libzookeeper has the feature of session restore. Client receives session id and session token from the server,
+  *  and when connection is lost, it can quickly reconnect to any server with the same session id and token,
+  *  to continue with existing session.
+  * libzookeeper performs this reconnection automatically.
+  *
+  * This feature is proven to be harmful.
+  * For example, it makes very difficult to correctly remove ephemeral nodes.
+  * This may lead to weird bugs in application code.
+  * For example, our developers have found that type of bugs in Curator Java library.
+  *
+  * On the other side, session restore feature has no advantages,
+  *  because every application should be able to establish new session and reinitialize internal state,
+  *  when the session is lost and cannot be restored.
+  *
+  * This library never restores the session. In case of any error, the session is considered as expired
+  *  and you should create a new instance of ZooKeeper object and reinitialize the application state.
+  *
+  * This library is not intended to be CPU efficient. Hundreds of thousands operations per second is usually enough.
+  */
+
+
 namespace CurrentMetrics
 {
     extern const Metric ZooKeeperSession;
@@ -61,7 +109,7 @@ public:
   * - you provide callbacks for your commands; callbacks are invoked in internal thread and must be cheap:
   *   for example, just signal a condvar / fulfull a promise.
   * - you also may provide callbacks for watches; they are also invoked in internal thread and must be cheap.
-  * - whenever you receive SessionExpired exception of method isValid returns false,
+  * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
   *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
   * - whenever session is expired or ZooKeeper instance is destroying, all callbacks are notified with special event.
   * - data for callbacks must be alive when ZooKeeper instance is alive.
@@ -391,6 +439,8 @@ public:
     using CheckCallback = std::function<void(const CheckResponse &)>;
     using MultiCallback = std::function<void(const MultiResponse &)>;
 
+    /// If the method will throw exception, callbacks won't be called.
+    /// After the method is executed successfully, you must wait for callbacks.
 
     void create(
         const String & path,
@@ -525,9 +575,9 @@ private:
         clock::time_point time;
     };
 
-    using RequestsQueue = ConcurrentBoundedQueue<RequestPtr>;
+    using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests{1};
+    RequestsQueue requests_queue{1};
     void pushRequest(RequestInfo && request);
 
     using Operations = std::map<XID, RequestInfo>;
@@ -571,7 +621,7 @@ private:
     template <typename T>
     void read(T &);
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::ZooKeeperSession};
+    CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
 };
 
 };
