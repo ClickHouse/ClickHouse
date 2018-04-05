@@ -506,7 +506,7 @@ ZooKeeper::ZooKeeper(
     Poco::Timespan operation_timeout)
     : root_path(root_path_),
     session_timeout(session_timeout),
-    operation_timeout(operation_timeout)
+    operation_timeout(std::min(operation_timeout, session_timeout))
 {
     if (!root_path.empty())
     {
