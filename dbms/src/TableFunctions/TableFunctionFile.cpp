@@ -26,6 +26,12 @@ namespace DB
 
     StoragePtr TableFunctionFile::executeImpl(const ASTPtr & ast_function, const Context & context) const
     {
+        switch (context.getApplicationType()) {
+            case Context::ApplicationType::SERVER: throw Exception("ApplicationType::SERVER", 9999);
+            case Context::ApplicationType::CLIENT: throw Exception("ApplicationType::CLIENT", 9999);
+            case Context::ApplicationType::LOCAL: throw Exception("ApplicationType::LOCAL", 9999);
+        }
+
         /// Parse args
         ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
