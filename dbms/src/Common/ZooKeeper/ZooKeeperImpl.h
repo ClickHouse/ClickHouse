@@ -66,7 +66,7 @@
   *  when the session is lost and cannot be restored.
   *
   * This library never restores the session. In case of any error, the session is considered as expired
-  *  and you should create a new instance of ZooKeeperImpl object and reinitialize the application state.
+  *  and you should create a new instance of ZooKeeper object and reinitialize the application state.
   */
 
 
@@ -107,7 +107,7 @@ public:
   * - you provide callbacks for your commands; callbacks are invoked in internal thread and must be cheap:
   *   for example, just signal a condvar / fulfull a promise.
   * - you also may provide callbacks for watches; they are also invoked in internal thread and must be cheap.
-  * - whenever you receive SessionExpired exception of method isValid returns false,
+  * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
   *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
   * - whenever session is expired or ZooKeeper instance is destroying, all callbacks are notified with special event.
   * - data for callbacks must be alive when ZooKeeper instance is alive.
