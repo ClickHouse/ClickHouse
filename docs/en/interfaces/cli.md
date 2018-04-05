@@ -6,7 +6,9 @@ To work from the command line, you can use ` clickhouse-client`:
 $ clickhouse-client
 ClickHouse client version 0.0.26176.
 Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.26176.:)
+Connected to ClickHouse server version 0.0.26176.
+
+:)
 ```
 
 The client supports command-line options and configuration files. For more information, see "[Configuring](#interfaces_cli_configuration)".
@@ -29,7 +31,6 @@ _EOF
 
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
-In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 
 By default, you can only process a single query in batch mode. To make multiple queries from a "script," use the --multiquery parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
 Similarly, to process a large number of queries, you can run 'clickhouse-client' for each query. Note that it may take tens of milliseconds to launch the 'clickhouse-client' program.
@@ -64,7 +65,7 @@ The command-line client allows passing external data (external temporary tables)
 
 <a name="interfaces_cli_configuration"></a>
 
-## Configure
+## Configuring
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 

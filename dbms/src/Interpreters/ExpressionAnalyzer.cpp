@@ -513,6 +513,7 @@ void ExpressionAnalyzer::analyzeAggregation()
     {
         getRootActions(select_query->array_join_expression_list(), true, false, temp_actions);
         addMultipleArrayJoinAction(temp_actions);
+        array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
     }
 
     if (select_query)
@@ -1519,7 +1520,10 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 }
                 else
                 {
-                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
+                    NamesAndTypesList temp_columns = source_columns;
+                    temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
+                    temp_columns.insert(temp_columns.end(), columns_added_by_join.begin(), columns_added_by_join.end());
+                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, settings);
                     getRootActions(func->arguments->children.at(0), true, false, temp_actions);
 
                     Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();

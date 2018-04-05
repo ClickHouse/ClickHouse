@@ -161,10 +161,21 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-if (Poco_DataODBC_FOUND)
-    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
-    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES})
+if (Poco_SQLODBC_FOUND)
+    target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
+    target_include_directories (clickhouse_common_io PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
+    target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
+    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
 endif()
+target_include_directories (clickhouse_common_io PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include)
+target_include_directories (dbms PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include)
+
+if (Poco_DataODBC_FOUND)
+    target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
+    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+endif()
+
 
 if (Poco_MongoDB_FOUND)
     target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
@@ -212,6 +223,7 @@ endif ()
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
 target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 # also for copy_headers.sh:

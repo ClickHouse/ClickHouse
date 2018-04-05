@@ -23,7 +23,7 @@ void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
 void registerStorageODBC(StorageFactory & factory);
 #endif
 
@@ -56,7 +56,7 @@ void registerStorages()
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
 
-    #if Poco_DataODBC_FOUND
+    #if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
     registerStorageODBC(factory);
     #endif
 

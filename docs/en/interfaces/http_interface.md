@@ -132,7 +132,7 @@ For successful requests that don't return a data table, an empty response body i
 
 You can use compression when transmitting data.
 
-For using ClickHouse internal compression format, and you will need to use the special clickhouse-compressor program to work with it (installed as a part of clickhouse-client package).
+For using ClickHouse internal compression format, and you will need to use the special compressor program to work with it (sudo apt-get install compressor-metrika-yandex).
 If you specified 'compress=1' in the URL, the server will compress the data it sends you.
 If you specified 'decompress=1' in the URL, the server will decompress the same data that you pass in the POST method.
 
