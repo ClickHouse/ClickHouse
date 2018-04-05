@@ -530,39 +530,53 @@ void ZooKeeper::tryRemoveRecursive(const std::string & path)
 }
 
 
-void ZooKeeper::waitForDisappear(const std::string & path)
+namespace
 {
-    while (true)
+    struct WaitForDisappearState
     {
         int32_t code = 0;
         int32_t event_type = 0;
         Poco::Event event;
+    };
+    using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
+}
 
-        auto callback = [&](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response)
+void ZooKeeper::waitForDisappear(const std::string & path)
+{
+    WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
+
+    while (true)
+    {
+        auto callback = [state](const ZooKeeperImpl::ZooKeeper::ExistsResponse & response)
         {
-            code = response.error;
-            if (code)
-                event.set();
+            state->code = response.error;
+            if (state->code)
+                state->event.set();
         };
 
-        auto watch = [&](const ZooKeeperImpl::ZooKeeper::WatchResponse & response)
+        auto watch = [state](const ZooKeeperImpl::ZooKeeper::WatchResponse & response)
         {
-            code = response.error;
-            if (!code)
-                event_type = response.type;
-            event.set();
+            if (!state->code)
+            {
+                state->code = response.error;
+                if (!state->code)
+                    state->event_type = response.type;
+                state->event.set();
+            }
         };
+
+        /// NOTE: if the node doesn't exist, the watch will leak.
 
         impl->exists(path, callback, watch);
-        event.wait();
+        state->event.wait();
 
-        if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
+        if (state->code == ZooKeeperImpl::ZooKeeper::ZNONODE)
             return;
 
-        if (code)
-            throw KeeperException(code, path);
+        if (state->code)
+            throw KeeperException(state->code, path);
 
-        if (event_type == ZooKeeperImpl::ZooKeeper::DELETED)
+        if (state->event_type == ZooKeeperImpl::ZooKeeper::DELETED)
             return;
     }
 }
