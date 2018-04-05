@@ -67,6 +67,8 @@
   *
   * This library never restores the session. In case of any error, the session is considered as expired
   *  and you should create a new instance of ZooKeeper object and reinitialize the application state.
+  *
+  * This library is not intended to be CPU efficient. Hundreds of thousands operations per second is usually enough.
   */
 
 
