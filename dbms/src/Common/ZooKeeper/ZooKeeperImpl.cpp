@@ -1021,7 +1021,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                     WatchResponse response;
                     response.type = SESSION;
                     response.state = EXPIRED_SESSION;
-                    response.error = ZCONNECTIONLOSS;
+                    response.error = ZSESSIONEXPIRED;
 
                     for (auto & callback : path_watches.second)
                         if (callback)
