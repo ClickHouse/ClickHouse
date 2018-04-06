@@ -330,7 +330,20 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
             // Start aggregations with current row
             addRow(current);
-            current_row_is_zero = true;
+
+            if (maps_to_sum.empty())
+            {
+                /// We have only columns_to_aggregate. The status of current row will be determined
+                /// in 'insertCurrentRowIfNeeded' method on the values of aggregate functions.
+                current_row_is_zero = true;
+            }
+            else
+            {
+                /// We have complex maps that will be summed with 'mergeMap' method.
+                /// The single row is considered non zero, and the status after merging with other rows
+                /// will be determined in the branch below (when key_differs == false).
+                current_row_is_zero = false;
+            }
         }
         else
         {
@@ -338,10 +351,8 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
             // Merge maps only for same rows
             for (const auto & desc : maps_to_sum)
-            {
                 if (mergeMap(desc, current_row, current))
                     current_row_is_zero = false;
-            }
         }
 
         if (!current->isLast())
