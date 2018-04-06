@@ -59,6 +59,12 @@ namespace ProfileEvents
     extern const Event DataAfterMergeDiffersFromReplica;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric LeaderReplica;
+}
+
+
 namespace DB
 {
 
@@ -1883,7 +1889,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                && cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
     };
 
-    while (!shutdown_called && is_leader_node)
+    while (is_leader)
     {
         bool success = false;
 
@@ -1932,7 +1938,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        if (shutdown_called || !is_leader_node)
+        if (!is_leader)
             break;
 
         if (!success)
@@ -2037,23 +2043,55 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::becomeLeader()
+void StorageReplicatedMergeTree::enterLeaderElection()
 {
-    std::lock_guard<std::mutex> lock(leader_node_mutex);
+    auto callback = [this]()
+    {
+        CurrentMetrics::add(CurrentMetrics::LeaderReplica);
+        LOG_INFO(log, "Became leader");
 
-    if (shutdown_called)
+        is_leader = true;
+        merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
+    };
+
+    try
+    {
+        leader_election = std::make_shared<zkutil::LeaderElection>(
+            zookeeper_path + "/leader_election",
+            *current_zookeeper,    /// current_zookeeper lives for the lifetime of leader_election,
+                                   ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
+            callback,
+            replica_name);
+    }
+    catch (...)
+    {
+        leader_election = nullptr;
+        throw;
+    }
+}
+
+void StorageReplicatedMergeTree::exitLeaderElection()
+{
+    if (!leader_election)
         return;
 
-    if (merge_selecting_thread.joinable())
+    /// Shut down the leader election thread to avoid suddenly becoming the leader again after
+    /// we have stopped the merge_selecting_thread, but before we have deleted the leader_election object.
+    leader_election->shutdown();
+
+    if (is_leader)
     {
-        LOG_INFO(log, "Deleting old leader");
-        is_leader_node = false; /// exit trigger inside thread
+        CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
+        LOG_INFO(log, "Stopped being leader");
+
+        is_leader = false;
+        merge_selecting_event.set();
         merge_selecting_thread.join();
     }
 
-    LOG_INFO(log, "Became leader");
-    is_leader_node = true;
-    merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
+    /// Delete the node in ZK only after we have stopped the merge_selecting_thread - so that only one
+    /// replica assigns merges at any given time.
+    leader_election = nullptr;
 }
 
 
@@ -2382,12 +2420,6 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    /** This must be done before waiting for restarting_thread.
-      * Because restarting_thread will wait for finishing of tasks in background pool,
-      *  and parts are fetched in that tasks.
-      */
-    fetcher.blocker.cancelForever();
-
     if (restarting_thread)
     {
         restarting_thread->stop();
@@ -2399,6 +2431,8 @@ void StorageReplicatedMergeTree::shutdown()
         data_parts_exchange_endpoint_holder->cancelForever();
         data_parts_exchange_endpoint_holder = nullptr;
     }
+
+    fetcher.blocker.cancelForever();
 }
 
 
@@ -2487,7 +2521,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 {
     assertNotReadonly();
 
-    if (!is_leader_node)
+    if (!is_leader)
     {
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return true;
@@ -2813,7 +2847,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
 
-    if (!is_leader_node)
+    if (!is_leader)
     {
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
@@ -3171,7 +3205,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
     auto zookeeper = tryGetZooKeeper();
 
-    res.is_leader = is_leader_node;
+    res.is_leader = is_leader;
     res.is_readonly = is_readonly;
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
