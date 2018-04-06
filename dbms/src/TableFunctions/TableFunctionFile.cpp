@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Common/escapeForFileName.h>
 #include <Storages/StorageMemory.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -28,6 +29,9 @@ namespace DB
 
     StoragePtr TableFunctionFile::executeImpl(const ASTPtr & ast_function, const Context & context) const
     {
+        std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase());
+        throw Exception(db_data_path, 9999);
+
         /// Parse args
         ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
@@ -36,8 +40,8 @@ namespace DB
 
         ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-        if (args.size() != 3)
-            throw Exception("Table function 'file' requires exactly three arguments: path, format and structure.",
+        if (args.size() != 3 && args.size() != 4)
+            throw Exception("Table function 'file' requires exactly 3 or 4 arguments: path, format, structure and useStorageMemory.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < 3; ++i)
@@ -59,8 +63,6 @@ namespace DB
 
         if (!startsWith(absolute_path, clickhouse_data_path))
             throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::LOGICAL_ERROR);
-
-        throw Exception(absolute_path, open(absolute_path.c_str(), O_RDONLY));
 
         // Create sample block
         std::vector<std::string> structure_vals;
