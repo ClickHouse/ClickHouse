@@ -234,7 +234,8 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 }
 
 
-InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage)
+InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage,
+                                                                                  ExpressionActionsChain & chain)
 {
     AnalysisResult res;
 
@@ -251,8 +252,6 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         */
 
     {
-        ExpressionActionsChain chain;
-
         res.need_aggregate = query_analyzer->hasAggregation();
 
         query_analyzer->appendArrayJoin(chain, !res.first_stage);
@@ -336,16 +335,22 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
      *  then perform the remaining operations with one resulting stream.
      */
 
-    /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-    QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
+    AnalysisResult expressions;
+    {
+        ExpressionActionsChain chain;
+        /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
+        QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run, chain);
 
-    if (from_stage == QueryProcessingStage::WithMergeableState && to_stage == QueryProcessingStage::WithMergeableState)
-        throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        if (from_stage == QueryProcessingStage::WithMergeableState &&
+            to_stage == QueryProcessingStage::WithMergeableState)
+            throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (!dry_run)
-        LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
+        if (!dry_run)
+            LOG_TRACE(log,
+                      QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
-    AnalysisResult expressions = analyzeExpressions(from_stage);
+        expressions = analyzeExpressions(from_stage, chain);
+    }
 
     const Settings & settings = context.getSettingsRef();
 
@@ -510,7 +515,8 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
     }
 }
 
-QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline, bool dry_run)
+QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline, bool dry_run,
+                                                                       ExpressionActionsChain & chain)
 {
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
@@ -674,6 +680,12 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 optimize_prewhere(*merge_tree);
             else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
                 optimize_prewhere(*merge_tree);
+        }
+
+        if (query_analyzer->appendPrewhere(chain, false))
+        {
+            query_info.prewhere_actions = chain.getLastActions();
+            chain.addStep();
         }
 
         if (!dry_run)

@@ -494,23 +494,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         LOG_DEBUG(log, "MinMax index condition: " << minmax_idx_condition->toString());
 
     /// PREWHERE
-    ExpressionActionsPtr prewhere_actions;
     String prewhere_column;
     if (select.prewhere_expression)
-    {
-        ExpressionAnalyzer analyzer(select.prewhere_expression, context, nullptr, available_real_columns);
-        prewhere_actions = analyzer.getActions(false);
         prewhere_column = select.prewhere_expression->getColumnName();
-        SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
-
-        /** Compute the subqueries right now.
-          * NOTE Disadvantage - these calculations do not fit into the query execution pipeline.
-          * They are done before the execution of the pipeline; they can not be interrupted; during the computation, packets of progress are not sent.
-          */
-        if (!prewhere_subqueries.empty())
-            CreatingSetsBlockInputStream(std::make_shared<NullBlockInputStream>(Block()), prewhere_subqueries,
-                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode)).read();
-    }
 
     RangesInDataParts parts_with_ranges;
 
@@ -567,7 +553,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
-            prewhere_actions,
+            query_info.prewhere_actions,
             prewhere_column,
             virt_column_names,
             settings,
@@ -581,7 +567,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
-            prewhere_actions,
+            query_info.prewhere_actions,
             prewhere_column,
             virt_column_names,
             settings);
