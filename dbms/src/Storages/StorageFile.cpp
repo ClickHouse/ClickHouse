@@ -50,19 +50,8 @@ static void checkCreationIsAllowed(Context & context_global, const std::string &
     if (table_path.empty())
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    throw Exception(db_dir_path, 9999);
-
-//    Poco::Path clickhouse_data_poco_path = Poco::Path(context_global.getPath() + "data/").makeAbsolute();
-//    std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
-//
-//    Poco::Path table_poco_path = Poco::Path(table_path);
-//    if (table_poco_path.isRelative())
-//        table_poco_path = Poco::Path(clickhouse_data_poco_path, table_poco_path);
-//
-//    std::string table_absolute_path = table_poco_path.absolute().toString();
-//
-//    if (!startsWith(table_absolute_path, clickhouse_data_path))
-//        throw Exception("Part path " + table_absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+    if (!startsWith(table_path, db_dir_path))
+        throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
 
@@ -83,8 +72,12 @@ StorageFile::StorageFile(
 
         if (!table_path_.empty()) /// Is user's file
         {
-            checkCreationIsAllowed(context_global, table_path_, db_dir_path);
-            path = Poco::Path(table_path_).absolute().toString();
+            Poco::Path poco_path = Poco::Path(table_path_);
+            if (poco_path.isRelative())
+                poco_path = Poco::Path(db_dir_path, poco_path);
+
+            path = poco_path.absolute().toString();
+            checkCreationIsAllowed(context_global, path, db_dir_path);
             is_db_table = false;
         }
         else /// Is DB's file
