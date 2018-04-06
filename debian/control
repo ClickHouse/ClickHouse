@@ -66,3 +66,17 @@ Priority: extra
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl
 Description: Clickhouse tests
+
+
+# TODO: Remove:
+
+Package: clickhouse-server-base
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
+Description: DEPRECATED PACKAGE: Server binary for clickhouse
+
+
+Package: clickhouse-server-common
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
+Description: DEPRECATED PACKAGE: Common configuration files for clickhouse-server-base package
