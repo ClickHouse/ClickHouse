@@ -33,8 +33,7 @@ public:
       *
       * identifier - if not empty, must uniquely (within same path) identify participant of leader election.
       * It means that different participants of leader election have different identifiers
-      *  and existence of more than one ephemeral node with same identifier indicates an error
-      *  (see cleanOldEphemeralNodes).
+      *  and existence of more than one ephemeral node with same identifier indicates an error.
       */
     LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
         : path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)

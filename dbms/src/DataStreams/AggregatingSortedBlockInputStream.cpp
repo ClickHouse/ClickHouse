@@ -17,9 +17,6 @@ Block AggregatingSortedBlockInputStream::readImpl()
     if (finished)
         return Block();
 
-    if (children.size() == 1)
-        return children[0]->read();
-
     Block header;
     MutableColumns merged_columns;
 

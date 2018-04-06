@@ -11,6 +11,7 @@
 #include <Poco/DOM/Comment.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"

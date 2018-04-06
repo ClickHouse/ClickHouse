@@ -339,6 +339,21 @@ void IProfilingBlockInputStream::cancel(bool kill)
 }
 
 
+bool IProfilingBlockInputStream::isCancelled() const
+{
+    return is_cancelled;
+}
+
+bool IProfilingBlockInputStream::isCancelledOrThrowIfKilled() const
+{
+    if (!is_cancelled)
+        return false;
+    if (is_killed)
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+    return true;
+}
+
+
 void IProfilingBlockInputStream::setProgressCallback(const ProgressCallback & callback)
 {
     progress_callback = callback;

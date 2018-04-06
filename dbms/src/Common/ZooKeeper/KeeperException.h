@@ -1,21 +1,6 @@
 #pragma once
-#include <Common/Exception.h>
+
 #include "Types.h"
-#include <Common/ProfileEvents.h>
-
-
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int KEEPER_EXCEPTION;
-    }
-}
-
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperExceptions;
-}
 
 
 namespace zkutil
@@ -43,42 +28,7 @@ inline bool isUserError(int32_t zk_return_code)
 }
 
 
-class KeeperException : public DB::Exception
-{
-private:
-    /// delegate constructor, used to minimize repetition; last parameter used for overload resolution
-    KeeperException(const std::string & msg, const int32_t code, int)
-        : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code) { incrementEventCounter(); }
-
-public:
-    KeeperException(const std::string & msg, const int32_t code)
-        : KeeperException(msg + " (" + ZooKeeperImpl::ZooKeeper::errorMessage(code) + ")", code, 0) {}
-    explicit KeeperException(const int32_t code) : KeeperException(ZooKeeperImpl::ZooKeeper::errorMessage(code), code, 0) {}
-    KeeperException(const int32_t code, const std::string & path)
-        : KeeperException(std::string{ZooKeeperImpl::ZooKeeper::errorMessage(code)} + ", path: " + path, code, 0) {}
-
-    KeeperException(const KeeperException & exc) : DB::Exception(exc), code(exc.code) { incrementEventCounter(); }
-
-    const char * name() const throw() override { return "zkutil::KeeperException"; }
-    const char * className() const throw() override { return "zkutil::KeeperException"; }
-    KeeperException * clone() const override { return new KeeperException(*this); }
-
-    /// Any error related with network or master election
-    /// In case of these errors you should reinitialize ZooKeeper session.
-    bool isHardwareError() const
-    {
-        return zkutil::isHardwareError(code);
-    }
-
-    const int32_t code;
-
-private:
-    static void incrementEventCounter()
-    {
-        ProfileEvents::increment(ProfileEvents::ZooKeeperExceptions);
-    }
-
-};
+using KeeperException = ZooKeeperImpl::Exception;
 
 
 class KeeperMultiException : public KeeperException

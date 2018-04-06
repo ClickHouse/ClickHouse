@@ -55,21 +55,23 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     if (ODBC_FOUND)
         if (EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/")
             set (Poco_SQL_FOUND 1)
-            set (Poco_SQLODBC_FOUND 1)
+            set (Poco_SQL_LIBRARY PocoSQL)
             set (Poco_SQL_INCLUDE_DIRS
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/include"
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include"
                 )
+            set (Poco_SQLODBC_FOUND 1)
             set (Poco_SQLODBC_INCLUDE_DIRS
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/"
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
                 )
-            set (Poco_SQL_LIBRARY PocoSQL)
             set (Poco_SQLODBC_LIBRARY PocoSQLODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
         else ()
-            set (Poco_DataODBC_FOUND 1)
-            set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/" "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
+            set (Poco_Data_FOUND 1)
+            set (Poco_Data_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
             set (Poco_Data_LIBRARY PocoData)
+            set (Poco_DataODBC_FOUND 1)
+            set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
             set (Poco_DataODBC_LIBRARY PocoDataODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
         endif ()
     endif ()
@@ -110,3 +112,5 @@ message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${
 # ClickHouse-Extras/clickhouse_warning
 # ClickHouse-Extras/clickhouse-purge-logs-on-no-space
 # ClickHouse-Extras/clickhouse_freebsd
+# ClickHouse-Extras/clikhouse_no_zlib
+# ClickHouse-Extras/clickhouse-fix-atomic
