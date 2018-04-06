@@ -52,7 +52,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
     ///  and two replicas will try to do cleanup simultaneously.
-    if (storage.is_leader_node)
+    if (storage.is_leader)
     {
         clearOldLogs();
         clearOldBlocks();
