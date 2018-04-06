@@ -3,6 +3,8 @@
 #include <Common/setThreadName.h>
 #include <Poco/Timestamp.h>
 
+#include <random>
+
 
 namespace DB
 {
@@ -25,7 +27,8 @@ void ReplicatedMergeTreeCleanupThread::run()
 {
     setThreadName("ReplMTCleanup");
 
-    const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000;
+    const auto CLEANUP_SLEEP_MS = (storage.data.settings.cleanup_delay_period
+        + std::uniform_int_distribution<UInt64>(0, storage.data.settings.cleanup_delay_period_random_add)(rng)) * 1000;
 
     while (!storage.shutdown_called)
     {
