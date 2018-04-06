@@ -112,3 +112,5 @@ message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${
 # ClickHouse-Extras/clickhouse_warning
 # ClickHouse-Extras/clickhouse-purge-logs-on-no-space
 # ClickHouse-Extras/clickhouse_freebsd
+# ClickHouse-Extras/clikhouse_no_zlib
+# ClickHouse-Extras/clickhouse-fix-atomic
