@@ -99,6 +99,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserExtractExpression : public IParserBase
+{
+    static constexpr auto name = "EXTRACT";
+
+protected:
+    const char * getName() const override { return name; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 /** NULL literal.
   */
@@ -183,6 +192,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/*
+template <typename ParserIdentifier>
+class ParserFromImpl : public IParserBase
+{
+public:
+    ParserFromImpl()
+         {}
+protected:
+    const char * getName() const { return "FROM"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+*/
 
 class ParserTypeInCastExpression;
 
