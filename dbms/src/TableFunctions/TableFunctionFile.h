@@ -6,9 +6,11 @@
 namespace DB
 {
 
-/* file(path, format, structure) - creates a temporary StorageMemory from file
- * The file must be in the data directory on clickhouse server.
- * The relative path begins with the data directory on clickhouse server.
+/* file(path, format, structure, useStorageMemory) - creates a temporary storage from file
+ *
+ *
+ * The file must be in the current database data directory.
+ * The relative path begins with the current database data directory.
  */
     class TableFunctionFile : public ITableFunction
     {
