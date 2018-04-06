@@ -55,21 +55,23 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     if (ODBC_FOUND)
         if (EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/")
             set (Poco_SQL_FOUND 1)
-            set (Poco_SQLODBC_FOUND 1)
+            set (Poco_SQL_LIBRARY PocoSQL)
             set (Poco_SQL_INCLUDE_DIRS
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/include"
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include"
                 )
+            set (Poco_SQLODBC_FOUND 1)
             set (Poco_SQLODBC_INCLUDE_DIRS
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/"
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
                 )
-            set (Poco_SQL_LIBRARY PocoSQL)
             set (Poco_SQLODBC_LIBRARY PocoSQLODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
         else ()
-            set (Poco_DataODBC_FOUND 1)
-            set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/" "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
+            set (Poco_Data_FOUND 1)
+            set (Poco_Data_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
             set (Poco_Data_LIBRARY PocoData)
+            set (Poco_DataODBC_FOUND 1)
+            set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
             set (Poco_DataODBC_LIBRARY PocoDataODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
         endif ()
     endif ()
