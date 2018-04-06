@@ -40,7 +40,7 @@ int main(int, char **)
     std::array<const char *, 2> arr{"hello", "world"};
     DUMP(arr);
 
-    DUMP([]{});
+    //DUMP([]{});
 
     S1 * s = nullptr;
     DUMP(s);
