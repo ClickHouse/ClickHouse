@@ -15,6 +15,8 @@
 #include <Poco/Path.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fcntl.h>
+
 namespace DB
 {
 
@@ -57,6 +59,8 @@ namespace DB
 
         if (!startsWith(absolute_path, clickhouse_data_path))
             throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::LOGICAL_ERROR);
+
+        throw Exception(absolute_path, open(absolute_path.c_str(), O_RDONLY));
 
         // Create sample block
         std::vector<std::string> structure_vals;
