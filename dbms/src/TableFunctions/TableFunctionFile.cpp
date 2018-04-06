@@ -50,7 +50,7 @@ namespace DB
         uint64_t useStorageMemory = 0;
 
         if (args.size() == 4)
-            useStorageMemory = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<UInt64>();
+            useStorageMemory = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<UInt64>();
 
         std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase());
 
