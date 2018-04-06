@@ -40,7 +40,7 @@ namespace zkutil
             {
                 unlock();
             }
-            catch (const zkutil::KeeperException & e)
+            catch (...)
             {
                 DB::tryLogCurrentException(__PRETTY_FUNCTION__);
             }

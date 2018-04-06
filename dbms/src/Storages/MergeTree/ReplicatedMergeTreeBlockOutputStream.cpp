@@ -5,7 +5,9 @@
 #include <Interpreters/PartLog.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Common/SipHash.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <IO/Operators.h>
+
 
 namespace ProfileEvents
 {
@@ -25,6 +27,7 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int UNKNOWN_STATUS_OF_INSERT;
     extern const int INSERT_WAS_DEDUPLICATED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 

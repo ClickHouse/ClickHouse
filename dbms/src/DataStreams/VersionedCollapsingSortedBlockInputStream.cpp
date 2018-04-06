@@ -52,9 +52,6 @@ Block VersionedCollapsingSortedBlockInputStream::readImpl()
     if (finished)
         return {};
 
-    if (children.size() == 1)
-        return children[0]->read();
-
     Block header;
     MutableColumns merged_columns;
 
