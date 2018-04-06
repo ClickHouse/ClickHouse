@@ -714,6 +714,9 @@ void ZooKeeper::sendThread()
                 RequestInfo info;
                 if (requests_queue.tryPop(info, max_wait))
                 {
+                    if (expired)
+                        break;
+
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                         std::lock_guard lock(operations_mutex);
