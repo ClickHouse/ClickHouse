@@ -7,6 +7,8 @@
 #include <thread>
 #include <map>
 
+#include <pcg_random.hpp>
+
 
 namespace DB
 {
@@ -27,6 +29,7 @@ private:
     StorageReplicatedMergeTree & storage;
     Logger * log;
     std::thread thread;
+    pcg64 rng;
 
     void run();
     void iterate();

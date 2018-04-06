@@ -334,7 +334,7 @@ private:
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
-                                  NameSet * parts_should_be_retied = nullptr);
+                                  NameSet * parts_should_be_retried = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
