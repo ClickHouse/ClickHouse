@@ -33,5 +33,8 @@
   - [ClickHouse-Net](https://github.com/killwort/ClickHouse-Net)
 - C++
   - [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp/)
+- Elixir
+  - [clickhousex](https://github.com/appodeal/clickhousex/)
+  - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 
 Библиотеки не тестировались нами. Порядок перечисления произвольный.

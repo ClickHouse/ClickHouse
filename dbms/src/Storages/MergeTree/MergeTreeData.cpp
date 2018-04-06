@@ -2172,7 +2172,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
     return total_covered_parts;
 }
 
-bool MergeTreeData::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
+bool MergeTreeData::isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     String column_name = node->getColumnName();
 
@@ -2180,31 +2180,33 @@ bool MergeTreeData::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & 
         if (column_name == column.column_name)
             return true;
 
+    if (partition_expr_ast && partition_expr_ast->children.at(0)->getColumnName() == column_name)
+        return true;
+
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
         if (func->arguments->children.size() == 1)
-            return isPrimaryKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
+            return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
     return false;
 }
 
 bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
 {
-    /// Make sure that the left side of the IN operator is part of the primary key.
-    /// If there is a tuple on the left side of the IN operator, each item of the tuple must be part of the primary key.
+    /// Make sure that the left side of the IN operator contain part of the primary key.
+    /// If there is a tuple on the left side of the IN operator, at least one item of the tuple must be part of the primary key (probably wrapped by a chain of some acceptable functions).
     const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
-            if (!isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
-                /// The tuple itself may be part of the primary key, so check that as a last resort.
-                return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+            if (isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(item))
+                return true;
 
-        /// tuple() is invalid but can still be found here since this method may be called before the arguments are validated.
-        return !left_in_operand_tuple->arguments->children.empty();
+        /// The tuple itself may be part of the primary key, so check that as a last resort.
+        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
-        return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }
 

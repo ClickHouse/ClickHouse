@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Types.h"
-#include "KeeperException.h"
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>
@@ -111,7 +110,7 @@ public:
     int32_t tryRemove(const std::string & path, int32_t version = -1);
 
     bool exists(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    bool existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
+    bool existsWatch(const std::string & path, Stat * stat, WatchCallback watch_callback);
 
     std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
 
@@ -119,7 +118,7 @@ public:
     /// * The node doesn't exist. Returns false in this case.
     bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, const EventPtr & watch = nullptr, int * code = nullptr);
 
-    bool tryGetWatch(const std::string & path, std::string & res, Stat * stat, const WatchCallback & watch_callback, int * code = nullptr);
+    bool tryGetWatch(const std::string & path, std::string & res, Stat * stat, WatchCallback watch_callback, int * code = nullptr);
 
     void set(const std::string & path, const std::string & data,
             int32_t version = -1, Stat * stat = nullptr);
