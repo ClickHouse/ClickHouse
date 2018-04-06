@@ -38,7 +38,7 @@ void ReplicatedMergeTreeCleanupThread::run()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
         storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
