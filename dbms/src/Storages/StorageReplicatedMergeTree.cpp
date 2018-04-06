@@ -234,7 +234,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// Failed to connect to ZK (this became known when trying to perform the first operation).
         if (e.code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
             current_zookeeper = nullptr;
         }
         else
@@ -1468,7 +1468,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
         throw;
@@ -1606,7 +1606,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
             queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
         }
     }
@@ -1626,7 +1626,7 @@ bool StorageReplicatedMergeTree::queueTask()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
     LogEntryPtr & entry = selected.first;
@@ -1660,7 +1660,7 @@ bool StorageReplicatedMergeTree::queueTask()
                 LOG_INFO(log, e.displayText());
             }
             else
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
             /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
               * The thread that performs this action will sleep a few seconds after the exception.
@@ -1670,7 +1670,7 @@ bool StorageReplicatedMergeTree::queueTask()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
             throw;
         }
     });
@@ -1929,7 +1929,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
         if (shutdown_called || !is_leader_node)

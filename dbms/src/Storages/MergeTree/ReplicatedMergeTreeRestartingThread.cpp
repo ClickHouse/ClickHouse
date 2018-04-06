@@ -93,7 +93,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                     catch (const zkutil::KeeperException & e)
                     {
                         /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
                         if (first_time)
                             storage.startup_event.set();
@@ -158,7 +158,7 @@ void ReplicatedMergeTreeRestartingThread::run()
         catch (...)
         {
             storage.startup_event.set();
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
         wakeup_event.tryWait(check_period_ms);
@@ -179,7 +179,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
     LOG_DEBUG(log, "Restarting thread finished");
