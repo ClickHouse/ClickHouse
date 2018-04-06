@@ -1,3 +1,4 @@
+
 #include <errno.h>
 #include <cstdlib>
 
@@ -22,6 +23,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
+//#include <Parsers/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -363,6 +365,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
+
     const auto function_node = std::make_shared<ASTFunction>();
     ASTPtr node_holder{function_node};
     function_node->name = name;
@@ -372,6 +375,116 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     node = node_holder;
     return true;
+}
+
+bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+DUMP("start")
+    auto begin = pos;
+
+    ParserIdentifier id_parser;
+
+    ASTPtr identifier;
+
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
+
+DUMP2(id, name);
+
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+//++pos;
+
+
+
+    ParserKeyword s_from("FROM");
+
+    //ASTPtr piece;
+    ASTPtr expr;
+
+//    Pos begin = pos;
+
+DUMP2("go parse", pos);
+
+    //ParserLiteral
+//ParserLiteral  piece_parser;
+    const char * function_name = nullptr;
+
+
+    if (ParserKeyword("SECOND").ignore(pos, expected))
+        function_name = "toSecond";
+    else if (ParserKeyword("MINUTE").ignore(pos, expected))
+        function_name = "toMinute";
+    else if (ParserKeyword("HOUR").ignore(pos, expected))
+        function_name = "toHour";
+    else if (ParserKeyword("DAY").ignore(pos, expected))
+        function_name = "toDayOfMonth";
+    else if (ParserKeyword("WEEK").ignore(pos, expected))
+        function_name = "toRelativeWeekNum";
+    else if (ParserKeyword("MONTH").ignore(pos, expected))
+        function_name = "toMonth";
+    else if (ParserKeyword("YEAR").ignore(pos, expected))
+        function_name = "toYear";
+    else
+{
+DUMP2("fail4", pos);
+        return false;
+}
+
+DUMP(function_name);
+/*
+//    if (!elem_parser.parse(pos, piece, expected))
+    if (!piece_parser.parse(pos, piece, expected))
+{
+DUMP("fail1");
+        return false;
+}
+*/
+
+    if (!s_from.ignore(pos, expected))
+{
+DUMP2("fail2 no FROM", pos);
+        return false;
+}
+
+ParserExpression elem_parser;
+
+    if (!elem_parser.parse(pos, expr, expected))
+{
+DUMP("fail3 no emem");
+        return false;
+}
+
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+DUMP("func make");
+
+    auto function = std::make_shared<ASTFunction>();
+ 
+    auto exp_list = std::make_shared<ASTExpressionList>();
+
+        function->range.first = begin->begin;
+        function->range.second = pos->begin;
+        function->name = function_name; //"toYear";
+        function->arguments = exp_list;
+        function->children.push_back(exp_list);
+
+        exp_list->children.push_back(expr);
+        exp_list->range.first = begin->begin;
+        exp_list->range.second = pos->begin;
+
+        node = function;
+
+DUMP("EXTRACT Ok.");
+        return true;
 }
 
 
@@ -677,7 +790,8 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ParserArray array_p;
     ParserArrayOfLiterals array_lite_p;
     ParserLiteral lit_p;
-    ParserCastExpression fun_p;
+    ParserExtractExpression extract_p;
+    ParserCastExpression cast_p;
     ParserCompoundIdentifier id_p;
     ParserAsterisk asterisk_p;
     ParserQualifiedAsterisk qualified_asterisk_p;
@@ -697,7 +811,10 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (lit_p.parse(pos, node, expected))
         return true;
 
-    if (fun_p.parse(pos, node, expected))
+    if (extract_p.parse(pos, node, expected))
+        return true;
+
+    if (cast_p.parse(pos, node, expected))
         return true;
 
     if (qualified_asterisk_p.parse(pos, node, expected))
