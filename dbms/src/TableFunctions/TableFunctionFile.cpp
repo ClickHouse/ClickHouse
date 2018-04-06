@@ -47,10 +47,10 @@ namespace DB
         std::string path = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
         std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
-        uint8_t useStorageMemory = 0;
+        UInt64 useStorageMemory = 0;
 
         if (args.size() == 4)
-            useStorageMemory = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<UInt8>();
+            useStorageMemory = static_cast<const ASTLiteral &>(*args[2]).value.safeget<UInt64>();
 
         std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase());
 
@@ -58,7 +58,7 @@ namespace DB
         if (poco_path.isRelative())
             poco_path = Poco::Path(db_data_path, poco_path);
 
-        std::string absolute_path = poco_path.absolute().toString();
+        std::string absolute_path = poco_path.absolute().tostring();
 
         // Create sample block
         std::vector<std::string> structure_vals;
