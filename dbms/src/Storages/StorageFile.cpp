@@ -19,7 +19,6 @@
 #include <Common/typeid_cast.h>
 
 #include <fcntl.h>
-#include <sys/param.h>
 
 #include <Poco/Path.h>
 
@@ -47,6 +46,9 @@ static void checkCreationIsAllowed(Context & context_global, const std::string &
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
+
+    if (table_path.empty())
+        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::Path clickhouse_data_poco_path = Poco::Path(context_global.getPath() + "data/").makeAbsolute();
     std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
@@ -95,13 +97,7 @@ StorageFile::StorageFile(
     }
     else /// Will use FD
     {
-        std::string table_path;
-        char table_path_chars[MAXPATHLEN];
-
-        if(fcntl(table_fd, F_GETPATH, table_path_chars) != -1)
-            table_path = std::string(table_path_chars);
-
-        checkCreationIsAllowed(context_global, table_path);
+        checkCreationIsAllowed(context_global, "");
 
         is_db_table = false;
         use_table_fd = true;
