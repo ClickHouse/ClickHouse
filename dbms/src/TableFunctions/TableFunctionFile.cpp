@@ -80,7 +80,7 @@ namespace DB
         }
 
         // Create table
-        NamesAndTypesList columns = sample_block.getNamesAndTypesList();
+        ColumnsDescription columns = ColumnsDescription{sample_block.getNamesAndTypesList()};
         StoragePtr storage;
 
         if (useStorageMemory)
@@ -90,7 +90,7 @@ namespace DB
                 throw Exception("Part path " + absolute_path + " is not inside " + db_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
             // Create Storage Memory
-            storage = StorageMemory::create(getName(), ColumnsDescription{columns});
+            storage = StorageMemory::create(getName(), columns);
             storage->startup();
             BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
 
