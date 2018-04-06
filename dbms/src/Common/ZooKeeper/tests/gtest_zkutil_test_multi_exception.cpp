@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <iostream>
 #include <chrono>
