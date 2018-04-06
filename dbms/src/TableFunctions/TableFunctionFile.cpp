@@ -52,7 +52,7 @@ namespace DB
         if (args.size() == 4)
             useStorageMemory = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<UInt64>();
 
-        std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase());
+        std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase()) + "/";
 
         Poco::Path poco_path = Poco::Path(path);
         if (poco_path.isRelative())
