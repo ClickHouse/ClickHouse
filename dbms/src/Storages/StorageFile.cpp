@@ -20,6 +20,7 @@
 
 #include <fcntl.h>
 
+#include <Poco/Path.h>
 
 namespace DB
 {
@@ -41,10 +42,16 @@ static std::string getTablePath(const std::string & db_dir_path, const std::stri
     return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
 }
 
-static void checkCreationIsAllowed(Context & context_global)
+static void checkCreationIsAllowed(Context & context_global, const std::string & table_path, const std::string & db_dir_path)
 {
-    if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception("Using file descriptor or user specified path as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+    if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
+        return;
+
+    if (table_path.empty())
+        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+    if (!startsWith(table_path, db_dir_path))
+        throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
 
@@ -65,8 +72,12 @@ StorageFile::StorageFile(
 
         if (!table_path_.empty()) /// Is user's file
         {
-            checkCreationIsAllowed(context_global);
-            path = Poco::Path(table_path_).absolute().toString();
+            Poco::Path poco_path = Poco::Path(table_path_);
+            if (poco_path.isRelative())
+                poco_path = Poco::Path(db_dir_path, poco_path);
+
+            path = poco_path.absolute().toString();
+            checkCreationIsAllowed(context_global, path, db_dir_path);
             is_db_table = false;
         }
         else /// Is DB's file
@@ -81,7 +92,8 @@ StorageFile::StorageFile(
     }
     else /// Will use FD
     {
-        checkCreationIsAllowed(context_global);
+        checkCreationIsAllowed(context_global, "", db_dir_path);
+
         is_db_table = false;
         use_table_fd = true;
 
