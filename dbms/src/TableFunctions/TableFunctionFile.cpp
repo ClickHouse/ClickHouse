@@ -109,7 +109,8 @@ namespace DB
         }
         else
         {
-            storage = StorageFile::create(absolute_path, -1, db_data_path, getName(), format, columns, context);
+            Context var_context = context;
+            storage = StorageFile::create(absolute_path, -1, db_data_path, getName(), format, columns, var_context);
             storage->startup();
         }
 
