@@ -23,7 +23,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
-//#include <Parsers/iostream_debug_helpers.h>
+#include <Parsers/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -409,7 +409,7 @@ DUMP2(id, name);
 
 //    Pos begin = pos;
 
-DUMP2("go parse", pos);
+//DUMP2("go parse", pos);
 
     //ParserLiteral
 //ParserLiteral  piece_parser;
@@ -432,7 +432,7 @@ DUMP2("go parse", pos);
         function_name = "toYear";
     else
 {
-DUMP2("fail4", pos);
+//DUMP2("fail4", pos);
         return false;
 }
 
@@ -448,7 +448,7 @@ DUMP("fail1");
 
     if (!s_from.ignore(pos, expected))
 {
-DUMP2("fail2 no FROM", pos);
+//DUMP2("fail2 no FROM", pos);
         return false;
 }
 

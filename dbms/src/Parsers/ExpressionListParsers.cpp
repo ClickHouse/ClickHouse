@@ -82,7 +82,7 @@ const char * ParserTupleElementExpression::operators[] =
 
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-DUMP(pos);
+//DUMP(pos);
 DUMP(node);
 
     bool first = true;
@@ -97,7 +97,7 @@ DUMP(node);
             ASTPtr elem;
             if (!elem_parser->parse(pos, elem, expected))
 {
-DUMP(pos);
+//DUMP(pos);
                 break;
 }
 
@@ -685,7 +685,7 @@ bool ParserExpressionInExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
 
     Pos begin = pos;
 
-DUMP2("go parse", pos);
+//DUMP2("go parse", pos);
 
     //ParserLiteral
 //ParserLiteral  piece_parser;
@@ -721,7 +721,7 @@ DUMP("fail1");
 
     if (!s_from.ignore(pos, expected))
 {
-DUMP2("fail2", pos);
+//DUMP2("fail2", pos);
         return false;
 }
 
