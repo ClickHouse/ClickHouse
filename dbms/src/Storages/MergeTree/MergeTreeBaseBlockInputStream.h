@@ -44,6 +44,8 @@ protected:
 
     void injectVirtualColumns(Block & block) const;
 
+    void executePrewhereActions(Block & block) const;
+
 protected:
     MergeTreeData & storage;
 

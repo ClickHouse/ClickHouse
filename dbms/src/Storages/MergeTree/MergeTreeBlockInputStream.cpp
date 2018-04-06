@@ -60,30 +60,34 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         << " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 
     addTotalRowsApprox(total_rows);
-
-    header = storage.getSampleBlockForColumns(ordered_names);
-
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->columns)
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    injectVirtualColumns(header);
 }
 
 
 Block MergeTreeBlockInputStream::getHeader() const
 {
+    if (!header)
+    {
+        header = storage.getSampleBlockForColumns(ordered_names);
+        executePrewhereActions(header);
+
+        /// Types may be different during ALTER (when this stream is used to perform an ALTER).
+        /// NOTE: We may use similar code to implement non blocking ALTERs.
+        for (const auto & name_type : data_part->columns)
+        {
+            if (header.has(name_type.name))
+            {
+                auto & elem = header.getByName(name_type.name);
+                if (!elem.type->equals(*name_type.type))
+                {
+                    elem.type = name_type.type;
+                    elem.column = elem.type->createColumn();
+                }
+            }
+        }
+
+        injectVirtualColumns(header);
+    }
+
     return header;
 }
 
