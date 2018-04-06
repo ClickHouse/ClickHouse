@@ -71,3 +71,6 @@ target_link_libraries (cow_columns clickhouse_common_io)
 
 add_executable (stopwatch stopwatch.cpp)
 target_link_libraries (stopwatch clickhouse_common_io)
+
+add_executable (dump_variable dump_variable.cpp)
+target_link_libraries (dump_variable clickhouse_common_io)
