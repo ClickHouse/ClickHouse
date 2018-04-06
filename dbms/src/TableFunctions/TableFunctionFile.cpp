@@ -52,11 +52,11 @@ namespace DB
         if (args.size() == 4)
             useStorageMemory = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<UInt64>();
 
-        std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase()) + "/";
+        std::string clickhouse_data_path = context.getPath() + "data/";
 
         Poco::Path poco_path = Poco::Path(path);
         if (poco_path.isRelative())
-            poco_path = Poco::Path(db_data_path, poco_path);
+            poco_path = Poco::Path(clickhouse_data_path, poco_path);
 
         std::string absolute_path = poco_path.absolute().toString();
 
@@ -86,8 +86,8 @@ namespace DB
         if (useStorageMemory)
         {
             // Validate path
-            if (!startsWith(absolute_path, db_data_path))
-                throw Exception("Part path " + absolute_path + " is not inside " + db_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+            if (!startsWith(absolute_path, clickhouse_data_path))
+                throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
             // Create Storage Memory
             storage = StorageMemory::create(getName(), columns);
@@ -105,12 +105,11 @@ namespace DB
                 output->write(block);
             data->readSuffix();
             output->writeSuffix();
-
         }
         else
         {
             Context var_context = context;
-            storage = StorageFile::create(absolute_path, -1, db_data_path, getName(), format, columns, var_context);
+            storage = StorageFile::create(absolute_path, -1, clickhouse_data_path, getName(), format, columns, var_context);
             storage->startup();
         }
 
