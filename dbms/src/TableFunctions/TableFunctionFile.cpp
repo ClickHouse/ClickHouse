@@ -47,10 +47,10 @@ namespace DB
         std::string path = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
         std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
-        bool useStorageMemory = false;
+        uint8_t useStorageMemory = 0;
 
         if (args.size() == 4)
-            useStorageMemory = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<bool>();
+            useStorageMemory = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<UInt8>();
 
         std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase());
 
