@@ -16,7 +16,6 @@
 #include <Parsers/formatAST.h>
 
 #include <DataTypes/DataTypeSet.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
@@ -67,6 +66,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int CYCLIC_ALIASES;
@@ -1663,10 +1663,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     else
     {
         DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-        if (const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(left_type.get()))
-            set_element_types.push_back(array_type->getNestedType());
-        else
-            set_element_types.push_back(left_type);
+        set_element_types.push_back(left_type);
     }
 
     /// The case `x in (1, 2)` distinguishes from the case `x in 1` (also `x in (1)`).
