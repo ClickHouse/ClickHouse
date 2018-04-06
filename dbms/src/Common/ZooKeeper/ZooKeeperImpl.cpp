@@ -717,6 +717,7 @@ void ZooKeeper::sendThread()
                     if (expired)
                         break;
 
+                    if (info.request->xid != close_xid)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                         std::lock_guard lock(operations_mutex);
