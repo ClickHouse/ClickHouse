@@ -439,8 +439,15 @@ public:
     using CheckCallback = std::function<void(const CheckResponse &)>;
     using MultiCallback = std::function<void(const MultiResponse &)>;
 
-    /// If the method will throw exception, callbacks won't be called.
-    /// After the method is executed successfully, you must wait for callbacks.
+    /// If the method will throw an exception, callbacks won't be called.
+    ///
+    /// After the method is executed successfully, you must wait for callbacks
+    ///  (don't destroy callback data before it will be called).
+    ///
+    /// All callbacks are executed sequentially (the execution of callbacks is serialized).
+    ///
+    /// If an exception is thrown inside the callback, the session will expire,
+    ///  and all other callbacks will be called with "Session expired" error.
 
     void create(
         const String & path,
