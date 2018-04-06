@@ -2429,6 +2429,21 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     return true;
 }
 
+bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types)
+{
+    assertSelect();
+
+    if (!select_query->prewhere_expression)
+        return false;
+
+    initChain(chain, source_columns);
+    ExpressionActionsChain::Step & step = chain.steps.back();
+
+    step.required_output.push_back(select_query->prewhere_expression->getColumnName());
+    getRootActions(select_query->prewhere_expression, only_types, false, step.actions);
+
+    return true;
+}
 
 bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
 {

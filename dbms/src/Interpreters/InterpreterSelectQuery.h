@@ -124,6 +124,7 @@ private:
         bool has_limit_by   = false;
 
         ExpressionActionsPtr before_join;   /// including JOIN
+        ExpressionActionsPtr before_prewhere;
         ExpressionActionsPtr before_where;
         ExpressionActionsPtr before_aggregation;
         ExpressionActionsPtr before_having;
@@ -142,7 +143,7 @@ private:
         SubqueriesForSets subqueries_for_sets;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, ExpressionActionsChain & chain);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
@@ -155,7 +156,7 @@ private:
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run);
+    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run, ExpressionActionsChain & chain);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);

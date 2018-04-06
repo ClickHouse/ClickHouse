@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Columns/FilterDescription.h>
-#include <ext/range.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnNothing.h>
+#include <ext/range.h>
 
 #if __SSE2__
 #include <emmintrin.h>
+#include <DataTypes/DataTypeNothing.h>
 #endif
 
 namespace DB
@@ -611,23 +613,25 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (!result.block)
         return;
 
+    /// Calculate the number of rows in block in order to create const column.
+    size_t rows = result.block.rows();
+    /// If block has single column, it's filter. We need to count bytes in it in order to get the number of rows.
+    if (result.block.columns() == 1)
+    {
+        if (result.getFilter())
+            rows = countBytesInFilter(result.getFilter()->getData());
+        else
+            rows = prev_rows;
+    }
+
     if (remove_prewhere_column)
         result.block.erase(*prewhere_column_name);
     else
-    {
-        /// Calculate the number of rows in block in order to create const column.
-        size_t rows = result.block.rows();
-        /// If block has single column, it's filter. We need to count bytes in it in order to get the number of rows.
-        if (result.block.columns() == 1)
-        {
-            if (result.getFilter())
-                rows = countBytesInFilter(result.getFilter()->getData());
-            else
-                rows = prev_rows;
-        }
-
         prewhere_column.column = prewhere_column.type->createColumnConst(rows, UInt64(1));
-    }
+
+    /// If block is empty, create column in order to store rows number.
+    if (last_reader_in_chain && result.block.columns() == 0)
+        result.block.insert({ColumnNothing::create(rows), std::make_shared<DataTypeNothing>(), "_nothing"});
 }
 
 }

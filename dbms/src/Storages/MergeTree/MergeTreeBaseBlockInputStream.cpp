@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
+#include <DataTypes/DataTypeNothing.h>
 
 
 namespace DB
@@ -212,6 +213,21 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
                 block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
             }
         }
+    }
+}
+
+
+void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block) const
+{
+    if (prewhere_actions)
+    {
+        bool had_prewhere_column = block.has(prewhere_column_name);
+        prewhere_actions->execute(block);
+        if (!had_prewhere_column)
+            block.erase(prewhere_column_name);
+
+        if (block.columns() == 0)
+            block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});
     }
 }
 
