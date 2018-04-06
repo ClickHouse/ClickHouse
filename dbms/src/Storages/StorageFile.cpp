@@ -42,7 +42,7 @@ static std::string getTablePath(const std::string & db_dir_path, const std::stri
     return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
 }
 
-static void checkCreationIsAllowed(Context & context_global, const std::string & table_path)
+static void checkCreationIsAllowed(Context & context_global, const std::string & table_path, const std::string & db_dir_path)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
@@ -50,17 +50,19 @@ static void checkCreationIsAllowed(Context & context_global, const std::string &
     if (table_path.empty())
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    Poco::Path clickhouse_data_poco_path = Poco::Path(context_global.getPath() + "data/").makeAbsolute();
-    std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
+    throw Exception(db_dir_path, 9999);
 
-    Poco::Path table_poco_path = Poco::Path(table_path);
-    if (table_poco_path.isRelative())
-        table_poco_path = Poco::Path(clickhouse_data_poco_path, table_poco_path);
-
-    std::string table_absolute_path = table_poco_path.absolute().toString();
-
-    if (!startsWith(table_absolute_path, clickhouse_data_path))
-        throw Exception("Part path " + table_absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+//    Poco::Path clickhouse_data_poco_path = Poco::Path(context_global.getPath() + "data/").makeAbsolute();
+//    std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
+//
+//    Poco::Path table_poco_path = Poco::Path(table_path);
+//    if (table_poco_path.isRelative())
+//        table_poco_path = Poco::Path(clickhouse_data_poco_path, table_poco_path);
+//
+//    std::string table_absolute_path = table_poco_path.absolute().toString();
+//
+//    if (!startsWith(table_absolute_path, clickhouse_data_path))
+//        throw Exception("Part path " + table_absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
 
@@ -81,7 +83,7 @@ StorageFile::StorageFile(
 
         if (!table_path_.empty()) /// Is user's file
         {
-            checkCreationIsAllowed(context_global, table_path_);
+            checkCreationIsAllowed(context_global, table_path_, db_dir_path);
             path = Poco::Path(table_path_).absolute().toString();
             is_db_table = false;
         }
@@ -97,7 +99,7 @@ StorageFile::StorageFile(
     }
     else /// Will use FD
     {
-        checkCreationIsAllowed(context_global, "");
+        checkCreationIsAllowed(context_global, "", db_dir_path);
 
         is_db_table = false;
         use_table_fd = true;
