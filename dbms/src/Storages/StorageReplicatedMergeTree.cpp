@@ -3671,7 +3671,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
-                                                          NameSet * parts_should_be_retied)
+                                                          NameSet * parts_should_be_retried)
 {
     zkutil::Requests ops;
     auto it_first_node_in_batch = part_names.cbegin();
@@ -3702,9 +3702,9 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     {
                         LOG_DEBUG(log, "There is no part " << *it_in_batch << " in ZooKeeper, it was only in filesystem");
                     }
-                    else if (parts_should_be_retied && zkutil::isHardwareError(cur_code))
+                    else if (parts_should_be_retried && zkutil::isHardwareError(cur_code))
                     {
-                        parts_should_be_retied->emplace(*it_in_batch);
+                        parts_should_be_retried->emplace(*it_in_batch);
                     }
                     else if (cur_code)
                     {
@@ -3712,10 +3712,10 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     }
                 }
             }
-            else if (parts_should_be_retied && zkutil::isHardwareError(code))
+            else if (parts_should_be_retried && zkutil::isHardwareError(code))
             {
                 for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
-                    parts_should_be_retied->emplace(*it_in_batch);
+                    parts_should_be_retried->emplace(*it_in_batch);
             }
             else if (code)
             {
