@@ -714,8 +714,8 @@ void ZooKeeper::sendThread()
                 RequestInfo info;
                 if (requests_queue.tryPop(info, max_wait))
                 {
-                    if (expired)
-                        break;
+                    /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
+                    ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
                     if (info.request->xid != close_xid)
                     {
@@ -731,6 +731,9 @@ void ZooKeeper::sendThread()
                         std::lock_guard lock(watches_mutex);
                         watches[info.request->getPath()].emplace_back(std::move(info.watch));
                     }
+
+                    if (expired)
+                        break;
 
                     info.request->write(*out);
 
