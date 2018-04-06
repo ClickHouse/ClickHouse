@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageFile.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
@@ -20,19 +21,15 @@
 
 namespace DB
 {
-
     namespace ErrorCodes
     {
         extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+        extern const int DATABASE_ACCESS_DENIED;
     }
-
 
     StoragePtr TableFunctionFile::executeImpl(const ASTPtr & ast_function, const Context & context) const
     {
-        std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase());
-        throw Exception(db_data_path, 9999);
-
-        /// Parse args
+        // Parse args
         ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
         if (args_func.size() != 1)
@@ -50,19 +47,18 @@ namespace DB
         std::string path = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
         std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+        bool useStorageMemory = false;
 
-        /// Validate path
-        Poco::Path clickhouse_data_poco_path = Poco::Path(context.getPath() + "data/").makeAbsolute();
-        std::string clickhouse_data_path = clickhouse_data_poco_path.toString();
+        if (args.size() == 4)
+            useStorageMemory = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<bool>();
+
+        std::string db_data_path = context.getPath() + "data/" + escapeForFileName(context.getCurrentDatabase());
 
         Poco::Path poco_path = Poco::Path(path);
         if (poco_path.isRelative())
-            poco_path = Poco::Path(clickhouse_data_poco_path, poco_path);
+            poco_path = Poco::Path(db_data_path, poco_path);
 
         std::string absolute_path = poco_path.absolute().toString();
-
-        if (!startsWith(absolute_path, clickhouse_data_path))
-            throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::LOGICAL_ERROR);
 
         // Create sample block
         std::vector<std::string> structure_vals;
@@ -83,23 +79,39 @@ namespace DB
             sample_block.insert(std::move(column));
         }
 
-        /// Create table
+        // Create table
         NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-        StoragePtr storage = StorageMemory::create(getName(), ColumnsDescription{columns});
-        storage->startup();
-        BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
+        StoragePtr storage;
 
-        /// Write data
-        std::unique_ptr<ReadBuffer> read_buffer = std::make_unique<ReadBufferFromFile>(absolute_path);
-        BlockInputStreamPtr data = std::make_shared<AsynchronousBlockInputStream>(context.getInputFormat(
-                format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE));
+        if (useStorageMemory)
+        {
+            // Validate path
+            if (!startsWith(absolute_path, db_data_path))
+                throw Exception("Part path " + absolute_path + " is not inside " + db_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
-        data->readPrefix();
-        output->writePrefix();
-        while(Block block = data->read())
-            output->write(block);
-        data->readSuffix();
-        output->writeSuffix();
+            // Create Storage Memory
+            storage = StorageMemory::create(getName(), ColumnsDescription{columns});
+            storage->startup();
+            BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
+
+            // Write data
+            std::unique_ptr<ReadBuffer> read_buffer = std::make_unique<ReadBufferFromFile>(absolute_path);
+            BlockInputStreamPtr data = std::make_shared<AsynchronousBlockInputStream>(context.getInputFormat(
+                    format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE));
+
+            data->readPrefix();
+            output->writePrefix();
+            while(Block block = data->read())
+                output->write(block);
+            data->readSuffix();
+            output->writeSuffix();
+
+        }
+        else
+        {
+            storage = StorageFile::create(absolute_path, -1, db_data_path, getName(), format, columns, context);
+            storage->startup();
+        }
 
         return storage;
     }
