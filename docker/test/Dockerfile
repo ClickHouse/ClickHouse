@@ -9,13 +9,11 @@ RUN apt-get update && \
     apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
-    apt-get install --allow-unauthenticated -y clickhouse-client=$version locales && \
+    apt-get install --allow-unauthenticated -y clickhouse-test && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 
-RUN locale-gen en_US.UTF-8
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+# clickhouse-test bug: it doesn't start without server config, remove after release 1.1.54372 :
+RUN mkdir -p /etc/clickhouse-server && echo "<y></y>" > /etc/clickhouse-server/config.xml
 
-ENTRYPOINT ["/usr/bin/clickhouse-client"]
+ENTRYPOINT ["/usr/bin/clickhouse-test"]
