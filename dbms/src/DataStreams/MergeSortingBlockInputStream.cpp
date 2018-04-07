@@ -63,14 +63,21 @@ static void enrichBlockWithConstants(Block & block, const Block & header)
 }
 
 
+MergeSortingBlockInputStream::MergeSortingBlockInputStream(
+    const BlockInputStreamPtr & input, SortDescription & description_,
+    size_t max_merged_block_size_, size_t limit_,
+    size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
+    : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
+    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
+{
+    children.push_back(input);
+    header = getHeader();
+    removeConstantsFromSortDescription(header, description);
+}
+
+
 Block MergeSortingBlockInputStream::readImpl()
 {
-    if (!header)
-    {
-        header = getHeader();
-        removeConstantsFromSortDescription(header, description);
-    }
-
     /** Algorithm:
       * - read to memory blocks from source stream;
       * - if too many of them and if external sorting is enabled,
@@ -133,7 +140,7 @@ Block MergeSortingBlockInputStream::readImpl()
             /// Create sorted streams to merge.
             for (const auto & file : temporary_files)
             {
-                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
+                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path(), header));
                 inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
             }
 

@@ -38,7 +38,7 @@ void ReplicatedMergeTreeCleanupThread::run()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
         storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
@@ -55,7 +55,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
     ///  and two replicas will try to do cleanup simultaneously.
-    if (storage.is_leader_node)
+    if (storage.is_leader)
     {
         clearOldLogs();
         clearOldBlocks();

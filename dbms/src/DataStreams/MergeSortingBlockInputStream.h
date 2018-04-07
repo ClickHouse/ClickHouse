@@ -73,12 +73,7 @@ public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_,
         size_t max_merged_block_size_, size_t limit_,
-        size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
-        : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
-        max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
-    {
-        children.push_back(input);
-    }
+        size_t max_bytes_before_external_sort_, const std::string & tmp_path_);
 
     String getName() const override { return "MergeSorting"; }
 
@@ -120,8 +115,8 @@ private:
         CompressedReadBuffer compressed_in;
         BlockInputStreamPtr block_in;
 
-        TemporaryFileStream(const std::string & path)
-            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, 0)) {}
+        TemporaryFileStream(const std::string & path, const Block & header)
+            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0)) {}
     };
 
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;

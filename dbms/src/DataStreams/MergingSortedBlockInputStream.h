@@ -65,8 +65,8 @@ public:
       * quiet - don't log profiling info
       */
     MergingSortedBlockInputStream(
-            BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-            size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+        size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -74,7 +74,7 @@ public:
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
-    Block getHeader() const override { return children.at(0)->getHeader(); }
+    Block getHeader() const override { return header; }
 
 protected:
     struct RowRef
@@ -120,13 +120,15 @@ protected:
 
     void readSuffixImpl() override;
 
-    /// Initializes the queue and the next result block.
-    void init(Block & header, MutableColumns & merged_columns);
+    /// Initializes the queue and the columns of next result block.
+    void init(MutableColumns & merged_columns);
 
     /// Gets the next block from the source corresponding to the `current`.
     template <typename TSortCursor>
     void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
 
+
+    Block header;
 
     const SortDescription description;
     const size_t max_block_size;
