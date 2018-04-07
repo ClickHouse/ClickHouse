@@ -1,6 +1,6 @@
 #include <mutex>
 #include <Poco/ThreadPool.h>
-#include <Common/PocoSessionPoolHelpers.h>
+#include <Poco/Ext/SessionPoolHelpers.h>
 
 
 std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
