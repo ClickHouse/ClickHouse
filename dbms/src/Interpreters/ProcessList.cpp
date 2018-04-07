@@ -66,7 +66,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
                     /// Ask queries to cancel. They will check this flag.
                     for (auto it = range.first; it != range.second; ++it)
-                        it->second->is_cancelled.store(true, std::memory_order_relaxed);
+                        it->second->is_killed.store(true, std::memory_order_relaxed);
                 }
             }
         }
