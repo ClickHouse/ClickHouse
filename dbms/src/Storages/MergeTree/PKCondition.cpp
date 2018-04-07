@@ -1005,6 +1005,8 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
                 {
                     rpn_stack.back() = !rpn_stack.back();
                 }
+            } else {
+                rpn_stack.emplace_back(true, true);
             }
             else
             {
