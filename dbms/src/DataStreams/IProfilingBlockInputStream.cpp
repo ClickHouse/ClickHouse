@@ -238,7 +238,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
     if (process_list_elem)
     {
         if (!process_list_elem->updateProgressIn(value))
-            cancel(/* kill= */ true);
+            cancel(/* kill */ true);
 
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
