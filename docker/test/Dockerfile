@@ -13,7 +13,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 
-# clickhouse-test bug: dotn start without server config, remove after release 1.1.54372 :
+# clickhouse-test bug: it doesn't start without server config, remove after release 1.1.54372 :
 RUN mkdir -p /etc/clickhouse-server && echo "<y></y>" > /etc/clickhouse-server/config.xml
 
 ENTRYPOINT ["/usr/bin/clickhouse-test"]
