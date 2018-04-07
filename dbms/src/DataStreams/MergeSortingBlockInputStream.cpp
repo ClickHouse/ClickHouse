@@ -140,7 +140,7 @@ Block MergeSortingBlockInputStream::readImpl()
             /// Create sorted streams to merge.
             for (const auto & file : temporary_files)
             {
-                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
+                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path(), header));
                 inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
             }
 
