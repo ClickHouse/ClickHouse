@@ -81,7 +81,7 @@ public:
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
-    Block getHeader() const override { return children.at(0)->getHeader(); }
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
@@ -104,6 +104,7 @@ private:
     /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)
     /// Save original block structure here.
     Block header;
+    Block header_without_constants;
 
     /// Everything below is for external sorting.
     std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
