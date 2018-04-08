@@ -1351,7 +1351,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         std::lock_guard lock(finalize_mutex);
 
         /// If the request is close request, we push it even after session is expired - because it will signal sending thread to stop.
-        if (expired && info.request->xid != close_xid)
+        if (expired)
             throw Exception("Session expired", ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
@@ -1530,7 +1530,9 @@ void ZooKeeper::close()
     RequestInfo request_info;
     request_info.request = std::make_shared<CloseRequest>(std::move(request));
 
-    pushRequest(std::move(request_info));
+    if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
+        throw Exception("Cannot push close request to queue within operation timeout", ZOPERATIONTIMEOUT);
+
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }
 
