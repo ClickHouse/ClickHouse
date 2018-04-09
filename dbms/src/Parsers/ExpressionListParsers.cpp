@@ -1,9 +1,6 @@
-//#include <Core/iostream_debug_helpers.h>
-
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include "TokenIterator.h"
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -13,7 +10,6 @@
 
 #include <Common/StringUtils/StringUtils.h>
 
-#include <Parsers/iostream_debug_helpers.h> 
 
 namespace DB
 {
@@ -56,7 +52,6 @@ const char * ParserComparisonExpression::operators[] =
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",
     "GLOBAL NOT IN", "globalNotIn",
-    //"FROM",     "ffffffffffffrom",
     nullptr
 };
 
@@ -82,9 +77,6 @@ const char * ParserTupleElementExpression::operators[] =
 
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-//DUMP(pos);
-DUMP(node);
-
     bool first = true;
 
     auto list = std::make_shared<ASTExpressionList>();
@@ -96,10 +88,7 @@ DUMP(node);
         {
             ASTPtr elem;
             if (!elem_parser->parse(pos, elem, expected))
-{
-//DUMP(pos);
                 break;
-}
 
             list->children.push_back(elem);
             first = false;
@@ -107,8 +96,6 @@ DUMP(node);
         else
         {
             auto prev_pos = pos;
-DUMP(list);
-DUMP2(pos.get(), expected);
 
             if (!separator_parser->ignore(pos, expected))
                 break;
@@ -555,13 +542,6 @@ ParserExpressionInCastExpression::ParserExpressionInCastExpression(bool allow_al
 }
 
 
-ParserExpressionInExtractExpression::ParserExpressionInExtractExpression()
-    //: impl(std::make_unique<ParserExtractExpression>(/*std::make_unique<ParserExpression>(), false*/))
-{
-DUMP("new parser");
-}
-
-
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
@@ -671,86 +651,6 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     exp_list->range.second = pos->begin;
 
     node = function;
-    return true;
-}
-
-bool ParserExpressionInExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// For the expression (date_part FROM date_expression)
-
-    ParserKeyword s_from("FROM");
-
-    ASTPtr piece;
-    ASTPtr expr;
-
-    Pos begin = pos;
-
-//DUMP2("go parse", pos);
-
-    //ParserLiteral
-//ParserLiteral  piece_parser;
-    const char * function_name = nullptr;
-
-
-    if (ParserKeyword("SECOND").ignore(pos, expected))
-        function_name = "toSecond";
-    else if (ParserKeyword("MINUTE").ignore(pos, expected))
-        function_name = "toMinute";
-    else if (ParserKeyword("HOUR").ignore(pos, expected))
-        function_name = "toHour";
-    else if (ParserKeyword("DAY").ignore(pos, expected))
-        function_name = "toDayOfMonth";
-    else if (ParserKeyword("WEEK").ignore(pos, expected))
-        function_name = "toRelativeWeekNum";
-    else if (ParserKeyword("MONTH").ignore(pos, expected))
-        function_name = "toMonth";
-    else if (ParserKeyword("YEAR").ignore(pos, expected))
-        function_name = "toYear";
-    else
-        return false;
-
-DUMP(function_name);
-/*
-//    if (!elem_parser.parse(pos, piece, expected))
-    if (!piece_parser.parse(pos, piece, expected))
-{
-DUMP("fail1");
-        return false;
-}
-*/
-
-    if (!s_from.ignore(pos, expected))
-{
-//DUMP2("fail2", pos);
-        return false;
-}
-
-    if (!elem_parser.parse(pos, expr, expected))
-{
-DUMP("fail3");
-        return false;
-}
-
-DUMP("func");
-
-    auto function = std::make_shared<ASTFunction>();
-
-    auto exp_list = std::make_shared<ASTExpressionList>();
-
-        function->range.first = begin->begin;
-        function->range.second = pos->begin;
-        function->name = function_name; //"toYear";
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-
-        exp_list->children.push_back(expr);
-        exp_list->range.first = begin->begin;
-        exp_list->range.second = pos->begin;
-
-        node = function;
-
-DUMP("EXTRACT Ok.");
-
     return true;
 }
 
