@@ -7,10 +7,12 @@ for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
     apt-get remove -y "$PKG" || true
 done
 
-dpkg --auto-deconfigure -i /tmp/buildd/*.deb || true
+#dpkg --auto-deconfigure -i /tmp/buildd/*.deb || true
+#apt install -y -f --allow-downgrades || true
+
 # Temporary fix for installing packages with new names. Remove after complete removing of clickhouse-server-base clickhouse-server-common :
-dpkg --auto-deconfigure -i /tmp/buildd/clickhouse-server_*.deb /tmp/buildd/clickhouse-client_*.deb || true
-apt install -y -f --allow-downgrades
+dpkg --auto-deconfigure -i /tmp/buildd/clickhouse-server_*.deb /tmp/buildd/clickhouse-common-static_*.deb /tmp/buildd/clickhouse-client_*.deb /tmp/buildd/clickhouse-test_*.deb || true
+apt install -y -f --allow-downgrades || true
 
 
 # Some test references uses specific timezone
