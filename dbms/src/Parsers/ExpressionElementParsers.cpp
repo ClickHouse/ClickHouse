@@ -1,4 +1,3 @@
-
 #include <errno.h>
 #include <cstdlib>
 
@@ -365,7 +364,6 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
-
     const auto function_node = std::make_shared<ASTFunction>();
     ASTPtr node_holder{function_node};
     function_node->name = name;
@@ -379,11 +377,8 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-DUMP("start")
     auto begin = pos;
-
     ParserIdentifier id_parser;
-
     ASTPtr identifier;
 
     if (!id_parser.parse(pos, identifier, expected))
@@ -391,30 +386,13 @@ DUMP("start")
 
     const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
 
-DUMP2(id, name);
-
-
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
+
     ++pos;
 
-//++pos;
-
-
-
-    ParserKeyword s_from("FROM");
-
-    //ASTPtr piece;
     ASTPtr expr;
-
-//    Pos begin = pos;
-
-//DUMP2("go parse", pos);
-
-    //ParserLiteral
-//ParserLiteral  piece_parser;
     const char * function_name = nullptr;
-
 
     if (ParserKeyword("SECOND").ignore(pos, expected))
         function_name = "toSecond";
@@ -424,67 +402,48 @@ DUMP2(id, name);
         function_name = "toHour";
     else if (ParserKeyword("DAY").ignore(pos, expected))
         function_name = "toDayOfMonth";
-    else if (ParserKeyword("WEEK").ignore(pos, expected))
-        function_name = "toRelativeWeekNum";
+
+    // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
+    // else if (ParserKeyword("WEEK").ignore(pos, expected))
+    //    function_name = "toRelativeWeekNum";
+
     else if (ParserKeyword("MONTH").ignore(pos, expected))
         function_name = "toMonth";
     else if (ParserKeyword("YEAR").ignore(pos, expected))
         function_name = "toYear";
     else
-{
-//DUMP2("fail4", pos);
         return false;
-}
 
-DUMP(function_name);
-/*
-//    if (!elem_parser.parse(pos, piece, expected))
-    if (!piece_parser.parse(pos, piece, expected))
-{
-DUMP("fail1");
-        return false;
-}
-*/
-
+    ParserKeyword s_from("FROM");
     if (!s_from.ignore(pos, expected))
-{
-//DUMP2("fail2 no FROM", pos);
         return false;
-}
 
-ParserExpression elem_parser;
+    ParserExpression elem_parser;
 
     if (!elem_parser.parse(pos, expr, expected))
-{
-DUMP("fail3 no emem");
         return false;
-}
-
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
 
-DUMP("func make");
-
     auto function = std::make_shared<ASTFunction>();
  
     auto exp_list = std::make_shared<ASTExpressionList>();
 
-        function->range.first = begin->begin;
-        function->range.second = pos->begin;
-        function->name = function_name; //"toYear";
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
+    function->range.first = begin->begin;
+    function->range.second = pos->begin;
+    function->name = function_name; //"toYear";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
 
-        exp_list->children.push_back(expr);
-        exp_list->range.first = begin->begin;
-        exp_list->range.second = pos->begin;
+    exp_list->children.push_back(expr);
+    exp_list->range.first = begin->begin;
+    exp_list->range.second = pos->begin;
 
-        node = function;
+    node = function;
 
-DUMP("EXTRACT Ok.");
-        return true;
+    return true;
 }
 
 
