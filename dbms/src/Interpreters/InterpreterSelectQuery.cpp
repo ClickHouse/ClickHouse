@@ -682,7 +682,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 optimize_prewhere(*merge_tree);
         }
 
-        if (query_analyzer->appendPrewhere(chain, false))
+        if (!dry_run && query_analyzer->appendPrewhere(chain, false))
         {
             query_info.prewhere_actions = chain.getLastActions();
             chain.addStep();
