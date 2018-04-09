@@ -17,7 +17,7 @@ Standards-Version: 3.9.8
 
 Package: clickhouse-client
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
 Description: Client binary for clickhouse
@@ -40,7 +40,7 @@ Description: Common files for clickhouse
 
 Package: clickhouse-server
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser, tzdata
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version}), adduser, tzdata
 Replaces: clickhouse-server-common
 Provides: clickhouse-server-common
 Conflicts: clickhouse-server-common
