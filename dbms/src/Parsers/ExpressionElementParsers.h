@@ -192,19 +192,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-/*
-template <typename ParserIdentifier>
-class ParserFromImpl : public IParserBase
-{
-public:
-    ParserFromImpl()
-         {}
-protected:
-    const char * getName() const { return "FROM"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-*/
-
 class ParserTypeInCastExpression;
 
 extern template class ParserAliasImpl<ParserIdentifier>;
