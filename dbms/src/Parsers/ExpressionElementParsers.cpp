@@ -22,7 +22,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
-#include <Parsers/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -384,11 +383,10 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
+    //const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
-
     ++pos;
 
     ASTPtr expr;
@@ -419,7 +417,6 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
 
     ParserExpression elem_parser;
-
     if (!elem_parser.parse(pos, expr, expected))
         return false;
 
@@ -428,19 +425,15 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ++pos;
 
     auto function = std::make_shared<ASTFunction>();
- 
     auto exp_list = std::make_shared<ASTExpressionList>();
-
     function->range.first = begin->begin;
     function->range.second = pos->begin;
     function->name = function_name; //"toYear";
     function->arguments = exp_list;
     function->children.push_back(exp_list);
-
     exp_list->children.push_back(expr);
     exp_list->range.first = begin->begin;
     exp_list->range.second = pos->begin;
-
     node = function;
 
     return true;

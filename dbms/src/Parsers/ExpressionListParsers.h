@@ -350,22 +350,6 @@ protected:
     }
 };
 
-class ParserExpressionInExtractExpression : public IParserBase
-{
-public:
-    ParserExpressionInExtractExpression(/*bool allow_alias_without_as_keyword*/);
-
-private:
-    //ParserLiteral  piece_parser;
-    ParserExpression elem_parser;
-protected:
-    //ParserPtr impl;
-
-    const char * getName() const { return "expression in EXTRACT expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
 
 /** A comma-separated list of expressions, probably empty. */
 class ParserExpressionList : public IParserBase

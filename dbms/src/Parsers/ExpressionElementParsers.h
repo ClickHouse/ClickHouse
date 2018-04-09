@@ -192,6 +192,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+
 class ParserTypeInCastExpression;
 
 extern template class ParserAliasImpl<ParserIdentifier>;
