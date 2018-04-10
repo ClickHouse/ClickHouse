@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
+#include <DataTypes/DataTypeNothing.h>
 
 
 namespace DB
@@ -222,8 +223,11 @@ void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block) const
     {
         bool had_prewhere_column = block.has(prewhere_column_name);
         prewhere_actions->execute(block);
-        if (!had_prewhere_column && block.columns() > 1)
+        if (!had_prewhere_column)
             block.erase(prewhere_column_name);
+
+        if (block.columns() == 0)
+            block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});
     }
 }
 
