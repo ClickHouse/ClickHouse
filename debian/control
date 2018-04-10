@@ -18,7 +18,6 @@ Standards-Version: 3.9.8
 Package: clickhouse-client
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version})
-#Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
 Description: Client binary for clickhouse
@@ -31,7 +30,6 @@ Package: clickhouse-common-static
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Replaces: clickhouse-server-base
-#Provides: clickhouse-server-base
 Conflicts: clickhouse-server-base
 Description: Common files for clickhouse
  Yandex ClickHouse is a column-oriented database management system
@@ -41,11 +39,8 @@ Description: Common files for clickhouse
 
 Package: clickhouse-server
 Architecture: any
-#Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version}), adduser, tzdata
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser, tzdata
 Replaces: clickhouse-server-common
-#Replaces: clickhouse-server-common, clickhouse-server-base
-#Provides: clickhouse-server-common, clickhouse-server-base
 Conflicts: clickhouse-server-common, clickhouse-server-base
 Description: Server binary for clickhouse
  Yandex ClickHouse is a column-oriented database management system
@@ -59,7 +54,6 @@ Section: debug
 Priority: optional
 Depends: ${misc:Depends}
 Replaces: clickhouse-common-dbg
-#Provides: clickhouse-common-dbg
 Conflicts: clickhouse-common-dbg
 Description: debugging symbols for clickhouse-common-static
  This package contains the debugging symbols for clickhouse-common.
@@ -71,18 +65,15 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, py
 Description: Clickhouse tests
 
 
+
 # TODO: Remove:
 
 Package: clickhouse-server-base
 Architecture: any
 Priority: optional
-#Provides: clickhouse-common-static, clickhouse-server
 Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
-#Replaces: clickhouse-server, clickhouse-common-static
-#Provides: clickhouse-common-static
 Breaks: clickhouse-common-static, clickhouse-server
 Description: DEPRECATED PACKAGE: Server binary for clickhouse
-
 
 Package: clickhouse-server-common
 Architecture: any
