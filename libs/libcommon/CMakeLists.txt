@@ -26,6 +26,7 @@ add_library (common ${SPLIT_SHARED}
     src/JSON.cpp
     src/getMemoryAmount.cpp
     src/ThreadPool.cpp
+    src/demangle.cpp
 
     include/common/Types.h
     include/common/DateLUT.h
@@ -44,6 +45,7 @@ add_library (common ${SPLIT_SHARED}
     include/common/JSON.h
     include/common/getMemoryAmount.h
     include/common/ThreadPool.h
+    include/common/demangle.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

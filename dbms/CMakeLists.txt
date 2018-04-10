@@ -145,8 +145,6 @@ target_link_libraries (dbms
     clickhouse_common_config
     clickhouse_common_io
     ${MYSQLXX_LIBRARY}
-    ${FARMHASH_LIBRARIES}
-    ${METROHASH_LIBRARIES}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}

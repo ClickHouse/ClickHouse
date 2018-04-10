@@ -3,6 +3,8 @@
 #include <Common/setThreadName.h>
 #include <Poco/Timestamp.h>
 
+#include <random>
+
 
 namespace DB
 {
@@ -25,7 +27,8 @@ void ReplicatedMergeTreeCleanupThread::run()
 {
     setThreadName("ReplMTCleanup");
 
-    const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000;
+    const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000
+        + std::uniform_int_distribution<UInt64>(0, storage.data.settings.cleanup_delay_period_random_add * 1000)(rng);
 
     while (!storage.shutdown_called)
     {
@@ -35,7 +38,7 @@ void ReplicatedMergeTreeCleanupThread::run()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
         storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
@@ -52,7 +55,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
     ///  and two replicas will try to do cleanup simultaneously.
-    if (storage.is_leader_node)
+    if (storage.is_leader)
     {
         clearOldLogs();
         clearOldBlocks();

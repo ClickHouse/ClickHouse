@@ -59,6 +59,12 @@ namespace ProfileEvents
     extern const Event DataAfterMergeDiffersFromReplica;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric LeaderReplica;
+}
+
+
 namespace DB
 {
 
@@ -205,40 +211,26 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
-    /// If zookeeper chroot prefix is used, path should starts with '/', because chroot concatenates without it.
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
     bool skip_sanity_checks = false;
 
-    try
+    if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
     {
-        if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
-        {
-            skip_sanity_checks = true;
-            current_zookeeper->remove(replica_path + "/flags/force_restore_data");
+        skip_sanity_checks = true;
+        current_zookeeper->remove(replica_path + "/flags/force_restore_data");
 
-            LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
-                << replica_path << "/flags/force_restore_data).");
-        }
-        else if (has_force_restore_data_flag)
-        {
-            skip_sanity_checks = true;
-
-            LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
-        }
+        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
+            << replica_path << "/flags/force_restore_data).");
     }
-    catch (const zkutil::KeeperException & e)
+    else if (has_force_restore_data_flag)
     {
-        /// Failed to connect to ZK (this became known when trying to perform the first operation).
-        if (e.code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            current_zookeeper = nullptr;
-        }
-        else
-            throw;
+        skip_sanity_checks = true;
+
+        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
     }
 
     data.loadDataParts(skip_sanity_checks);
@@ -1268,7 +1260,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         /** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
           */
 
-        /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
+        /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
           * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
           */
         merge_selecting_event.set();
@@ -1468,7 +1460,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
         throw;
@@ -1606,7 +1598,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
             queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
         }
     }
@@ -1626,7 +1618,7 @@ bool StorageReplicatedMergeTree::queueTask()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
     LogEntryPtr & entry = selected.first;
@@ -1660,7 +1652,7 @@ bool StorageReplicatedMergeTree::queueTask()
                 LOG_INFO(log, e.displayText());
             }
             else
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
             /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
               * The thread that performs this action will sleep a few seconds after the exception.
@@ -1670,7 +1662,7 @@ bool StorageReplicatedMergeTree::queueTask()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
             throw;
         }
     });
@@ -1883,7 +1875,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
                && cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
     };
 
-    while (!shutdown_called && is_leader_node)
+    while (is_leader)
     {
         bool success = false;
 
@@ -1929,10 +1921,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
 
-        if (shutdown_called || !is_leader_node)
+        if (!is_leader)
             break;
 
         if (!success)
@@ -2037,23 +2029,55 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::becomeLeader()
+void StorageReplicatedMergeTree::enterLeaderElection()
 {
-    std::lock_guard<std::mutex> lock(leader_node_mutex);
+    auto callback = [this]()
+    {
+        CurrentMetrics::add(CurrentMetrics::LeaderReplica);
+        LOG_INFO(log, "Became leader");
 
-    if (shutdown_called)
+        is_leader = true;
+        merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
+    };
+
+    try
+    {
+        leader_election = std::make_shared<zkutil::LeaderElection>(
+            zookeeper_path + "/leader_election",
+            *current_zookeeper,    /// current_zookeeper lives for the lifetime of leader_election,
+                                   ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
+            callback,
+            replica_name);
+    }
+    catch (...)
+    {
+        leader_election = nullptr;
+        throw;
+    }
+}
+
+void StorageReplicatedMergeTree::exitLeaderElection()
+{
+    if (!leader_election)
         return;
 
-    if (merge_selecting_thread.joinable())
+    /// Shut down the leader election thread to avoid suddenly becoming the leader again after
+    /// we have stopped the merge_selecting_thread, but before we have deleted the leader_election object.
+    leader_election->shutdown();
+
+    if (is_leader)
     {
-        LOG_INFO(log, "Deleting old leader");
-        is_leader_node = false; /// exit trigger inside thread
+        CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
+        LOG_INFO(log, "Stopped being leader");
+
+        is_leader = false;
+        merge_selecting_event.set();
         merge_selecting_thread.join();
     }
 
-    LOG_INFO(log, "Became leader");
-    is_leader_node = true;
-    merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
+    /// Delete the node in ZK only after we have stopped the merge_selecting_thread - so that only one
+    /// replica assigns merges at any given time.
+    leader_election = nullptr;
 }
 
 
@@ -2382,12 +2406,6 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    /** This must be done before waiting for restarting_thread.
-      * Because restarting_thread will wait for finishing of tasks in background pool,
-      *  and parts are fetched in that tasks.
-      */
-    fetcher.blocker.cancelForever();
-
     if (restarting_thread)
     {
         restarting_thread->stop();
@@ -2399,6 +2417,8 @@ void StorageReplicatedMergeTree::shutdown()
         data_parts_exchange_endpoint_holder->cancelForever();
         data_parts_exchange_endpoint_holder = nullptr;
     }
+
+    fetcher.blocker.cancelForever();
 }
 
 
@@ -2487,7 +2507,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 {
     assertNotReadonly();
 
-    if (!is_leader_node)
+    if (!is_leader)
     {
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return true;
@@ -2813,7 +2833,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
 
-    if (!is_leader_node)
+    if (!is_leader)
     {
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
@@ -3171,7 +3191,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
     auto zookeeper = tryGetZooKeeper();
 
-    res.is_leader = is_leader_node;
+    res.is_leader = is_leader;
     res.is_readonly = is_readonly;
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
@@ -3637,7 +3657,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
-                                                          NameSet * parts_should_be_retied)
+                                                          NameSet * parts_should_be_retried)
 {
     zkutil::Requests ops;
     auto it_first_node_in_batch = part_names.cbegin();
@@ -3668,9 +3688,9 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     {
                         LOG_DEBUG(log, "There is no part " << *it_in_batch << " in ZooKeeper, it was only in filesystem");
                     }
-                    else if (parts_should_be_retied && zkutil::isHardwareError(cur_code))
+                    else if (parts_should_be_retried && zkutil::isHardwareError(cur_code))
                     {
-                        parts_should_be_retied->emplace(*it_in_batch);
+                        parts_should_be_retried->emplace(*it_in_batch);
                     }
                     else if (cur_code)
                     {
@@ -3678,10 +3698,10 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     }
                 }
             }
-            else if (parts_should_be_retied && zkutil::isHardwareError(code))
+            else if (parts_should_be_retried && zkutil::isHardwareError(code))
             {
                 for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
-                    parts_should_be_retied->emplace(*it_in_batch);
+                    parts_should_be_retried->emplace(*it_in_batch);
             }
             else if (code)
             {
