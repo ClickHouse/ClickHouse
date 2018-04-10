@@ -5,19 +5,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <Common/escapeForFileName.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/StorageFile.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <IO/copyData.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Poco/Path.h>
 #include <boost/algorithm/string.hpp>
-
-#include <fcntl.h>
 
 namespace DB
 {
