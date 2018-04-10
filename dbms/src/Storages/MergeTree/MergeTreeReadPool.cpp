@@ -214,7 +214,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
             /** If expression in PREWHERE is not table column, then no need to return column with it to caller
                 *    (because storage is expected only to read table columns).
                 */
-            per_part_remove_prewhere_column.push_back(0 == pre_name_set.count(prewhere_column_name));
+            per_part_remove_prewhere_column.push_back(false && 0 == pre_name_set.count(prewhere_column_name));
 
             Names post_column_names;
             for (const auto & name : required_column_names)
