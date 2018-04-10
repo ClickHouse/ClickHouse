@@ -222,7 +222,7 @@ void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block) const
     {
         bool had_prewhere_column = block.has(prewhere_column_name);
         prewhere_actions->execute(block);
-        if (!had_prewhere_column)
+        if (!had_prewhere_column && block.columns() > 1)
             block.erase(prewhere_column_name);
     }
 }
