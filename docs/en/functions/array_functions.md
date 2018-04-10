@@ -313,6 +313,15 @@ If multiple arguments are passed, it counts the number of different tuples of el
 
 If you want to get a list of unique items in an array, you can use arrayReduce('groupUniqArray', arr).
 
+
+## arraySort(arr)
+
+Returns new array as result of sorting the elements of `arr` in ascending order.
+
+## arrayReverseSort(arr)
+
+Returns new array as result of sorting the elements of `arr` in descending order.
+
 ## arrayJoin(arr)
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
