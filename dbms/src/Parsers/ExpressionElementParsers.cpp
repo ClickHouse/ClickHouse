@@ -383,8 +383,6 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    //const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
-
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
