@@ -367,6 +367,16 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
+std::string ZooKeeper::getWatch(const std::string & path, Stat * stat, WatchCallback watch_callback)
+{
+    int32_t code = 0;
+    std::string res;
+    if (tryGetWatch(path, res, stat, watch_callback, &code))
+        return res;
+    else
+        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
+}
+
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat, const EventPtr & watch, int * return_code)
 {
     return tryGetWatch(path, res, stat, callbackForEvent(watch), return_code);
