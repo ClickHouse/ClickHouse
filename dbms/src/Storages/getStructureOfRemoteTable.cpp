@@ -1,4 +1,4 @@
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include "getStructureOfRemoteTable.h"
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
