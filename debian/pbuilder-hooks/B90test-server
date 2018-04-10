@@ -7,9 +7,9 @@ for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
     apt-get remove -y "$PKG" || true
 done
 
-dpkg -i /tmp/buildd/*.deb || true
-apt install -y -f --allow-downgrades
-
+dpkg --auto-deconfigure -i /tmp/buildd/*.deb || true
+apt install -y -f --allow-downgrades || true
+dpkg -l | grep clickhouse || true
 
 # Some test references uses specific timezone
 ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime

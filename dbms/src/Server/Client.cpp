@@ -192,7 +192,7 @@ private:
 
             host = config.getString("host", "localhost");
             port = config.getInt("port",
-                config.getInt(is_secure ? "tcp_secure_port" : "tcp_port",
+                config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
                     is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
             default_database = config.getString("database", "");
