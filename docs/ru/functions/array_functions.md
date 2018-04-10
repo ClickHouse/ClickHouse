@@ -301,6 +301,14 @@ SELECT arraySlice([1, 2, 3, 4, 5], 2, 3) AS res
 
 Если необходимо получить список уникальных элементов массива, можно воспользоваться arrayReduce('groupUniqArray', arr).
 
+## arraySort(arr)
+
+Возвращает отсортированный в восходящем порядке массив `arr`
+
+## arrayReverseSort(arr)
+
+Возвращает отсортированный в нисходящем порядке массив `arr`
+
 ## arrayJoin(arr)
 Особенная функция. Смотрите раздел ["Функция arrayJoin"](array_join.md#functions_arrayjoin).
 
