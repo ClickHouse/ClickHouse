@@ -1,4 +1,4 @@
-# ClickHouse 1.1.54370 Release Candidate, 2018-03-16
+# ClickHouse release 1.1.54370, 2018-03-16
 
 ## New features:
 

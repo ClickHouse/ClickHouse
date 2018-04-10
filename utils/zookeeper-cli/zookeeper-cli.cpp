@@ -206,13 +206,13 @@ int main(int argc, char ** argv)
                 }
 
             }
-            catch (zkutil::KeeperException & e)
+            catch (const zkutil::KeeperException & e)
             {
                 std::cerr << "KeeperException: " << e.displayText() << std::endl;
             }
         }
     }
-    catch (zkutil::KeeperException & e)
+    catch (const zkutil::KeeperException & e)
     {
         std::cerr << "KeeperException: " << e.displayText() << std::endl;
         return 1;

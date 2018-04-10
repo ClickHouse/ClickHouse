@@ -10,6 +10,7 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 
 namespace Poco
 {
@@ -44,7 +45,7 @@ public:
 
 private:
 
-    IColumn::Selector createSelector(Block block);
+    IColumn::Selector createSelector(const Block & source_block);
 
 
     void writeAsync(const Block & block);
@@ -65,10 +66,10 @@ private:
     /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
     void writeSync(const Block & block);
 
-    void initWritingJobs();
+    void initWritingJobs(const Block & first_block);
 
-    struct JobInfo;
-    ThreadPool::Job runWritingJob(JobInfo & job);
+    struct JobReplica;
+    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block);
 
     void waitForJobs();
 
@@ -80,26 +81,30 @@ private:
     ASTPtr query_ast;
     ClusterPtr cluster;
     const Settings & settings;
-    size_t blocks_inserted = 0;
+    size_t inserted_blocks = 0;
+    size_t inserted_rows = 0;
 
     bool insert_sync;
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
     Stopwatch watch;
+    Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
     String query_string;
 
-    struct JobInfo
+    struct JobReplica
     {
-        JobInfo() = default;
-        JobInfo(size_t shard_index, size_t replica_index, bool is_local_job)
-            : shard_index(shard_index), replica_index(replica_index), is_local_job(is_local_job) {}
+        JobReplica() = default;
+        JobReplica(size_t shard_index, size_t replica_index, bool is_local_job, const Block & sample_block)
+            : shard_index(shard_index), replica_index(replica_index), is_local_job(is_local_job), current_shard_block(sample_block.cloneEmpty()) {}
 
         size_t shard_index = 0;
         size_t replica_index = 0;
         bool is_local_job = false;
+
+        Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
         std::unique_ptr<Context> local_context;
@@ -108,13 +113,18 @@ private:
         UInt64 blocks_written = 0;
         UInt64 rows_written = 0;
 
-        UInt64 bloks_started = 0;
+        UInt64 blocks_started = 0;
         UInt64 elapsed_time_ms = 0;
         UInt64 max_elapsed_time_for_block_ms = 0;
     };
 
-    std::vector<std::list<JobInfo>> per_shard_jobs;
-    Blocks current_blocks;
+    struct JobShard
+    {
+        std::list<JobReplica> replicas_jobs;
+        IColumn::Permutation shard_current_block_permuation;
+    };
+
+    std::vector<JobShard> per_shard_jobs;
 
     size_t remote_jobs_count = 0;
     size_t local_jobs_count = 0;

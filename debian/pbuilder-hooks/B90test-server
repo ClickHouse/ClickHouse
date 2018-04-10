@@ -23,12 +23,12 @@ if [ "${TEST_CONNECT}" ]; then
 
     TEST_SSL=${TEST_SSL=1}
     if  [ "${TEST_SSL}" ]; then
-        echo "<yandex><https_port>8443</https_port><tcp_ssl_port>9440</tcp_ssl_port></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+        echo "<yandex><https_port>8443</https_port><tcp_port_secure>9440</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
         echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
 
         openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
         openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
-        CLIENT_ADD="--ssl"
+        CLIENT_ADD="--secure"
     fi
 
     function finish {

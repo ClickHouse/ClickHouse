@@ -145,8 +145,6 @@ target_link_libraries (dbms
     clickhouse_common_config
     clickhouse_common_io
     ${MYSQLXX_LIBRARY}
-    ${FARMHASH_LIBRARIES}
-    ${METROHASH_LIBRARIES}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
@@ -161,10 +159,28 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-if (Poco_DataODBC_FOUND)
-    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
-    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES})
+if (Poco_SQLODBC_FOUND)
+    target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
+    target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
+    if (NOT USE_INTERNAL_POCO_LIBRARY)
+        target_include_directories (clickhouse_common_io PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
+        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
+    endif()
 endif()
+
+if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories (clickhouse_common_io PRIVATE ${Poco_Data_INCLUDE_DIRS})
+    target_include_directories (dbms PRIVATE ${Poco_Data_INCLUDE_DIRS})
+endif()
+
+if (Poco_DataODBC_FOUND)
+    target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
+    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    if (NOT USE_INTERNAL_POCO_LIBRARY)
+        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+    endif()
+endif()
+
 
 if (Poco_MongoDB_FOUND)
     target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
@@ -212,6 +228,7 @@ endif ()
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
 target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 # also for copy_headers.sh:

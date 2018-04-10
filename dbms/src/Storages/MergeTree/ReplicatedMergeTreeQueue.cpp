@@ -53,7 +53,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         std::sort(children.begin(), children.end());
 
-        std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+        std::vector<std::pair<String, std::future<zkutil::GetResponse>>> futures;
         futures.reserve(children.size());
 
         for (const String & child : children)
@@ -61,8 +61,9 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         for (auto & future : futures)
         {
-            zkutil::ZooKeeper::ValueAndStat res = future.second.get();
-            LogEntryPtr entry = LogEntry::parse(res.value, res.stat);
+            zkutil::GetResponse res = future.second.get();
+
+            LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
             entry->znode_name = future.first;
 
             insertUnlocked(entry, min_unprocessed_insert_time_changed, lock);
@@ -94,7 +95,12 @@ void ReplicatedMergeTreeQueue::initialize(
 void ReplicatedMergeTreeQueue::insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &)
 {
     virtual_parts.add(entry->new_part_name);
-    queue.push_back(entry);
+
+    /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
+    if (entry->type != LogEntry::DROP_RANGE)
+        queue.push_back(entry);
+    else
+        queue.push_front(entry);
 
     if (entry->type == LogEntry::GET_PART)
     {
@@ -161,21 +167,22 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
     ///  because we update times in ZooKeeper with unlocked mutex, while these times may change.
     /// Consider it unimportant (for a short time, ZK will have a slightly different time value).
 
-    zkutil::Ops ops;
+    zkutil::Requests ops;
 
     if (min_unprocessed_insert_time_changed)
-        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+        ops.emplace_back(zkutil::makeSetRequest(
             replica_path + "/min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
     if (max_processed_insert_time_changed)
-        ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+        ops.emplace_back(zkutil::makeSetRequest(
             replica_path + "/max_processed_insert_time", toString(*max_processed_insert_time_changed), -1));
 
     if (!ops.empty())
     {
-        auto code = zookeeper->tryMulti(ops);
+        zkutil::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
 
-        if (code != ZOK)
+        if (code)
             LOG_ERROR(log, "Couldn't set value of nodes for insert times ("
                 << replica_path << "/min_unprocessed_insert_time, max_processed_insert_time)" << ": "
                 << zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
@@ -187,7 +194,7 @@ void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
 {
     auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
 
-    if (code != ZOK)
+    if (code)
         LOG_ERROR(log, "Couldn't remove " << replica_path << "/queue/" << entry->znode_name << ": "
             << zkutil::ZooKeeper::error2string(code) << ". This shouldn't happen often.");
 
@@ -256,13 +263,6 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 {
     std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
 
-    bool dirty_entries_loaded = false;
-    if (is_dirty)
-    {
-        dirty_entries_loaded = load(zookeeper);
-        is_dirty = false;
-    }
-
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
@@ -315,7 +315,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             LOG_DEBUG(log, "Pulling " << (end - begin) << " entries to queue: " << *begin << " - " << *last);
 
-            std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+            std::vector<std::pair<String, std::future<zkutil::GetResponse>>> futures;
             futures.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
@@ -323,7 +323,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
-            zkutil::Ops ops;
+            zkutil::Requests ops;
             std::vector<LogEntryPtr> copied_entries;
             copied_entries.reserve(end - begin);
 
@@ -331,11 +331,12 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             for (auto & future : futures)
             {
-                zkutil::ZooKeeper::ValueAndStat res = future.second.get();
-                copied_entries.emplace_back(LogEntry::parse(res.value, res.stat));
+                zkutil::GetResponse res = future.second.get();
 
-                ops.emplace_back(std::make_shared<zkutil::Op::Create>(
-                    replica_path + "/queue/queue-", res.value, zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+                copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
+
+                ops.emplace_back(zkutil::makeCreateRequest(
+                    replica_path + "/queue/queue-", res.data, zkutil::CreateMode::PersistentSequential));
 
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART)
@@ -349,27 +350,14 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                 }
             }
 
-            ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+            ops.emplace_back(zkutil::makeSetRequest(
                 replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
 
             if (min_unprocessed_insert_time_changed)
-                ops.emplace_back(std::make_shared<zkutil::Op::SetData>(
+                ops.emplace_back(zkutil::makeSetRequest(
                     replica_path + "/min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
-            try
-            {
-                zookeeper->multi(ops);
-            }
-            catch (const zkutil::KeeperException & ex)
-            {
-                if (ex.isTemporaryError())
-                {
-                    LOG_WARNING(log, "Unknown status of queue update, marking queue dirty (will reload on next iteration).");
-                    is_dirty = true;
-                }
-
-                throw;
-            }
+            auto responses = zookeeper->multi(ops);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
@@ -379,7 +367,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
                 for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
                 {
-                    String path_created = dynamic_cast<zkutil::Op::Create &>(*ops[i]).getPathCreated();
+                    String path_created = dynamic_cast<const zkutil::CreateResponse &>(*responses[i]).path_created;
                     copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
                     std::optional<time_t> unused = false;
@@ -406,7 +394,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
             next_update_event->set();
     }
 
-    return dirty_entries_loaded || !log_entries.empty();
+    return !log_entries.empty();
 }
 
 
@@ -471,7 +459,7 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
             auto code = zookeeper->tryRemove(replica_path + "/queue/" + (*it)->znode_name);
-            if (code != ZOK)
+            if (code)
                 LOG_INFO(log, "Couldn't remove " << replica_path + "/queue/" + (*it)->znode_name << ": "
                     << zkutil::ZooKeeper::error2string(code));
 
@@ -634,7 +622,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
-                sum_parts_size_in_bytes += part->size_in_bytes;
+                sum_parts_size_in_bytes += part->bytes_on_disk;
         }
 
         if (merger.merges_blocker.isCancelled())

@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 
 #include <mutex>
 #include <condition_variable>
-
-
-struct Stat;
 
 
 namespace DB
@@ -100,7 +98,7 @@ struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
 
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
-    static Ptr parse(const String & s, const Stat & stat);
+    static Ptr parse(const String & s, const zkutil::Stat & stat);
 };
 
 

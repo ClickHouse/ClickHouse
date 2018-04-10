@@ -50,7 +50,7 @@ scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-tsan
 ## Start ClickHouse and run tests
 
 ```
-sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1 suppressions=tsan_suppressions' ./clickhouse-tsan server --config /etc/clickhouse-server/config.xml
+sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1' ./clickhouse-tsan server --config /etc/clickhouse-server/config.xml
 ```
 
 
