@@ -1,4 +1,4 @@
-#include <Common/PocoSessionPoolHelpers.h>
+#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/StorageODBC.h>
 #include <Storages/StorageFactory.h>

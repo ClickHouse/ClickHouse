@@ -37,8 +37,8 @@ namespace DB
 
         ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-        if (args.size() != 3 && args.size() != 4)
-            throw Exception("Table function 'file' requires exactly 3 or 4 arguments: path, format, structure and useStorageMemory.",
+        if (args.size() != 3)
+            throw Exception("Table function 'file' requires exactly 3 arguments: path, format and structure.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < 3; ++i)
@@ -47,18 +47,6 @@ namespace DB
         std::string path = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
         std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
-        uint64_t useStorageMemory = 0;
-
-        if (args.size() == 4)
-            useStorageMemory = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<UInt64>();
-
-        std::string clickhouse_data_path = context.getPath() + "data/";
-
-        Poco::Path poco_path = Poco::Path(path);
-        if (poco_path.isRelative())
-            poco_path = Poco::Path(clickhouse_data_path, poco_path);
-
-        std::string absolute_path = poco_path.absolute().toString();
 
         // Create sample block
         std::vector<std::string> structure_vals;
@@ -80,38 +68,11 @@ namespace DB
         }
 
         // Create table
-        ColumnsDescription columns = ColumnsDescription{sample_block.getNamesAndTypesList()};
-        StoragePtr storage;
+        StoragePtr storage = StorageFile::create(
+                path, -1, context.getPath() + "data/", getName(), format,
+                ColumnsDescription{sample_block.getNamesAndTypesList()}, const_cast<Context &>(context));
 
-        if (useStorageMemory)
-        {
-            // Validate path
-            if (!startsWith(absolute_path, clickhouse_data_path))
-                throw Exception("Part path " + absolute_path + " is not inside " + clickhouse_data_path, ErrorCodes::DATABASE_ACCESS_DENIED);
-
-            // Create Storage Memory
-            storage = StorageMemory::create(getName(), columns);
-            storage->startup();
-            BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
-
-            // Write data
-            std::unique_ptr<ReadBuffer> read_buffer = std::make_unique<ReadBufferFromFile>(absolute_path);
-            BlockInputStreamPtr data = std::make_shared<AsynchronousBlockInputStream>(context.getInputFormat(
-                    format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE));
-
-            data->readPrefix();
-            output->writePrefix();
-            while(Block block = data->read())
-                output->write(block);
-            data->readSuffix();
-            output->writeSuffix();
-        }
-        else
-        {
-            Context var_context = context;
-            storage = StorageFile::create(absolute_path, -1, clickhouse_data_path, getName(), format, columns, var_context);
-            storage->startup();
-        }
+        storage->startup();
 
         return storage;
     }

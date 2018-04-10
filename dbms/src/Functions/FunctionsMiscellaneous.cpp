@@ -31,7 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 
 
 namespace DB

@@ -9,17 +9,11 @@ RUN apt-get update && \
     apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
-    apt-get install --allow-unauthenticated -y "clickhouse-server|clickhouse-server-common=$version" libgcc-7-dev && \
+    apt-get install --allow-unauthenticated -y clickhouse-test && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 
-COPY docker_related_config.xml /etc/clickhouse-server/config.d/
-RUN chown -R clickhouse /etc/clickhouse-server/
+# clickhouse-test bug: it doesn't start without server config, remove after release 1.1.54372 :
+RUN mkdir -p /etc/clickhouse-server && echo "<y></y>" > /etc/clickhouse-server/config.xml
 
-USER clickhouse
-EXPOSE 9000 8123 9009
-VOLUME /var/lib/clickhouse
-
-ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
-
-ENTRYPOINT exec /usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}
+ENTRYPOINT ["/usr/bin/clickhouse-test"]
