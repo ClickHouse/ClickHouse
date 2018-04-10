@@ -192,9 +192,12 @@ BlockInputStreams StorageDistributed::read(
     size_t num_remote_shards = cluster->getRemoteShardCount();
     size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
 
-    processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
-        ? QueryProcessingStage::Complete
-        : QueryProcessingStage::WithMergeableState;
+    if (settings.distributed_group_by_no_merge)
+        processed_stage = QueryProcessingStage::Complete;
+    else    /// Normal mode.
+        processed_stage = result_size == 1
+            ? QueryProcessingStage::Complete
+            : QueryProcessingStage::WithMergeableState;
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);

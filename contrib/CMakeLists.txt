@@ -25,10 +25,6 @@ if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
     add_subdirectory (double-conversion)
 endif ()
 
-if (USE_INTERNAL_ZOOKEEPER_LIBRARY)
-    add_subdirectory (zookeeper/src/c)
-endif ()
-
 if (USE_INTERNAL_CITYHASH_LIBRARY)
     add_subdirectory (libcityhash)
 endif ()

@@ -42,7 +42,7 @@ Block IProfilingBlockInputStream::read()
     if (isCancelledOrThrowIfKilled())
         return res;
 
-    if (!checkTimeLimits())
+    if (!checkTimeLimit())
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
@@ -191,7 +191,7 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
 };
 
 
-bool IProfilingBlockInputStream::checkTimeLimits()
+bool IProfilingBlockInputStream::checkTimeLimit()
 {
     if (limits.max_execution_time != 0
         && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
@@ -238,7 +238,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
     if (process_list_elem)
     {
         if (!process_list_elem->updateProgressIn(value))
-            cancel(false);
+            cancel(/* kill */ true);
 
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
@@ -336,6 +336,21 @@ void IProfilingBlockInputStream::cancel(bool kill)
         child.cancel(kill);
         return false;
     });
+}
+
+
+bool IProfilingBlockInputStream::isCancelled() const
+{
+    return is_cancelled;
+}
+
+bool IProfilingBlockInputStream::isCancelledOrThrowIfKilled() const
+{
+    if (!is_cancelled)
+        return false;
+    if (is_killed)
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+    return true;
 }
 
 

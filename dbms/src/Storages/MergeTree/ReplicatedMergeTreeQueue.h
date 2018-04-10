@@ -52,10 +52,6 @@ private:
       */
     Queue queue;
 
-    /// If true, the queue in RAM is possibly out of sync with ZK and we need to reload it.
-    /// Protected by pull_logs_to_queue_mutex.
-    bool is_dirty = false;
-
     InsertsByTime inserts_by_time;
     time_t min_unprocessed_insert_time = 0;
     time_t max_processed_insert_time = 0;
