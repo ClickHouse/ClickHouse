@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
+    extern const int FILE_DOESNT_EXIST;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 };
 
@@ -55,7 +56,7 @@ static void checkCreationIsAllowed(Context & context_global, const std::string &
 
     Poco::File table_path_poco_file = Poco::File(table_path);
     if (!table_path_poco_file.exists())
-        throw Exception("File " + table_path + " is not exists", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception("File " + table_path + " is not exists", ErrorCodes::FILE_DOESNT_EXIST);
     else if (table_path_poco_file.isDirectory())
         throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
