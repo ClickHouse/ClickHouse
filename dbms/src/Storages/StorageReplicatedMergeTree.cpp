@@ -231,7 +231,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
-    /// If zookeeper chroot prefix is used, path should starts with '/', because chroot concatenates without it.
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
@@ -241,33 +241,19 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     bool skip_sanity_checks = false;
 
-    try
+    if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
     {
-        if (current_zookeeper && current_zookeeper->exists(replica_path + "/flags/force_restore_data"))
-        {
-            skip_sanity_checks = true;
-            current_zookeeper->remove(replica_path + "/flags/force_restore_data");
+        skip_sanity_checks = true;
+        current_zookeeper->remove(replica_path + "/flags/force_restore_data");
 
-            LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
-                << replica_path << "/flags/force_restore_data).");
-        }
-        else if (has_force_restore_data_flag)
-        {
-            skip_sanity_checks = true;
-
-            LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
-        }
+        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
+            << replica_path << "/flags/force_restore_data).");
     }
-    catch (const zkutil::KeeperException & e)
+    else if (has_force_restore_data_flag)
     {
-        /// Failed to connect to ZK (this became known when trying to perform the first operation).
-        if (e.code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            current_zookeeper = nullptr;
-        }
-        else
-            throw;
+        skip_sanity_checks = true;
+
+        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
     }
 
     data.loadDataParts(skip_sanity_checks);
@@ -1297,7 +1283,7 @@ void StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         /** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
           */
 
-        /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
+        /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
           * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
           */
         merge_selecting_task_handle->schedule();

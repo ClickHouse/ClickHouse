@@ -570,7 +570,10 @@ private:
     std::optional<WriteBufferFromPocoSocket> out;
 
     int64_t session_id = 0;
+
     std::atomic<XID> xid {1};
+    std::atomic<bool> expired {false};
+    std::mutex finalize_mutex;
 
     using clock = std::chrono::steady_clock;
 
@@ -600,8 +603,6 @@ private:
 
     std::thread send_thread;
     std::thread receive_thread;
-
-    std::atomic<bool> expired {false};
 
     void connect(
         const Addresses & addresses,
