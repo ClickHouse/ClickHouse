@@ -221,10 +221,7 @@ void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block) const
 {
     if (prewhere_actions)
     {
-        bool had_prewhere_column = block.has(prewhere_column_name);
         prewhere_actions->execute(block);
-        if (!had_prewhere_column)
-            block.erase(prewhere_column_name);
 
         if (block.columns() == 0)
             block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});
