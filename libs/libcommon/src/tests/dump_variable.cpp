@@ -1,4 +1,4 @@
-#include <Common/iostream_debug_helpers.h>
+#include <common/iostream_debug_helpers.h>
 
 #include <iostream>
 #include <memory>
@@ -37,7 +37,7 @@ int main(int, char **)
     std::initializer_list<const char *> list{"hello", "world"};
     DUMP(list);
 
-    std::array<const char *, 2> arr{"hello", "world"};
+    std::array<const char *, 2> arr{{"hello", "world"}};
     DUMP(arr);
 
     //DUMP([]{});

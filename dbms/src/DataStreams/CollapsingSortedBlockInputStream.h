@@ -25,10 +25,10 @@ class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 public:
     CollapsingSortedBlockInputStream(
             BlockInputStreams inputs_, const SortDescription & description_,
-            const String & sign_column_, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
+            const String & sign_column, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
         : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
-        , sign_column(sign_column_)
     {
+        sign_column_number = header.getPositionByName(sign_column);
     }
 
     String getName() const override { return "CollapsingSorted"; }
@@ -38,8 +38,7 @@ protected:
     Block readImpl() override;
 
 private:
-    String sign_column;
-    size_t sign_column_number = 0;
+    size_t sign_column_number;
 
     Logger * log = &Logger::get("CollapsingSortedBlockInputStream");
 
