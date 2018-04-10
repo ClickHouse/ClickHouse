@@ -68,9 +68,10 @@ namespace DB
         }
 
         // Create table
-        ColumnsDescription columns = ColumnsDescription{sample_block.getNamesAndTypesList()};
-        std::string clickhouse_data_path = context.getPath() + "data/";
-        StoragePtr storage = StorageFile::create(path, -1, clickhouse_data_path, getName(), format, columns, const_cast<Context &>(context));
+        StoragePtr storage = StorageFile::create(
+                path, -1, context.getPath() + "data/", getName(), format,
+                ColumnsDescription{sample_block.getNamesAndTypesList()}, const_cast<Context &>(context));
+
         storage->startup();
 
         return storage;
