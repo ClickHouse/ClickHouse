@@ -95,8 +95,8 @@ else
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
 
-    if [[ ! -x "pbuilder" ]] ; then
-	sudo apt install pbuilder fakeroot debhelper debian-archive-keyring debian-keyring
+    if [[ -z `which pbuilder` ]] ; then
+        sudo apt install -y pbuilder fakeroot debhelper debian-archive-keyring debian-keyring
     fi
 
     if [[ ! -e "/usr/share/debootstrap/scripts/${DIST}" ]] ; then
