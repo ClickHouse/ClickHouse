@@ -29,10 +29,10 @@ if [ "$1" = configure ]; then
     if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
         if [ "$OS" == "rhel" ] || [ "$OS" == "centos" ] || [ "$OS" == "fedora" ]; then
             adduser --system --no-create-home --home /nonexistent \
-                --shell /bin/false clickhouse > /dev/null
+                --shell /bin/false ${CLICKHOUSE_USER} > /dev/null
         else
             adduser --system --disabled-login --no-create-home --home /nonexistent \
-                --shell /bin/false --group --gecos "ClickHouse server" clickhouse > /dev/null
+                --shell /bin/false --group --gecos "ClickHouse server" ${CLICKHOUSE_USER} > /dev/null
         fi
     fi
 
