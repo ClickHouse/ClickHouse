@@ -3,9 +3,27 @@
 # sh -x clickhouse-report > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
 
-# Also dump some system info (can contain some private data)
-# sh -x clickhouse-report system > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report system | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# Also dump some system info (can contain some private data) and get trace from running clickhouse-server process
+# sh -x clickhouse-report system gdb > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report system gdb | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+
+
+for i in "$@" ; do
+    case $i in
+    gdb)
+        sudo gdb -p $(pidof -s clickhouse-server) -batch -ex 'set pagination off' -ex 'thread apply all backtrace' -ex 'detach' -ex 'quit'
+        shift
+    ;;
+    system)
+        uname -a
+        cat /etc/lsb-release
+        df -h
+        top -bn1
+        ps auxw
+        shift
+    ;;
+    esac
+done
 
 clickhouse-client -q 'SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'
 clickhouse-client -q 'SELECT * FROM system.metrics FORMAT PrettyCompactNoEscapes'
@@ -20,11 +38,3 @@ clickhouse-client -q 'SELECT * FROM system.dictionaries FORMAT PrettyCompactNoEs
 tail -n200 /var/log/clickhouse-server/clickhouse-server.err.log
 tail -n200 /var/log/clickhouse-server/clickhouse-server.log
 tail -n100 /var/log/clickhouse-server/stderr
-
-if [ "$1" = "system" ]; then
-    uname -a
-    cat /etc/lsb-release
-    df -h
-    top -bn1
-    ps auxw
-fi
