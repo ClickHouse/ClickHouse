@@ -29,8 +29,8 @@ Description: Client binary for clickhouse
 Package: clickhouse-common-static
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Replaces: clickhouse-server-common, clickhouse-server-base
-Conflicts: clickhouse-server-common, clickhouse-server-base
+Replaces: clickhouse-server-base
+Provides: clickhouse-server-base
 Description: Common files for clickhouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
@@ -41,7 +41,7 @@ Package: clickhouse-server
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser, tzdata
 Replaces: clickhouse-server-common, clickhouse-server-base
-Conflicts: clickhouse-server-common, clickhouse-server-base
+Provides: clickhouse-server-common
 Description: Server binary for clickhouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
@@ -72,12 +72,10 @@ Package: clickhouse-server-base
 Architecture: any
 Priority: optional
 Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
-Breaks: clickhouse-common-static, clickhouse-server
 Description: DEPRECATED PACKAGE: Server binary for clickhouse
 
 Package: clickhouse-server-common
 Architecture: any
 Priority: optional
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
-Breaks: clickhouse-server
 Description: DEPRECATED PACKAGE: Common configuration files for clickhouse-server-base package
