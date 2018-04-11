@@ -338,8 +338,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     AnalysisResult expressions;
     {
         ExpressionActionsChain chain;
+        PrewhereInfoPtr prewhere_info;
+        ExpressionActionsPtr remove_prewhere_column_actions;
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run, chain);
+        QueryProcessingStage::Enum from_stage = executeFetchColumns(
+                pipeline, dry_run, chain, prewhere_info, remove_prewhere_column_actions);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             to_stage == QueryProcessingStage::WithMergeableState)
@@ -350,6 +353,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                       QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
         expressions = analyzeExpressions(from_stage, chain);
+        if (prewhere_info)
+            prewhere_info->remove_prewhere_column = remove_prewhere_column_actions->getActions().size() > 0; /// Added REMOVE_COLUMN
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -515,8 +520,9 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
     }
 }
 
-QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline, bool dry_run,
-                                                                       ExpressionActionsChain & chain)
+QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
+    Pipeline & pipeline, bool dry_run, ExpressionActionsChain & chain,
+    PrewhereInfoPtr & prewhere_info, ExpressionActionsPtr & remove_prewhere_column_actions)
 {
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
@@ -684,7 +690,10 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
         if (!dry_run && query_analyzer->appendPrewhere(chain, false))
         {
-            query_info.prewhere_actions = chain.getLastActions();
+            query_info.prewhere_info = prewhere_info = std::make_shared<PrewhereInfo>(
+                    chain.getLastActions(), query.prewhere_expression->getColumnName());
+            chain.addStep();
+            remove_prewhere_column_actions = chain.getLastActions();
             chain.addStep();
         }
 

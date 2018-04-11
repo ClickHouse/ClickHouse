@@ -553,8 +553,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
-            query_info.prewhere_actions,
-            prewhere_column,
+            query_info.prewhere_info,
             virt_column_names,
             settings,
             context);
@@ -567,8 +566,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
-            query_info.prewhere_actions,
-            prewhere_column,
+            query_info.prewhere_info,
             virt_column_names,
             settings);
     }
@@ -593,8 +591,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Names & column_names,
     size_t max_block_size,
     bool use_uncompressed_cache,
-    ExpressionActionsPtr prewhere_actions,
-    const String & prewhere_column,
+    const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
     const Settings & settings) const
 {
@@ -629,7 +626,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
 
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
+            num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_info, true,
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
@@ -641,7 +638,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
                 i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
-                prewhere_actions, prewhere_column, settings, virt_columns));
+                prewhere_info, settings, virt_columns));
 
             if (i == 0)
             {
@@ -715,7 +712,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
-                    use_uncompressed_cache, prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io,
+                    use_uncompressed_cache, prewhere_info, true, settings.min_bytes_to_use_direct_io,
                     settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query);
 
                 res.push_back(source_stream);
@@ -734,8 +731,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const Names & column_names,
     size_t max_block_size,
     bool use_uncompressed_cache,
-    ExpressionActionsPtr prewhere_actions,
-    const String & prewhere_column,
+    const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
     const Settings & settings,
     const Context & context) const
@@ -762,7 +758,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
         BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
-            prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
+            prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 
         to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
