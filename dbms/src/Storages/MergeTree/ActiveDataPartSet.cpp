@@ -79,17 +79,20 @@ String ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_i
     return String();
 }
 
-
-Strings ActiveDataPartSet::getParts() const
+Strings ActiveDataPartSet::getPartsImpl() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
-
     Strings res;
     res.reserve(part_info_to_name.size());
     for (const auto & kv : part_info_to_name)
         res.push_back(kv.second);
 
     return res;
+}
+
+Strings ActiveDataPartSet::getParts() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return getPartsImpl();
 }
 
 

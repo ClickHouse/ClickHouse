@@ -167,6 +167,9 @@ public:
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
+    using DataPartsLock = std::unique_lock<std::mutex>;
+    DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
+
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
     /// * Next, if commit() is called, the parts are added to the active set and the parts that are
@@ -177,8 +180,7 @@ public:
     public:
         Transaction() {}
 
-        /// Return parts marked Obsolete as a ressult of the transaction commit.
-        DataPartsVector commit(std::unique_lock<std::mutex> * acquired_data_parts_lock = nullptr);
+        DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
         void rollback();
 
@@ -239,7 +241,7 @@ public:
         }
 
         DataPartPtr data_part;
-        std::unique_lock<std::mutex> alter_lock;
+        DataPartsLock alter_lock;
 
         DataPart::Checksums new_checksums;
         NamesAndTypesList new_columns;
@@ -371,12 +373,14 @@ public:
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
+    DataPartPtr getActiveContainingPartImpl(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock);
 
     /// Returns all parts in specified partition
     DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
 
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
+    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -401,20 +405,23 @@ public:
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
-    /// Bulk version of previous function
-    DataPartsVector renameTempPartsAndReplace(
-        MutableDataPartsVector & parts, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
-
     /// Low-level version of previous one, doesn't lock mutex
     void renameTempPartAndReplaceImpl(
-        MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction,
-        DataPartsVector & out_covered_parts, std::unique_lock<std::mutex> & lock);
+        MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
+        DataPartsVector * out_covered_parts = nullptr);
 
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
-    void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout);
+    void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
+
+    /// Removes all parts from the working set parts
+    ///  for which (partition_id = drop_range.partition_id && min_block >= drop_range.min_block && max_block <= drop_range.max_block).
+    /// If a part intersecting drop_range.max_block is found, an exception will be thrown.
+    /// Used in REPLACE PARTITION command;
+    DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
+                                                     DataPartsLock & lock);
 
     /// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
     /// clearOldParts.
@@ -518,8 +525,8 @@ public:
     /// Tables structure should be locked.
     MergeTreeData * checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
 
-    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & dst_prefix,
-                                                           const MergeTreePartInfo & dst_part_info) const;
+    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
+                                                           const MergeTreePartInfo & dst_part_info);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -693,7 +700,7 @@ private:
     void removePartContributionToColumnSizes(const DataPartPtr & part);
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
-    DataPartPtr getAnyPartInPartition(const String & partition_id, std::unique_lock<std::mutex> & data_parts_lock);
+    DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock);
 
     /// Return parts in the Committed set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.
@@ -701,7 +708,7 @@ private:
         const MergeTreePartInfo & new_part_info,
         const String & new_part_name,
         DataPartPtr & out_covering_part,
-        std::unique_lock<std::mutex> & data_parts_lock) const;
+        DataPartsLock & data_parts_lock) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;

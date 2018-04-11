@@ -343,6 +343,9 @@ private:
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                   NameSet * parts_should_be_retried = nullptr);
 
+    bool removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
+    bool removePartsFromZooKeeperWithRetries(MergeTreeData::DataPartsVector & parts, size_t max_retries = 5);
+
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
 
@@ -367,7 +370,7 @@ private:
 
     void executeClearColumnInPartition(const LogEntry & entry);
 
-    void executeReplaceRange(const LogEntry & entry);
+    bool executeReplaceRange(const LogEntry & entry);
 
     /** Updates the queue.
       */
@@ -413,6 +416,7 @@ private:
       * If not found, returns empty string.
       */
     String findReplicaHavingCoveringPart(const LogEntry & entry, bool active);
+    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
 
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
@@ -430,7 +434,7 @@ private:
 
     /// Creates new block number if block with such block_id does not exist
     std::optional<AbandonableLockInZooKeeper> allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                                  const String & zookeeper_block_id_path);
+                                                                  const String & zookeeper_block_id_path = "");
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .

@@ -176,7 +176,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 {
     last_block_is_duplicate = false;
 
-    /// NOTE No delay in this case. That's Ok.
+    /// NOTE: No delay in this case. That's Ok.
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);

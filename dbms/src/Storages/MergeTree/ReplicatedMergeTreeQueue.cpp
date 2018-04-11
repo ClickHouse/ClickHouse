@@ -94,7 +94,8 @@ void ReplicatedMergeTreeQueue::initialize(
 
 void ReplicatedMergeTreeQueue::insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &)
 {
-    virtual_parts.add(entry->new_part_name);
+    if (!entry->new_part_name.empty())
+        virtual_parts.add(entry->new_part_name);
 
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
     if (entry->type != LogEntry::DROP_RANGE)
@@ -442,7 +443,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
 }
 
 
-void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name)
+void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info)
 {
     Queue to_wait;
     size_t removed_entries = 0;
@@ -453,8 +454,10 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
     std::unique_lock<std::mutex> lock(mutex);
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
-        if (((*it)->type == LogEntry::GET_PART || (*it)->type == LogEntry::MERGE_PARTS) &&
-            MergeTreePartInfo::contains(part_name, (*it)->new_part_name, format_version))
+        auto type = (*it)->type;
+
+        if ((type == LogEntry::GET_PART || type == LogEntry::MERGE_PARTS)
+            && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version)))
         {
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);

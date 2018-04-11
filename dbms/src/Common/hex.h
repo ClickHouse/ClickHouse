@@ -38,14 +38,15 @@ inline void writeHexByteLowercase(UInt8 byte, void * out)
     memcpy(out, &hex_byte_to_char_lowercase_table[static_cast<size_t>(byte) * 2], 2);
 }
 
-/// Keeps leading zeroes (used for checksums)
+
+/// Produces hex representation of an unsigned int with leading zeros (for checksums)
 template <typename TUInt>
 inline void writeHexUIntImpl(TUInt uint, char * out, const char * const table)
 {
     union
     {
         TUInt value;
-        char uint8[sizeof(TUInt)];
+        UInt8 uint8[sizeof(TUInt)];
     };
 
     value = uint;

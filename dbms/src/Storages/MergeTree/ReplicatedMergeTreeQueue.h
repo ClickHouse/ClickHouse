@@ -164,7 +164,7 @@ public:
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+    void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info);
 
     /** Disables future merges and fetches inside entry.new_part_name
      *  If there are currently executing merges or fetches then throws exception.

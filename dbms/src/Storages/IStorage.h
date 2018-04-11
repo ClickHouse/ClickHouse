@@ -225,7 +225,7 @@ public:
     }
 
     /** Execute ALTER TABLE dst.table REPLACE(ATTACH) PARTITION partition FROM src.table */
-    virtual void replacePartitionFrom(const StoragePtr & /*source_table*/, const ASTPtr & /*partition*/, bool /*attach*/, const Context &)
+    virtual void replacePartitionFrom(const StoragePtr & /*source_table*/, const ASTPtr & /*partition*/, bool /*replace*/, const Context &)
     {
         throw Exception("Method replacePartitionFrom is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

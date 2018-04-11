@@ -47,6 +47,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             break;
 
         case REPLACE_RANGE:
+            out << typeToString(REPLACE_RANGE) << "\n";
             replace_range_entry->writeText(out);
             break;
 
@@ -133,10 +134,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
 void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer & out) const
 {
-    out << "partition: " << partition << "\n";
-    out << "drop_range: " << drop_range_start_block << " " << drop_range_end_block << "\n";
-    out << "from_database:" << escape << from_database << "\n";
-    out << "from_table:" << escape << from_table << "\n";
+    out << "partition: " << partition_id << "\n";
+    out << "drop_range: " << drop_range_first_block << " " << drop_range_last_block << "\n";
+    out << "from_database: " << escape << from_database << "\n";
+    out << "from_table: " << escape << from_table << "\n";
 
     out << "source_parts: ";
     writeQuoted(src_part_names, out);
@@ -155,20 +156,20 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer &
 
 void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & in)
 {
-    in >> "partition: " >> partition >> "\n";
-    in >> "drop_range: " >> drop_range_start_block >> " " >> drop_range_end_block >> "\n";
-    in >> "from_database:" >> escape >> from_database >> "\n";
-    in >> "from_table:" >> escape >> from_table >> "\n";
+    in >> "partition: " >> partition_id >> "\n";
+    in >> "drop_range: " >> drop_range_first_block >> " " >> drop_range_last_block >> "\n";
+    in >> "from_database: " >> escape >> from_database >> "\n";
+    in >> "from_table: " >> escape >> from_table >> "\n";
 
     in >> "source_parts: ";
     readQuoted(src_part_names, in);
     in >> "\n";
 
-    in >> "new_parts:";
+    in >> "new_parts: ";
     readQuoted(new_part_names, in);
     in >> "\n";
 
-    in >> "part_checksums:";
+    in >> "part_checksums: ";
     readQuoted(part_names_checksums, in);
     in >> "\n";
 

@@ -153,7 +153,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (!parse_database_and_table(params.from_database, params.from_table))
                     return false;
 
-                params.replace = true;
+                params.replace = false;
                 params.type = ASTAlterQuery::REPLACE_PARTITION;
             }
             else
@@ -172,7 +172,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!parse_database_and_table(params.from_database, params.from_table))
                 return false;
 
-            params.replace = false;
+            params.replace = true;
             params.type = ASTAlterQuery::REPLACE_PARTITION;
         }
         else if (s_attach_part.ignore(pos, expected))

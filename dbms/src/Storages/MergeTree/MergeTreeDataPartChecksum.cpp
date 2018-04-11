@@ -273,6 +273,7 @@ bool MergeTreeDataPartChecksums::isBadChecksumsErrorCode(int code)
            || code == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART;
 }
 
+/// Puts into hash "stream" length of the string and its bytes
 static void updateHash(SipHash & hash, const std::string & data)
 {
     UInt64 len = data.size();
@@ -280,6 +281,7 @@ static void updateHash(SipHash & hash, const std::string & data)
     hash.update(data.data(), len);
 }
 
+/// Hash is the same as MinimalisticDataPartChecksums::hash_of_all_files
 String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
     SipHash hash_of_all_files;
