@@ -95,6 +95,13 @@ else
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
 
+    if [[ ! -x "pbuilder" ]] ; then
+	sudo apt install pbuilder fakeroot debhelper debian-archive-keyring debian-keyring
+    fi
+
+    if [[ ! -e "/usr/share/debootstrap/scripts/${DIST}" ]] ; then
+        sudo ln -s gutsy /usr/share/debootstrap/scripts/${DIST}
+    fi
 
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
         echo Creating base system $BASETGZ
