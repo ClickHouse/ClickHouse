@@ -21,8 +21,8 @@ private:
 
 public:
     /// filter_column_ - the number of the column with filter conditions.
-    FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, ssize_t filter_column_);
-    FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name_);
+    FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, ssize_t filter_column_, bool remove_filter = false);
+    FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name_, bool remove_filter = false);
 
     String getName() const override;
     Block getTotals() override;
@@ -35,8 +35,11 @@ private:
     ExpressionActionsPtr expression;
     Block header;
     ssize_t filter_column;
+    bool remove_filter;
 
     ConstantFilterDescription constant_filter_description;
+
+    Block removeFilterIfNeed(Block && block);
 };
 
 }

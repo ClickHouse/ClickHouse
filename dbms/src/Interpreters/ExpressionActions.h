@@ -230,7 +230,9 @@ struct ExpressionActionsChain
     struct Step
     {
         ExpressionActionsPtr actions;
+        NameSet additional_input;
         Names required_output;
+        std::vector<std::shared_ptr<bool>> can_remove_required_output; /// Has the same size with required_output, is filled in finalize()
 
         Step(const ExpressionActionsPtr & actions_ = nullptr, const Names & required_output_ = Names())
             : actions(actions_), required_output(required_output_) {}

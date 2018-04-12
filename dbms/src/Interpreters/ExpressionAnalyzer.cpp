@@ -60,6 +60,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -2429,7 +2430,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     return true;
 }
 
-bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types)
+bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types, std::shared_ptr<bool> & remove_filter)
 {
     assertSelect();
 
@@ -2437,15 +2438,61 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
         return false;
 
     initChain(chain, source_columns);
-    ExpressionActionsChain::Step & step = chain.steps.back();
-
-    step.required_output.push_back(select_query->prewhere_expression->getColumnName());
+    auto & step = chain.getLastStep();
     getRootActions(select_query->prewhere_expression, only_types, false, step.actions);
+    String prewhere_column_name = select_query->prewhere_expression->getColumnName();
+    step.required_output.push_back(prewhere_column_name);
+    step.can_remove_required_output = {remove_filter = std::make_shared<bool>(true)};
+
+    {
+        /// Remove unused source_columns from prewhere actions.
+        auto tmp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
+        getRootActions(select_query->prewhere_expression, only_types, false, tmp_actions);
+        tmp_actions->finalize({prewhere_column_name});
+        auto required_columns = tmp_actions->getRequiredColumns();
+        NameSet required_source_columns(required_columns.begin(), required_columns.end());
+
+        auto names = step.actions->getSampleBlock().getNames();
+        NameSet name_set(names.begin(), names.end());
+
+        for (const auto & column : source_columns)
+            if (required_source_columns.count(column.name) == 0)
+                name_set.erase(column.name);
+
+        Names required_output(name_set.begin(), name_set.end());
+        step.actions->finalize(required_output);
+    }
+
+    {
+        /// Add empty action with input = {prewhere actions output} + {unused source columns}
+        /// Reasons:
+        /// 1. Remove remove source columns which are used only in prewhere actions during prewhere actions execution.
+        ///    Example: select A prewhere B > 0. B can be removed at prewhere step.
+        /// 2. Store side columns which were calculated during prewhere actions execution if they are used.
+        ///    Example: select F(A) prewhere F(A) > 0. F(A) can be saved from prewhere step.
+        /// 3. Check if we can remove filer column at prewhere step. If we can, action will store single REMOVE_COLUMN.
+        ColumnsWithTypeAndName columns = step.actions->getSampleBlock().getColumnsWithTypeAndName();
+        auto required_columns = step.actions->getRequiredColumns();
+        NameSet prewhere_input_names(required_columns.begin(), required_columns.end());
+        NameSet unused_source_columns;
+
+        for (const auto & column : source_columns)
+        {
+            if (prewhere_input_names.count(column.name) == 0)
+            {
+                columns.emplace_back(column.type, column.name);
+                unused_source_columns.emplace(column.name);
+            }
+        }
+
+        chain.steps.emplace_back(std::make_shared<ExpressionActions>(std::move(columns), settings));
+        chain.steps.back().additional_input = std::move(unused_source_columns);
+    }
 
     return true;
 }
 
-bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
+bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types, std::shared_ptr<bool> & remove_filter)
 {
     assertSelect();
 
@@ -2456,6 +2503,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     step.required_output.push_back(select_query->where_expression->getColumnName());
+    step.can_remove_required_output = {remove_filter = std::make_shared<bool>(true)};
     getRootActions(select_query->where_expression, only_types, false, step.actions);
 
     return true;

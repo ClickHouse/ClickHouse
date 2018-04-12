@@ -27,7 +27,7 @@ struct PrewhereInfo
     bool remove_prewhere_column = false;
 
     PrewhereInfo() = default;
-    explicit PrewhereInfo(ExpressionActionsPtr && prewhere_actions_, String prewhere_column_name_)
+    explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 };
 
