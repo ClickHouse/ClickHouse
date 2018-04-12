@@ -251,6 +251,8 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
         */
 
+    std::shared_ptr<bool> remove_where_filter;
+
     {
         res.need_aggregate = query_analyzer->hasAggregation();
 
@@ -263,7 +265,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             chain.addStep();
         }
 
-        if (query_analyzer->appendWhere(chain, !res.first_stage))
+        if (query_analyzer->appendWhere(chain, !res.first_stage, remove_where_filter))
         {
             res.has_where = true;
             res.before_where = chain.getLastActions();
@@ -310,7 +312,10 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
     if (res.has_where)
+    {
         res.before_where->prependProjectInput();
+        res.remove_where_filter = *remove_where_filter;
+    }
     if (res.has_having)
         res.before_having->prependProjectInput();
 
@@ -339,10 +344,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     {
         ExpressionActionsChain chain;
         PrewhereInfoPtr prewhere_info;
-        ExpressionActionsPtr remove_prewhere_column_actions;
+        std::shared_ptr<bool> remove_prewhere_filter;
+
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        QueryProcessingStage::Enum from_stage = executeFetchColumns(
-                pipeline, dry_run, chain, prewhere_info, remove_prewhere_column_actions);
+        QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run, chain,
+                                                                    prewhere_info, remove_prewhere_filter);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             to_stage == QueryProcessingStage::WithMergeableState)
@@ -353,8 +359,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                       QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
         expressions = analyzeExpressions(from_stage, chain);
+
         if (prewhere_info)
-            prewhere_info->remove_prewhere_column = remove_prewhere_column_actions->getActions().size() > 0; /// Added REMOVE_COLUMN
+            prewhere_info->remove_prewhere_column = *remove_prewhere_filter;
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -391,7 +398,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             }
 
             if (expressions.has_where)
-                executeWhere(pipeline, expressions.before_where);
+                executeWhere(pipeline, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
                 executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final);
@@ -522,7 +529,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
     Pipeline & pipeline, bool dry_run, ExpressionActionsChain & chain,
-    PrewhereInfoPtr & prewhere_info, ExpressionActionsPtr & remove_prewhere_column_actions)
+    PrewhereInfoPtr & prewhere_info, std::shared_ptr<bool> & remove_prewhere_filter)
 {
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
@@ -688,12 +695,10 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
                 optimize_prewhere(*merge_tree);
         }
 
-        if (!dry_run && query_analyzer->appendPrewhere(chain, false))
+        if (!dry_run && query_analyzer->appendPrewhere(chain, false, remove_prewhere_filter))
         {
             query_info.prewhere_info = prewhere_info = std::make_shared<PrewhereInfo>(
-                    chain.getLastActions(), query.prewhere_expression->getColumnName());
-            chain.addStep();
-            remove_prewhere_column_actions = chain.getLastActions();
+                    chain.steps.front().actions, query.prewhere_expression->getColumnName());
             chain.addStep();
         }
 
@@ -759,11 +764,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
 }
 
 
-void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression)
+void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter)
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(stream, expression, query.where_expression->getColumnName());
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, query.where_expression->getColumnName(), remove_fiter);
     });
 }
 

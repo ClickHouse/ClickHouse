@@ -124,8 +124,10 @@ private:
         bool has_order_by   = false;
         bool has_limit_by   = false;
 
+        bool remove_prewhere_filter = false;
+        bool remove_where_filter = false;
+
         ExpressionActionsPtr before_join;   /// including JOIN
-        ExpressionActionsPtr before_prewhere;
         ExpressionActionsPtr before_where;
         ExpressionActionsPtr before_aggregation;
         ExpressionActionsPtr before_having;
@@ -159,9 +161,9 @@ private:
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
     QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run, ExpressionActionsChain & chain,
                                                    PrewhereInfoPtr & prewhere_info,
-                                                   ExpressionActionsPtr & remove_prewhere_column_actions);
+                                                   std::shared_ptr<bool> & remove_prewhere_filter);
 
-    void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row);
