@@ -867,7 +867,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const MergeTreeData::DataPartPtr & part : unexpected_parts)
     {
         LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-        data.renameAndDetachPart(part, "ignored_", true);
+        data.forgivePartAndMoveToDetached(part, "ignored_", true);
     }
 }
 
@@ -1478,48 +1478,41 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 {
     LOG_INFO(log, (entry.detach ? "Detaching" : "Removing") << " parts inside " << entry.new_part_name << ".");
 
-    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
-    queue.removeGetsAndMergesInRange(getZooKeeper(), entry_part_info);
+    auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
+    queue.removeGetsAndMergesInRange(getZooKeeper(), drop_range_info);
 
     LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
-    size_t removed_parts = 0;
 
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
     ///  after adding a new replica, this new replica downloads them, but does not delete them.
     /// And, if you do not, the parts will come to life after the server is restarted.
     /// Therefore, we use all data parts.
-    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
 
-    Strings part_names_to_remove;
-
-    for (const auto & part : parts)
+    MergeTreeData::DataPartsVector parts_to_remove;
     {
-        if (!entry_part_info.contains(part->info))
-            continue;
+        auto data_parts_lock = data.lockParts();
+        parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range_info, true, true, data_parts_lock);
+    }
 
-        LOG_DEBUG(log, "Removing part " << part->name);
-        ++removed_parts;
-
-        /// If you do not need to delete a part, it's more reliable to move the directory before making changes to ZooKeeper.
-        if (entry.detach)
-            data.renameAndDetachPart(part);
-
-        part_names_to_remove.emplace_back(part->name);
-
-        /// If the part needs to be removed, it is more reliable to delete the directory after the changes in ZooKeeper.
-        if (!entry.detach)
-            data.removePartsFromWorkingSet({part}, true);
+    if (entry.detach)
+    {
+        /// If DETACH clone parts to detached/ directory
+        for (const auto & part : parts_to_remove)
+        {
+            LOG_INFO(log, "Detaching " << part->relative_path);
+            part->makeCloneInDetached("");
+        }
     }
 
     /// Forcibly remove parts from ZooKeeper
-    removePartsFromZooKeeperWithRetries(part_names_to_remove);
-    parts.clear();
+    removePartsFromZooKeeperWithRetries(parts_to_remove);
 
-    LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << ".");
+    LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside " << entry.new_part_name << ".");
 
     /// We want to remove dropped parts from disk as soon as possible
     /// To be removed a partition should have zero refcount, therefore call the cleanup thread at exit
+    parts_to_remove.clear();
     cleanup_thread_event.set();
 }
 
@@ -1649,7 +1642,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
         }
 
         if (parts_to_add.empty())
-            parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+            parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
 
     if (parts_to_add.empty())
@@ -1866,7 +1859,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
         auto data_parts_lock = data.lockParts();
 
         transaction.commit(&data_parts_lock);
-        parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+        parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
 
     removePartsFromZooKeeperWithRetries(parts_to_remove);
@@ -4340,7 +4333,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         auto data_parts_lock = data.lockParts();
 
         transaction.commit(&data_parts_lock);
-        parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+        parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
 
     String log_znode_path = dynamic_cast<const zkutil::CreateResponse &>(*op_results.back()).path_created;

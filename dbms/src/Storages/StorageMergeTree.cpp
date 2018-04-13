@@ -465,32 +465,33 @@ bool StorageMergeTree::optimize(
 
 void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & partition, bool detach, const Context & context)
 {
-    /// Asks to complete merges and does not allow them to start.
-    /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger.merges_blocker.cancel();
-    /// Waits for completion of merge and does not start new ones.
-    auto lock = lockForAlter(__PRETTY_FUNCTION__);
-
-    String partition_id = data.getPartitionIDFromQuery(partition, context);
-
-    size_t removed_parts = 0;
-    auto parts = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-
-    for (const auto & part : parts)
     {
-        if (part->info.partition_id != partition_id)
-            throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = merger.merges_blocker.cancel();
+        /// Waits for completion of merge and does not start new ones.
+        auto lock = lockForAlter(__PRETTY_FUNCTION__);
 
-        LOG_DEBUG(log, "Removing part " << part->name);
-        ++removed_parts;
+        String partition_id = data.getPartitionIDFromQuery(partition, context);
+
+        /// TODO: should we include PreComitted parts like in Replicated case?
+        auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        data.removePartsFromWorkingSet(parts_to_remove, true);
 
         if (detach)
-            data.renameAndDetachPart(part, "");
-        else
-            data.removePartsFromWorkingSet({part}, false);
+        {
+            /// If DETACH clone parts to detached/ directory
+            for (const auto & part : parts_to_remove)
+            {
+                LOG_INFO(log, "Detaching " << part->relative_path);
+                part->makeCloneInDetached("");
+            }
+        }
+
+        LOG_INFO(log, (detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
     }
 
-    LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside partition ID " << partition_id << ".");
+    data.clearOldPartsFromFilesystem();
 }
 
 
@@ -606,7 +607,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
         if (replace)
-            data.removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+            data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
 }
 

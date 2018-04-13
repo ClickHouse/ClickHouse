@@ -415,18 +415,22 @@ public:
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
     void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
+    void removePartsFromWorkingSetImpl(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
     /// Removes all parts from the working set parts
     ///  for which (partition_id = drop_range.partition_id && min_block >= drop_range.min_block && max_block <= drop_range.max_block).
     /// If a part intersecting drop_range.max_block is found, an exception will be thrown.
     /// Used in REPLACE PARTITION command;
     DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
-                                                     DataPartsLock & lock);
+                                                     bool skip_intersecting_parts, DataPartsLock & lock);
 
-    /// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
-    /// clearOldParts.
+    /// Renames the part to detached/<prefix>_<part> and removes it from working set.
+    void removePartsFromWorkingSetAndCloneToDetached(const DataPartsVector & parts, bool clear_without_timeout, const String & prefix = "");
+
+    /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
+    //// so it will not be deleted in clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
-    void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
+    void forgivePartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.

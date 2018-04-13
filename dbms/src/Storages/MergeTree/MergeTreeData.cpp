@@ -553,7 +553,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (auto & part : broken_parts_to_remove)
         part->remove();
     for (auto & part : broken_parts_to_detach)
-        part->renameAddPrefix(true, "");
+        part->renameToDetached("");
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
     /// were merged), but that for some reason are still not deleted from the filesystem.
@@ -1545,6 +1545,23 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     return covered_parts;
 }
 
+void MergeTreeData::removePartsFromWorkingSetImpl(const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
+{
+    auto remove_time = clear_without_timeout ? 0 : time(nullptr);
+
+    for (const DataPartPtr & part : remove)
+    {
+        if (part->state == MergeTreeDataPart::State::Committed)
+            removePartContributionToColumnSizes(part);
+
+        if (part->state == MergeTreeDataPart::State::Committed || clear_without_timeout)
+            part->remove_time.store(remove_time, std::memory_order_relaxed);
+
+        if (part->state != MergeTreeDataPart::State::Outdated)
+            modifyPartState(part, MergeTreeDataPart::State::Outdated);
+    }
+}
+
 void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
 {
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
@@ -1557,20 +1574,11 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
         part->assertState({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
     }
 
-    auto remove_time = clear_without_timeout ? 0 : time(nullptr);
-    for (const DataPartPtr & part : remove)
-    {
-        if (part->state == DataPartState::Committed)
-            removePartContributionToColumnSizes(part);
-
-        modifyPartState(part, DataPartState::Outdated);
-        part->remove_time.store(remove_time, std::memory_order_relaxed);
-    }
+    removePartsFromWorkingSetImpl(remove, clear_without_timeout, lock);
 }
 
-
 MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
-                                                                               DataPartsLock & /* lock */)
+                                                                               bool skip_intersecting_parts, DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
 
@@ -1587,7 +1595,13 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.min_block < drop_range.min_block)
         {
             if (part->info.max_block >= drop_range.min_block)
-                throw Exception("Unexpected merged part " + part->name + " intersecting drop range.", ErrorCodes::LOGICAL_ERROR);
+            {
+                String error = "Unexpected merged part " + part->name + " intersecting drop range.";
+                if (!skip_intersecting_parts)
+                    throw Exception(error, ErrorCodes::LOGICAL_ERROR);
+
+                LOG_WARNING(log, error);
+            }
 
             continue;
         }
@@ -1597,7 +1611,14 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             break;
 
         if (part->info.min_block <= drop_range.max_block && part->info.max_block > drop_range.max_block)
-            throw Exception("Unexpected merged part " + part->name + " intersecting drop range. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        {
+            String error = "Unexpected merged part " + part->name + " intersecting drop range.";
+            if (!skip_intersecting_parts)
+                throw Exception(error, ErrorCodes::LOGICAL_ERROR);
+
+            LOG_WARNING(log, error);
+            continue;
+        }
 
         if (part->state == DataPartState::Deleting)
             continue;
@@ -1605,42 +1626,31 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         parts_to_remove.emplace_back(part);
     }
 
-    time_t remove_time = clear_without_timeout ? 0 : time(nullptr);
-
-    for (const DataPartPtr & part : parts_to_remove)
-    {
-        if (part->state == DataPartState::Committed)
-        {
-            removePartContributionToColumnSizes(part);
-            part->remove_time.store(remove_time);
-        }
-
-        modifyPartState(part, DataPartState::Outdated);
-    }
+    removePartsFromWorkingSetImpl(parts_to_remove, clear_without_timeout, lock);
 
     return parts_to_remove;
 }
 
-
-void MergeTreeData::renameAndDetachPart(const DataPartPtr & part_to_detach, const String & prefix, bool restore_covered,
-                                        bool move_to_detached)
+void MergeTreeData::forgivePartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
+restore_covered)
 {
-    LOG_INFO(log, "Renaming " << part_to_detach->relative_path << " to " << prefix << part_to_detach->name << " and detaching it.");
+    LOG_INFO(log, "Renaming " << part_to_detach->relative_path << " to " << prefix << part_to_detach->name << " and forgiving it.");
 
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    auto data_parts_lock = lockParts();
 
     auto it_part = data_parts_by_info.find(part_to_detach->info);
     if (it_part == data_parts_by_info.end())
         throw Exception("No such data part " + part_to_detach->getNameWithState(), ErrorCodes::NO_SUCH_DATA_PART);
 
-    /// What if part_to_detach is reference to *it_part? Make a new owner just in case.
+    /// What if part_to_detach is a reference to *it_part? Make a new owner just in case.
     DataPartPtr part = *it_part;
 
     if (part->state == DataPartState::Committed)
         removePartContributionToColumnSizes(part);
     modifyPartState(it_part, DataPartState::Deleting);
-    if (move_to_detached || !prefix.empty())
-        part->renameAddPrefix(move_to_detached, prefix);
+
+    part->renameToDetached(prefix);
+
     data_parts_indexes.erase(it_part);
 
     if (restore_covered && part->info.level == 0)

@@ -248,22 +248,18 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     if (!zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts))
         return;
 
+    /// Firstly, remove parts from ZooKeeper
+    storage.removePartsFromZooKeeperWithRetries(failed_parts);
+
     for (auto part_name : failed_parts)
     {
         auto part = storage.data.getPartIfExists(
             part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+
         if (part)
         {
             LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
-
-            zkutil::Requests ops;
-            zkutil::Responses responses;
-            storage.removePartFromZooKeeper(part_name, ops);
-            auto code = zookeeper->tryMulti(ops, responses);
-            if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
-                LOG_WARNING(log, "Part " << part_name << " with failed quorum is not in ZooKeeper. This shouldn't happen often.");
-
-            storage.data.renameAndDetachPart(part, "noquorum");
+            storage.data.forgivePartAndMoveToDetached(part, "noquorum");
         }
     }
 }

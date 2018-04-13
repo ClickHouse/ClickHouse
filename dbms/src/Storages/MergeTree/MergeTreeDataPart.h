@@ -8,6 +8,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Columns/IColumn.h>
 #include <shared_mutex>
+#include "../../../../contrib/poco/Foundation/include/Poco/Path.h"
+#include "../../Core/Types.h"
 
 
 namespace DB
@@ -225,8 +227,14 @@ struct MergeTreeDataPart
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
 
-    /// Renames a part by appending a prefix to the name. To_detached - also moved to the detached directory.
-    void renameAddPrefix(bool to_detached, const String & prefix) const;
+    /// Generate unique path to detach part
+    String getRelativePathForDetachedPart(const String & prefix) const;
+
+    /// Moves a part to detached/ directory and adds prefix to its name
+    void renameToDetached(const String & prefix) const;
+
+    /// Makes clone of a part in detached/ directory via hard links
+    void makeCloneInDetached(const String & prefix) const;
 
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;
