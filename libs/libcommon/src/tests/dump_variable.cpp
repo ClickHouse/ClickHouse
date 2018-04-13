@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <set>
 #include <tuple>
 #include <array>
 #include <utility>
@@ -11,6 +12,18 @@
 
 struct S1;
 struct S2 {};
+
+struct S3
+{
+    std::set<const char *> m1;
+};
+
+std::ostream & operator<<(std::ostream & stream, const S3 & what)
+{
+    stream << "S3 {m1=";
+    dumpValue(stream, what.m1) << "}";
+    return stream;
+}
 
 int main(int, char **)
 {
@@ -46,6 +59,12 @@ int main(int, char **)
     DUMP(s);
 
     DUMP(S2());
+
+    std::set<const char *> variants = {"hello", "world"};
+    DUMP(variants);
+
+    S3 s3 {{"hello", "world"}};
+    DUMP(s3);
 
     return 0;
 }
