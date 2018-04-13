@@ -4,11 +4,11 @@ All the functions return a Float64 number. The accuracy of the result is close t
 
 ## e()
 
-Accepts zero arguments and returns a Float64 number close to the e number.
+Returns a Float64 number close to the e number.
 
 ## pi()
 
-Accepts zero arguments and returns a Float64 number close to π.
+Returns a Float64 number close to π.
 
 ## exp(x)
 
@@ -20,7 +20,7 @@ Accepts a numeric argument and returns a Float64 number close to the natural log
 
 ## exp2(x)
 
-Accepts a numeric argument and returns a Float64 number close to 2x.
+Accepts a numeric argument and returns a Float64 number close to 2^x.
 
 ## log2(x)
 
@@ -28,7 +28,7 @@ Accepts a numeric argument and returns a Float64 number close to the binary loga
 
 ## exp10(x)
 
-Accepts a numeric argument and returns a Float64 number close to 10x.
+Accepts a numeric argument and returns a Float64 number close to 10^x.
 
 ## log10(x)
 
@@ -96,4 +96,4 @@ The arc tangent.
 
 ## pow(x, y)
 
-xy.
+Accepts two numeric arguments and returns a Float64 number close to x^y.

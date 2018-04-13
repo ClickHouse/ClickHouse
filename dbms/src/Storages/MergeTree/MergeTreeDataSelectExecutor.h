@@ -53,8 +53,7 @@ private:
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         const Names & virt_columns,
-        const Settings & settings,
-        const Context & context) const;
+        const Settings & settings) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(

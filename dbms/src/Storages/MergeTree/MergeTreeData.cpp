@@ -2172,7 +2172,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
     return total_covered_parts;
 }
 
-bool MergeTreeData::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
+bool MergeTreeData::isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     String column_name = node->getColumnName();
 
@@ -2180,9 +2180,12 @@ bool MergeTreeData::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & 
         if (column_name == column.column_name)
             return true;
 
+    if (partition_expr_ast && partition_expr_ast->children.at(0)->getColumnName() == column_name)
+        return true;
+
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
         if (func->arguments->children.size() == 1)
-            return isPrimaryKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
+            return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
     return false;
 }
@@ -2195,15 +2198,15 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
-            if (isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+            if (isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
 
         /// The tuple itself may be part of the primary key, so check that as a last resort.
-        return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
-        return isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }
 

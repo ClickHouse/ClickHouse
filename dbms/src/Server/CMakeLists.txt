@@ -37,7 +37,7 @@ add_library (clickhouse-extract-from-config-lib ${SPLIT_SHARED} ExtractFromConfi
 target_link_libraries (clickhouse-extract-from-config-lib clickhouse_common_config clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-client-lib Client.cpp)
-target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-client-lib PRIVATE ${READLINE_INCLUDE_DIR})
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
 
@@ -56,7 +56,7 @@ add_library (clickhouse-format-lib ${SPLIT_SHARED} Format.cpp)
 target_link_libraries (clickhouse-format-lib dbms clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-copier-lib ClusterCopier.cpp)
-target_link_libraries (clickhouse-copier-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_link_libraries (clickhouse-copier-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions)
 
 if (USE_EMBEDDED_COMPILER)
     link_directories (${LLVM_LIBRARY_DIRS})
