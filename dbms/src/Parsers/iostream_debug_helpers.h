@@ -3,7 +3,7 @@
 
 namespace DB
 {
-class Token;
+struct Token;
 std::ostream & operator<<(std::ostream & stream, const Token & what);
 
 struct Expected;
