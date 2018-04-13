@@ -259,9 +259,26 @@ public:
             path = zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
     }
 
+    EphemeralNodeHolder(EphemeralNodeHolder && other)
+        : zookeeper(other.zookeeper)
+        , metric_increment(std::move(other.metric_increment))
+    {
+        std::swap(path, other.path);
+    }
+
     std::string getPath() const
     {
         return path;
+    }
+
+    void getRemoveOps(zkutil::Requests & ops) const
+    {
+        ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
+    }
+
+    void assumeRemoved()
+    {
+        path.clear();
     }
 
     static Ptr create(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
@@ -281,6 +298,9 @@ public:
 
     ~EphemeralNodeHolder()
     {
+        if (path.empty())
+            return;
+
         try
         {
             zookeeper.tryRemove(path);

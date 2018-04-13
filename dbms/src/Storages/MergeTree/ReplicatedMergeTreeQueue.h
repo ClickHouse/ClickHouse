@@ -76,6 +76,8 @@ private:
       */
     ActiveDataPartSet virtual_parts;
 
+    std::set<Int64> ephemeral_block_numbers;
+
     Logger * log = nullptr;
 
 
@@ -192,7 +194,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Will a part in the future be merged into a larger part (or merges of parts in this range are prohibited)?
-    bool partWillBeMergedOrMergesDisabled(const String & part_name) const;
+    bool canMergeParts(const String & left, const String & right, String * out_reason = nullptr) const;
 
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);

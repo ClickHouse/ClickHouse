@@ -224,11 +224,14 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         deduplication_check_ops_ptr = &deduplication_check_ops;
     }
 
-    AbandonableLockInZooKeeper block_number_lock;
+    Int64 block_number;
+    zkutil::EphemeralNodeHolder::Ptr block_number_holder;
     try
     {
-        /// 2 RTT
-        block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, deduplication_check_ops_ptr);
+        auto number_and_node = storage.allocateBlockNumber(*zookeeper, deduplication_check_ops_ptr);
+        block_number = number_and_node.first;
+        block_number_holder = number_and_node.second;
+        LOG_TRACE(log, "Allocated block number " << block_number);
     }
     catch (const zkutil::KeeperMultiException & e)
     {
@@ -247,8 +250,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     {
         throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
     }
-
-    Int64 block_number = block_number_lock.getNumber();
 
     /// Set part attributes according to part_number. Prepare an entry for log.
 
@@ -312,7 +313,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         zkutil::CreateMode::PersistentSequential));
 
     /// Deletes the information that the block number is used for writing.
-    block_number_lock.getUnlockOps(ops);
+    block_number_holder->getRemoveOps(ops);
 
     /** If you need a quorum - create a node in which the quorum is monitored.
         * (If such a node already exists, then someone has managed to make another quorum record at the same time, but for it the quorum has not yet been reached.
@@ -361,11 +362,12 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     if (multi_code == ZooKeeperImpl::ZooKeeper::ZOK)
     {
+        LOG_TRACE(log, "Released block number " << block_number);
+        block_number_holder->assumeRemoved();
+
         transaction.commit();
         storage.merge_selecting_event.set();
 
-        /// Lock nodes have been already deleted, do not delete them in destructor
-        block_number_lock.assumeUnlocked();
     }
     else if (zkutil::isUserError(multi_code))
     {

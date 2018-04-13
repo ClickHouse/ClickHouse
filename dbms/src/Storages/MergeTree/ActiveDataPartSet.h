@@ -26,6 +26,8 @@ public:
     /// If not found, returns an empty string.
     String getContainingPart(const String & name) const;
 
+    Strings getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
+
     Strings getParts() const; /// In ascending order of the partition_id and block number.
 
     size_t size() const;

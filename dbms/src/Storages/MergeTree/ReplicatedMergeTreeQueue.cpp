@@ -266,7 +266,23 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
-    Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+    Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log", nullptr, next_update_event);
+
+    std::set<Int64> new_ephemeral_block_numbers;
+    for (const String & entry : log_entries)
+    {
+        if (!startsWith(entry, "block_number-"))
+            continue;
+
+        Int64 number = parse<Int64>(entry.substr(strlen("block_number-")));
+        new_ephemeral_block_numbers.insert(number);
+    }
+
+    log_entries.erase(
+        std::remove_if(
+            log_entries.begin(), log_entries.end(),
+            [](const String & s) { return !startsWith(s, "log-"); }),
+        log_entries.end());
 
     if (index_str.empty())
     {
@@ -363,7 +379,9 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             try
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard lock(mutex);
+
+                ephemeral_block_numbers.swap(new_ephemeral_block_numbers);
 
                 for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
                 {
@@ -386,12 +404,6 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
             if (!copied_entries.empty())
                 LOG_DEBUG(log, "Pulled " << copied_entries.size() << " entries to queue.");
         }
-    }
-
-    if (next_update_event)
-    {
-        if (zookeeper->exists(zookeeper_path + "/log/log-" + padIndex(index), nullptr, next_update_event))
-            next_update_event->set();
     }
 
     return !log_entries.empty();
@@ -772,9 +784,57 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-bool ReplicatedMergeTreeQueue::partWillBeMergedOrMergesDisabled(const String & part_name) const
+bool ReplicatedMergeTreeQueue::canMergeParts(const String & left, const String & right, String * out_reason) const
 {
-    return virtual_parts.getContainingPart(part_name) != part_name;
+    auto set_reason = [&out_reason] (const String & part_name)
+    {
+        if (out_reason)
+            *out_reason = "Part " + part_name + " cannot be merged yet, a merge has already assigned for it or it is temporarily disabled";
+        return false;
+    };
+
+    auto left_info = MergeTreePartInfo::fromPartName(left, format_version);
+    auto right_info = MergeTreePartInfo::fromPartName(right, format_version);
+
+    std::lock_guard lock(mutex);
+
+    if (virtual_parts.getContainingPart(left) != left)
+        return set_reason(left);
+
+    if (right != left && virtual_parts.getContainingPart(right) != right)
+        return set_reason(right);
+
+    Int64 left_max_block = left_info.max_block;
+    Int64 right_min_block = right_info.min_block;
+
+    if (left_max_block > right_min_block)
+        std::swap(left_max_block, right_min_block);
+
+    if (left_max_block + 1 < right_min_block)
+    {
+        auto left_eph_it = ephemeral_block_numbers.upper_bound(left_max_block);
+        if (left_eph_it != ephemeral_block_numbers.end() && *left_eph_it < right_min_block)
+        {
+            if (out_reason)
+                *out_reason = "Block number " + toString(*left_eph_it) + " is still being inserted between parts "
+                    + left + " and " + right;
+
+            return false;
+        }
+
+        MergeTreePartInfo gap_part_info(
+            left_info.partition_id, left_max_block + 1, right_min_block - 1, 999999);
+
+        Strings covered = virtual_parts.getPartsCoveredBy(gap_part_info);
+        if (!covered.empty())
+        {
+            if (out_reason)
+                *out_reason = "There are " + toString(covered.size()) + " parts that are still being not ready between " + left + " and " + right;
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)

@@ -80,6 +80,47 @@ String ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_i
 }
 
 
+Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
+{
+    std::lock_guard lock(mutex);
+
+    auto it_middle = part_info_to_name.lower_bound(part_info);
+    auto begin = it_middle;
+    while (begin != part_info_to_name.begin())
+    {
+        auto prev = std::prev(begin);
+        if (!part_info.contains(prev->first))
+        {
+            if (prev->first.contains(part_info))
+                return {};
+
+            break;
+        }
+
+        begin = prev;
+    }
+
+    auto end = it_middle;
+    while (end != part_info_to_name.end())
+    {
+        if (!part_info.contains(end->first))
+        {
+            if (end->first.contains(part_info))
+                return {};
+            break;
+        }
+
+        ++end;
+    }
+
+    Strings covered;
+    for (auto it = begin; it != end; ++it)
+        covered.push_back(it->second);
+
+    return covered;
+}
+
+
 Strings ActiveDataPartSet::getParts() const
 {
     std::lock_guard<std::mutex> lock(mutex);
