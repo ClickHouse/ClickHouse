@@ -220,8 +220,8 @@ private:
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
-    std::atomic_bool is_leader_node {false};
-    std::mutex leader_node_mutex;
+    std::atomic<bool> is_leader {false};
+    zkutil::LeaderElectionPtr leader_election;
 
     InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
 
@@ -239,7 +239,6 @@ private:
 
     DataPartsExchange::Fetcher fetcher;
 
-    zkutil::LeaderElectionPtr leader_election;
 
     /// When activated, replica is initialized and startup() method could exit
     Poco::Event startup_event;
@@ -334,7 +333,7 @@ private:
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
-                                  NameSet * parts_should_be_retied = nullptr);
+                                  NameSet * parts_should_be_retried = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -368,9 +367,15 @@ private:
       */
     bool queueTask();
 
-    /// Select the parts to merge.
+    /// Postcondition:
+    /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
+    /// or an exception is thrown and leader_election is destroyed.
+    void enterLeaderElection();
 
-    void becomeLeader();
+    /// Postcondition:
+    /// is_leader is false, merge_selecting_thread is stopped, leader_election is nullptr.
+    /// leader_election node in ZK is either deleted, or the session is marked expired.
+    void exitLeaderElection();
 
     /** Selects the parts to merge and writes to the log.
       */

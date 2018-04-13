@@ -11,7 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Common/Exception.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 
 
 namespace DB

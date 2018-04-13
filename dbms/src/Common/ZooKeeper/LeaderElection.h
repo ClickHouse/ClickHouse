@@ -33,8 +33,7 @@ public:
       *
       * identifier - if not empty, must uniquely (within same path) identify participant of leader election.
       * It means that different participants of leader election have different identifiers
-      *  and existence of more than one ephemeral node with same identifier indicates an error
-      *  (see cleanOldEphemeralNodes).
+      *  and existence of more than one ephemeral node with same identifier indicates an error.
       */
     LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
         : path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
@@ -42,10 +41,15 @@ public:
         createNode();
     }
 
-    void yield()
+    void shutdown()
     {
-        releaseNode();
-        createNode();
+        if (shutdown_called)
+            return;
+
+        shutdown_called = true;
+        event->set();
+        if (thread.joinable())
+            thread.join();
     }
 
     ~LeaderElection()
@@ -63,14 +67,14 @@ private:
     std::string node_name;
 
     std::thread thread;
-    std::atomic<bool> shutdown {false};
+    std::atomic<bool> shutdown_called {false};
     zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
 
     void createNode()
     {
-        shutdown = false;
+        shutdown_called = false;
         node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
         std::string node_path = node->getPath();
@@ -81,16 +85,13 @@ private:
 
     void releaseNode()
     {
-        shutdown = true;
-        event->set();
-        if (thread.joinable())
-            thread.join();
+        shutdown();
         node = nullptr;
     }
 
     void threadFunction()
     {
-        while (!shutdown)
+        while (!shutdown_called)
         {
             bool success = false;
 
