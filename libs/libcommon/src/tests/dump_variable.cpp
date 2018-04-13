@@ -13,11 +13,13 @@
 struct S1;
 struct S2 {};
 
-struct S3 {
+struct S3
+{
     std::set<const char *> m1;
 };
 
-std::ostream & operator<<(std::ostream & stream, const S3 & what) {
+std::ostream & operator<<(std::ostream & stream, const S3 & what)
+{
     stream << "S3 {m1=";
     dumpValue(stream, what.m1) << "}";
     return stream;
