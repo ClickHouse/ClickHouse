@@ -96,6 +96,10 @@ void ReplicatedMergeTreeQueue::insertUnlocked(LogEntryPtr & entry, std::optional
 {
     if (!entry->new_part_name.empty())
         virtual_parts.add(entry->new_part_name);
+    else if (entry->type == LogEntry::REPLACE_RANGE)
+        virtual_parts.add(entry->replace_range_entry->drop_range_part_name); // It will block merges in drop_range
+    else
+        throw Exception("Unexpected log entry with empty new_part_name. This is a bug", ErrorCodes::LOGICAL_ERROR);
 
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
     if (entry->type != LogEntry::DROP_RANGE)

@@ -451,10 +451,9 @@ private:
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
 
-    /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
-    /// Returns empty string if the partition doesn't exist yet.
-    String getFakePartNameCoveringAllPartsInPartition(
-        const String & partition_id, Int64 * out_min_block = nullptr, Int64 * out_max_block = nullptr);
+    /// Produce an imaginary part info covering all parts in the specified partition (at the call moment).
+    /// Returns false if the partition doesn't exist yet.
+    bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;

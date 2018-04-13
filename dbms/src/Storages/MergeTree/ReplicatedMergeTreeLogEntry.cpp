@@ -134,8 +134,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
 void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer & out) const
 {
-    out << "partition: " << partition_id << "\n";
-    out << "drop_range: " << drop_range_first_block << " " << drop_range_last_block << "\n";
+    out << "drop_range_name: " << drop_range_part_name << "\n";
     out << "from_database: " << escape << from_database << "\n";
     out << "from_table: " << escape << from_table << "\n";
 
@@ -156,8 +155,7 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer &
 
 void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & in)
 {
-    in >> "partition: " >> partition_id >> "\n";
-    in >> "drop_range: " >> drop_range_first_block >> " " >> drop_range_last_block >> "\n";
+    in >> "drop_range_name: " >> drop_range_part_name >> "\n";
     in >> "from_database: " >> escape >> from_database >> "\n";
     in >> "from_table: " >> escape >> from_table >> "\n";
 

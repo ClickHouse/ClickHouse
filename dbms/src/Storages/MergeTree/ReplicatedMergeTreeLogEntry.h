@@ -78,13 +78,10 @@ struct ReplicatedMergeTreeLogEntryData
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 
-    /// REPLACE PARTITION FROM stuff
+    /// REPLACE PARTITION FROM command
     struct ReplaceRangeEntry
     {
-        String partition_id;
-
-        Int64 drop_range_first_block;
-        Int64 drop_range_last_block;
+        String drop_range_part_name;
 
         String from_database;
         String from_table;

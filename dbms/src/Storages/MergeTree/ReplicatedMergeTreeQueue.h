@@ -137,7 +137,7 @@ private:
 public:
     ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
         : format_version(format_version_)
-        , virtual_parts(format_version)
+        , virtual_parts(format_version_)
     {
     }
 

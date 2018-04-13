@@ -1586,11 +1586,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
 {
     auto & entry_replace = *entry.replace_range_entry;
 
-    MergeTreePartInfo drop_range;
-    drop_range.partition_id = entry_replace.partition_id;
-    drop_range.min_block = entry_replace.drop_range_first_block;
-    drop_range.max_block = entry_replace.drop_range_last_block;
-    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+    MergeTreePartInfo drop_range = MergeTreePartInfo::fromPartName(entry_replace.drop_range_part_name, data.format_version);
 
     queue.removeGetsAndMergesInRange(getZooKeeper(), drop_range);
 
@@ -3089,28 +3085,23 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 }
 
 
-/// The name of an imaginary part covering all possible parts in the specified partition with numbers in the range from zero to specified right bound.
-static String getFakePartNameCoveringPartRange(
-        MergeTreeDataFormatVersion format_version, const String & partition_id, UInt64 left, UInt64 right)
+/// If new version returns ordinary name, else returns part name containing the first and last month of the month
+static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
 {
-    /// Artificial high level is choosen, to make this part "covering" all parts inside.
-    MergeTreePartInfo part_info(partition_id, left, right, 999999999);
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// The date range is all month long.
         const auto & lut = DateLUT::instance();
-        time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(partition_id + "01"));
+        time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.partition_id + "01"));
         DayNum_t left_date = lut.toDayNum(start_time);
         DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
         return part_info.getPartNameV0(left_date, right_date);
     }
-    else
-        return part_info.getPartName();
+
+    return part_info.getPartName();
 }
 
-
-String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(
-    const String & partition_id, Int64 * out_min_block, Int64 * out_max_block)
+bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info)
 {
     /// Even if there is no data in the partition, you still need to mark the range for deletion.
     /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
@@ -3133,15 +3124,14 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(
 
     /// Empty partition.
     if (right == 0)
-        return {};
+        return false;
 
     --right;
 
-    if (out_min_block)
-        *out_min_block = left;
-    if (out_max_block)
-        *out_max_block = right;
-    return getFakePartNameCoveringPartRange(data.format_version, partition_id, left, right);
+    /// Artificial high level is choosen, to make this part "covering" all parts inside.
+    static constexpr UInt32 level = 999999999;
+    part_info = MergeTreePartInfo(partition_id, left, right, level);
+    return true;
 }
 
 
@@ -3153,9 +3143,9 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
     /// We don't block merges, so anyone can manage this task (not only leader)
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
-    String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
+    MergeTreePartInfo drop_range_info;
 
-    if (fake_part_name.empty())
+    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
     {
         LOG_INFO(log, "Will not clear partition " << partition_id << ", it is empty.");
         return;
@@ -3165,7 +3155,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 
     LogEntry entry;
     entry.type = LogEntry::CLEAR_COLUMN;
-    entry.new_part_name = fake_part_name;
+    entry.new_part_name = getPartNamePossiblyFake(data.format_version, drop_range_info);
     entry.column_name = column_name.safeGet<String>();
     entry.create_time = time(nullptr);
 
@@ -3195,34 +3185,31 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
     }
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
-
-    Int64 min_block = 0;
-    Int64 max_block = 0;
-    String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id, &min_block, &max_block);
-
-    if (fake_part_name.empty())
+    MergeTreePartInfo drop_range_info;
+    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
     {
         LOG_INFO(log, "Will not drop partition " << partition_id << ", it is empty.");
         return;
     }
 
-    clearBlocksInPartition(*zookeeper, partition_id, min_block, max_block);
+    clearBlocksInPartition(*zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
 
     /** Forbid to choose the parts to be deleted for merging.
       * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
       */
+    String drop_range_fake_part_name = getPartNamePossiblyFake(data.format_version, drop_range_info);
     {
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-        queue.disableMergesInRange(fake_part_name);
+        queue.disableMergesInRange(drop_range_fake_part_name);
     }
 
-    LOG_DEBUG(log, "Disabled merges covered by range " << fake_part_name);
+    LOG_DEBUG(log, "Disabled merges covered by range " << drop_range_fake_part_name);
 
     /// Finally, having achieved the necessary invariants, you can put an entry in the log.
     LogEntry entry;
     entry.type = LogEntry::DROP_RANGE;
     entry.source_replica = replica_name;
-    entry.new_part_name = fake_part_name;
+    entry.new_part_name = drop_range_fake_part_name;
     entry.detach = detach;
     entry.create_time = time(nullptr);
 
@@ -4246,9 +4233,26 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     /// Firstly, generate last block number and compute drop_range
     MergeTreePartInfo drop_range;
     drop_range.partition_id = partition_id;
-    drop_range.min_block = 0;
     drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
+    drop_range.min_block = replace ? 0 : drop_range.max_block;
     drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+
+    String drop_range_fake_part_name = getPartNamePossiblyFake(data.format_version, drop_range);
+
+    if (drop_range.getBlocksCount() > 1)
+    {
+        /// We have to prohibit merges in drop_range, since new merge log entry appeared after this REPLACE FROM entry
+        ///  could produce new merged part instead in place of just deleted parts.
+        /// It is better to prohibit them on leader replica (like DROP PARTITION makes),
+        ///  but it is inconvenient for a user since he could actually use source table from this replica.
+        /// Therefore prohibit merges on the initializer server now and on the remaining servers when log entry will be executed.
+        /// It does not provides strong guarantees, but is suitable for intended use case (assume merges are quite rare).
+
+        {
+            std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+            queue.disableMergesInRange(drop_range_fake_part_name);
+        }
+    }
 
     for (size_t i = 0; i < src_all_parts.size(); ++i)
     {
@@ -4286,9 +4290,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
 
         auto & entry_replace = *entry.replace_range_entry;
-        entry_replace.partition_id = partition_id;
-        entry_replace.drop_range_first_block = drop_range.min_block;
-        entry_replace.drop_range_last_block = drop_range.max_block;
+        entry_replace.drop_range_part_name = drop_range_fake_part_name;
         entry_replace.from_database = src_data->database_name;
         entry_replace.from_table = src_data->table_name;
         for (const auto & part : src_parts)
@@ -4300,13 +4302,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         entry_replace.columns_version = columns_version;
     }
 
-
     /// We are almost ready to commit changes, remove fetches and merges from drop range
-    queue.removeGetsAndMergesInRange(getZooKeeper(), drop_range);
+    queue.removeGetsAndMergesInRange(zookeeper, drop_range);
 
-    zookeeper = getZooKeeper();
+    /// Remove deduplication block_ids of replacing parts
+    if (replace)
+        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+
     zkutil::Requests ops;
-
     for (size_t i = 0; i < dst_parts.size(); ++i)
     {
         getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
