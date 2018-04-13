@@ -1,3 +1,25 @@
+# ClickHouse release 1.1.54378, 2018-04-13
+
+## Новые возможности:
+
+* Добавлен запрос `SHOW CREATE DATABASE`.
+* Возможность передать query_id в `clickhouse-client`.
+* Добавлена настройка `max_network_bandwidth_for_all_users`.
+
+## Улучшения:
+
+* Debian: переименованы пакеты `clickhouse-server-base` => `clickhouse-common-static`; `clickhouse-server-common` -> `clickhouse-server`; clickhouse-common-dbg -> clickhouse-common-static-dbg. Для установки используйте только `clickhouse-server clickhouse-client`
+* Сервер больше не использует по умолчанию опцию сокета SO_REUSEPORT. Теперь многократный listen одного адреса например `<listen_host>::</listen_host><listen_host>0.0.0.0</listen_host>` выдаст ошибку. Для включения этой опции добавьте в конфиг `<listen_reuse_port>1</listen_reuse_port>`
+* Добавлена информация о размере несжатых кусков в системные таблицы
+* В `clickhouse-client` выводится имя_сервера :)
+* Новая библиотека для работы с `ZooKeeper`
+* `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`
+
+## Исправление ошибок:
+
+* Исправлены ошибки с запросами содержащими IN
+
+
 # ClickHouse release 1.1.54370, 2018-03-16
 
 ## Новые возможности:
