@@ -16,6 +16,8 @@
 * Новая библиотека для работы с `ZooKeeper`.
 * `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`.
 * SystemLog: execute prepareTable() on each flush (Kirill Shvakov)
+* faster merges in ReplicatedAggregatingMergeTree (#2084)
+* Support SIMD to UTF-8 countCodePoints (zhang2014)
 
 ## Исправление ошибок:
 
