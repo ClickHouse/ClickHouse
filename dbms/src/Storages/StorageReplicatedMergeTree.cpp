@@ -3270,7 +3270,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
+    /// Query send with current user credentials
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
