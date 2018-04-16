@@ -215,11 +215,11 @@ a:hover, a:active {
 #announcement {
     margin: 0 0 60px 0;
     padding: 20px 0;
+    font: 400 150%/133% 'Yandex Sans Display Web',Arial,sans-serif;
 }
 #announcement-link {
     color: #000;
     text-decoration: underline;
-    font: 400 150%/133% 'Yandex Sans Display Web',Arial,sans-serif;
     margin: 1em 0;
 }
 #announcement-link:hover {

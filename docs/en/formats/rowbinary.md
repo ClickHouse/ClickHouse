@@ -9,5 +9,5 @@ Date is represented as a UInt16 object that contains the number of days since 19
 String is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 FixedString is represented simply as a sequence of bytes.
 
-Arrays are represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by the array elements in order.
+Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by successive elements of the array.
 

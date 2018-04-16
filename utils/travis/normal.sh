@@ -35,6 +35,6 @@ cmake $CUR_DIR/../.. -DCMAKE_CXX_COMPILER=`which $DEB_CXX $CXX` -DCMAKE_C_COMPIL
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00428 requires sudo (not all vms allow this)` \
-    && ( [ ${TEST_RUN=1} ] && ( ( cd $CUR_DIR/../.. && env TEST_OPT="--skip long compile 00428 $TEST_OPT" bash -x dbms/tests/clickhouse-test-server ) || ${TEST_TRUE=false} ) || true )
+    && ( [ ! ${TEST_RUN=1} ] || ( ( cd $CUR_DIR/../.. && env TEST_OPT="--skip long compile 00428 $TEST_OPT" bash -x dbms/tests/clickhouse-test-server ) || ${TEST_TRUE=false} ) )
 
 date

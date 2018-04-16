@@ -67,6 +67,7 @@ void ConfigReloader::run()
         catch (...)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            std::this_thread::sleep_for(reload_interval);
         }
     }
 }

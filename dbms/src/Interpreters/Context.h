@@ -140,7 +140,6 @@ public:
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
-    ConfigurationPtr getConfig() const;
     Poco::Util::AbstractConfiguration & getConfigRef() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
@@ -241,8 +240,9 @@ public:
     UInt16 getTCPPort() const;
 
     /// Get query for the CREATE table.
-    ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
-    ASTPtr getCreateExternalQuery(const String & table_name) const;
+    ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
+    ASTPtr getCreateExternalTableQuery(const String & table_name) const;
+    ASTPtr getCreateDatabaseQuery(const String & database_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
@@ -299,7 +299,6 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper

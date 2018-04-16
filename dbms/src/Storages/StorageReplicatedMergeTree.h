@@ -220,8 +220,8 @@ private:
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
-    std::atomic_bool is_leader_node {false};
-    std::mutex leader_node_mutex;
+    std::atomic<bool> is_leader {false};
+    zkutil::LeaderElectionPtr leader_election;
 
     InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
 
@@ -239,7 +239,6 @@ private:
 
     DataPartsExchange::Fetcher fetcher;
 
-    zkutil::LeaderElectionPtr leader_election;
 
     /// When activated, replica is initialized and startup() method could exit
     Poco::Event startup_event;
@@ -321,7 +320,7 @@ private:
       * Call under TableStructureLock.
       */
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
-                                           zkutil::Ops & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+                                           zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums);
 
@@ -330,11 +329,11 @@ private:
                                                                const MergeTreeData::DataPartPtr & part);
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
+    void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
-                                  NameSet * parts_should_be_retied = nullptr);
+                                  NameSet * parts_should_be_retried = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -368,9 +367,15 @@ private:
       */
     bool queueTask();
 
-    /// Select the parts to merge.
+    /// Postcondition:
+    /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
+    /// or an exception is thrown and leader_election is destroyed.
+    void enterLeaderElection();
 
-    void becomeLeader();
+    /// Postcondition:
+    /// is_leader is false, merge_selecting_thread is stopped, leader_election is nullptr.
+    /// leader_election node in ZK is either deleted, or the session is marked expired.
+    void exitLeaderElection();
 
     /** Selects the parts to merge and writes to the log.
       */
@@ -415,7 +420,7 @@ private:
 
     /// Creates new block number and additionally perform precheck_ops while creates 'abandoned node'
     AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                   zkutil::Ops * precheck_ops = nullptr);
+                                                   zkutil::Requests * precheck_ops = nullptr);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .

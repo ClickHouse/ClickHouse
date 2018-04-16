@@ -23,10 +23,22 @@ class ColumnNullable final : public COWPtrHelper<IColumn, ColumnNullable>
 private:
     friend class COWPtrHelper<IColumn, ColumnNullable>;
 
-    ColumnNullable(const ColumnPtr & nested_column_, const ColumnPtr & null_map_);
+    ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_);
     ColumnNullable(const ColumnNullable &) = default;
 
 public:
+    /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
+      * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
+      */
+    using Base = COWPtrHelper<IColumn, ColumnNullable>;
+    static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
+    {
+        return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
+    }
+
+    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
+
     const char * getFamilyName() const override { return "Nullable"; }
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     MutableColumnPtr cloneResized(size_t size) const override;
@@ -50,14 +62,14 @@ public:
     }
 
     void popBack(size_t n) override;
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    MutableColumnPtr replicate(const Offsets & replicate_offsets) const override;
+    ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 

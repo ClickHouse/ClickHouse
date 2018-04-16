@@ -22,7 +22,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 #include <Interpreters/config_compile.h>
 
 

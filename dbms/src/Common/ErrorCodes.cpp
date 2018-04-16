@@ -125,7 +125,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING = 115;
     extern const int THERE_IS_NO_DEFAULT_VALUE = 116;
     extern const int INCORRECT_DATA = 117;
-    extern const int TABLE_METADATA_DOESNT_EXIST = 118;
     extern const int ENGINE_REQUIRED = 119;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE = 120;
     extern const int UNKNOWN_SET_DATA_VARIANT = 121;

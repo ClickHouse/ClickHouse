@@ -119,21 +119,8 @@ public:
       */
     virtual void cancel(bool kill);
 
-    /** Do you want to abort the receipt of data.
-     */
-    bool isCancelled() const
-    {
-        return is_cancelled.load(std::memory_order_seq_cst);
-    }
-
-    bool isCancelledOrThrowIfKilled() const
-    {
-        if (!isCancelled())
-            return false;
-        if (is_killed)
-            throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
-        return true;
-    }
+    bool isCancelled() const;
+    bool isCancelledOrThrowIfKilled() const;
 
     /** What limitations and quotas should be checked.
       * LIMITS_CURRENT - checks amount of data read by current stream only (BlockStreamProfileInfo is used for check).
@@ -189,7 +176,7 @@ public:
 protected:
     BlockStreamProfileInfo info;
     std::atomic<bool> is_cancelled{false};
-    bool is_killed{false};
+    std::atomic<bool> is_killed{false};
     ProgressCallback progress_callback;
     ProcessListElement * process_list_elem = nullptr;
 
@@ -234,10 +221,10 @@ private:
 
     void updateExtremes(Block & block);
 
-    /** Check constraints and quotas.
-      * But only those that can be tested within each separate source.
+    /** Check limits and quotas.
+      * But only those that can be checked within each separate stream.
       */
-    bool checkTimeLimits();
+    bool checkTimeLimit();
     void checkQuota(Block & block);
 
 

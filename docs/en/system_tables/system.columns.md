@@ -11,4 +11,3 @@ type String               - Column type.
 default_type String       - Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined.
 default_expression String - Expression for the default value, or an empty string if it is not defined.
 ```
-

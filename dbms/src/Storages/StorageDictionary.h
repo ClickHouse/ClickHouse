@@ -4,6 +4,8 @@
 #include <Core/Defines.h>
 #include <common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace Poco
@@ -32,6 +34,26 @@ public:
     void drop() override {}
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
+    template <typename ForwardIterator>
+    static std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end)
+    {
+        std::string description;
+        {
+            WriteBufferFromString buffer(description);
+            bool first = true;
+            for (; begin != end; ++begin)
+            {
+                if (!first)
+                    buffer << ", ";
+                first = false;
+
+                buffer << begin->name << ' ' << begin->type->getName();
+            }
+        }
+
+        return description;
+    }
+
 private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
@@ -40,24 +62,6 @@ private:
     Poco::Logger * logger;
 
     void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const;
-
-    template <typename ForwardIterator>
-    std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end) const
-    {
-        if (begin == end)
-        {
-            return "";
-        }
-        std::string description;
-        for (; begin != end; ++begin)
-        {
-            description += ", ";
-            description += begin->name;
-            description += ' ';
-            description += begin->type->getName();
-        }
-        return description.substr(2, description.size());
-    }
 
 protected:
     StorageDictionary(const String & table_name_,

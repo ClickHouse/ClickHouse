@@ -35,7 +35,7 @@ XML format is suitable only for output, not for parsing. Example:
                         <field>1549</field>
                 </row>
                 <row>
-                        <SearchPhrase>freeform photos</SearchPhrase>
+                        <SearchPhrase>freeform photo</SearchPhrase>
                         <field>1480</field>
                 </row>
                 <row>
