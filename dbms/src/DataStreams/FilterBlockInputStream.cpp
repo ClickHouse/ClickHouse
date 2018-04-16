@@ -19,14 +19,14 @@ namespace ErrorCodes
 
 FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
                                                ssize_t filter_column_, bool remove_filter)
-    : expression(expression_), filter_column(filter_column_), remove_filter(remove_filter)
+    : remove_filter(remove_filter), expression(expression_), filter_column(filter_column_)
 {
     children.push_back(input);
 }
 
 FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
                                                const String & filter_column_name, bool remove_filter)
-    : expression(expression_), remove_filter(remove_filter)
+    : remove_filter(remove_filter), expression(expression_)
 {
     children.push_back(input);
 

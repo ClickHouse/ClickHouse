@@ -31,8 +31,10 @@ public:
 
     ~MergeTreeBaseBlockInputStream() override;
 
+    static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
+
 protected:
-    Block readImpl() override final;
+    Block readImpl() final;
 
     /// Creates new this->task, and initilizes readers
     virtual bool getNewTask() = 0;
@@ -43,8 +45,6 @@ protected:
     Block readFromPart();
 
     void injectVirtualColumns(Block & block) const;
-
-    void executePrewhereActions(Block & block) const;
 
 protected:
     MergeTreeData & storage;

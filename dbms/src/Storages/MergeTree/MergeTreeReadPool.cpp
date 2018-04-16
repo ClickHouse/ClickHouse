@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.h>
+#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -28,7 +29,7 @@ MergeTreeReadPool::MergeTreeReadPool(
 }
 
 
-MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread)
+MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
 {
     const std::lock_guard<std::mutex> lock{mutex};
 
@@ -112,7 +113,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
 
     return std::make_unique<MergeTreeReadTask>(
-        part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names,
+        part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
         per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
         prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
@@ -122,7 +123,6 @@ Block MergeTreeReadPool::getHeader() const
 {
     return data.getSampleBlockForColumns(column_names);
 }
-
 
 void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
 {

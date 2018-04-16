@@ -36,7 +36,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     MergeTreeBaseBlockInputStream{storage_, prewhere_info, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names},
-    ordered_names{column_names},
+    required_columns{column_names},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
     all_mark_ranges(mark_ranges_),
@@ -66,8 +66,8 @@ Block MergeTreeBlockInputStream::getHeader() const
 {
     if (!header)
     {
-        header = storage.getSampleBlockForColumns(ordered_names);
-        executePrewhereActions(header);
+        header = storage.getSampleBlockForColumns(required_columns);
+        executePrewhereActions(header, prewhere_info);
 
         /// Types may be different during ALTER (when this stream is used to perform an ALTER).
         /// NOTE: We may use similar code to implement non blocking ALTERs.
@@ -91,6 +91,15 @@ Block MergeTreeBlockInputStream::getHeader() const
 }
 
 
+const Names & MergeTreeBlockInputStream::getOrderedNames()
+{
+    if (ordered_names.empty())
+        ordered_names = getHeader().getNames();
+
+    return ordered_names;
+}
+
+
 bool MergeTreeBlockInputStream::getNewTask()
 try
 {
@@ -102,7 +111,7 @@ try
     }
     is_first_task = false;
 
-    Names pre_column_names, column_names = ordered_names;
+    Names pre_column_names, column_names = required_columns;
 
     /// inject columns required for defaults evaluation
     bool should_reorder = !injectRequiredColumns(storage, data_part, column_names).empty();
@@ -159,7 +168,7 @@ try
                           : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
 
     task = std::make_unique<MergeTreeReadTask>(
-            data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set, columns, pre_columns,
+            data_part, remaining_mark_ranges, part_index_in_query, getOrderedNames(), column_name_set, columns, pre_columns,
             prewhere_info && prewhere_info->remove_prewhere_column, should_reorder, std::move(size_predictor));
 
     if (!reader)

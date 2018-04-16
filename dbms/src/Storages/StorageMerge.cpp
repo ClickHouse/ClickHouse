@@ -210,6 +210,7 @@ BlockInputStreams StorageMerge::read(
 
         SelectQueryInfo modified_query_info;
         modified_query_info.query = modified_query_ast;
+        modified_query_info.prewhere_info = query_info.prewhere_info;
 
         relinkSets(modified_query_info.query, query_info.sets, modified_query_info.sets);
 

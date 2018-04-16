@@ -19,6 +19,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/PrewhereFilterBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -706,7 +707,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
             pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         if (pipeline.streams.empty())
+        {
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
+
+            if (query_info.prewhere_info)
+                pipeline.streams.back() = std::make_shared<PrewhereFilterBlockInputStream>(pipeline.streams.back(),
+                                                                                           query_info.prewhere_info);
+        }
 
         pipeline.transform([&](auto & stream)
         {
