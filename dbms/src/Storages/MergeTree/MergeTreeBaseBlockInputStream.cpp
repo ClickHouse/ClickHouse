@@ -215,7 +215,7 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 }
 
 
-void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block) const
+void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
 {
     if (prewhere_info)
     {

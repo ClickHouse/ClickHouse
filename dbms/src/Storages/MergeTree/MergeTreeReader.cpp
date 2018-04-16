@@ -497,7 +497,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
     }
 }
 
-void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
+void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names, const String * filter_name)
 {
     try
     {
@@ -506,6 +506,9 @@ void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
         for (const auto & name : ordered_names)
             if (res.has(name))
                 ordered_block.insert(res.getByName(name));
+
+        if (filter_name && !ordered_block.has(*filter_name) && res.has(*filter_name))
+            ordered_block.insert(res.getByName(*filter_name));
 
         std::swap(res, ordered_block);
     }

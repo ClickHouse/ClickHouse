@@ -72,7 +72,7 @@ public:
         const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
         const bool do_not_steal_tasks = false);
 
-    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread);
+    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names);
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
@@ -93,6 +93,7 @@ private:
     std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
     MergeTreeData & data;
     Names column_names;
+    Names ordered_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
     std::vector<NameSet> per_part_column_name_set;

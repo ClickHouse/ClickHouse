@@ -31,11 +31,12 @@ public:
 protected:
     Block readImpl() override;
 
+    bool remove_filter;
+
 private:
     ExpressionActionsPtr expression;
     Block header;
     ssize_t filter_column;
-    bool remove_filter;
 
     ConstantFilterDescription constant_filter_description;
 

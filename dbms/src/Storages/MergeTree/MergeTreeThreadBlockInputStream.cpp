@@ -41,15 +41,24 @@ Block MergeTreeThreadBlockInputStream::getHeader() const
 {
     auto res = pool->getHeader();
     injectVirtualColumns(res);
-    executePrewhereActions(res);
+    executePrewhereActions(res, prewhere_info);
     return res;
 };
+
+
+const Names & MergeTreeThreadBlockInputStream::getOrderedNames()
+{
+    if (ordered_names.empty())
+        ordered_names = getHeader().getNames();
+
+    return ordered_names;
+}
 
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadBlockInputStream::getNewTask()
 {
-    task = pool->getTask(min_marks_to_read, thread);
+    task = pool->getTask(min_marks_to_read, thread, getOrderedNames());
 
     if (!task)
     {

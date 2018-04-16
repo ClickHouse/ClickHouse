@@ -37,11 +37,16 @@ protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
     bool getNewTask() override;
 
+private:
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
     size_t thread;
 
     std::shared_ptr<MergeTreeReadPool> pool;
     size_t min_marks_to_read;
+
+    Names ordered_names;
+
+    const Names & getOrderedNames();
 };
 
 }

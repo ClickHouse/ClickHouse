@@ -438,7 +438,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
 
             if (should_reorder || always_reorder || block.columns())
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names);
+                merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
         }
     }
     else
@@ -454,7 +454,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
 
             if (should_reorder || always_reorder)
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names);
+                merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
         }
     }
 

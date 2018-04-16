@@ -43,7 +43,7 @@ public:
     /// If at least one column was added, reorders all columns in the block according to ordered_names.
     void fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults);
     /// Sort columns to ensure consistent order among all blocks.
-    void reorderColumns(Block & res, const Names & ordered_names);
+    void reorderColumns(Block & res, const Names & ordered_names, const String * filter_name);
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block & res);
 

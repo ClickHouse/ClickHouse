@@ -51,6 +51,7 @@ private:
     mutable Block header;
 
     /// Used by Task
+    Names required_columns;
     Names ordered_names;
     NameSet column_name_set;
     NamesAndTypesList columns;
@@ -71,6 +72,8 @@ private:
     bool is_first_task = true;
 
     Logger * log = &Logger::get("MergeTreeBlockInputStream");
+
+    const Names & getOrderedNames();
 };
 
 }
