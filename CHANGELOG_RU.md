@@ -5,20 +5,25 @@
 * Добавлен запрос `SHOW CREATE DATABASE`.
 * Возможность передать query_id в `clickhouse-client`.
 * Добавлена настройка `max_network_bandwidth_for_all_users`.
+* Поддержка межсерверного шифрования для distributed таблиц (в настройках реплики <secure>1</secure>).
 
 ## Улучшения:
 
-* Debian: переименованы пакеты `clickhouse-server-base` => `clickhouse-common-static`; `clickhouse-server-common` -> `clickhouse-server`; clickhouse-common-dbg -> clickhouse-common-static-dbg. Для установки используйте только `clickhouse-server clickhouse-client`
-* Сервер больше не использует по умолчанию опцию сокета SO_REUSEPORT. Теперь многократный listen одного адреса например `<listen_host>::</listen_host><listen_host>0.0.0.0</listen_host>` выдаст ошибку. Для включения этой опции добавьте в конфиг `<listen_reuse_port>1</listen_reuse_port>`
-* Добавлена информация о размере несжатых кусков в системные таблицы
-* В `clickhouse-client` выводится имя_сервера :)
-* Новая библиотека для работы с `ZooKeeper`
-* `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`
+* Debian: переименованы пакеты `clickhouse-server-base` => `clickhouse-common-static`; `clickhouse-server-common` -> `clickhouse-server`; clickhouse-common-dbg -> clickhouse-common-static-dbg. Для установки используйте только `clickhouse-server clickhouse-client`.
+* Сервер больше не использует по умолчанию опцию сокета SO_REUSEPORT. Теперь многократный listen одного адреса например `<listen_host>::</listen_host><listen_host>0.0.0.0</listen_host>` выдаст ошибку. Для включения этой опции добавьте в конфиг `<listen_reuse_port>1</listen_reuse_port>`.
+* Добавлена информация о размере несжатых кусков в системные таблицы.
+* В `clickhouse-client` выводится `имя_сервера` :)
+* Новая библиотека для работы с `ZooKeeper`.
+* `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`.
+* SystemLog: execute prepareTable() on each flush (Kirill Shvakov)
 
 ## Исправление ошибок:
 
-* Исправлены ошибки с запросами содержащими IN
-
+* Исправлены ошибки с запросами содержащими IN.
+* Fixed error with IN where left hand side is nullable.
+* Allow to use FINAL even in case of single part.
+* Неправильный результат при использовании таплов с IN.
+* Исправлен не работающий max_execution_time с распределенными запросами.
 
 # ClickHouse release 1.1.54370, 2018-03-16
 
