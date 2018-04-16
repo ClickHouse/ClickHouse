@@ -240,7 +240,7 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
     std::string message;
     auto begin = query.data();
     auto end = begin + query.size();
-    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false);
+    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0);
     return ast != nullptr;
 }
 

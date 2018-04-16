@@ -97,7 +97,7 @@ int main(int, char **)
 
         std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
         ParserSelectQuery parser;
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;

@@ -129,7 +129,7 @@ MergeTreeData::MergeTreeData(
             String partition_expr_str = "toYYYYMM(" + backQuoteIfNeed(date_column_name) + ")";
             ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
             partition_expr_ast = parseQuery(
-                parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
+                parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression", 0);
 
             initPartitionKey();
 
