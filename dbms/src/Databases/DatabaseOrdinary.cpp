@@ -480,7 +480,7 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
         /// Handle databases (such as default) for which there are no database.sql files.
         String query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "");
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
     }
 
     return ast;
