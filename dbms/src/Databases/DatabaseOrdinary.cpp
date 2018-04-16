@@ -352,7 +352,7 @@ static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_e
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                             "in file " + metadata_path, /* allow_multi_statements = */ false);
+                             "in file " + metadata_path, /* allow_multi_statements = */ false, 0);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -480,7 +480,7 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
         /// Handle databases (such as default) for which there are no database.sql files.
         String query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "");
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
     }
 
     return ast;
@@ -533,7 +533,7 @@ void DatabaseOrdinary::alterTable(
     }
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path);
+    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 

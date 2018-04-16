@@ -291,7 +291,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const auto end = pos + type_name->size();
 
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type");
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
@@ -315,7 +315,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto end = pos + type_name->size();
 
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type");
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         column_declaration->type->owned_string = type_name;
 
         const auto it = columns.defaults.find(column.name);

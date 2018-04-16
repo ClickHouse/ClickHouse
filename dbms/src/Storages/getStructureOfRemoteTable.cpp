@@ -66,7 +66,7 @@ ColumnsDescription getStructureOfRemoteTable(
                 auto kind = columnDefaultKindFromString(kind_name);
 
                 String expr_str = (*default_expr)[i].get<const String &>();
-                ASTPtr expr = parseQuery(expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression");
+                ASTPtr expr = parseQuery(expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0);
                 res.defaults.emplace(column_name, ColumnDefault{kind, expr});
 
                 if (ColumnDefaultKind::Default == kind)
