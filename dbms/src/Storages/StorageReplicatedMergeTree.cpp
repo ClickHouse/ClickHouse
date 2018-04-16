@@ -3277,7 +3277,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        "", "", timeouts, "ClickHouse replica");
+        context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
     NullBlockOutputStream output({});
