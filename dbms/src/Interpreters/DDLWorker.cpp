@@ -425,7 +425,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
 
         ParserQuery parser_query(end);
         String description;
-        task.query = parseQuery(parser_query, begin, end, description);
+        task.query = parseQuery(parser_query, begin, end, description, 0);
     }
 
     if (!task.query || !(task.query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(task.query.get())))

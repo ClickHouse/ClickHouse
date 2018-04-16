@@ -50,6 +50,8 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 Token Lexer::nextToken()
 {
     Token res = nextTokenImpl();
+    if (res.type != TokenType::EndOfStream && max_query_size && res.end > begin + max_query_size)
+        res.type = TokenType::ErrorMaxQuerySizeExceeded;
     if (res.isSignificant())
         prev_significant_token_type = res.type;
     return res;
@@ -341,6 +343,8 @@ const char * getErrorTokenDescription(TokenType type)
             return "Pipe symbol could only occur in || operator";
         case TokenType::ErrorWrongNumber:
             return "Wrong number";
+        case TokenType::ErrorMaxQuerySizeExceeded:
+            return "Max query size exceeded";
         default:
             return "Not an error";
     }
