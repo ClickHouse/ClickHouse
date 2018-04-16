@@ -157,16 +157,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "");
+        ast = parseQuery(parser, begin, end, "", max_query_size);
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
         if (!(begin <= ast->range.first && ast->range.second <= end))
             throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
         query_size = ast->range.second - begin;
-
-        if (max_query_size && query_size > max_query_size)
-            throw Exception("Query is too large (" + toString(query_size) + ")."
-                " max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
     }
     catch (...)
     {
@@ -417,7 +413,7 @@ void executeQuery(
 
     size_t max_query_size = context.getSettingsRef().max_query_size;
 
-    if (istr.buffer().end() - istr.position() >= static_cast<ssize_t>(max_query_size))
+    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         begin = istr.position();
@@ -427,8 +423,8 @@ void executeQuery(
     else
     {
         /// If not - copy enough data into 'parse_buf'.
-        parse_buf.resize(max_query_size);
-        parse_buf.resize(istr.read(&parse_buf[0], max_query_size));
+        parse_buf.resize(max_query_size + 1);
+        parse_buf.resize(istr.read(&parse_buf[0], max_query_size + 1));
         begin = &parse_buf[0];
         end = begin + parse_buf.size();
     }
