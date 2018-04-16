@@ -15,7 +15,8 @@ ASTPtr tryParseQuery(
     bool hilite,
     const std::string & description,
     bool allow_multi_statements,    /// If false, check for non-space characters after semicolon and set error message if any.
-    size_t max_query_size = 0);
+    size_t max_query_size);         /// If (end - pos) > max_query_size and query is longer than max_query_size then throws "Max query size exceeded".
+                                    /// Disabled if zero. Is used in order to check query size if buffer can contains data for INSERT query.
 
 
 /// Parse query or throw an exception with error message.
@@ -25,7 +26,7 @@ ASTPtr parseQueryAndMovePosition(
     const char * end,
     const std::string & description,
     bool allow_multi_statements,
-    size_t max_query_size = 0);
+    size_t max_query_size);
 
 
 ASTPtr parseQuery(
@@ -33,7 +34,7 @@ ASTPtr parseQuery(
     const char * begin,
     const char * end,
     const std::string & description,
-    size_t max_query_size = 0);
+    size_t max_query_size);
 
 ASTPtr parseQuery(
     IParser & parser,
@@ -44,7 +45,7 @@ ASTPtr parseQuery(
 ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
-    size_t max_query_size = 0);
+    size_t max_query_size);
 
 
 /** Split queries separated by ; on to list of single queries

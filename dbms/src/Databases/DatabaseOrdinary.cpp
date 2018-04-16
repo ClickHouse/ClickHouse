@@ -341,7 +341,7 @@ static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
     }
 
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + table_metadata_path);
+    return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + table_metadata_path, 0);
 }
 
 
@@ -479,7 +479,7 @@ void DatabaseOrdinary::alterTable(
     }
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path);
+    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
