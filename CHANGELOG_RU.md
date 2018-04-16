@@ -15,17 +15,18 @@
 * В `clickhouse-client` выводится `имя_сервера` :)
 * Новая библиотека для работы с `ZooKeeper`.
 * `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`.
-* SystemLog: execute prepareTable() on each flush (Kirill Shvakov)
-* faster merges in ReplicatedAggregatingMergeTree (#2084)
-* Support SIMD to UTF-8 countCodePoints (zhang2014)
+* SystemLog: Выполнение prepareTable() на каждом сбросе лога (Kirill Shvakov).
+* Более быстрые мержи в ReplicatedAggregatingMergeTree (#2084).
+* Поддержка инструкций SIMD в UTF-8 countCodePoints (zhang2014).
 
 ## Исправление ошибок:
 
 * Исправлены ошибки с запросами содержащими IN.
-* Fixed error with IN where left hand side is nullable.
-* Allow to use FINAL even in case of single part.
+* Исправлена ошибка c IN где левая часть выражения nullable.
+* Возможно использовать FINAL даже с одним куском.
 * Неправильный результат при использовании таплов с IN.
 * Исправлен не работающий max_execution_time с распределенными запросами.
+
 
 # ClickHouse release 1.1.54370, 2018-03-16
 
