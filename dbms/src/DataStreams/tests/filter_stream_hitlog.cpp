@@ -110,10 +110,11 @@ int main(int, char **)
 
         /// read from it, apply the expression, filter, and write in tsv form to the console
 
+        std::shared_ptr<bool> remove_filter;
         ExpressionAnalyzer analyzer(ast, context, nullptr, names_and_types_list);
         ExpressionActionsChain chain;
         analyzer.appendSelect(chain, false);
-        analyzer.appendWhere(chain, false);
+        analyzer.appendWhere(chain, false, remove_filter);
         chain.finalize();
         ExpressionActionsPtr expression = chain.getLastActions();
 
@@ -128,7 +129,7 @@ int main(int, char **)
         QueryProcessingStage::Enum stage;
 
         BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
-        in = std::make_shared<FilterBlockInputStream>(in, expression, 4);
+        in = std::make_shared<FilterBlockInputStream>(in, expression, 4, *remove_filter);
         //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
         WriteBufferFromOStream ob(std::cout);
