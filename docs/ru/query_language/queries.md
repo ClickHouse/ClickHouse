@@ -1,3 +1,5 @@
+<a name="queries"></a>
+
 # Запросы
 
 ## CREATE DATABASE
