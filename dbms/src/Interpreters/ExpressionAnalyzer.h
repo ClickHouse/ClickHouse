@@ -159,6 +159,8 @@ private:
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
 
+    NamesAndTypesList array_join_columns;
+
     /// The main table in FROM clause, if exists.
     StoragePtr storage;
 

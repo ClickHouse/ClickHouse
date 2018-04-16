@@ -46,8 +46,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DIRECTORY_DOESNT_EXIST;
-    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
@@ -425,7 +423,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = context.getCreateQuery(as_database_name, as_table_name);
+        ASTPtr as_create_ptr = context.getCreateTableQuery(as_database_name, as_table_name);
         const auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
 
         if (as_create.is_view)
@@ -454,7 +452,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns)
     {
         // Table SQL definition is available even if the table is detached
-        auto query = context.getCreateQuery(database_name, table_name);
+        auto query = context.getCreateTableQuery(database_name, table_name);
         auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
         create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;

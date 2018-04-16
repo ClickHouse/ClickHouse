@@ -86,6 +86,7 @@ pages:
   - 'GraphiteMergeTree': 'table_engines/graphitemergetree.md'
   - 'Data replication': 'table_engines/replication.md'
   - 'Distributed': 'table_engines/distributed.md'
+  - 'Dictionary': 'table_engines/dictionary.md'
   - 'Merge': 'table_engines/merge.md'
   - 'Buffer': 'table_engines/buffer.md'
   - 'File': 'table_engines/file.md'

@@ -1,0 +1,22 @@
+DROP TABLE IF EXISTS test.secure1;
+DROP TABLE IF EXISTS test.secure2;
+DROP TABLE IF EXISTS test.secure3;
+
+CREATE TABLE test.secure1 ( date Date, a Int32, b Int32, c Int32, d Int32) ENGINE = MergeTree(date, (a, date), 8192);
+CREATE TABLE test.secure2 ( date Date, a Int32, b Int32, c Int32, d Int32) ENGINE = Distributed(test_shard_localhost_secure, 'test', 'secure1');
+CREATE TABLE test.secure3 ( date Date, a Int32, b Int32, c Int32, d Int32) ENGINE = Distributed(test_shard_localhost_secure, 'test', 'secure2');
+
+INSERT INTO test.secure1 VALUES (1,  2, 3, 4, 5);
+INSERT INTO test.secure1 VALUES (11,12,13,14,15);
+INSERT INTO test.secure2 VALUES (21,22,23,24,25);
+INSERT INTO test.secure3 VALUES (31,32,33,34,35);
+
+SELECT sleep(1);
+
+SELECT * FROM test.secure1 ORDER BY a;
+SELECT * FROM test.secure2 ORDER BY a;
+SELECT * FROM test.secure3 ORDER BY a;
+
+DROP TABLE test.secure1;
+DROP TABLE test.secure2;
+DROP TABLE test.secure3;

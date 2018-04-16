@@ -67,11 +67,11 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `NOT a` The `not(a) function.`
 
-## Logical 'AND' operator
+## Logical AND operator
 
 `a AND b` – The`and(a, b) function.`
 
-## Logical 'OR' operator
+## Logical OR operator
 
 `a OR b` – The `or(a, b) function.`
 

@@ -1,4 +1,4 @@
-# Contributing to ClickHouse 
+# Contributing to ClickHouse
 
 ## Technical info
 Developer guide for writing code for ClickHouse is published on official website alongside the usage and operations documentation:
@@ -7,7 +7,7 @@ https://clickhouse.yandex/docs/en/development/index.html
 ## Legal info
 
 In order for us (YANDEX LLC) to accept patches and other contributions from you, you will have to adopt our Yandex Contributor License Agreement (the "**CLA**"). The current version of the CLA you may find here:
-1) https://yandex.ru/legal/cla/?lang=en (in English) and 
+1) https://yandex.ru/legal/cla/?lang=en (in English) and
 2) https://yandex.ru/legal/cla/?lang=ru (in Russian).
 
 By adopting the CLA, you state the following:
@@ -29,4 +29,6 @@ I hereby agree to the terms of the CLA available at: [link].
 Replace the bracketed text as follows:
 * [link] is the link at the current version of the CLA (you may add here a link https://yandex.ru/legal/cla/?lang=en (in English) or a link https://yandex.ru/legal/cla/?lang=ru (in Russian).
 
-It is enough to provide us such notification at once. 
+It is enough to provide us such notification at once.
+
+If you don't agree with the CLA, you still can open a pull request to provide your contributions.
