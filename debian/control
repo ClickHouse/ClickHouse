@@ -28,7 +28,7 @@ Description: Client binary for clickhouse
 
 Package: clickhouse-common-static
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, tzdata
 Replaces: clickhouse-server-base
 Provides: clickhouse-server-base
 Description: Common files for clickhouse
@@ -39,7 +39,7 @@ Description: Common files for clickhouse
 
 Package: clickhouse-server
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser, tzdata
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser
 Replaces: clickhouse-server-common, clickhouse-server-base
 Provides: clickhouse-server-common
 Description: Server binary for clickhouse
