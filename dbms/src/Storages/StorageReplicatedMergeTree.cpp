@@ -3004,6 +3004,10 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
     table_name = new_table_name;
     full_path = new_full_path;
 
+    /// Update table name in zookeeper
+    auto zookeeper = getZooKeeper();
+    zookeeper->set(replica_path + "/host", getReplicatedMergeTreeAddress().toString());
+
     /// TODO: You can update names of loggers.
 }
 
@@ -3764,6 +3768,19 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     }
 
     LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
+}
+
+ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAddress() const
+{
+    auto host_port = context.getInterserverIOAddress();
+
+    ReplicatedMergeTreeAddress res;
+    res.host = host_port.first;
+    res.replication_port = host_port.second;
+    res.queries_port = context.getTCPPort();
+    res.database = database_name;
+    res.table = table_name;
+    return res;
 }
 
 }

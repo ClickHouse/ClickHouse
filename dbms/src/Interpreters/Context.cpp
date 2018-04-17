@@ -590,6 +590,12 @@ QuotaForIntervals & Context::getQuota()
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
+    auto lock = getLock();
+    checkDatabaseAccessRightsImpl(database_name);
+}
+
+void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
+{
     if (client_info.current_user.empty() || (database_name == "system"))
     {
          /// An unnamed user, i.e. server, has access to all databases.
@@ -603,8 +609,8 @@ void Context::checkDatabaseAccessRights(const std::string & database_name) const
 void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
-    checkDatabaseAccessRights(from.first);
-    checkDatabaseAccessRights(where.first);
+    checkDatabaseAccessRightsImpl(from.first);
+    checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].insert(where);
 
     // Notify table of dependencies change
@@ -616,8 +622,8 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
 void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
-    checkDatabaseAccessRights(from.first);
-    checkDatabaseAccessRights(where.first);
+    checkDatabaseAccessRightsImpl(from.first);
+    checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].erase(where);
 
     // Notify table of dependencies change
@@ -638,7 +644,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
     }
     else
     {
-        checkDatabaseAccessRights(db);
+        checkDatabaseAccessRightsImpl(db);
     }
 
     ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
@@ -653,7 +659,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     return shared->databases.end() != it
@@ -665,7 +671,7 @@ bool Context::isDatabaseExist(const String & database_name) const
 {
     auto lock = getLock();
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
     return shared->databases.end() != shared->databases.find(db);
 }
 
@@ -680,7 +686,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() == it)
@@ -697,7 +703,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 
     String db = resolveDatabase(database_name, current_database);
     if (check_database_access_rights)
-        checkDatabaseAccessRights(db);
+        checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
@@ -711,7 +717,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
 
     String db = resolveDatabase(database_name, current_database);
     if (check_database_access_rights)
-        checkDatabaseAccessRights(db);
+        checkDatabaseAccessRightsImpl(db);
 
     if (shared->databases.end() == shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
@@ -723,7 +729,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     if (shared->databases.end() != shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
@@ -790,7 +796,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     }
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() == it)
