@@ -9,7 +9,7 @@
 * Добавлена поддержка `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`.
 * Добавлена информация о размере кусков данных в несжатом виде в системные таблицы.
 * Поддержка межсерверного шифрования для distributed таблиц (`<secure>1</secure>` в конфигурации реплики в `<remote_servers>`).
-* Добавлена настройка уровня таблицы семейства `ReplicatedMergeTree` для уменьшения объема данных хранимых в zookeeper: `use_minimalistic_checksums_in_zookeeper = 1`
+* Добавлена настройка уровня таблицы семейства `ReplicatedMergeTree` для уменьшения объема данных, хранимых в zookeeper: `use_minimalistic_checksums_in_zookeeper = 1`
 * Возможность настройки приглашения `clickhouse-client`. По-умолчанию добавлен вывод имени сервера в приглашение. Возможность изменить отображаемое имя сервера. Отправка его в HTTP заголовке `X-ClickHouse-Display-Name` (Kirill Shvakov).
 * Возможность указания нескольких `topics` через запятую для движка `Kafka` (Tobias Adamson)
 * При остановке запроса по причине `KILL QUERY` или `replace_running_query`, клиент получает исключение `Query was cancelled` вместо неполного результата.
