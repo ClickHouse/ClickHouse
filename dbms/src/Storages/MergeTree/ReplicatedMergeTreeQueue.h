@@ -74,6 +74,7 @@ private:
       * Additionally, special elements are also added here to explicitly disallow the merge in a certain range (see disableMergesInRange).
       * This set is protected by its mutex.
       */
+    ActiveDataPartSet prev_virtual_parts;
     ActiveDataPartSet virtual_parts;
 
     std::set<Int64> ephemeral_block_numbers;
@@ -139,6 +140,7 @@ private:
 public:
     ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
         : format_version(format_version_)
+        , prev_virtual_parts(format_version)
         , virtual_parts(format_version)
     {
     }

@@ -21,6 +21,28 @@ public:
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
+    /// Not thread safe
+    ActiveDataPartSet(const ActiveDataPartSet & other)
+        : format_version(other.format_version)
+        , part_info_to_name(other.part_info_to_name)
+    {}
+
+    void swap(ActiveDataPartSet & other)
+    {
+        std::swap(format_version, other.format_version);
+        std::swap(part_info_to_name, other.part_info_to_name);
+    }
+
+    ActiveDataPartSet & operator=(const ActiveDataPartSet & other)
+    {
+        if (&other != this)
+        {
+            ActiveDataPartSet tmp(other);
+            swap(tmp);
+        }
+        return *this;
+    }
+
     void add(const String & name);
 
     /// If not found, returns an empty string.

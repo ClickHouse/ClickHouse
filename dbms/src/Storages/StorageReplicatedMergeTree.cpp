@@ -485,6 +485,8 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
         zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
         zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers2", "",
+        zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/nonincrement_block_numbers", "",
         zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/leader_election", "",
@@ -3010,7 +3012,7 @@ std::pair<Int64, zkutil::EphemeralNodeHolder::Ptr> StorageReplicatedMergeTree::a
     zkutil::Requests own_requests;
     zkutil::Requests * requests = precheck_ops ? precheck_ops : &own_requests;
 
-    String path_prefix = zookeeper_path + "/log/block_number-";
+    String path_prefix = zookeeper_path + "/block_numbers2/block_number-";
     requests->emplace_back(zkutil::makeCreateRequest(path_prefix, String(), zkutil::CreateMode::EphemeralSequential));
     zkutil::Responses results = zookeeper.multi(*requests);
 

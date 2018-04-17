@@ -263,26 +263,24 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 {
     std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
 
+    std::set<Int64> new_ephemeral_block_numbers;
+    {
+        Strings ephemeral_block_nodes = zookeeper->getChildren(zookeeper_path + "/block_numbers2");
+
+        for (const String & entry : ephemeral_block_nodes)
+        {
+            if (!startsWith(entry, "block_number-"))
+                continue;
+
+            Int64 number = parse<Int64>(entry.substr(strlen("block_number-")));
+            new_ephemeral_block_numbers.insert(number);
+        }
+    }
+
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
     Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log", nullptr, next_update_event);
-
-    std::set<Int64> new_ephemeral_block_numbers;
-    for (const String & entry : log_entries)
-    {
-        if (!startsWith(entry, "block_number-"))
-            continue;
-
-        Int64 number = parse<Int64>(entry.substr(strlen("block_number-")));
-        new_ephemeral_block_numbers.insert(number);
-    }
-
-    log_entries.erase(
-        std::remove_if(
-            log_entries.begin(), log_entries.end(),
-            [](const String & s) { return !startsWith(s, "log-"); }),
-        log_entries.end());
 
     if (index_str.empty())
     {
@@ -304,7 +302,14 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
         std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
         log_entries.end());
 
-    if (!log_entries.empty())
+    if (log_entries.empty())
+    {
+        std::lock_guard lock(mutex);
+
+        ephemeral_block_numbers.swap(new_ephemeral_block_numbers);
+        prev_virtual_parts = virtual_parts;
+    }
+    else
     {
         std::sort(log_entries.begin(), log_entries.end());
 
@@ -383,6 +388,8 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
                 ephemeral_block_numbers.swap(new_ephemeral_block_numbers);
 
+                ActiveDataPartSet tmp = virtual_parts;
+
                 for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
                 {
                     String path_created = dynamic_cast<const zkutil::CreateResponse &>(*responses[i]).path_created;
@@ -392,6 +399,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                     insertUnlocked(copied_entries[i], unused, lock);
                 }
 
+                prev_virtual_parts = tmp;
                 last_queue_update = time(nullptr);
             }
             catch (...)
@@ -798,10 +806,10 @@ bool ReplicatedMergeTreeQueue::canMergeParts(const String & left, const String &
 
     std::lock_guard lock(mutex);
 
-    if (virtual_parts.getContainingPart(left) != left)
+    if (prev_virtual_parts.getContainingPart(left) != left || virtual_parts.getContainingPart(left) != left)
         return set_reason(left);
 
-    if (right != left && virtual_parts.getContainingPart(right) != right)
+    if (right != left && (prev_virtual_parts.getContainingPart(right) != right || virtual_parts.getContainingPart(right) != right))
         return set_reason(right);
 
     Int64 left_max_block = left_info.max_block;
