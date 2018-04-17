@@ -1,4 +1,4 @@
-# ClickHouse release 1.1.54378, 2018-04-13
+# ClickHouse release 1.1.54378, 2018-04-16
 
 ## Новые возможности:
 
