@@ -1,6 +1,9 @@
 #pragma once
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
+#include <Common/typeid_cast.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include "ColumnsNumber.h"
 
 namespace DB
 {
@@ -34,6 +37,22 @@ public:
     std::string getName() const override { return "ColumnWithDictionary"; }
     const char * getFamilyName() const override { return "ColumnWithDictionary"; }
 
+    ColumnPtr convertToFullColumn() const
+    {
+        auto & nested = getUnique()->getNestedColumn();
+        auto * indexes = getIndexes();
+        if (auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(indexes))
+            return nested->sample(column_uint8->getData());
+        else if (auto * column_uint16 = typeid_cast<const ColumnUInt16 *>(indexes))
+            return nested->sample(column_uint16->getData());
+        else if (auto * column_uint32 = typeid_cast<const ColumnUInt32 *>(indexes))
+            return nested->sample(column_uint32->getData());
+        else if (auto * column_uint64 = typeid_cast<const ColumnUInt64 *>(indexes))
+            return nested->sample(column_uint64->getData());
+        else
+            throw Exception("Indexes column for ColumnWithDictionary expected to be ColumnUInt, got "
+                            + indexes->getName(), ErrorCodes::LOGICAL_ERROR);
+    }
 
     MutableColumnPtr cloneResized(size_t size) const override
     {
@@ -199,6 +218,8 @@ public:
     IColumn * getIndexes() { return indexes->assumeMutable().get(); }
     const IColumn * getIndexes() const { return indexes.get(); }
     const ColumnPtr & getIndexesPtr() const { return indexes; }
+
+    bool withDictionary() const override { return true; }
 
 private:
     ColumnPtr column_unique;

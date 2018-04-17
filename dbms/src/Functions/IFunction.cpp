@@ -8,6 +8,8 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
+#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -176,7 +178,7 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
     for (size_t i = 0; i < arguments_size; ++i)
         temporary_argument_numbers[i] = i;
 
-    execute(temporary_block, temporary_argument_numbers, arguments_size);
+    executeWithoutColumnsWithDictionary(temporary_block, temporary_argument_numbers, arguments_size);
 
     block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, block.rows());
     return true;
@@ -199,7 +201,7 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
     if (null_presence.has_nullable)
     {
         Block temporary_block = createBlockWithNestedColumns(block, args, result);
-        execute(temporary_block, args, result);
+        executeWithoutColumnsWithDictionary(temporary_block, args, result);
         block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args, result);
         return true;
     }
@@ -207,7 +209,8 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
     return false;
 }
 
-void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result)
+
+void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, const ColumnNumbers & args, size_t result)
 {
     if (defaultImplementationForConstantArguments(block, args, result))
         return;
@@ -216,6 +219,78 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
         return;
 
     executeImpl(block, args, result);
+}
+
+static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & args, size_t result)
+{
+    bool has_with_dictionary = false;
+    bool convert_all_to_full = false;
+    size_t column_with_dict_size = 0;
+
+    for (auto & arg : args)
+    {
+        if (auto * column_with_dict = typeid_cast<const ColumnWithDictionary *>(block.getByPosition(arg).column.get()))
+        {
+            if (has_with_dictionary)
+                convert_all_to_full = true;
+            else
+            {
+                has_with_dictionary = true;
+                column_with_dict_size = column_with_dict->getUnique()->size();
+            }
+        }
+    }
+
+    if (!has_with_dictionary)
+        return {};
+
+    Block temp_block;
+    temp_block.insert(block.getByPosition(result));
+    {
+        auto & column = temp_block.getByPosition(0);
+        auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(column.type.get());
+        if (!type_with_dict)
+            throw Exception("Return type of function which has argument WithDictionary must be WithDictionary, got"
+                            + column.type->getName(), ErrorCodes::LOGICAL_ERROR);
+
+        column.type = type_with_dict->getDictionaryType();
+    }
+
+    for (auto & arg : args)
+    {
+        auto & column = block.getByPosition(arg);
+        if (auto * column_with_dict = typeid_cast<const ColumnWithDictionary *>(column.column.get))
+        {
+            auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(column.type.get());
+            if (!type_with_dict)
+                throw Exception("Column with dictionary must have type WithDictionary, but has"
+                                + column.type->getName(), ErrorCodes::LOGICAL_ERROR);
+
+            ColumnPtr new_column = convert_all_to_full ? column_with_dict->convertToFullColumn()
+                                                       : column_with_dict->getUnique()->getNestedColumn();
+
+            temp_block.insert({new_column, type_with_dict->getDictionaryType(), column.name});
+        }
+        else if (auto * column_const = typeid_cast<const ColumnConst *>(column.column.get()))
+            temp_block.insert({column_const->cloneResized(column_with_dict_size), column.type, column.name});
+        else if (convert_all_to_full)
+            temp_block.insert(column);
+        else
+            throw Exception("Expected ColumnWithDictionary or ColumnConst, got" + column.column->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    return temp_block;
+}
+
+void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result)
+{
+    if (useDefaultImplementationForColumnsWithDictionary())
+    {
+
+    }
+
+    return executeWithoutColumnsWithDictionary(block, args, result);
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
@@ -231,7 +306,36 @@ void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) con
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
-DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & arguments) const
+struct ArgumentsWithoutDictionary
+{
+    ColumnsWithTypeAndName arguments;
+    DataTypePtr common_index_type;
+    bool all_without_dictionary = true;
+
+    explicit ArgumentsWithoutDictionary(const ColumnsWithTypeAndName & args)
+    {
+        DataTypes index_types;
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            const auto & arg = args[i];
+            if (auto * arg_with_dict = typeid_cast<const DataTypeWithDictionary*>(arg.type.get()))
+            {
+                if (all_without_dictionary)
+                {
+                    all_without_dictionary = false;
+                    arguments = args;
+                }
+                arguments[i].type = arg_with_dict->getDictionaryType();
+                index_types.push_back(arg_with_dict->getIndexesType());
+            }
+        }
+
+        if (!all_without_dictionary)
+            common_index_type = getLeastSupertype(index_types);
+    }
+};
+
+DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutDictionary(const ColumnsWithTypeAndName & arguments) const
 {
     checkNumberOfArguments(arguments.size());
 
@@ -253,5 +357,19 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
     }
 
     return getReturnTypeImpl(arguments);
+}
+
+DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & arguments) const
+{
+    if (useDefaultImplementationForColumnsWithDictionary())
+    {
+        ArgumentsWithoutDictionary arguments_without_dictionary(arguments);
+        if (!arguments_without_dictionary.all_without_dictionary)
+            return std::make_shared<DataTypeWithDictionary>(
+                    getReturnTypeWithoutDictionary(arguments_without_dictionary.arguments),
+                    arguments_without_dictionary.common_index_type);
+    }
+
+    return getReturnTypeWithoutDictionary(arguments);
 }
 }
