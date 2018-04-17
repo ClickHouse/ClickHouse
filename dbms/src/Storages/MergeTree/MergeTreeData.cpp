@@ -149,12 +149,15 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
+    auto path_exists = Poco::File(full_path).exists();
     /// Creating directories, if not exist.
     Poco::File(full_path).createDirectories();
+
     Poco::File(full_path + "detached").createDirectory();
 
     String version_file_path = full_path + "format_version.txt";
-    if (!attach)
+    // When data path not exists, ignore the format_version check
+    if (!attach || !path_exists)
     {
         format_version = min_format_version;
         WriteBufferFromFile buf(version_file_path);
