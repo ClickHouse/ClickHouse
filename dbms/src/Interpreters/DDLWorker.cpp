@@ -32,6 +32,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Poco/Timestamp.h>
@@ -424,7 +425,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
 
         ParserQuery parser_query(end);
         String description;
-        task.query = parseQuery(parser_query, begin, end, description);
+        task.query = parseQuery(parser_query, begin, end, description, 0);
     }
 
     if (!task.query || !(task.query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(task.query.get())))
@@ -523,6 +524,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     try
     {
         Context local_context(context);
+        local_context.setCurrentQueryId(""); // generate random query_id
         executeQuery(istr, ostr, false, local_context, nullptr);
     }
     catch (...)
@@ -548,16 +550,16 @@ void DDLWorker::processTask(DDLTask & task)
     String active_node_path = task.entry_path + "/active/" + task.host_id_str;
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
-    auto code = zookeeper->tryCreateWithRetries(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
-    if (code == ZOK || code == ZNODEEXISTS)
+    auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
+    if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
     {
         // Ok
     }
-    else if (code == ZNONODE)
+    else if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
     {
         /// There is no parent
         createStatusDirs(task.entry_path);
-        if (ZOK != zookeeper->tryCreateWithRetries(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+        if (ZooKeeperImpl::ZooKeeper::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
             throw zkutil::KeeperException(code, active_node_path);
     }
     else
@@ -598,10 +600,9 @@ void DDLWorker::processTask(DDLTask & task)
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
 
     /// Delete active flag and create finish flag
-    zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(active_node_path, -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(finished_node_path, task.execution_status.serializeText(),
-                                                          zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+    zkutil::Requests ops;
+    ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
+    ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
 }
 
@@ -778,9 +779,9 @@ void DDLWorker::cleanupQueue()
                 }
 
                 /// Remove the lock node and its parent atomically
-                zkutil::Ops ops;
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(lock_path, -1));
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(node_path, -1));
+                zkutil::Requests ops;
+                ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
+                ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
                 zookeeper->multi(ops);
 
                 lock->unlockAssumeLockNodeRemovedManually();
@@ -797,13 +798,20 @@ void DDLWorker::cleanupQueue()
 /// Try to create nonexisting "status" dirs for a node
 void DDLWorker::createStatusDirs(const std::string & node_path)
 {
-    zkutil::Ops ops;
-    auto acl = zookeeper->getDefaultACL();
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(node_path + "/active", "", acl, zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(node_path + "/finished", "", acl, zkutil::CreateMode::Persistent));
-
-    int code = zookeeper->tryMulti(ops);
-    if (code != ZOK && code != ZNODEEXISTS)
+    zkutil::Requests ops;
+    {
+        zkutil::CreateRequest request;
+        request.path = node_path + "/active";
+        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+    }
+    {
+        zkutil::CreateRequest request;
+        request.path = node_path + "/finished";
+        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+    }
+    zkutil::Responses responses;
+    int code = zookeeper->tryMulti(ops, responses);
+    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
         throw zkutil::KeeperException(code);
 }
 
@@ -816,19 +824,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     String query_path_prefix = queue_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
-    String node_path;
-    try
-    {
-        node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        /// TODO: This condition could be relaxed with additional post-checks
-        if (e.isTemporaryError())
-            throw Exception("Unknown status of distributed DDL task", ErrorCodes::UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK);
-
-        throw;
-    }
+    String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
 
     /// Optional step
     try
@@ -863,7 +859,7 @@ void DDLWorker::run()
             }
             catch (const zkutil::KeeperException & e)
             {
-                if (!e.isHardwareError())
+                if (!zkutil::isHardwareError(e.code))
                     throw;
             }
         }
@@ -891,31 +887,24 @@ void DDLWorker::run()
         }
         catch (zkutil::KeeperException & e)
         {
-            if (e.isHardwareError())
+            if (zkutil::isHardwareError(e.code))
             {
-                if (!e.isTemporaryError())
-                {
-                    LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
+                LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
 
-                    while (!stop_flag)
+                while (!stop_flag)
+                {
+                    try
                     {
-                        try
-                        {
-                            zookeeper = context.getZooKeeper();
-                            break;
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
-
-                            using namespace std::chrono_literals;
-                            std::this_thread::sleep_for(5s);
-                        }
+                        zookeeper = context.getZooKeeper();
+                        break;
                     }
-                }
-                else
-                {
-                    LOG_DEBUG(log, "Retry task processing after: " << getCurrentExceptionMessage(false));
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                        using namespace std::chrono_literals;
+                        std::this_thread::sleep_for(5s);
+                    }
                 }
             }
             else
@@ -1059,7 +1048,7 @@ private:
     {
         Strings res;
         int code = zookeeper->tryGetChildren(node_path, res);
-        if (code != ZOK && code != ZNONODE)
+        if (code && code != ZooKeeperImpl::ZooKeeper::ZNONODE)
             throw zkutil::KeeperException(code, node_path);
         return res;
     }
@@ -1131,7 +1120,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
-    query->cluster = context.getMacros().expand(query->cluster);
+    query->cluster = context.getMacros()->expand(query->cluster);
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 

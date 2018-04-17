@@ -175,7 +175,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         }
     }
 
-    NamesAndTypesList available_real_columns = data.getColumnsList();
+    NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
 
     NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
     for (const auto & name : virt_column_names)
@@ -570,8 +570,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             prewhere_actions,
             prewhere_column,
             virt_column_names,
-            settings,
-            context);
+            settings);
     }
     else
     {
@@ -751,8 +750,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     ExpressionActionsPtr prewhere_actions,
     const String & prewhere_column,
     const Names & virt_columns,
-    const Settings & settings,
-    const Context & context) const
+    const Settings & settings) const
 {
     const size_t max_marks_to_use_cache =
         (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
@@ -782,63 +780,43 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
         to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
     }
 
-    BlockInputStreams res;
-    if (to_merge.size() == 1)
+    BlockInputStreamPtr merged;
+
+    switch (data.merging_params.mode)
     {
-        if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-        {
-            ExpressionActionsPtr sign_filter_expression;
-            String sign_filter_column;
+        case MergeTreeData::MergingParams::Ordinary:
+            merged = std::make_shared<MergingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
+            break;
 
-            createPositiveSignCondition(sign_filter_expression, sign_filter_column, context);
+        case MergeTreeData::MergingParams::Collapsing:
+            merged = std::make_shared<CollapsingFinalBlockInputStream>(
+                    to_merge, data.getSortDescription(), data.merging_params.sign_column);
+            break;
 
-            res.emplace_back(std::make_shared<FilterBlockInputStream>(to_merge[0], sign_filter_expression, sign_filter_column));
-        }
-        else
-            res = to_merge;
-    }
-    else if (to_merge.size() > 1)
-    {
-        BlockInputStreamPtr merged;
+        case MergeTreeData::MergingParams::Summing:
+            merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
+                    data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
+            break;
 
-        switch (data.merging_params.mode)
-        {
-            case MergeTreeData::MergingParams::Ordinary:
-                merged = std::make_shared<MergingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
-                break;
+        case MergeTreeData::MergingParams::Aggregating:
+            merged = std::make_shared<AggregatingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
+            break;
 
-            case MergeTreeData::MergingParams::Collapsing:
-                merged = std::make_shared<CollapsingFinalBlockInputStream>(
-                        to_merge, data.getSortDescription(), data.merging_params.sign_column);
-                break;
+        case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
+            merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
+                    data.getSortDescription(), data.merging_params.version_column, max_block_size);
+            break;
 
-            case MergeTreeData::MergingParams::Summing:
-                merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
-                        data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
-                break;
+        case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
+            merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
+                    to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
+            break;
 
-            case MergeTreeData::MergingParams::Aggregating:
-                merged = std::make_shared<AggregatingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
-                break;
-
-            case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
-                merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
-                        data.getSortDescription(), data.merging_params.version_column, max_block_size);
-                break;
-
-            case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
-                merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
-                        to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
-                break;
-
-            case MergeTreeData::MergingParams::Graphite:
-                throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
-        }
-
-        res.emplace_back(merged);
+        case MergeTreeData::MergingParams::Graphite:
+            throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
     }
 
-    return res;
+    return {merged};
 }
 
 
@@ -857,7 +835,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     arguments->children.push_back(sign);
     arguments->children.push_back(one);
 
-    out_expression = ExpressionAnalyzer(function, context, {}, data.getColumnsList()).getActions(false);
+    out_expression = ExpressionAnalyzer(function, context, {}, data.getColumns().getAllPhysical()).getActions(false);
     out_column = function->getColumnName();
 }
 

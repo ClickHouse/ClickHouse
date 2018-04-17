@@ -125,7 +125,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING = 115;
     extern const int THERE_IS_NO_DEFAULT_VALUE = 116;
     extern const int INCORRECT_DATA = 117;
-    extern const int TABLE_METADATA_DOESNT_EXIST = 118;
     extern const int ENGINE_REQUIRED = 119;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE = 120;
     extern const int UNKNOWN_SET_DATA_VARIANT = 121;
@@ -372,6 +371,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED = 394;
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO = 395;
     extern const int TOO_MANY_ROWS_OR_BYTES = 396;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW = 397;
 
 
     extern const int KEEPER_EXCEPTION = 999;

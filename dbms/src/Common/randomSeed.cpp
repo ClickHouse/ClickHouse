@@ -1,12 +1,10 @@
 #include <time.h>
-#include <unistd.h>
+#include <port/unistd.h>
 #include <sys/types.h>
-
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <Core/Types.h>
-
 #ifdef __APPLE__
 #include <common/apple_rt.h>
 #endif

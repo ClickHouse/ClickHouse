@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/QueryProcessingStage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
@@ -53,8 +55,7 @@ private:
         ExpressionActionsPtr prewhere_actions,
         const String & prewhere_column,
         const Names & virt_columns,
-        const Settings & settings,
-        const Context & context) const;
+        const Settings & settings) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(

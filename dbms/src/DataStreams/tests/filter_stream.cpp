@@ -33,7 +33,7 @@ try
     std::string input = "SELECT number, number % 3 == 1";
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     formatAST(*ast, std::cerr);
     std::cerr << std::endl;

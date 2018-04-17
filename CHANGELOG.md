@@ -1,4 +1,31 @@
-# ClickHouse 1.1.54356 Release Candidate, 2018-03-06
+# ClickHouse release 1.1.54370, 2018-03-16
+
+## New features:
+
+* Added the `system.macros` table and auto updating of macros when the config file is changed.
+* Added the `SYSTEM RELOAD CONFIG` query.
+* Added the `maxIntersections(left_col, right_col)` aggregate function, which returns the maximum number of simultaneously intersecting intervals `[left; right]`. The `maxIntersectionsPosition(left, right)` function returns the beginning of the "maximum" interval. ([Michael Furmur](https://github.com/yandex/ClickHouse/pull/2012)).
+
+## Improvements:
+
+* When inserting data in a `Replicated` table, fewer requests are made to `ZooKeeper` (and most of the user-level errors have disappeared from the `ZooKeeper` log).
+* Added the ability to create aliases for sets. Example: `WITH (1, 2, 3) AS set SELECT number IN set FROM system.numbers LIMIT 10`.
+
+## Bug fixes:
+
+* Fixed the `Illegal PREWHERE` error when reading from `Merge` tables over `Distributed` tables.
+* Added fixes that allow you to run `clickhouse-server` in IPv4-only Docker containers.
+* Fixed a race condition when reading from system `system.parts_columns` tables.
+* Removed double buffering during a synchronous insert to a `Distributed` table, which could have caused the connection to timeout.
+* Fixed a bug that caused excessively long waits for an unavailable replica before beginning a `SELECT` query.
+* Fixed incorrect dates in the `system.parts` table.
+* Fixed a bug that made it impossible to insert data in a `Replicated` table if `chroot` was non-empty in the configuration of the `ZooKeeper` cluster.
+* Fixed the vertical merging algorithm for an empty `ORDER BY` table.
+* Restored the ability to use dictionaries in queries to remote tables, even if these dictionaries are not present on the requestor server. This functionality was lost in release 1.1.54362.
+* Restored the behavior for queries like `SELECT * FROM remote('server2', default.table) WHERE col IN (SELECT col2 FROM default.table)` when the right side argument of the `IN` should use a remote `default.table` instead of a local one. This behavior was broken in version 1.1.54358.
+* Removed extraneous error-level logging of `Not found column ... in block`.
+
+# ClickHouse release 1.1.54356, 2018-03-06
 
 ## New features:
 

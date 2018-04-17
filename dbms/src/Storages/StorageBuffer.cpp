@@ -48,14 +48,11 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & name_, const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+StorageBuffer::StorageBuffer(const std::string & name_, const ColumnsDescription & columns_,
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     name(name_), context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
@@ -167,7 +164,7 @@ static void appendBlock(const Block & from, Block & to)
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = to.getByPosition(column_no).column->mutate();
+            MutableColumnPtr col_to = (*std::move(to.getByPosition(column_no).column)).mutate();
 
             col_to->insertRangeFrom(col_from, 0, rows);
 
@@ -186,7 +183,7 @@ static void appendBlock(const Block & from, Block & to)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = col_to->mutate()->cut(0, old_rows);
+                    col_to = (*std::move(col_to)).mutate()->cut(0, old_rows);
             }
         }
         catch (...)
@@ -323,6 +320,20 @@ private:
 BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
+}
+
+
+bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+{
+    if (no_destination)
+        return false;
+
+    auto destination = context.getTable(destination_database, destination_table);
+
+    if (destination.get() == this)
+        throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+    return destination->mayBenefitFromIndexForIn(left_in_operand);
 }
 
 
@@ -598,11 +609,10 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    params.apply(columns, materialized_columns, alias_columns, column_defaults);
-
-    context.getDatabase(database_name)->alterTable(
-        context, table_name,
-        columns, materialized_columns, alias_columns, column_defaults, {});
+    ColumnsDescription new_columns = getColumns();
+    params.apply(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    setColumns(std::move(new_columns));
 }
 
 
@@ -641,7 +651,6 @@ void registerStorageBuffer(StorageFactory & factory)
 
         return StorageBuffer::create(
             args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             args.context,
             num_buckets,
             StorageBuffer::Thresholds{min_time, min_rows, min_bytes},

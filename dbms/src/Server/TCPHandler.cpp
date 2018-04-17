@@ -31,6 +31,7 @@
 #include "TCPHandler.h"
 
 #include <Common/NetException.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -133,11 +134,15 @@ void TCPHandler::runImpl()
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
         std::unique_ptr<Exception> exception;
+        bool network_error = false;
 
         try
         {
             /// Restore context of request.
             query_context = connection_context;
+
+            /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
+            SCOPE_EXIT({state.timeout_setter.reset();});
 
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
@@ -179,6 +184,10 @@ void TCPHandler::runImpl()
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
+
+            /// If a timeout occurred, try to inform client about it and close the session
+            if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
+                network_error = true;
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -206,8 +215,6 @@ void TCPHandler::runImpl()
             state.io.onException();
             exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
-
-        bool network_error = false;
 
         try
         {
@@ -247,6 +254,14 @@ void TCPHandler::runImpl()
 
 void TCPHandler::readData(const Settings & global_settings)
 {
+    auto receive_timeout = query_context.getSettingsRef().receive_timeout.value;
+
+    /// Poll interval should not be greater than receive_timeout
+    size_t default_poll_interval = global_settings.poll_interval.value * 1000000;
+    size_t current_poll_interval = static_cast<size_t>(receive_timeout.totalMicroseconds());
+    constexpr size_t min_poll_interval = 5000; // 5 ms
+    size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
+
     while (1)
     {
         Stopwatch watch(CLOCK_MONOTONIC_COARSE);
@@ -254,7 +269,7 @@ void TCPHandler::readData(const Settings & global_settings)
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
         while (1)
         {
-            if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000))
+            if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(poll_interval))
                 break;
 
             /// Do we need to shut down?
@@ -265,8 +280,16 @@ void TCPHandler::readData(const Settings & global_settings)
              *  If we periodically poll, the receive_timeout of the socket itself does not work.
              *  Therefore, an additional check is added.
              */
-            if (watch.elapsedSeconds() > global_settings.receive_timeout.totalSeconds())
-                throw Exception("Timeout exceeded while receiving data from client", ErrorCodes::SOCKET_TIMEOUT);
+            double elapsed = watch.elapsedSeconds();
+            if (elapsed > receive_timeout.totalSeconds())
+            {
+                std::stringstream ss;
+                ss << "Timeout exceeded while receiving data from client.";
+                ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
+                ss << " timeout is " << receive_timeout.totalSeconds() << " seconds.";
+
+                throw Exception(ss.str(), ErrorCodes::SOCKET_TIMEOUT);
+            }
         }
 
         /// If client disconnected.
@@ -508,6 +531,10 @@ void TCPHandler::sendHello()
     {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+    {
+        writeStringBinary(server_display_name, *out);
+    }
     out->next();
 }
 
@@ -552,7 +579,7 @@ bool TCPHandler::receivePacket()
             return false;
 
         default:
-            throw Exception("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+            throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
 }
 
@@ -596,7 +623,14 @@ void TCPHandler::receiveQuery()
     }
 
     /// Per query settings.
-    query_context.getSettingsRef().deserialize(*in);
+    Settings & settings = query_context.getSettingsRef();
+    settings.deserialize(*in);
+
+    /// Sync timeouts on client and server during current query to avoid dangling queries on server
+    /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
+    ///  because settings.send_timeout is client-side setting which has opposite meaning on the server side.
+    /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
+    state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.receive_timeout, settings.send_timeout);
 
     readVarUInt(stage, *in);
     state.stage = QueryProcessingStage::Enum(stage);
@@ -630,7 +664,8 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context.tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+                storage = StorageMemory::create(external_table_name,
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }

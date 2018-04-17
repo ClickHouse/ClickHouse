@@ -4,6 +4,7 @@
 
 #include <Core/Field.h>
 #include <Common/FieldVisitors.h>
+#include <Common/NaNUtils.h>
 
 
 namespace DB
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 
@@ -55,6 +57,10 @@ struct QuantileLevels
         for (size_t i = 0; i < size; ++i)
         {
             levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+
+            if (isNaN(levels[i]) || levels[i] < 0 || levels[i] > 1)
+                throw Exception("Quantile level is out of range [0..1]", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
             permutation[i] = i;
         }
 

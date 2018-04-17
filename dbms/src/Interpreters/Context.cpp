@@ -74,7 +74,6 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_ALREADY_EXISTS;
-    extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -82,6 +81,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 
@@ -130,7 +130,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
-    Macros macros;                                          /// Substitutions extracted from config.
+    MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -184,6 +184,8 @@ struct ContextShared
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     pcg64 rng{randomSeed()};
+
+    Context::ConfigReloadCallback config_reload_callback;
 
     ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
         : runtime_components_factory(std::move(runtime_components_factory_))
@@ -513,12 +515,6 @@ void Context::setConfig(const ConfigurationPtr & config)
     shared->config = config;
 }
 
-ConfigurationPtr Context::getConfig() const
-{
-    auto lock = getLock();
-    return shared->config;
-}
-
 Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 {
     auto lock = getLock();
@@ -568,6 +564,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
     client_info.current_user = name;
     client_info.current_address = address;
+    client_info.current_password = password;
 
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
@@ -687,10 +684,10 @@ void Context::assertTableExists(const String & database_name, const String & tab
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() == it)
-        throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
     if (!it->second->isTableExist(*this, table_name))
-        throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 
@@ -704,7 +701,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
-        throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 
@@ -717,7 +714,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
         checkDatabaseAccessRights(db);
 
     if (shared->databases.end() == shared->databases.find(db))
-        throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 }
 
 
@@ -729,7 +726,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
     checkDatabaseAccessRights(db);
 
     if (shared->databases.end() != shared->databases.find(db))
-        throw Exception("Database " + db + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+        throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
 
 
@@ -799,7 +796,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     if (shared->databases.end() == it)
     {
         if (exception)
-            *exception = Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
         return {};
     }
 
@@ -807,7 +804,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     if (!table)
     {
         if (exception)
-            *exception = Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            *exception = Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 
@@ -818,7 +815,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
 {
     if (external_tables.end() != external_tables.find(table_name))
-        throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     external_tables[table_name] = std::pair(storage, ast);
 }
@@ -910,25 +907,34 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 }
 
 
-ASTPtr Context::getCreateQuery(const String & database_name, const String & table_name) const
+ASTPtr Context::getCreateTableQuery(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
     assertDatabaseExists(db);
 
-    return shared->databases[db]->getCreateQuery(*this, table_name);
+    return shared->databases[db]->getCreateTableQuery(*this, table_name);
 }
 
-ASTPtr Context::getCreateExternalQuery(const String & table_name) const
+ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
     TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
     if (external_tables.end() == jt)
-        throw Exception("Temporary Table" + table_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
     return jt->second.second;
 }
 
+ASTPtr Context::getCreateDatabaseQuery(const String & database_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    assertDatabaseExists(db);
+
+    return shared->databases[db]->getCreateDatabaseQuery(*this);
+}
 
 Settings Context::getSettings() const
 {
@@ -1042,15 +1048,14 @@ void Context::setDefaultFormat(const String & name)
     default_format = name;
 }
 
-const Macros & Context::getMacros() const
+MultiVersion<Macros>::Version Context::getMacros() const
 {
-    return shared->macros;
+    return shared->macros.get();
 }
 
-void Context::setMacros(Macros && macros)
+void Context::setMacros(std::unique_ptr<Macros> && macros)
 {
-    /// We assume that this assignment occurs once when the server starts. If this is not the case, you need to use a mutex.
-    shared->macros = macros;
+    shared->macros.set(std::move(macros));
 }
 
 const Context & Context::getQueryContext() const
@@ -1316,21 +1321,13 @@ DDLWorker & Context::getDDLWorker() const
     return *shared->ddl_worker;
 }
 
-void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
-{
-    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
-
-    if (shared->zookeeper)
-        throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
-
-    shared->zookeeper = std::move(zookeeper);
-}
-
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
 
-    if (shared->zookeeper && shared->zookeeper->expired())
+    if (!shared->zookeeper)
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "zookeeper");
+    else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
@@ -1619,6 +1616,22 @@ time_t Context::getUptimeSeconds() const
 {
     auto lock = getLock();
     return shared->uptime_watch.elapsedSeconds();
+}
+
+
+void Context::setConfigReloadCallback(ConfigReloadCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    shared->config_reload_callback = std::move(callback);
+}
+
+void Context::reloadConfig() const
+{
+    /// Use mutex if callback may be changed after startup.
+    if (!shared->config_reload_callback)
+        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->config_reload_callback();
 }
 
 

@@ -59,7 +59,8 @@ For elements in a nested data structure, the function checks for the existence o
 
 Allows building a unicode-art diagram.
 
-`bar (x, min, max, width)` – Draws a band with a width proportional to (x - min) and equal to 'width' characters when x == max.`min, max` – Integer constants. The value must fit in Int64.`width` – Constant, positive number, may be a fraction.
+`bar (x, min, max, width)` – Draws a band with a width proportional to (x - min) and equal to 'width' characters when x == max.
+`min, max` – Integer constants. The value must fit in Int64.`width` – Constant, positive number, may be a fraction.
 
 The band is drawn with accuracy to one eighth of a symbol.
 
@@ -137,7 +138,7 @@ Example:
 
 ```sql
 SELECT
-    transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other' AS title,
+    transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
 FROM test.hits
 WHERE SearchEngineID != 0

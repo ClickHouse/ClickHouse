@@ -86,6 +86,7 @@ pages:
   - 'GraphiteMergeTree': 'table_engines/graphitemergetree.md'
   - 'Data replication': 'table_engines/replication.md'
   - 'Distributed': 'table_engines/distributed.md'
+  - 'Dictionary': 'table_engines/dictionary.md'
   - 'Merge': 'table_engines/merge.md'
   - 'Buffer': 'table_engines/buffer.md'
   - 'File': 'table_engines/file.md'
@@ -122,6 +123,7 @@ pages:
   - 'Introduction': 'table_functions/index.md'
   - 'remote': 'table_functions/remote.md'
   - 'merge': 'table_functions/merge.md'
+  - 'numbers': 'table_functions/numbers.md'
 
 - 'Formats':
   - 'Introduction': 'formats/index.md'
@@ -133,6 +135,7 @@ pages:
   - 'CSVWithNames': 'formats/csvwithnames.md'
   - 'Values': 'formats/values.md'
   - 'Vertical': 'formats/vertical.md'
+  - 'VerticalRaw': 'formats/verticalraw.md'
   - 'JSON': 'formats/json.md'
   - 'JSONCompact': 'formats/jsoncompact.md'
   - 'JSONEachRow': 'formats/jsoneachrow.md'
@@ -218,7 +221,7 @@ pages:
   - 'Internal dictionaries': 'dicts/internal_dicts.md'
 
 - 'Operation':
-  - 'Operation': 'operations/index.md'
+#  - 'Operation': 'operations/index.md'
   - 'Access rights': 'operations/access_rights.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
