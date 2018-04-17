@@ -116,7 +116,7 @@ public:
 
     IColumn & getNestedUniqueColumn(ColumnWithDictionary & column_with_dictionary) const
     {
-        return *column_with_dictionary.getUnique()->getNestedColumn()->assumeMutable();
+        return column_with_dictionary.getUnique()->getNestedColumn()->assumeMutableRef();
     }
 
     template <typename ... Args>
