@@ -5,32 +5,31 @@
 * Добавлен запрос `SHOW CREATE DATABASE`.
 * Возможность передать query_id в `clickhouse-client`.
 * Добавлена настройка `max_network_bandwidth_for_all_users`.
-* Поддержка межсерверного шифрования для distributed таблиц (в настройках реплики <secure>1</secure>).
+* Поддержка межсерверного шифрования для distributed таблиц (`<secure>1</secure>` в конфигурации реплики в `<remote_servers>`).
+* Добавлена настройка для уменьшения объема данных хранимых в zookeeper: `use_minimalistic_checksums_in_zookeeper = 1`
 
 ## Улучшения:
 
-* Debian: переименованы пакеты `clickhouse-server-base` => `clickhouse-common-static`; `clickhouse-server-common` -> `clickhouse-server`; clickhouse-common-dbg -> clickhouse-common-static-dbg. Для установки используйте только `clickhouse-server clickhouse-client`.
-* Сервер больше не использует по умолчанию опцию сокета SO_REUSEPORT. Теперь многократный listen одного адреса например `<listen_host>::</listen_host><listen_host>0.0.0.0</listen_host>` выдаст ошибку. Для включения этой опции добавьте в конфиг `<listen_reuse_port>1</listen_reuse_port>`.
-* Добавлена информация о размере несжатых кусков в системные таблицы.
-* В `clickhouse-client` выводится `имя_сервера` :)
-* Новая библиотека для работы с `ZooKeeper`.
-* `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`.
-* SystemLog: Выполнение prepareTable() на каждом сбросе лога (Kirill Shvakov).
-* Более быстрые мержи в ReplicatedAggregatingMergeTree (#2084).
-* Поддержка инструкций SIMD в UTF-8 countCodePoints (zhang2014).
+* Добавлена информация о размере кусков данных в несжатом виде в системные таблицы.
+* Возможность настройки приглашения `clickhouse-client`. По-умолчанию добавлен вывод имени сервера в приглашение.
+* Добавлена поддержка `ALTER TABLE ... PARTITION ... ` для `MATERIALIZED VIEW`.
+* Возможность использовать `SELECT ... FINAL` и `OPTIMIZE ... FINAL` даже с одним куском.
+* Пересоздание таблицы `query_log` налету в случае если было произведено её удаление вручную (Kirill Shvakov).
+* Исправлена проблема с появлением `Too many parts` в агрегирующих материализованных представлениях (#2084).
+* Ускорение функции `lengthUTF8` (zhang2014).
 
 ## Исправление ошибок:
 
-* Исправлены ошибки с запросами содержащими IN.
 * Исправлена ошибка c IN где левая часть выражения nullable.
-* Возможно использовать FINAL даже с одним куском.
-* Неправильный результат при использовании таплов с IN.
-* Исправлен не работающий max_execution_time с распределенными запросами.
-* Исправлена ошибка при создании временной таблицы CREATE TEMPORARY TABLE IF NOT EXISTS
-* Семейство 'uniq' функций теперь поддерживает массивы #2010
-* Исправлены ошибки в StorageKafka #2075
-* Настройка для уменьшения объема данных хранимых в zookeeper: use_minimalistic_checksums_in_zookeeper=1
-* Исправлены падения сервера от некорректных аргументов аггрегатных функций.
+* Неправильный результат при использовании кортежей с IN в случае, если часть компоненнтов кортежа есть в индексе таблицы.
+* Исправлена работа ограничения `max_execution_time` с распределенными запросами.
+* Исправлена ошибка при создании временной таблицы `CREATE TEMPORARY TABLE IF NOT EXISTS`
+* Исправлены ошибки в `StorageKafka` #2075
+* Исправлены падения сервера от некорректных аргументов некоторых аггрегатных функций.
+
+## Изменения сборки
+
+* Переименованы пакеты `clickhouse-server-base` в `clickhouse-common-static`; `clickhouse-server-common` в `clickhouse-server`; `clickhouse-common-dbg` в `clickhouse-common-static-dbg`. Для установки используйте только `clickhouse-server clickhouse-client`. Для совместимости, пакеты со старыми именами продолжают загружаться в репозиторий.
 
 
 # ClickHouse release 1.1.54370, 2018-03-16
