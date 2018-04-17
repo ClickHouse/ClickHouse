@@ -55,14 +55,11 @@ class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<Colum
 
 private:
     explicit ColumnUnique(MutableColumnPtr && holder);
-    explicit ColumnUnique(const DataTypePtr & type) : is_nullable(type->isNullable())
-    {
-        column_holder = removeNullable(type)->createColumn()->cloneResized(numSpecialValues());
-    }
+    explicit ColumnUnique(const DataTypePtr & type);
     ColumnUnique(const ColumnUnique & other) : column_holder(other.column_holder), is_nullable(other.is_nullable) {}
 
 public:
-    const ColumnPtr & getNestedColumn() const override { return column_holder; }
+    const ColumnPtr & getNestedColumn() const override;
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     ColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -133,6 +130,11 @@ private:
     using IndexMapType = HashMap<StringRefWrapper<ColumnType>, IndexType, StringRefHash>;
 
     ColumnPtr column_holder;
+
+    /// For DataTypeNullable, nullptr otherwise.
+    ColumnPtr nullable_column;
+    NullMap * nullable_column_map = nullptr;
+
     /// Lazy initialized.
     std::unique_ptr<IndexMapType> index;
 
@@ -148,14 +150,42 @@ private:
 };
 
 template <typename ColumnType, typename IndexType>
+ColumnUnique<ColumnType, IndexType>::ColumnUnique(const DataTypePtr & type) : is_nullable(type->isNullable())
+{
+    if (is_nullable)
+    {
+        nullable_column = type->createColumn()->cloneResized(numSpecialValues());
+        auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
+        column_holder = column_nullable.getNestedColumnPtr();
+        nullable_column_map = &column_nullable.getNullMapData();
+        (*nullable_column_map)[1] = 0;
+    }
+    else
+        column_holder = type->createColumn()->cloneResized(numSpecialValues());
+}
+
+template <typename ColumnType, typename IndexType>
 ColumnUnique<ColumnType, IndexType>::ColumnUnique(MutableColumnPtr && holder) : column_holder(std::move(holder))
 {
     if (column_holder->isColumnNullable())
     {
-        auto column_nullable = static_cast<const ColumnNullable *>(column_holder.get());
-        column_holder = column_nullable->getNestedColumnPtr();
+        nullable_column = std::move(column_holder);
+        auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
+        column_holder = column_nullable.getNestedColumnPtr();
+        nullable_column_map = &column_nullable.getNullMapData();
         is_nullable = true;
     }
+}
+
+template <typename ColumnType, typename IndexType>
+const ColumnPtr& ColumnUnique<ColumnType, IndexType>::getNestedColumn() const
+{
+    if (is_nullable)
+    {
+        nullable_column_map->resize_fill(column_holder->size());
+        return nullable_column;
+    }
+    return column_holder;
 }
 
 template <typename ColumnType, typename IndexType>
@@ -320,10 +350,10 @@ ColumnPtr ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeFrom(const IColu
     {
         auto row = start + i;
 
-        if (column->compareAt(getDefaultValueIndex(), row, *src_column, 1) == 0)
-            positions[i] = getDefaultValueIndex();
-        else if (null_map && (*null_map)[row])
+        if (null_map && (*null_map)[row])
             positions[i] = getNullValueIndex();
+        else if (column->compareAt(getDefaultValueIndex(), row, *src_column, 1) == 0)
+            positions[i] = getDefaultValueIndex();
         else
         {
             auto it = index->find(StringRefWrapper<ColumnType>(src_column, row));
