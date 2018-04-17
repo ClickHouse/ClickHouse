@@ -38,7 +38,7 @@ public:
     MutableColumnPtr cloneResized(size_t size) const override
     {
         auto unique_ptr = column_unique;
-        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->cloneResized(size));
+        return ColumnWithDictionary::create((*std::move(unique_ptr)).mutate(), indexes->cloneResized(size));
     }
 
     size_t size() const override { return indexes->size(); }
