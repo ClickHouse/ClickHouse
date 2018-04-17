@@ -178,6 +178,7 @@ public:
     void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
 
     void assertDatabaseDoesntExist(const String & database_name) const;
+    void checkDatabaseAccessRights(const std::string & database_name) const;
 
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
@@ -392,7 +393,7 @@ private:
       * If access is denied, throw an exception.
       * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
       */
-    void checkDatabaseAccessRights(const std::string & database_name) const;
+    void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
     ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;

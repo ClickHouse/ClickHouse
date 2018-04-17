@@ -91,8 +91,14 @@ private:
     BlockInputStreamPtr query_stream_in;
     BlockOutputStreamPtr query_stream_out;
 
-    bool query_streams_initialized{false};
-    bool query_streams_released{false};
+    enum QueryStreamsStatus
+    {
+        NotInitialized,
+        Initialized,
+        Released
+    };
+
+    QueryStreamsStatus query_streams_status{NotInitialized};
 
 public:
     ProcessListElement(
