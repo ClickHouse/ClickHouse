@@ -4,7 +4,8 @@
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/IStorage.h>
+#include <Storages/ITableDeclaration.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -270,10 +271,8 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & full_path_, const NamesAndTypesList & columns_,
-                  const NamesAndTypesList & materialized_columns_,
-                  const NamesAndTypesList & alias_columns_,
-                  const ColumnDefaults & column_defaults_,
+                  const String & full_path_,
+                  const ColumnsDescription & columns_,
                   Context & context_,
                   const ASTPtr & primary_expr_ast_,
                   const ASTPtr & secondary_sort_expr_ast_,
@@ -305,8 +304,6 @@ public:
 
     Int64 getMaxDataPartIndex();
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     NameAndTypePair getColumn(const String & column_name) const override
     {
         if (column_name == "_part")
@@ -316,12 +313,12 @@ public:
         if (column_name == "_sample_factor")
             return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
-        return ITableDeclaration::getColumn(column_name);
+        return getColumns().getPhysical(column_name);
     }
 
     bool hasColumn(const String & column_name) const override
     {
-        return ITableDeclaration::hasColumn(column_name)
+        return getColumns().hasPhysical(column_name)
             || column_name == "_part"
             || column_name == "_part_index"
             || column_name == "_sample_factor";
@@ -329,7 +326,7 @@ public:
 
     String getDatabaseName() const { return database_name; }
 
-    String getTableName() const override { return table_name; }
+    String getTableName() const { return table_name; }
 
     String getFullPath() const { return full_path; }
 
@@ -431,9 +428,6 @@ public:
         const ASTPtr & new_primary_key,
         bool skip_sanity_checks);
 
-    /// Must be called with locked lockStructureForAlter().
-    void setColumnsList(const NamesAndTypesList & new_columns) { columns = new_columns; }
-
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name)
     {
@@ -458,18 +452,6 @@ public:
     /// Returns the size of partition in bytes.
     size_t getPartitionSize(const std::string & partition_id) const;
 
-    struct ColumnSize
-    {
-        size_t marks = 0;
-        size_t data_compressed = 0;
-        size_t data_uncompressed = 0;
-
-        size_t getTotalCompressedSize() const
-        {
-            return marks + data_compressed;
-        }
-    };
-
     size_t getColumnCompressedSize(const std::string & name) const
     {
         std::lock_guard<std::mutex> lock{data_parts_mutex};
@@ -478,23 +460,11 @@ public:
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
-    using ColumnSizes = std::unordered_map<std::string, ColumnSize>;
-    ColumnSizes getColumnSizes() const
+    using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
+    ColumnSizeByName getColumnSizes() const
     {
         std::lock_guard<std::mutex> lock{data_parts_mutex};
         return column_sizes;
-    }
-
-    /// NOTE Could be off after DROPped and MODIFYed columns in ALTER. Doesn't include primary.idx.
-    size_t getTotalCompressedSize() const
-    {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
-        size_t total_size = 0;
-
-        for (const auto & col : column_sizes)
-            total_size += col.second.getTotalCompressedSize();
-
-        return total_size;
     }
 
     /// Calculates column sizes in compressed form for the current state of data_parts.
@@ -506,6 +476,7 @@ public:
 
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
+
 
     MergeTreeDataFormatVersion format_version;
 
@@ -560,7 +531,7 @@ private:
     String full_path;
 
     /// Current column sizes in compressed and uncompressed form.
-    ColumnSizes column_sizes;
+    ColumnSizeByName column_sizes;
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
@@ -680,8 +651,8 @@ private:
         DataPartPtr & out_covering_part,
         std::lock_guard<std::mutex> & data_parts_lock) const;
 
-    /// Checks whether the column is in the primary key.
-    bool isPrimaryKeyColumn(const ASTPtr &node) const;
+    /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
+    bool isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 };
 
 }

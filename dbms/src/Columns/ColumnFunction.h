@@ -29,10 +29,10 @@ public:
 
     size_t size() const override { return size_; }
 
-    MutableColumnPtr cut(size_t start, size_t length) const override;
-    MutableColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr cut(size_t start, size_t length) const override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     void insertDefault() override;
     void popBack(size_t n) override;
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns,

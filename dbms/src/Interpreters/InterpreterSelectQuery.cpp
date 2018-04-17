@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -338,6 +339,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
 
+    if (from_stage == QueryProcessingStage::WithMergeableState && to_stage == QueryProcessingStage::WithMergeableState)
+        throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
     if (!dry_run)
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
@@ -516,12 +520,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     /// Are ALIAS columns required for query execution?
     auto alias_columns_required = false;
 
-    if (storage && !storage->alias_columns.empty())
+    if (storage && !storage->getColumns().aliases.empty())
     {
+        const auto & column_defaults = storage->getColumns().defaults;
         for (const auto & column : required_columns)
         {
-            const auto default_it = storage->column_defaults.find(column);
-            if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+            const auto default_it = column_defaults.find(column);
+            if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
             {
                 alias_columns_required = true;
                 break;
@@ -535,8 +540,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
             for (const auto & column : required_columns)
             {
-                const auto default_it = storage->column_defaults.find(column);
-                if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+                const auto default_it = column_defaults.find(column);
+                if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
                     required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
                 else
                     required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));
@@ -682,19 +687,26 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             stream->addTableLock(table_lock);
         });
 
-        /** Set the limits and quota for reading data, the speed and time of the query.
-          *  Such restrictions are checked on the initiating server of the request, and not on remote servers.
-          *  Because the initiating server has a summary of the execution of the request on all servers.
-          */
-        if (to_stage == QueryProcessingStage::Complete)
+        /// Set the limits and quota for reading data, the speed and time of the query.
         {
             IProfilingBlockInputStream::LocalLimits limits;
             limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
             limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
             limits.max_execution_time = settings.max_execution_time;
             limits.timeout_overflow_mode = settings.timeout_overflow_mode;
-            limits.min_execution_speed = settings.min_execution_speed;
-            limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+            /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+              *  because the initiating server has a summary of the execution of the request on all servers.
+              *
+              * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+              *  additionally on each remote server, because these limits are checked per block of data processed,
+              *  and remote servers may process way more blocks of data than are received by initiator.
+              */
+            if (to_stage == QueryProcessingStage::Complete)
+            {
+                limits.min_execution_speed = settings.min_execution_speed;
+                limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+            }
 
             QuotaForIntervals & quota = context.getQuota();
 
@@ -703,7 +715,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
                 {
                     p_stream->setLimits(limits);
-                    p_stream->setQuota(quota);
+
+                    if (to_stage == QueryProcessingStage::Complete)
+                        p_stream->setQuota(quota);
                 }
             });
         }

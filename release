@@ -13,6 +13,7 @@ DEB_CXX=${DEB_CXX:=g++-7}
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
 DEBUILD_NODEPS_OPTIONS="-d"
+USE_PBUILDER=1
 
 if [ -z "$REVISION" ] ; then
     get_revision_author
@@ -35,11 +36,14 @@ do
         REVISION=`git rev-parse HEAD`
         shift
     elif [[ $1 == '--pbuilder' ]]; then
-        USE_PBUILDER=1
+        # Default
+        shift
+    elif [[ $1 == '--no-pbuilder' ]]; then
+        USE_PBUILDER=
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo openssl"
         shift
     else
         echo "Unknown option $1"
@@ -91,6 +95,13 @@ else
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
 
+    if [[ -z `which pbuilder` ]] ; then
+        sudo apt install -y pbuilder fakeroot debhelper debian-archive-keyring debian-keyring
+    fi
+
+    if [[ ! -e "/usr/share/debootstrap/scripts/${DIST}" ]] ; then
+        sudo ln -s gutsy /usr/share/debootstrap/scripts/${DIST}
+    fi
 
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
         echo Creating base system $BASETGZ

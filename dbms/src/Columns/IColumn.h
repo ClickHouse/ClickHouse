@@ -45,7 +45,7 @@ public:
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
       */
-    virtual MutablePtr convertToFullColumnIfConst() const { return {}; }
+    virtual Ptr convertToFullColumnIfConst() const { return {}; }
 
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
@@ -104,11 +104,11 @@ public:
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
-    virtual MutablePtr cut(size_t start, size_t length) const
+    virtual Ptr cut(size_t start, size_t length) const
     {
         MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
-        return res;
+        return std::move(res);
     }
 
     /// Appends new value at the end of column (column's size is increased by 1).
@@ -171,12 +171,12 @@ public:
       *  otherwise (i.e. < 0), makes reserve() using size of source column.
       */
     using Filter = PaddedPODArray<UInt8>;
-    virtual MutablePtr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
+    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /// Permutes elements using specified permutation. Is used in sortings.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;
-    virtual MutablePtr permute(const Permutation & perm, size_t limit) const = 0;
+    virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /** Compares (*this)[n] and rhs[m].
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
@@ -205,7 +205,7 @@ public:
       */
     using Offset = UInt64;
     using Offsets = PaddedPODArray<Offset>;
-    virtual MutablePtr replicate(const Offsets & offsets) const = 0;
+    virtual Ptr replicate(const Offsets & offsets) const = 0;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
       * Selector must contain values from 0 to num_columns - 1.
@@ -247,10 +247,10 @@ public:
     virtual void forEachSubcolumn(ColumnCallback) {}
 
 
-    MutablePtr mutate() const
+    MutablePtr mutate() const &&
     {
         MutablePtr res = COWPtr<IColumn>::mutate();
-        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = subcolumn->mutate(); });
+        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = (*std::move(subcolumn)).mutate(); });
         return res;
     }
 
@@ -359,5 +359,17 @@ using MutableColumns = std::vector<MutableColumnPtr>;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
 //using MutableColumnRawPtrs = std::vector<IColumn *>;
+
+template <typename ... Args>
+struct IsMutableColumns;
+
+template <typename Arg, typename ... Args>
+struct IsMutableColumns<Arg, Args ...>
+{
+    static const bool value = std::is_assignable<MutableColumnPtr &&, Arg>::value && IsMutableColumns<Args ...>::value;
+};
+
+template <>
+struct IsMutableColumns<> { static const bool value = true; };
 
 }

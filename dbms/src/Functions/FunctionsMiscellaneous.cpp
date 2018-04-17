@@ -10,6 +10,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
@@ -30,7 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 
 
 namespace DB
@@ -41,6 +42,8 @@ namespace ErrorCodes
     extern const int FUNCTION_IS_SPECIAL;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_SLOW;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
@@ -724,6 +727,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
+    }
+
+    bool useDefaultImplementationForNulls() const override
+    {
+        return false;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1750,9 +1758,8 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
         auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort(), false);
-        auto names_and_types_list = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
-        const auto & names = names_and_types_list.getNames();
-        has_column = std::find(names.begin(), names.end(), column_name) != names.end();
+        auto remote_columns = getStructureOfRemoteTable(*cluster, database_name, table_name, global_context);
+        has_column = remote_columns.hasPhysical(column_name);
     }
 
     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(has_column));

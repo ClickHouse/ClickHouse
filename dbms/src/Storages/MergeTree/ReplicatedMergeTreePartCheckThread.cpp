@@ -237,7 +237,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
             try
             {
-                auto zk_checksums = MergeTreeData::DataPart::Checksums::parse(
+                auto zk_checksums = MinimalisticDataPartChecksums::deserializeFrom(
                     zookeeper->get(storage.replica_path + "/parts/" + part_name + "/checksums"));
                 zk_checksums.checkEqual(part->checksums, true);
 
@@ -265,7 +265,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             {
                 /// TODO Better to check error code.
 
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
                 LOG_ERROR(log, "Part " << part_name << " looks broken. Removing it and queueing a fetch.");
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
@@ -383,7 +383,7 @@ void ReplicatedMergeTreePartCheckThread::run()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
             wakeup_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
         }
     }

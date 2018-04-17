@@ -11,6 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
+#include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 
 
@@ -66,6 +67,9 @@ public:
 
     void insert(const T & v, const UInt64 determinator)
     {
+        if (isNaN(v))
+            return;
+
         const UInt32 hash = intHash64(determinator);
         if (!good(hash))
             return;

@@ -1,11 +1,12 @@
-FROM ubuntu:16.04
+FROM ubuntu:17.10
 
-ARG repository="deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/binary-amd64/"
+ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
 ARG version=\*
 
 RUN apt-get update && \
-    apt-get install -y apt-transport-https && \
+    apt-get install -y apt-transport-https dirmngr && \
     mkdir -p /etc/apt/sources.list.d && \
+    apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
     apt-get install --allow-unauthenticated -y clickhouse-client=$version locales && \

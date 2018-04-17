@@ -80,10 +80,7 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
-    const String & full_path_, const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const String & full_path_, const ColumnsDescription & columns_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
     const ASTPtr & secondary_sort_expr_ast_,
@@ -95,7 +92,7 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : ITableDeclaration{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : ITableDeclaration{columns_},
     context(context_),
     sampling_expression(sampling_expression_),
     index_granularity(settings_.index_granularity),
@@ -113,7 +110,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
     /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(getColumnsList());
+    merging_params.check(getColumns().getAllPhysical());
 
     if (!primary_expr_ast)
         throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -132,7 +129,7 @@ MergeTreeData::MergeTreeData(
             String partition_expr_str = "toYYYYMM(" + backQuoteIfNeed(date_column_name) + ")";
             ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
             partition_expr_ast = parseQuery(
-                parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
+                parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression", 0);
 
             initPartitionKey();
 
@@ -225,11 +222,11 @@ void MergeTreeData::initPrimaryKey()
     primary_sort_descr.clear();
     addSortDescription(primary_sort_descr, primary_expr_ast);
 
-    primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+    primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
 
     {
         ExpressionActionsPtr projected_expr =
-                ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
+            ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
         primary_key_sample = projected_expr->getSampleBlock();
     }
 
@@ -244,10 +241,10 @@ void MergeTreeData::initPrimaryKey()
     if (secondary_sort_expr_ast)
     {
         addSortDescription(sort_descr, secondary_sort_expr_ast);
-        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
 
         ExpressionActionsPtr projected_expr =
-                ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumnsList()).getActions(true);
+            ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
         auto secondary_key_sample = projected_expr->getSampleBlock();
 
         checkKeyExpression(*secondary_sort_expr, secondary_key_sample, "Secondary");
@@ -260,7 +257,7 @@ void MergeTreeData::initPartitionKey()
     if (!partition_expr_ast || partition_expr_ast->children.empty())
         return;
 
-    partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+    partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
     for (const ASTPtr & ast : partition_expr_ast->children)
     {
         String col_name = ast->getColumnName();
@@ -750,7 +747,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         for (auto & part : parts)
         {
             part_log_elem.part_name = part->name;
-            part_log_elem.bytes_compressed_on_disk = part->size_in_bytes;
+            part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
             part_log_elem.rows = part->rows_count;
 
             part_log->add(part_log_elem);
@@ -864,11 +861,8 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    auto new_columns = columns;
-    auto new_materialized_columns = materialized_columns;
-    auto new_alias_columns = alias_columns;
-    auto new_column_defaults = column_defaults;
-    commands.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+    auto new_columns = getColumns();
+    commands.apply(new_columns);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
@@ -909,7 +903,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
-    for (const auto & column : columns)
+    for (const auto & column : getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
     for (const AlterCommand & command : commands)
@@ -937,11 +931,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     NameToNameMap unused_map;
     bool unused_bool;
 
-    /// augment plain columns with materialized columns for convert expression creation
-    new_columns.insert(std::end(new_columns),
-        std::begin(new_materialized_columns), std::end(new_materialized_columns));
-
-    createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
+    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(), unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -1221,8 +1211,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
-            part->size_in_bytes,
-            static_cast<double>(part->size_in_bytes) / this->getTotalActiveSizeInBytes());
+            part->bytes_on_disk,
+            static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
 
         /** Don't write offsets for arrays, because ALTER never change them
@@ -1324,7 +1314,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
                 file.remove();
         }
 
-        mutable_part.size_in_bytes = MergeTreeData::DataPart::calculateTotalSize(path);
+        mutable_part.bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(path);
 
         /// TODO: we can skip resetting caches when the column is added.
         data_part->storage.context.dropCaches();
@@ -1684,7 +1674,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
         std::lock_guard<std::mutex> lock(data_parts_mutex);
 
         for (auto & part : getDataPartsStateRange(DataPartState::Committed))
-            res += part->size_in_bytes;
+            res += part->bytes_on_disk;
     }
 
     return res;
@@ -1842,59 +1832,37 @@ void MergeTreeData::calculateColumnSizesImpl()
 void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
     std::shared_lock<std::shared_mutex> lock(part->columns_lock);
-    const auto & files = part->checksums.files;
 
-    /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : getColumnsList())
+    for (const auto & column : part->columns)
     {
-        const auto escaped_name = escapeForFileName(column.name);
-        const auto bin_file_name = escaped_name + ".bin";
-        const auto mrk_file_name = escaped_name + ".mrk";
-
-        ColumnSize & column_size = column_sizes[column.name];
-
-        if (files.count(bin_file_name))
-        {
-            const auto & bin_file_checksums = files.at(bin_file_name);
-            column_size.data_compressed += bin_file_checksums.file_size;
-            column_size.data_uncompressed += bin_file_checksums.uncompressed_size;
-        }
-
-        if (files.count(mrk_file_name))
-            column_size.marks += files.at(mrk_file_name).file_size;
+        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
+        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        total_column_size.add(part_column_size);
     }
-}
-
-static inline void logSubtract(size_t & from, size_t value, Logger * log, const String & variable)
-{
-    if (value > from)
-        LOG_ERROR(log, "Possibly incorrect subtraction: " << from << " - " << value << " = " << from - value << ", variable " << variable);
-
-    from -= value;
 }
 
 void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
 {
-    const auto & files = part->checksums.files;
+    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
 
-    /// TODO This method doesn't take into account columns with multiple files.
-    for (const auto & column : columns)
+    for (const auto & column : part->columns)
     {
-        const auto escaped_name = escapeForFileName(column.name);
-        const auto bin_file_name = escaped_name + ".bin";
-        const auto mrk_file_name = escaped_name + ".mrk";
+        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
+        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
 
-        auto & column_size = column_sizes[column.name];
-
-        if (files.count(bin_file_name))
+        auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
-            const auto & bin_file_checksums = files.at(bin_file_name);
-            logSubtract(column_size.data_compressed, bin_file_checksums.file_size, log, bin_file_name + ".file_size");
-            logSubtract(column_size.data_uncompressed, bin_file_checksums.uncompressed_size, log, bin_file_name + ".uncompressed_size");
-        }
+            if (value > from)
+                LOG_ERROR(log, "Possibly incorrect column size subtraction: "
+                    << from << " - " << value << " = " << from - value
+                    << ", column: " << column.name << ", field: " << field);
 
-        if (files.count(mrk_file_name))
-            logSubtract(column_size.marks, files.at(mrk_file_name).file_size, log, mrk_file_name + ".file_size");
+            from -= value;
+        };
+
+        log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
+        log_subtract(total_column_size.data_uncompressed, part_column_size.data_uncompressed, ".data_uncompressed");
+        log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 }
 
@@ -2204,7 +2172,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
     return total_covered_parts;
 }
 
-bool MergeTreeData::isPrimaryKeyColumn(const ASTPtr &node) const
+bool MergeTreeData::isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     String column_name = node->getColumnName();
 
@@ -2212,27 +2180,33 @@ bool MergeTreeData::isPrimaryKeyColumn(const ASTPtr &node) const
         if (column_name == column.column_name)
             return true;
 
+    if (partition_expr_ast && partition_expr_ast->children.at(0)->getColumnName() == column_name)
+        return true;
+
+    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+        if (func->arguments->children.size() == 1)
+            return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
+
     return false;
 }
 
 bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
 {
-    /// Make sure that the left side of the IN operator is part of the primary key.
-    /// If there is a tuple on the left side of the IN operator, each item of the tuple must be part of the primary key.
+    /// Make sure that the left side of the IN operator contain part of the primary key.
+    /// If there is a tuple on the left side of the IN operator, at least one item of the tuple must be part of the primary key (probably wrapped by a chain of some acceptable functions).
     const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
-            if (!isPrimaryKeyColumn(item))
-                /// The tuple itself may be part of the primary key, so check that as a last resort.
-                return isPrimaryKeyColumn(left_in_operand);
+            if (isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(item))
+                return true;
 
-        /// tuple() is invalid but can still be found here since this method may be called before the arguments are validated.
-        return !left_in_operand_tuple->arguments->children.empty();
+        /// The tuple itself may be part of the primary key, so check that as a last resort.
+        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
-        return isPrimaryKeyColumn(left_in_operand);
+        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }
 

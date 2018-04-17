@@ -8,7 +8,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <ext/range.h>
-#include <ext/scope_guard.h>
 #include <ext/map.h>
 
 

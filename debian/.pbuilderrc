@@ -164,11 +164,11 @@ esac
 case "$DIST" in
     "bionic" )
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
-        export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 -DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
+        export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=1 -DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;
     "artful" | "experimental" | "unstable" | "testing" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
-        export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+        export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
         ;;
 esac
 
@@ -188,7 +188,7 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
 [ -n "$CCACHEDIR" ] && sudo mkdir -p $CCACHEDIR
-[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR
+[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR || true
 # chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
 

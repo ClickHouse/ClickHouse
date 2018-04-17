@@ -1,8 +1,8 @@
-#include <unistd.h>
+#include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
-
+#include <map>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -10,13 +10,11 @@
 #include <algorithm>
 #include <optional>
 #include <boost/program_options.hpp>
-
+#include <boost/algorithm/string/replace.hpp>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-
 #include <common/readline_use.h>
 #include <common/find_first_symbols.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -28,12 +26,14 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
@@ -101,7 +101,6 @@ private:
         "учшеж", "йгшеж", "дщпщгеж",
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
-
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
@@ -111,6 +110,7 @@ private:
     winsize terminal_size {};            /// Terminal size is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
+    String query_id;                     /// Current query_id.
     String query;                        /// Current query.
 
     String format;                       /// Query results output format.
@@ -138,6 +138,8 @@ private:
 
     String current_profile;
 
+    String prompt_by_server_display_name;
+
     /// Path to a file containing command history.
     String history_file;
 
@@ -153,6 +155,7 @@ private:
     /// If the last query resulted in exception.
     bool got_exception = false;
     String server_version;
+    String server_display_name;
 
     Stopwatch watch;
 
@@ -167,6 +170,49 @@ private:
     std::list<ExternalTable> external_tables;
 
 
+    struct ConnectionParameters
+    {
+        String host;
+        UInt16 port;
+        String default_database;
+        String user;
+        String password;
+        Protocol::Secure security;
+        Protocol::Compression compression;
+        ConnectionTimeouts timeouts;
+
+        ConnectionParameters() {}
+
+        ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
+        {
+            bool is_secure = config.getBool("secure", false);
+            security = is_secure
+                ? Protocol::Secure::Enable
+                : Protocol::Secure::Disable;
+
+            host = config.getString("host", "localhost");
+            port = config.getInt("port",
+                config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
+                    is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+
+            default_database = config.getString("database", "");
+            user = config.getString("user", "");
+            password = config.getString("password", "");
+
+            compression = config.getBool("compression", true)
+                ? Protocol::Compression::Enable
+                : Protocol::Compression::Disable;
+
+            timeouts = ConnectionTimeouts(
+                Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
+                Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
+                Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
+        }
+    };
+
+    ConnectionParameters connection_parameters;
+
+
     void initialize(Poco::Util::Application & self)
     {
         Poco::Util::Application::initialize(self);
@@ -175,14 +221,22 @@ private:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
+        std::string config_path;
         if (config().has("config-file"))
-            loadConfiguration(config().getString("config-file"));
+            config_path = config().getString("config-file");
         else if (Poco::File("./clickhouse-client.xml").exists())
-            loadConfiguration("./clickhouse-client.xml");
+            config_path = "./clickhouse-client.xml";
         else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
-            loadConfiguration(home_path + "/.clickhouse-client/config.xml");
+            config_path = home_path + "/.clickhouse-client/config.xml";
         else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
-            loadConfiguration("/etc/clickhouse-client/config.xml");
+            config_path = "/etc/clickhouse-client/config.xml";
+
+        if (!config_path.empty())
+        {
+            ConfigProcessor config_processor(config_path);
+            auto loaded_config = config_processor.loadConfig();
+            config().add(loaded_config.configuration);
+        }
 
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
@@ -300,6 +354,7 @@ private:
             echo_queries = config().getBool("echo", false);
         }
 
+        connection_parameters = ConnectionParameters(config());
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -329,8 +384,46 @@ private:
             }
         }
 
+        Strings keys;
+
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+
+        config().keys("prompt_by_server_display_name", keys);
+
+        for (const String & key : keys)
+        {
+            if (key != "default" && server_display_name.find(key) != std::string::npos)
+            {
+                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
+                break;
+            }
+        }
+
+        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
+        {
+            String unescaped_prompt_by_server_display_name;
+            ReadBufferFromString in(prompt_by_server_display_name);
+            readEscapedString(unescaped_prompt_by_server_display_name, in);
+            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
+        }
+
+        /// Prompt may contain the following substitutions in a form of {name}.
+        std::map<String, String> prompt_substitutions
+        {
+            {"host", connection_parameters.host},
+            {"port", toString(connection_parameters.port)},
+            {"user", connection_parameters.user},
+            {"display_name", server_display_name},
+        };
+
+        /// Quite suboptimal.
+        for (const auto & [key, value]: prompt_substitutions)
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+
         if (is_interactive)
         {
+            if (!query_id.empty())
+                throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
@@ -365,6 +458,7 @@ private:
         }
         else
         {
+            query_id = config().getString("query_id", "");
             nonInteractive();
 
             if (last_exception)
@@ -377,34 +471,23 @@ private:
 
     void connect()
     {
-        auto encryption = config().getBool("ssl", false)
-        ? Protocol::Encryption::Enable
-        : Protocol::Encryption::Disable;
-
-        String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
-        String default_database = config().getString("database", "");
-        String user = config().getString("user", "");
-        String password = config().getString("password", "");
-
-        auto compression = config().getBool("compression", true)
-            ? Protocol::Compression::Enable
-            : Protocol::Compression::Disable;
-
         if (is_interactive)
             std::cout << "Connecting to "
-                << (!default_database.empty() ? "database " + default_database + " at " : "")
-                << host << ":" << port
-                << (!user.empty() ? " as user " + user : "")
+                << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at " : "")
+                << connection_parameters.host << ":" << connection_parameters.port
+                << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "")
                 << "." << std::endl;
 
-        ConnectionTimeouts timeouts(
-            Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-            Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-
         connection = std::make_unique<Connection>(
-            host, port, default_database, user, password, timeouts, "client", compression, encryption);
+            connection_parameters.host,
+            connection_parameters.port,
+            connection_parameters.default_database,
+            connection_parameters.user,
+            connection_parameters.password,
+            connection_parameters.timeouts,
+            "client",
+            connection_parameters.compression,
+            connection_parameters.security);
 
         String server_name;
         UInt64 server_version_major = 0;
@@ -420,6 +503,12 @@ private:
         connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
+
+        if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
+        {
+            server_display_name = config().getString("host", "localhost");
+        }
+
         if (is_interactive)
         {
             std::cout << "Connected to " << server_name
@@ -440,12 +529,17 @@ private:
         return select(1, &fds, 0, 0, &timeout) == 1;
     }
 
+    inline const String prompt() const
+    {
+        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+    }
 
     void loop()
     {
         String query;
         String prev_query;
-        while (char * line_ = readline(query.empty() ? ":) " : ":-] "))
+
+        while (char * line_ = readline(query.empty() ? prompt().c_str() : ":-] "))
         {
             String line = line_;
             free(line_);
@@ -726,7 +820,7 @@ private:
     /// Process the query that doesn't require transfering data blocks to the server.
     void processOrdinaryQuery()
     {
-        connection->sendQuery(query, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
     }
@@ -744,7 +838,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -769,7 +863,7 @@ private:
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements);
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, 0);
 
             if (!res)
             {
@@ -778,7 +872,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements);
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, 0);
 
         if (is_interactive)
         {
@@ -1277,9 +1371,10 @@ public:
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
             ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
             ("port", boost::program_options::value<int>()->default_value(9000), "server port")
-            ("ssl,s", "ssl")
+            ("secure,s", "secure")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
+            ("query_id", boost::program_options::value<std::string>(), "query_id")
             ("query,q", boost::program_options::value<std::string>(), "query")
             ("database,d", boost::program_options::value<std::string>(), "database")
             ("pager", boost::program_options::value<std::string>(), "pager")
@@ -1368,6 +1463,8 @@ public:
             config().setString("config-file", options["config-file"].as<std::string>());
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
+        if (options.count("query_id"))
+            config().setString("query_id", options["query_id"].as<std::string>());
         if (options.count("query"))
             config().setString("query", options["query"].as<std::string>());
         if (options.count("database"))
@@ -1377,8 +1474,8 @@ public:
 
         if (options.count("port") && !options["port"].defaulted())
             config().setInt("port", options["port"].as<int>());
-        if (options.count("ssl"))
-            config().setBool("ssl", true);
+        if (options.count("secure"))
+            config().setBool("secure", true);
         if (options.count("user"))
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))

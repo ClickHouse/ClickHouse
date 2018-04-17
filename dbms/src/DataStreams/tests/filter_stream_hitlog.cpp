@@ -97,15 +97,15 @@ int main(int, char **)
 
         std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
         ParserSelectQuery parser;
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
 
         /// create an object of an existing hit log table
 
-        StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-            NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+        StoragePtr table = StorageLog::create(
+            "./", "HitLog", ColumnsDescription{names_and_types_list}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
         table->startup();
 
         /// read from it, apply the expression, filter, and write in tsv form to the console

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
 
 
 class ThreadPool;
@@ -27,11 +27,7 @@ public:
 
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
-    static ASTPtr formatColumns(
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults);
+    static ASTPtr formatColumns(const ColumnsDescription & columns);
 
     void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
     {
@@ -48,23 +44,15 @@ public:
         internal = internal_;
     }
 
-    struct ColumnsInfo
-    {
-        NamesAndTypesList columns;
-        NamesAndTypesList materialized_columns;
-        NamesAndTypesList alias_columns;
-        ColumnDefaults column_defaults;
-    };
-
     /// Obtain information about columns, their types and default values, for case when columns in CREATE query is specified explicitly.
-    static ColumnsInfo getColumnsInfo(const ASTExpressionList & columns, const Context & context);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context);
 
 private:
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns of table and return it.
-    ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
+    ColumnsDescription setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
     void setEngine(ASTCreateQuery & create) const;
     void checkAccess(const ASTCreateQuery & create);
 

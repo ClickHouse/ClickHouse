@@ -35,10 +35,7 @@ StorageMergeTree::StorageMergeTree(
     const String & path_,
     const String & database_name_,
     const String & table_name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     bool attach,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
@@ -49,12 +46,10 @@ StorageMergeTree::StorageMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
-    path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
+    : path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
-         materialized_columns_, alias_columns_, column_defaults_,
          context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
          sampling_expression_, merging_params_,
          settings_, false, attach),
@@ -121,7 +116,7 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Set
 bool StorageMergeTree::checkTableCanBeDropped() const
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalCompressedSize());
+    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
     return true;
 }
 
@@ -157,16 +152,8 @@ void StorageMergeTree::alter(
 
     data.checkAlter(params);
 
-    auto new_columns = data.getColumnsListNonMaterialized();
-    auto new_materialized_columns = data.materialized_columns;
-    auto new_alias_columns = data.alias_columns;
-    auto new_column_defaults = data.column_defaults;
-
-    params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
-
-    auto columns_for_parts = new_columns;
-    columns_for_parts.insert(std::end(columns_for_parts),
-        std::begin(new_materialized_columns), std::end(new_materialized_columns));
+    auto new_columns = data.getColumns();
+    params.apply(new_columns);
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
@@ -187,6 +174,7 @@ void StorageMergeTree::alter(
         throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    auto columns_for_parts = new_columns.getAllPhysical();
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
         if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
@@ -212,19 +200,8 @@ void StorageMergeTree::alter(
         };
     }
 
-    context.getDatabase(database_name)->alterTable(
-        context, table_name,
-        new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
-        storage_modifier);
-
-    materialized_columns = new_materialized_columns;
-    alias_columns = new_alias_columns;
-    column_defaults = new_column_defaults;
-
-    data.setColumnsList(new_columns);
-    data.materialized_columns = std::move(new_materialized_columns);
-    data.alias_columns = std::move(new_alias_columns);
-    data.column_defaults = std::move(new_column_defaults);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
+    setColumns(std::move(new_columns));
 
     if (primary_key_is_modified)
     {
@@ -357,7 +334,7 @@ bool StorageMergeTree::merge(
             part_log_elem.part_name = future_part.name;
 
             if (new_part)
-                part_log_elem.bytes_compressed_on_disk = new_part->size_in_bytes;
+                part_log_elem.bytes_compressed_on_disk = new_part->bytes_on_disk;
 
             part_log_elem.source_part_names.reserve(future_part.parts.size());
             for (const auto & source_part : future_part.parts)
@@ -438,17 +415,10 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     alter_command.type = AlterCommand::DROP_COLUMN;
     alter_command.column_name = get<String>(column_name);
 
-    auto new_columns = data.getColumnsListNonMaterialized();
-    auto new_materialized_columns = data.materialized_columns;
-    auto new_alias_columns = data.alias_columns;
-    auto new_column_defaults = data.column_defaults;
+    auto new_columns = getColumns();
+    alter_command.apply(new_columns);
 
-    alter_command.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
-
-    auto columns_for_parts = new_columns;
-    columns_for_parts.insert(std::end(columns_for_parts),
-        std::begin(new_materialized_columns), std::end(new_materialized_columns));
-
+    auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
     {
         if (part->info.partition_id != partition_id)

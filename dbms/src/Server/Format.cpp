@@ -50,7 +50,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         const char * end = pos + query.size();
 
         ParserQuery parser(end);
-        ASTPtr res = parseQuery(parser, pos, end, "query");
+        ASTPtr res = parseQuery(parser, pos, end, "query", 0);
 
         if (!quiet)
         {
