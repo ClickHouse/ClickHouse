@@ -59,6 +59,12 @@ protected:
       */
     virtual bool useDefaultImplementationForConstants() const { return false; }
 
+    /** If function arguments has single column with dictionary and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all columns with dictionary to ordinary columns.
+      * Returns ColumnWithDictionary if at least one argument is ColumnWithDictionary.
+      */
+    virtual bool useDefaultImplementationForColumnsWithDictionary() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
@@ -66,6 +72,7 @@ protected:
 private:
     bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result);
     bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result);
+    void executeWithoutColumnsWithDictionary(Block & block, const ColumnNumbers & arguments, size_t result);
 };
 
 /// Function with known arguments and return type.
@@ -234,12 +241,22 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
+    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl().
+      * If function arguments has types with dictionary, convert them to ordinary types.
+      * getReturnType returns ColumnWithDictionary if at least one argument type is ColumnWithDictionary.
+      */
+    virtual bool useDefaultImplementationForColumnsWithDictionary() const { return true; }
+
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
 
     virtual void getLambdaArgumentTypesImpl(DataTypes & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
+
+private:
+
+    DataTypePtr getReturnTypeWithoutDictionary(const ColumnsWithTypeAndName & arguments) const;
 };
 
 /// Previous function interface.
