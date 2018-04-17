@@ -18,6 +18,19 @@ class ColumnWithDictionary final : public COWPtrHelper<IColumn, ColumnWithDictio
     ColumnWithDictionary(const ColumnWithDictionary & other);
 
 public:
+    /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
+      * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
+      */
+    using Base = COWPtrHelper<IColumn, ColumnWithDictionary>;
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_)
+    {
+        return ColumnWithDictionary::create(column_unique_->assumeMutable(), indexes_->assumeMutable());
+    }
+
+    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
+
+
     std::string getName() const override { return "ColumnWithDictionary"; }
     const char * getFamilyName() const override { return "ColumnWithDictionary"; }
 
@@ -46,10 +59,9 @@ public:
     UInt64 getUInt(size_t n) const override { return column_unique->getUInt(indexes->getUInt(n)); }
     Int64 getInt(size_t n) const override { return column_unique->getInt(indexes->getUInt(n)); }
     bool isNullAt(size_t n) const override { return column_unique->isNullAt(indexes->getUInt(n)); }
-    MutableColumnPtr cut(size_t start, size_t length) const override
+    ColumnPtr cut(size_t start, size_t length) const override
     {
-        auto unique_ptr = column_unique;
-        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->cut(start, length));
+        return ColumnWithDictionary::create(column_unique, indexes->cut(start, length));
     }
 
     void insert(const Field & x) override { getIndexes()->insert(Field(UInt64(getUnique()->uniqueInsert(x)))); }
@@ -94,16 +106,14 @@ public:
         return getUnique()->updateHashWithValue(indexes->getUInt(n), hash);
     }
 
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        auto unique_ptr = column_unique;
-        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->filter(filt, result_size_hint));
+        return ColumnWithDictionary::create(column_unique, indexes->filter(filt, result_size_hint));
     }
 
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        auto unique_ptr = column_unique;
-        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->permute(perm, limit));
+        return ColumnWithDictionary::create(column_unique, indexes->permute(perm, limit));
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
@@ -146,10 +156,9 @@ public:
         }
     }
 
-    MutableColumnPtr replicate(const Offsets & offsets) const override
+    ColumnPtr replicate(const Offsets & offsets) const override
     {
-        auto unique_ptr = column_unique;
-        return ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), indexes->replicate(offsets));
+        return ColumnWithDictionary::create(column_unique, indexes->replicate(offsets));
     }
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override
@@ -158,7 +167,7 @@ public:
         for (auto & column : columns)
         {
             auto unique_ptr = column_unique;
-            column = ColumnWithDictionary::create(std::move(unique_ptr)->mutate(), std::move(column));
+            column = ColumnWithDictionary::create((*std::move(unique_ptr)).mutate(), std::move(column));
         }
 
         return columns;

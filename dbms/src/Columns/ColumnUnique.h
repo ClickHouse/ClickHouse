@@ -76,24 +76,44 @@ public:
     Field operator[](size_t n) const override { return (*column_holder)[n]; }
     void get(size_t n, Field & res) const override { column_holder->get(n, res); }
     StringRef getDataAt(size_t n) const override { return column_holder->getDataAt(n); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override { return column_holder->getDataAtWithTerminatingZero(n); }
+    StringRef getDataAtWithTerminatingZero(size_t n) const override
+    {
+        return column_holder->getDataAtWithTerminatingZero(n);
+    }
     UInt64 get64(size_t n) const override { return column_holder->get64(n); }
     UInt64 getUInt(size_t n) const override { return column_holder->getUInt(n); }
     Int64 getInt(size_t n) const override { return column_holder->getInt(n); }
     bool isNullAt(size_t n) const override { return column_holder->isNullAt(n); }
-    MutableColumnPtr cut(size_t start, size_t length) const override { return column_holder->cut(start, length); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override { return column_holder->serializeValueIntoArena(n, arena, begin); }
-    void updateHashWithValue(size_t n, SipHash & hash) const override { return column_holder->updateHashWithValue(n, hash); }
-    MutableColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override { return column_holder->filter(filt, result_size_hint); }
-    MutableColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override { return column_holder->permute(perm, limit); }
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override { return column_holder->compareAt(n, m, rhs, nan_direction_hint); }
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override { column_holder->getPermutation(reverse, limit, nan_direction_hint, res); }
-    MutableColumnPtr replicate(const IColumn::Offsets & offsets) const override
+    ColumnPtr cut(size_t start, size_t length) const override { return column_holder->cut(start, length); }
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
     {
-        auto holder = column_holder;
-        return std::move(holder)->mutate()->replicate(offsets);
+        return column_holder->serializeValueIntoArena(n, arena, begin);
     }
-    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override { return column_holder->scatter(num_columns, selector); }
+    void updateHashWithValue(size_t n, SipHash & hash) const override
+    {
+        return column_holder->updateHashWithValue(n, hash);
+    }
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override
+    {
+        return column_holder->filter(filt, result_size_hint);
+    }
+    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override
+    {
+        return column_holder->permute(perm, limit);
+    }
+    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
+    {
+        return column_holder->compareAt(n, m, rhs, nan_direction_hint);
+    }
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override
+    {
+        column_holder->getPermutation(reverse, limit, nan_direction_hint, res);
+    }
+    ColumnPtr replicate(const IColumn::Offsets & offsets) const override { return column_holder->replicate(offsets); }
+    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
+    {
+        return column_holder->scatter(num_columns, selector);
+    }
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return column_holder->isFixedAndContiguous(); }
@@ -101,7 +121,10 @@ public:
     bool isNumeric() const override { return column_holder->isNumeric(); }
 
     size_t byteSize() const override { return column_holder->byteSize(); }
-    size_t allocatedBytes() const override { return column_holder->allocatedBytes() + (index ? index->getBufferSizeInBytes() : 0); }
+    size_t allocatedBytes() const override
+    {
+        return column_holder->allocatedBytes() + (index ? index->getBufferSizeInBytes() : 0);
+    }
     void forEachSubcolumn(IColumn::ColumnCallback callback) override { callback(column_holder); }
 
 private:
