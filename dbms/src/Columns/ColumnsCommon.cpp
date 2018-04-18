@@ -3,6 +3,8 @@
 #endif
 
 #include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnVector.h>
 
 
 namespace DB
@@ -307,5 +309,23 @@ INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 
 #undef INSTANTIATE
+
+namespace detail
+{
+    template <typename T>
+    PaddedPODArray<T> * const getIndexesData(const ColumnPtr & indexes)
+    {
+        auto * column = typeid_cast<const ColumnVector<T> *>(indexes.get());
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+}
+
+PaddedPODArray<UInt8> * const detail::getIndexesData<UInt8>(const DB::ColumnPtr & indexes);
+PaddedPODArray<UInt16> * const detail::getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
+PaddedPODArray<UInt32> * const detail::getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
+PaddedPODArray<UInt64> * const detail::getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
 
 }
