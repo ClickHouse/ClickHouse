@@ -497,7 +497,11 @@ bool PKCondition::isTupleIndexable(
 
     size_t num_key_columns = prepared_set->getDataTypes().size();
     if (num_key_columns == 0)
-        throw Exception("Logical error: Set has zero number of columns", ErrorCodes::LOGICAL_ERROR);
+    {
+        /// Empty set. It is "indexable" in a sense, that it implies that condition is always false (or true for NOT IN).
+        out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+        return true;
+    }
 
     const ASTFunction * node_tuple = typeid_cast<const ASTFunction *>(node.get());
     if (node_tuple && node_tuple->name == "tuple")
@@ -1024,14 +1028,10 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
             {
                 rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));
                 if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                {
                     rpn_stack.back() = !rpn_stack.back();
-                }
             }
             else
-            {
-                throw Exception("Set for IN is not created yet!", ErrorCodes::LOGICAL_ERROR);
-            }
+                throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
