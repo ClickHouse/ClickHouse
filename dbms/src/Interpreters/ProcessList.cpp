@@ -35,6 +35,10 @@ static bool isUnlimitedQuery(const IAST * ast)
         return true;
 
     /// It is SELECT FROM system.processes
+    /// NOTE: This is very rough check.
+    /// False negative: USE system; SELECT * FROM processes;
+    /// False positive: SELECT * FROM system.processes CROSS JOIN (SELECT ...)
+
     if (auto ast_selects = typeid_cast<const ASTSelectWithUnionQuery *>(ast))
     {
         if (!ast_selects->list_of_selects || ast_selects->list_of_selects->children.empty())
