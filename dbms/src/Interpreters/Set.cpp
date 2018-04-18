@@ -115,34 +115,6 @@ bool Set::insertFromBlock(const Block & block, bool fill_set_elements)
         }
     }
 
-    /** Flatten tuples. For case when written
-      *  (a, b) IN (SELECT (a, b) FROM table)
-      * instead of more typical
-      *  (a, b) IN (SELECT a, b FROM table)
-      *
-      * Avoid flatten in case then we have more than one column:
-      * Ex.: 1, (2, 3) become just 1, 2, 3
-      */
-    if (keys_size == 1)
-    {
-        const auto & col = block.getByPosition(0);
-        if (const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(col.type.get()))
-        {
-            const ColumnTuple & column = typeid_cast<const ColumnTuple &>(*key_columns[0]);
-
-            key_columns.pop_back();
-            const Columns & tuple_elements = column.getColumns();
-            for (const auto & elem : tuple_elements)
-                key_columns.push_back(elem.get());
-
-            if (empty())
-            {
-                data_types.pop_back();
-                data_types.insert(data_types.end(), tuple->getElements().begin(), tuple->getElements().end());
-            }
-        }
-    }
-
     size_t rows = block.rows();
 
     /// We will insert to the Set only keys, where all components are not NULL.
@@ -172,9 +144,8 @@ bool Set::insertFromBlock(const Block & block, bool fill_set_elements)
         {
             std::vector<Field> new_set_elements;
             for (size_t j = 0; j < keys_size; ++j)
-            {
                 new_set_elements.push_back((*key_columns[j])[i]);
-            }
+
             set_elements->emplace_back(std::move(new_set_elements));
         }
     }
