@@ -105,6 +105,14 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsFetch;
+    extern const StorageActionBlockType PartsSend;
+    extern const StorageActionBlockType ReplicationQueue;
+}
+
 
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
 static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
@@ -2049,17 +2057,24 @@ namespace
     bool partsWillNotBeMergedOrDisabled(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
                                         ReplicatedMergeTreeQueue & queue, String * out_reason = nullptr)
     {
-        auto set_reason = [&out_reason] (const String & part_name)
+        String covering_part;
+        auto set_reason = [&] (const String & part_name)
         {
             if (out_reason)
-                *out_reason = "Part " + part_name + " cannot be merged yet, a merge has already assigned for it or it is temporarily disabled";
+            {
+                *out_reason = "Part " + part_name + " cannot be merged yet";
+                if (!covering_part.empty())
+                    *out_reason += ", a merge " + covering_part + " a covering it has already assigned";
+                else
+                    *out_reason += ", it is temporarily disabled";
+            }
             return false;
         };
 
-        if (queue.partWillBeMergedOrMergesDisabled(left->name))
+        if (queue.partWillBeMergedOrMergesDisabled(left->name, &covering_part))
             return set_reason(left->name);
 
-        if (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name))
+        if (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name, &covering_part))
             return set_reason(right->name);
 
         return true;
@@ -2758,7 +2773,7 @@ void StorageReplicatedMergeTree::shutdown()
 
     if (data_parts_exchange_endpoint_holder)
     {
-        data_parts_exchange_endpoint_holder->cancelForever();
+        data_parts_exchange_endpoint_holder->getBlocker().cancelForever();
         data_parts_exchange_endpoint_holder = nullptr;
     }
 
@@ -2907,7 +2922,10 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             return handle_noop("Can't create merge queue node in ZooKeeper");
     }
 
-    waitForAllReplicasToProcessLogEntry(merge_entry);
+    /// TODO: Bad setting name for such purpose
+    if (context.getSettingsRef().replication_alter_partitions_sync != 0)
+        waitForAllReplicasToProcessLogEntry(merge_entry);
+
     return true;
 }
 
@@ -4401,6 +4419,62 @@ ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAdd
     res.database = database_name;
     res.table = table_name;
     return res;
+}
+
+ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType action_type) const
+{
+    if (action_type == ActionLocks::PartsMerge)
+        return merger.merges_blocker.cancel();
+
+    if (action_type == ActionLocks::PartsFetch)
+        return fetcher.blocker.cancel();
+
+    if (action_type == ActionLocks::PartsSend)
+        return data_parts_exchange_endpoint_holder ? data_parts_exchange_endpoint_holder->getBlocker().cancel() : ActionLock();
+
+    if (action_type == ActionLocks::ReplicationQueue)
+        return queue.block.cancel();
+
+    return {};
+}
+
+bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
+{
+    Stopwatch watch;
+    Poco::Event event;
+    std::atomic<bool> cond_reached{false};
+
+    auto callback = [&event, &cond_reached, queue_size] (size_t new_queue_size)
+    {
+        if (new_queue_size <= queue_size)
+            cond_reached.store(true, std::memory_order_relaxed);
+
+        event.set();
+    };
+
+    auto handler = queue.addSubscriber(std::move(callback));
+
+    while (true)
+    {
+        if (max_wait_milliseconds)
+        {
+            UInt64 elapsed_ms = watch.elapsedMilliseconds();
+            if (elapsed_ms >= max_wait_milliseconds)
+                break;
+
+            event.tryWait(max_wait_milliseconds - elapsed_ms);
+        }
+        else
+            event.wait();
+
+        if (cond_reached)
+            break;
+
+        if (shutdown_called)
+            throw Exception("Shutdown is called for table", ErrorCodes::ABORTED);
+    }
+
+    return cond_reached.load(std::memory_order_relaxed);
 }
 
 }

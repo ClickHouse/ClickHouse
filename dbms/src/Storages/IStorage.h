@@ -9,6 +9,7 @@
 #include <shared_mutex>
 #include <memory>
 #include <optional>
+#include <Common/ActionLock.h>
 
 
 namespace DB
@@ -25,6 +26,8 @@ class IBlockOutputStream;
 
 class RWLockFIFO;
 using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
+
+using StorageActionBlockType = size_t;
 
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -282,6 +285,13 @@ public:
       * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}
+
+    /// Asks table to stop executing some action identified by action_type
+    /// If table does not support such type of lock, and empty lock is returned
+    virtual ActionLock getActionLock(StorageActionBlockType /* action_type */) const
+    {
+        return {};
+    }
 
     bool is_dropped{false};
 

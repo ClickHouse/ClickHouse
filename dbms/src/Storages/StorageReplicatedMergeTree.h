@@ -130,6 +130,12 @@ public:
 
     bool checkTableCanBeDropped() const override;
 
+    ActionLock getActionLock(StorageActionBlockType action_type) const override;
+
+    /// Wait when replication queue size becomes less or equal than queue_size
+    /// If timeout is exceeded returns false
+    bool waitForShrinkingQueueSize(size_t queue_size = 0, UInt64 max_wait_milliseconds = 0);
+
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
 

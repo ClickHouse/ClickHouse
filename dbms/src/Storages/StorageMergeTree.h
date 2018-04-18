@@ -81,6 +81,8 @@ public:
 
     bool checkTableCanBeDropped() const override;
 
+    ActionLock getActionLock(StorageActionBlockType action_type) const override;
+
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
 

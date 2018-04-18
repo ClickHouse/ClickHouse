@@ -2,6 +2,7 @@
 
 #include <optional>
 
+#include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -76,6 +77,31 @@ private:
       */
     ActiveDataPartSet virtual_parts;
 
+    /// List of subscribers
+    /// A subscriber callback is called when an entry queue is deleted
+    mutable std::mutex subscribers_mutex;
+
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */)>;
+    using Subscribers = std::list<SubscriberCallBack>;
+    using SubscriberIterator = Subscribers::iterator;
+
+    friend class SubscriberHandler;
+    struct SubscriberHandler : public boost::noncopyable
+    {
+        SubscriberHandler(SubscriberIterator it, ReplicatedMergeTreeQueue & queue) : it(it), queue(queue) {}
+        ~SubscriberHandler();
+
+    private:
+        SubscriberIterator it;
+        ReplicatedMergeTreeQueue & queue;
+    };
+
+    Subscribers subscribers;
+
+    /// Notify subscribers about queue change
+    void notifySubscribers(size_t new_queue_size);
+
+
     Logger * log = nullptr;
 
 
@@ -141,6 +167,8 @@ public:
     {
     }
 
+    ~ReplicatedMergeTreeQueue();
+
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
 
@@ -192,7 +220,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Will a part in the future be merged into a larger part (or merges of parts in this range are prohibited)?
-    bool partWillBeMergedOrMergesDisabled(const String & part_name) const;
+    bool partWillBeMergedOrMergesDisabled(const String & part_name, String * out_covering_part = nullptr) const;
 
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
@@ -204,6 +232,12 @@ public:
 
     /// Count the number of merges in the queue.
     size_t countMerges() const;
+
+    /// A blocker that stops selects from the queue
+    ActionBlocker block;
+
+    /// Adds a subscriber
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback);
 
     struct Status
     {

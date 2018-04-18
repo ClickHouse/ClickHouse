@@ -7,6 +7,7 @@ namespace DB
 
 class Context;
 class IAST;
+class ASTSystemQuery;
 using ASTPtr = std::shared_ptr<IAST>;
 
 
@@ -20,6 +21,10 @@ public:
 private:
     ASTPtr query_ptr;
     Context & context;
+    Poco::Logger * log = nullptr;
+
+    void restartReplicas();
+    void syncReplica(ASTSystemQuery & query);
 };
 
 

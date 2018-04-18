@@ -27,6 +27,10 @@ public:
         RELOAD_CONFIG,
         STOP_MERGES,
         START_MERGES,
+        STOP_FETCHES,
+        START_FETCHES,
+        STOP_REPLICATED_SENDS,
+        START_REPLICATEDS_SENDS,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
         END
@@ -37,8 +41,8 @@ public:
     Type type = Type::UNKNOWN;
 
     String target_dictionary;
-    //String target_replica_database;
-    //String target_replica_table;
+    String target_database;
+    String target_table;
 
     String getID() const override { return "SYSTEM query"; };
 

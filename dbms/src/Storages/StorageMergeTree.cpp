@@ -33,6 +33,11 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_COLUMNS;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType PartsMerge;
+}
+
 
 StorageMergeTree::StorageMergeTree(
     const String & path_,
@@ -382,6 +387,9 @@ bool StorageMergeTree::mergeTask()
     if (shutdown_called)
         return false;
 
+    if (merger.merges_blocker.isCancelled())
+        return false;
+
     try
     {
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
@@ -609,6 +617,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         if (replace)
             data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
+}
+
+ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type) const
+{
+    if (action_type == ActionLocks::PartsMerge)
+        return merger.merges_blocker.cancel();
+
+    return {};
 }
 
 }

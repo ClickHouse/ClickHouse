@@ -6,6 +6,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/parseDatabaseAndTableName.h>
+
 
 namespace DB
 {
@@ -52,33 +54,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_alter_table.ignore(pos, expected))
         return false;
 
-    /// Parses [db].name
-    auto parse_database_and_table = [&] (String & database_str, String & table_str)
-    {
-        ASTPtr database;
-        ASTPtr table;
-
-        if (!table_parser.parse(pos, database, expected))
-            return false;
-
-        if (s_dot.ignore(pos))
-        {
-            if (!table_parser.parse(pos, table, expected))
-                return false;
-
-            database_str = typeid_cast<ASTIdentifier &>(*database).name;
-            table_str = typeid_cast<ASTIdentifier &>(*table).name;
-        }
-        else
-        {
-            database_str = "";
-            table_str = typeid_cast<ASTIdentifier &>(*database).name;
-        }
-
-        return true;
-    };
-
-    if (!parse_database_and_table(query->database, query->table))
+    if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
         return false;
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
@@ -150,7 +126,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (s_from.ignore(pos))
             {
-                if (!parse_database_and_table(params.from_database, params.from_table))
+                if (!parseDatabaseAndTableName(pos, expected, params.from_database, params.from_table))
                     return false;
 
                 params.replace = false;
@@ -169,7 +145,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!s_from.ignore(pos, expected))
                 return false;
 
-            if (!parse_database_and_table(params.from_database, params.from_table))
+            if (!parseDatabaseAndTableName(pos, expected, params.from_database, params.from_table))
                 return false;
 
             params.replace = true;

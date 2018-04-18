@@ -206,6 +206,9 @@ void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
     std::optional<time_t> min_unprocessed_insert_time_changed;
     std::optional<time_t> max_processed_insert_time_changed;
 
+    bool found = false;
+    size_t queue_size = 0;
+
     {
         std::unique_lock<std::mutex> lock(mutex);
 
@@ -219,12 +222,16 @@ void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
             if (*it == entry)
             {
                 queue.erase(it);
+                found = true;
+                queue_size = queue.size();
                 break;
             }
         }
 
         updateTimesOnRemoval(entry, min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
     }
+
+    notifySubscribers(queue_size);
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 }
@@ -233,6 +240,7 @@ void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPt
 bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name)
 {
     LogEntryPtr found;
+    size_t queue_size = 0;
 
     std::optional<time_t> min_unprocessed_insert_time_changed;
     std::optional<time_t> max_processed_insert_time_changed;
@@ -246,6 +254,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
             {
                 found = *it;
                 queue.erase(it++);
+                queue_size = queue.size();
                 updateTimesOnRemoval(found, min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
                 break;
             }
@@ -256,6 +265,8 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 
     if (!found)
         return false;
+
+    notifySubscribers(queue_size);
 
     zookeeper->tryRemove(replica_path + "/queue/" + found->znode_name);
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
@@ -722,6 +733,9 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 
 ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger, MergeTreeData & data)
 {
+    if (block.isCancelled())
+        return {};
+
     std::lock_guard<std::mutex> lock(mutex);
 
     LogEntryPtr entry;
@@ -779,9 +793,13 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-bool ReplicatedMergeTreeQueue::partWillBeMergedOrMergesDisabled(const String & part_name) const
+bool ReplicatedMergeTreeQueue::partWillBeMergedOrMergesDisabled(const String & part_name, String * out_covering_part) const
 {
-    return virtual_parts.getContainingPart(part_name) != part_name;
+    String covering_part = virtual_parts.getContainingPart(part_name);
+    if (out_covering_part)
+        *out_covering_part = covering_part;
+
+    return covering_part != part_name;
 }
 
 void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
@@ -871,11 +889,41 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
     out_max_processed_insert_time = max_processed_insert_time;
 }
 
+ReplicatedMergeTreeQueue::SubscriberHandler
+ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> lock_subscribers(subscribers_mutex);
+
+    auto it = subscribers.emplace(subscribers.end(), std::move(callback));
+
+    /// Atomically notify about current size
+    (*it)(queue.size());
+
+    return SubscriberHandler(it, *this);
+}
+
+ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
+{
+    std::lock_guard<std::mutex> lock(queue.subscribers_mutex);
+    queue.subscribers.erase(it);
+}
+
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size)
+{
+    std::lock_guard<std::mutex> lock_subscribers(subscribers_mutex);
+    for (auto & subscriber_callback : subscribers)
+        subscriber_callback(new_queue_size);
+}
+
+ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
+{
+    notifySubscribers(0);
+}
 
 String padIndex(Int64 index)
 {
     String index_str = toString(index);
     return std::string(10 - index_str.size(), '0') + index_str;
 }
-
 }
