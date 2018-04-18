@@ -401,20 +401,19 @@ MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vect
             return std::forward_as_tuple(l.pk_index, l.tuple_index) < std::forward_as_tuple(r.pk_index, r.tuple_index);
         });
 
-    std::unique(
+    indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
         {
             return l.pk_index == r.pk_index;
-        });
+        }), indexes_mapping.end());
 
     for (size_t i = 0; i < set_elements.size(); ++i)
     {
         std::vector<FieldWithInfinity> new_set_values;
         for (size_t j = 0; j < indexes_mapping.size(); ++j)
-        {
-            new_set_values.push_back(FieldWithInfinity(set_elements[i][indexes_mapping[j].tuple_index]));
-        }
+            new_set_values.emplace_back(set_elements[i][indexes_mapping[j].tuple_index]);
+
         ordered_set.emplace_back(std::move(new_set_values));
     }
 
