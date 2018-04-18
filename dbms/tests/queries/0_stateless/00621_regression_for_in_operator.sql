@@ -14,3 +14,6 @@ SELECT count() FROM test.regression_for_in_operator_view WHERE g = '5' OR g = '6
 
 SET optimize_min_equality_disjunction_chain_length = 3;
 SELECT count() FROM test.regression_for_in_operator_view WHERE g = '5' OR g = '6';
+
+DROP TABLE test.regression_for_in_operator_view;
+DROP TABLE test.regression_for_in_operator;
