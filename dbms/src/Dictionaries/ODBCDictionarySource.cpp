@@ -1,6 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Common/PocoSessionPoolHelpers.h>
+#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>

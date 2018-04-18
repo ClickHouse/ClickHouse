@@ -190,7 +190,7 @@ void ReplicatedMergeTreeAlterThread::run()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
             force_recheck_parts = true;
 

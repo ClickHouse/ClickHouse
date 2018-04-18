@@ -1,6 +1,7 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
 #include <IO/WriteHelpers.h>
@@ -505,7 +506,7 @@ ZooKeeper::ZooKeeper(
     Poco::Timespan operation_timeout)
     : root_path(root_path_),
     session_timeout(session_timeout),
-    operation_timeout(operation_timeout)
+    operation_timeout(std::min(operation_timeout, session_timeout))
 {
     if (!root_path.empty())
     {
@@ -532,9 +533,6 @@ ZooKeeper::ZooKeeper(
 
     connect(addresses, connection_timeout);
 
-    sendHandshake();
-    receiveHandshake();
-
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
 
@@ -549,6 +547,9 @@ void ZooKeeper::connect(
     const Addresses & addresses,
     Poco::Timespan connection_timeout)
 {
+    if (addresses.empty())
+        throw Exception("No addresses passed to ZooKeeperImpl constructor", ZBADARGUMENTS);
+
     static constexpr size_t num_tries = 3;
     bool connected = false;
 
@@ -559,13 +560,25 @@ void ZooKeeper::connect(
         {
             try
             {
+                socket = Poco::Net::StreamSocket();     /// Reset the state of previous attempt.
                 socket.connect(address, connection_timeout);
+
+                socket.setReceiveTimeout(operation_timeout);
+                socket.setSendTimeout(operation_timeout);
+                socket.setNoDelay(true);
+
+                in.emplace(socket);
+                out.emplace(socket);
+
+                sendHandshake();
+                receiveHandshake();
+
                 connected = true;
                 break;
             }
             catch (const Poco::Net::NetException & e)
             {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false);
+                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
             }
             catch (const Poco::TimeoutException & e)
             {
@@ -591,16 +604,9 @@ void ZooKeeper::connect(
             out << address.toString();
         }
 
-        out << fail_reasons.str();
+        out << fail_reasons.str() << "\n";
         throw Exception(out.str(), ZCONNECTIONLOSS);
     }
-
-    socket.setReceiveTimeout(operation_timeout);
-    socket.setSendTimeout(operation_timeout);
-    socket.setNoDelay(true);
-
-    in.emplace(socket);
-    out.emplace(socket);
 }
 
 
@@ -685,6 +691,8 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
 void ZooKeeper::sendThread()
 {
+    setThreadName("ZooKeeperSend");
+
     auto prev_heartbeat_time = clock::now();
 
     try
@@ -703,12 +711,33 @@ void ZooKeeper::sendThread()
                     std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count(),
                     operation_timeout.totalMilliseconds());
 
-                RequestPtr request;
-                if (requests.tryPop(request, max_wait))
+                RequestInfo info;
+                if (requests_queue.tryPop(info, max_wait))
                 {
-                    request->write(*out);
+                    /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
+                    ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    if (request->xid == close_xid)
+                    if (info.request->xid != close_xid)
+                    {
+                        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
+                        std::lock_guard lock(operations_mutex);
+                        operations[info.request->xid] = info;
+                    }
+
+                    if (info.watch)
+                    {
+                        info.request->has_watch = true;
+                        CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
+                        std::lock_guard lock(watches_mutex);
+                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
+                    }
+
+                    if (expired)
+                        break;
+
+                    info.request->write(*out);
+
+                    if (info.request->xid == close_xid)
                         break;
                 }
             }
@@ -730,16 +759,13 @@ void ZooKeeper::sendThread()
         tryLogCurrentException(__PRETTY_FUNCTION__);
         finalize(true, false);
     }
-
-    /// Drain queue
-    RequestPtr request;
-    while (requests.tryPop(request))
-        ;
 }
 
 
 void ZooKeeper::receiveThread()
 {
+    setThreadName("ZooKeeperRecv");
+
     try
     {
         Int64 waited = 0;
@@ -943,6 +969,9 @@ void ZooKeeper::receiveEvent()
         }
 
         response = request_info.request->makeResponse();
+
+        auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
     if (err)
@@ -957,8 +986,7 @@ void ZooKeeper::receiveEvent()
     if (length != actual_length)
         throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
 
-    auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-    ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
+    /// NOTE: Exception in callback will propagate to receiveThread and will lead to session expiration. This is Ok.
 
     if (request_info.callback)
         request_info.callback(*response);
@@ -967,63 +995,141 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
-    bool expired_prev = false;
-    if (expired.compare_exchange_strong(expired_prev, true))
+    std::unique_lock lock(finalize_mutex, std::defer_lock);
+    if (!lock.try_lock())
+        return;
+
+    if (expired)
+        return;
+    expired = true;
+
+    active_session_metric_increment.destroy();
+
+    try
     {
+        if (!error_send)
+        {
+            /// Send close event. This also signals sending thread to wakeup and then stop.
+            try
+            {
+                close();
+            }
+            catch (...)
+            {
+                /// This happens for example, when "Cannot push request to queue within operation timeout".
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+            send_thread.join();
+        }
+
         try
         {
-            if (!error_send)
-            {
-                /// Send close event. This also signals sending thread to wakeup and then stop.
-                close();
-                send_thread.join();
-            }
-
-            /// This will also wakeup receiving thread.
+            /// This will also wakeup the receiving thread.
             socket.shutdown();
-
-            if (!error_receive)
-                receive_thread.join();
-
-            {
-                std::lock_guard lock(operations_mutex);
-
-                for (auto & op : operations)
-                {
-                    RequestInfo & request_info = op.second;
-                    ResponsePtr response = request_info.request->makeResponse();
-                    response->error = ZCONNECTIONLOSS;
-                    if (request_info.callback)
-                        request_info.callback(*response);
-                }
-
-                CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest, operations.size());
-                operations.clear();
-            }
-
-            {
-                std::lock_guard lock(watches_mutex);
-
-                for (auto & path_watches : watches)
-                {
-                    WatchResponse response;
-                    response.type = SESSION;
-                    response.state = EXPIRED_SESSION;
-                    response.error = ZCONNECTIONLOSS;
-
-                    for (auto & callback : path_watches.second)
-                        if (callback)
-                            callback(response);
-                }
-
-                CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watches.size());
-                watches.clear();
-            }
         }
         catch (...)
         {
+            /// We must continue to execute all callbacks, because the user is waiting for them.
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+
+        if (!error_receive)
+            receive_thread.join();
+
+        {
+            std::lock_guard lock(operations_mutex);
+
+            for (auto & op : operations)
+            {
+                RequestInfo & request_info = op.second;
+                ResponsePtr response = request_info.request->makeResponse();
+                response->error = ZSESSIONEXPIRED;
+                if (request_info.callback)
+                {
+                    try
+                    {
+                        request_info.callback(*response);
+                    }
+                    catch (...)
+                    {
+                        /// We must continue to all other callbacks, because the user is waiting for them.
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
+                }
+            }
+
+            CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest, operations.size());
+            operations.clear();
+        }
+
+        {
+            std::lock_guard lock(watches_mutex);
+
+            for (auto & path_watches : watches)
+            {
+                WatchResponse response;
+                response.type = SESSION;
+                response.state = EXPIRED_SESSION;
+                response.error = ZSESSIONEXPIRED;
+
+                for (auto & callback : path_watches.second)
+                {
+                    if (callback)
+                    {
+                        try
+                        {
+                            callback(response);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                        }
+                    }
+                }
+            }
+
+            CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watches.size());
+            watches.clear();
+        }
+
+        /// Drain queue
+        RequestInfo info;
+        while (requests_queue.tryPop(info))
+        {
+            if (info.callback)
+            {
+                ResponsePtr response = info.request->makeResponse();
+                response->error = ZSESSIONEXPIRED;
+                try
+                {
+                    info.callback(*response);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+
+            }
+            if (info.watch)
+            {
+                WatchResponse response;
+                response.type = SESSION;
+                response.state = EXPIRED_SESSION;
+                response.error = ZSESSIONEXPIRED;
+                try
+                {
+                    info.watch(response);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -1227,39 +1333,38 @@ void ZooKeeper::MultiResponse::readImpl(ReadBuffer & in)
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
-    /// If the request is close request, we push it even after session is expired - because it will signal sending thread to stop.
-    if (expired && info.request->xid != close_xid)
-        throw Exception("Session expired", ZSESSIONEXPIRED);
-
-    info.request->addRootPath(root_path);
-
-    info.time = clock::now();
-
-    if (!info.request->xid)
+    try
     {
-        info.request->xid = xid.fetch_add(1);
-        if (info.request->xid < 0)
-            throw Exception("XID overflow", ZSESSIONEXPIRED);
+        info.request->addRootPath(root_path);
+
+        info.time = clock::now();
+
+        if (!info.request->xid)
+        {
+            info.request->xid = xid.fetch_add(1);
+            if (info.request->xid < 0)
+                throw Exception("XID overflow", ZSESSIONEXPIRED);
+        }
+
+        /// We must serialize 'pushRequest' and 'finalize' (from sendThread, receiveThread) calls
+        ///  to avoid forgotten operations in the queue when session is expired.
+        /// Invariant: when expired, no new operations will be pushed to the queue in 'pushRequest'
+        ///  and the queue will be drained in 'finalize'.
+        std::lock_guard lock(finalize_mutex);
+
+        if (expired)
+            throw Exception("Session expired", ZSESSIONEXPIRED);
+
+        if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
+            throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
+    }
+    catch (...)
+    {
+        finalize(false, false);
+        throw;
     }
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
-
-    {
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
-        std::lock_guard lock(operations_mutex);
-        operations[info.request->xid] = info;
-    }
-
-    if (info.watch)
-    {
-        info.request->has_watch = true;
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
-        std::lock_guard lock(watches_mutex);
-        watches[info.request->getPath()].emplace_back(std::move(info.watch));
-    }
-
-    if (!requests.tryPush(info.request, operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
 }
 
 
@@ -1426,7 +1531,9 @@ void ZooKeeper::close()
     RequestInfo request_info;
     request_info.request = std::make_shared<CloseRequest>(std::move(request));
 
-    pushRequest(std::move(request_info));
+    if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
+        throw Exception("Cannot push close request to queue within operation timeout", ZOPERATIONTIMEOUT);
+
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }
 

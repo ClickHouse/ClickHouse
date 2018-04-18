@@ -234,7 +234,7 @@ bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
         UInt64 pong = 0;
@@ -274,7 +274,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
     if (!connected)
         connect();
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);

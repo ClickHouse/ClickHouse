@@ -180,7 +180,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
-            /* hilite = */ false, "", /* allow_multi_statements = */ false);
+            /* hilite = */ false, "", /* allow_multi_statements = */ false, 0);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -206,7 +206,7 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) c
         buffer << "CREATE DATABASE " << backQuoteIfNeed(name) << " ENGINE = Dictionary";
     }
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "");
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
 }
 
 void DatabaseDictionary::shutdown()

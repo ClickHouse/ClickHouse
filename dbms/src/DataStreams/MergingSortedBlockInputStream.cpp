@@ -15,15 +15,17 @@ namespace ErrorCodes
 
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
-        BlockInputStreams & inputs_, const SortDescription & description_,
-        size_t max_block_size_, size_t limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
+    const BlockInputStreams & inputs_, const SortDescription & description_,
+    size_t max_block_size_, size_t limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
     : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
+    header = children.at(0)->getHeader();
+    num_columns = header.columns();
 }
 
-void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged_columns)
+void MergingSortedBlockInputStream::init(MutableColumns & merged_columns)
 {
     /// Read the first blocks, initialize the queue.
     if (first)
@@ -44,9 +46,6 @@ void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged
             if (rows == 0)
                 continue;
 
-            if (!num_columns)
-                num_columns = shared_block_ptr->columns();
-
             if (expected_block_size < rows)
                 expected_block_size = std::min(rows, max_block_size);
 
@@ -62,32 +61,9 @@ void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged
             initQueue(queue);
     }
 
-    /// Initialize the result.
-
-    /// We clone the structure of the first non-empty source block.
-    {
-        auto it = source_blocks.cbegin();
-        for (; it != source_blocks.cend(); ++it)
-        {
-            const SharedBlockPtr & shared_block_ptr = *it;
-
-            if (*shared_block_ptr)
-            {
-                header = shared_block_ptr->cloneEmpty();
-                break;
-            }
-        }
-
-        /// If all the input blocks are empty.
-        if (it == source_blocks.cend())
-            return;
-    }
-
     /// Let's check that all source blocks have the same structure.
-    for (auto it = source_blocks.cbegin(); it != source_blocks.cend(); ++it)
+    for (const SharedBlockPtr & shared_block_ptr : source_blocks)
     {
-        const SharedBlockPtr & shared_block_ptr = *it;
-
         if (!*shared_block_ptr)
             continue;
 
@@ -120,10 +96,9 @@ Block MergingSortedBlockInputStream::readImpl()
     if (children.size() == 1)
         return children[0]->read();
 
-    Block header;
     MutableColumns merged_columns;
 
-    init(header, merged_columns);
+    init(merged_columns);
     if (merged_columns.empty())
         return {};
 

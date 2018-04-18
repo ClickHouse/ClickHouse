@@ -145,7 +145,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
 
         const char * begin = default_expr_str.data();
         const auto end = begin + default_expr_str.size();
-        ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default expression");
+        ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default expression", 0);
 
         if (ColumnDefaultKind::Default == default_kind)
             result.ordinary.emplace_back(column_name, std::move(type));

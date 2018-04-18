@@ -2,7 +2,6 @@
 
 #include <shared_mutex>
 #include <Core/Block.h>
-#include <Columns/ColumnArray.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -89,9 +88,6 @@ private:
     /// Limitations on the maximum size of the set
     SizeLimits limits;
 
-    /// If there is an array on the left side of IN. We check that at least one element of the array presents in the set.
-    void executeArray(const ColumnArray * key_column, ColumnUInt8::Container & vec_res, bool negative) const;
-
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
@@ -143,15 +139,6 @@ private:
         bool negative,
         size_t rows,
         ConstNullMapPtr null_map) const;
-
-    template <typename Method>
-    void executeArrayImpl(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        const ColumnArray::Offsets & offsets,
-        ColumnUInt8::Container & vec_res,
-        bool negative,
-        size_t rows) const;
 };
 
 using SetPtr = std::shared_ptr<Set>;
