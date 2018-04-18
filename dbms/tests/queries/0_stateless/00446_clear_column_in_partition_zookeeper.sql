@@ -61,11 +61,3 @@ ALTER TABLE test.clear_column1 CLEAR COLUMN s IN PARTITION '200002';
 ALTER TABLE test.clear_column1 CLEAR COLUMN s IN PARTITION '200012', CLEAR COLUMN i IN PARTITION '200012';
 -- Drop empty partition also Ok
 ALTER TABLE test.clear_column1 DROP PARTITION '200012', DROP PARTITION '200011';
-
-
--- check optimize for non-leader replica (it is not related with CLEAR COLUMN)
-OPTIMIZE TABLE test.clear_column1;
-OPTIMIZE TABLE test.clear_column2;
-
-DROP TABLE IF EXISTS test.clear_column1;
-DROP TABLE IF EXISTS test.clear_column2;

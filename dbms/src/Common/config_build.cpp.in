@@ -6,6 +6,7 @@ const char * auto_config_build[]
 {
     "VERSION_FULL", "@VERSION_FULL@",
     "VERSION_DESCRIBE", "@VERSION_DESCRIBE@",
+    "VERSION_GITHASH", "@VERSION_GITHASH@",
     "BUILD_DATE", "@BUILD_DATE@",
     "BUILD_TYPE", "@CMAKE_BUILD_TYPE@",
     "SYSTEM", "@CMAKE_SYSTEM@",
