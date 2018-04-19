@@ -1596,6 +1596,15 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
             update_in_progress = false;
             queue_updating_event->wait();
         }
+        catch (const zkutil::KeeperException & e)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                break;
+            else
+                queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
+        }
         catch (...)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
