@@ -28,7 +28,9 @@ CreatingSetsBlockInputStream::CreatingSetsBlockInputStream(
         if (elem.second.source)
         {
             children.push_back(elem.second.source);
-            elem.second.set->setHeader(elem.second.source->getHeader());
+
+            if (elem.second.set)
+                elem.second.set->setHeader(elem.second.source->getHeader());
         }
     }
 
