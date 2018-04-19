@@ -11,7 +11,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -330,7 +330,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
     {
         /// Disable DNS caching at all
-        DNSCache::instance().setDisableFlag();
+        DNSResolver::instance().setDisableCacheFlag();
     }
     else
     {

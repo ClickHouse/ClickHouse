@@ -1,5 +1,5 @@
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -78,7 +78,7 @@ BlockIO InterpreterSystemQuery::execute()
                 throwFromErrno("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::DROP_DNS_CACHE:
-            DNSCache::instance().drop();
+            DNSResolver::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
