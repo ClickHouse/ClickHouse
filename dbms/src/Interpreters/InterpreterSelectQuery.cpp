@@ -630,8 +630,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
-    query_analyzer->makeSetsForIndex();
-
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (!pipeline.streams.empty())
     {
@@ -675,6 +673,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
                 optimize_prewhere(*merge_tree);
         }
+
+        query_analyzer->makeSetsForIndex();
 
         if (!dry_run)
             pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
