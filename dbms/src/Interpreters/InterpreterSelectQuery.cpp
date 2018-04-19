@@ -235,9 +235,9 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 }
 
 
-InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage,
-                                                                                  ExpressionActionsChain & chain)
+InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage)
 {
+    ExpressionActionsChain chain;
     AnalysisResult res;
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
@@ -253,8 +253,16 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         */
 
     std::shared_ptr<bool> remove_where_filter;
+    std::shared_ptr<bool> remove_prewhere_filter;
 
     {
+        if (query_analyzer->appendPrewhere(chain, false, remove_prewhere_filter))
+        {
+            res.prewhere_info = std::make_shared<PrewhereInfo>(
+                    chain.steps.front().actions, query.prewhere_expression->getColumnName());
+            chain.addStep();
+        }
+
         res.need_aggregate = query_analyzer->hasAggregation();
 
         query_analyzer->appendArrayJoin(chain, !res.first_stage);
@@ -311,6 +319,9 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         chain.clear();
     }
 
+    if (res.prewhere_info)
+        res.prewhere_info->remove_prewhere_column = *remove_prewhere_filter;
+
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
     if (res.has_where)
     {
@@ -343,13 +354,14 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
     AnalysisResult expressions;
     {
-        ExpressionActionsChain chain;
-        PrewhereInfoPtr prewhere_info;
-        std::shared_ptr<bool> remove_prewhere_filter;
+        QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
+        if (storage)
+            from_stage = storage->getQueryProcessingStage(context);
+
+        expressions = analyzeExpressions(from_stage);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run, chain,
-                                                                    prewhere_info, remove_prewhere_filter);
+        executeFetchColumns(from_stage, pipeline, dry_run, expressions.prewhere_info);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             to_stage == QueryProcessingStage::WithMergeableState)
@@ -358,11 +370,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         if (!dry_run)
             LOG_TRACE(log,
                       QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
-
-        expressions = analyzeExpressions(from_stage, chain);
-
-        if (prewhere_info)
-            prewhere_info->remove_prewhere_column = *remove_prewhere_filter;
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -528,9 +535,8 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
     }
 }
 
-QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
-    Pipeline & pipeline, bool dry_run, ExpressionActionsChain & chain,
-    PrewhereInfoPtr & prewhere_info, std::shared_ptr<bool> & remove_prewhere_filter)
+void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum from_stage, Pipeline & pipeline,
+                                                 bool dry_run, const PrewhereInfoPtr & prewhere_info)
 {
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
@@ -648,8 +654,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
         max_streams = 1;
     }
 
-    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-
     query_analyzer->makeSetsForIndex();
 
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
@@ -680,6 +684,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
         SelectQueryInfo query_info;
         query_info.query = query_ptr;
         query_info.sets = query_analyzer->getPreparedSets();
+        query_info.prewhere_info = prewhere_info;
 
         /// PREWHERE optimization
         {
@@ -696,13 +701,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
                 optimize_prewhere(*merge_tree);
         }
 
-        if (!dry_run && query_analyzer->appendPrewhere(chain, false, remove_prewhere_filter))
-        {
-            query_info.prewhere_info = prewhere_info = std::make_shared<PrewhereInfo>(
-                    chain.steps.front().actions, query.prewhere_expression->getColumnName());
-            chain.addStep();
-        }
-
         if (!dry_run)
             pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
@@ -711,8 +709,10 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
 
             if (query_info.prewhere_info)
-                pipeline.streams.back() = std::make_shared<PrewhereFilterBlockInputStream>(pipeline.streams.back(),
-                                                                                           query_info.prewhere_info);
+                pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
+                        pipeline.streams.back(), prewhere_info->prewhere_actions,
+                        prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column
+                );
         }
 
         pipeline.transform([&](auto & stream)

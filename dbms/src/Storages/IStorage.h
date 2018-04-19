@@ -150,6 +150,11 @@ public:
         return res;
     }
 
+    /** Returns stage to which query is going to be processed in read() function.
+      * (Normally, the function only reads the columns from the list, but in other cases,
+      *  for example, the request can be partially processed on a remote server.)
+      */
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
 
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -157,9 +162,7 @@ public:
       *  (indexes, locks, etc.)
       * Returns a stream with which you can read data sequentially
       *  or multiple streams for parallel data reading.
-      * The `processed_stage` info is also written to what stage the request was processed.
-      * (Normally, the function only reads the columns from the list, but in other cases,
-      *  for example, the request can be partially processed on a remote server.)
+      * The `processed_stage` must be the result of getQueryProcessingStage() function.
       *
       * context contains settings for one query.
       * Usually Storage does not care about these settings, since they are used in the interpreter.
@@ -174,7 +177,7 @@ public:
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
-        QueryProcessingStage::Enum & /*processed_stage*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/)
     {
@@ -302,6 +305,15 @@ public:
 protected:
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
+
+    void checkQueryProcessingStage(QueryProcessingStage::Enum processed_stage, const Context & context)
+    {
+        auto expected = getQueryProcessingStage(context);
+        if (processed_stage != expected)
+            throw Exception("Unexpected query processing stage for storage " + getName() +
+                            ": expected " + QueryProcessingStage::toString(expected) +
+                            ", got " + QueryProcessingStage::toString(processed_stage), ErrorCodes::LOGICAL_ERROR);
+    }
 
 private:
     friend class TableStructureReadLock;

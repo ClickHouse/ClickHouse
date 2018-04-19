@@ -134,7 +134,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams,
     Int64 max_block_number_to_read) const
@@ -193,7 +192,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
     data.check(real_column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     const Settings & settings = context.getSettingsRef();
     SortDescription sort_descr = data.getPrimarySortDescription();

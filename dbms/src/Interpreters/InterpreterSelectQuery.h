@@ -144,9 +144,10 @@ private:
         bool second_stage = false;
 
         SubqueriesForSets subqueries_for_sets;
+        PrewhereInfoPtr prewhere_info;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, ExpressionActionsChain & chain);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
@@ -158,10 +159,9 @@ private:
     /// dry_run - don't read from table, use empty header block instead.
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run, ExpressionActionsChain & chain,
-                                                   PrewhereInfoPtr & prewhere_info,
-                                                   std::shared_ptr<bool> & remove_prewhere_filter);
+    /// Fetch data from the table.
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, bool dry_run,
+                             const PrewhereInfoPtr & prewhere_info);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
