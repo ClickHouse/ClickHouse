@@ -56,6 +56,9 @@ public:
 
     size_t getTotalRowCount() const { return data.getTotalRowCount(); }
     size_t getTotalByteCount() const { return data.getTotalByteCount(); }
+
+    const DataTypes & getDataTypes() const { return data_types; }
+
     SetElements & getSetElements() { return *set_elements.get(); }
 
 private:

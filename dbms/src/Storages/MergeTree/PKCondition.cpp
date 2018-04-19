@@ -19,6 +19,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_TYPE_OF_FIELD;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+}
+
+
 String Range::toString() const
 {
     std::stringstream str;
@@ -464,8 +472,8 @@ void PKCondition::getPKTuplePositionMapping(
     index_mapping.tuple_index = tuple_index;
     DataTypePtr data_type;
     if (isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
-            node, context, index_mapping.pk_index,
-            data_type, index_mapping.functions))
+        node, context, index_mapping.pk_index,
+        data_type, index_mapping.functions))
     {
         indexes_mapping.push_back(index_mapping);
         if (out_primary_key_column_num < index_mapping.pk_index)
@@ -475,7 +483,8 @@ void PKCondition::getPKTuplePositionMapping(
     }
 }
 
-// Try to prepare PKTuplePositionMapping for tuples from IN expression.
+
+/// Try to prepare PKTuplePositionMapping for tuples from IN expression.
 bool PKCondition::isTupleIndexable(
     const ASTPtr & node,
     const Context & context,
@@ -484,31 +493,48 @@ bool PKCondition::isTupleIndexable(
     size_t & out_primary_key_column_num)
 {
     out_primary_key_column_num = 0;
-    const ASTFunction * node_tuple = typeid_cast<const ASTFunction *>(node.get());
     std::vector<MergeTreeSetIndex::PKTuplePositionMapping> indexes_mapping;
+
+    size_t num_key_columns = prepared_set->getDataTypes().size();
+    if (num_key_columns == 0)
+    {
+        /// Empty set. It is "indexable" in a sense, that it implies that condition is always false (or true for NOT IN).
+        out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+        return true;
+    }
+
+    const ASTFunction * node_tuple = typeid_cast<const ASTFunction *>(node.get());
     if (node_tuple && node_tuple->name == "tuple")
     {
+        if (num_key_columns != node_tuple->arguments->children.size())
+        {
+            std::stringstream message;
+            message << "Number of columns in section IN doesn't match. "
+                << node_tuple->arguments->children.size() << " at left, " << num_key_columns << " at right.";
+            throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+        }
+
         size_t current_tuple_index = 0;
         for (const auto & arg : node_tuple->arguments->children)
         {
-            getPKTuplePositionMapping(arg, context, indexes_mapping, current_tuple_index++, out_primary_key_column_num);
+            getPKTuplePositionMapping(arg, context, indexes_mapping, current_tuple_index, out_primary_key_column_num);
+            ++current_tuple_index;
         }
     }
     else
     {
-       getPKTuplePositionMapping(node, context, indexes_mapping, 0, out_primary_key_column_num);
+        getPKTuplePositionMapping(node, context, indexes_mapping, 0, out_primary_key_column_num);
     }
 
     if (indexes_mapping.empty())
-    {
         return false;
-    }
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(
         prepared_set->getSetElements(), std::move(indexes_mapping));
 
     return true;
 }
+
 
 bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
     const ASTPtr & node,
@@ -1002,14 +1028,10 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
             {
                 rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));
                 if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                {
                     rpn_stack.back() = !rpn_stack.back();
-                }
             }
             else
-            {
-                throw Exception("Set for IN is not created yet!", ErrorCodes::LOGICAL_ERROR);
-            }
+                throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {

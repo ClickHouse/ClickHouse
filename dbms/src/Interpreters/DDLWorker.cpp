@@ -960,15 +960,25 @@ public:
     {
         Block res;
         if (num_hosts_finished >= waiting_hosts.size())
+        {
+            if (first_exception)
+                throw Exception(*first_exception);
+
             return res;
+        }
 
         auto zookeeper = context.getZooKeeper();
         size_t try_number = 0;
 
-        while(res.rows() == 0)
+        while (res.rows() == 0)
         {
             if (isCancelled())
+            {
+                if (first_exception)
+                    throw Exception(*first_exception);
+
                 return res;
+            }
 
             if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
             {
@@ -1019,6 +1029,9 @@ public:
                 String host;
                 UInt16 port;
                 Cluster::Address::fromString(host_id, host, port);
+
+                if (status.code != 0 && first_exception == nullptr)
+                    first_exception = std::make_unique<Exception>("There was an error on " + host + ": " + status.message, status.code);
 
                 ++num_hosts_finished;
 
@@ -1092,11 +1105,14 @@ private:
     Strings current_active_hosts; /// Hosts that were in active state at the last check
     size_t num_hosts_finished = 0;
 
+    /// Save the first detected error and throw it at the end of excecution
+    std::unique_ptr<Exception> first_exception;
+
     Int64 timeout_seconds = 120;
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, const NameSet & query_databases)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -1128,12 +1144,25 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getCommonHostID();
 
+    /// Check database access rights, assume that all servers have the same users config
+    NameSet databases_to_check_access_rights;
+
     Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
+
     for (const auto & shard : shards)
     {
         for (const auto & addr : shard)
+        {
             entry.hosts.emplace_back(addr);
+
+            /// Expand empty database name to shards' default database name
+            for (const String & database : query_databases)
+                databases_to_check_access_rights.emplace(database.empty() ? addr.default_database : database);
+        }
     }
+
+    for (const String & database : databases_to_check_access_rights)
+        context.checkDatabaseAccessRights(database.empty() ? context.getCurrentDatabase() : database);
 
     String node_path = ddl_worker.enqueueQuery(entry);
 
