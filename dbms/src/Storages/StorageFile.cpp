@@ -44,6 +44,7 @@ static std::string getTablePath(const std::string & db_dir_path, const std::stri
     return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
 }
 
+/// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 static void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path, int table_fd)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
