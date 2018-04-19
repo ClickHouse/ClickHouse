@@ -258,6 +258,9 @@ private:
     std::thread queue_updating_thread;
     zkutil::EventPtr queue_updating_event = std::make_shared<Poco::Event>();
 
+    std::thread mutations_updating_thread;
+    zkutil::EventPtr mutations_updating_event = std::make_shared<Poco::Event>();
+
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
@@ -364,6 +367,8 @@ private:
     /** Updates the queue.
       */
     void queueUpdatingThread();
+
+    void mutationsUpdatingThread();
 
     /** Performs actions from the queue.
       */
