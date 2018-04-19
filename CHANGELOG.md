@@ -6,7 +6,7 @@
 * The `query_id` can be passed to `clickhouse-client` (elBroom).
 * New setting: `max_network_bandwidth_for_all_users`.
 * Added support for `ALTER TABLE ... PARTITION ... ` for `MATERIALIZED VIEW`.
-* Added information about the size of uncompressed data parts in the system table.
+* Added information about the size of data parts in uncompressed form in the system table.
 * Server-to-server encryption support for distributed tables (`<secure>1</secure>` in the replica config in `<remote_servers>`).
 * Configuration of the table level for the `ReplicatedMergeTree` family in order to minimize the amount of data stored in zookeeper: `use_minimalistic_checksums_in_zookeeper = 1`
 * Configuration of the `clickhouse-client` prompt. By default, server names are now output to the prompt. The server's display name can be changed and sent in the `X-ClickHouse-Display-Name` HTTP header (Kirill Shvakov).
