@@ -1,18 +1,94 @@
+====SCHEMA====
 http
 https
 svn+ssh
 
 http
+
+====HOST====
 www.example.com
 
 www.example.com
 127.0.0.1
+www.example.com
+www.example.com
 example.com
+example.com
+====DOMAIN====
 com
 
 ru
 ru
+com
+====PATH====
 П
 %D%9
 /?query=hello world+foo+bar
 /?query=hello world+foo+bar
+/?query=hello world+foo+bar
+/?query=hello world+foo+bar
+
+/a/b/c
+/a/b/c
+/a/b/c
+/a/b/c
+====QUERY STRING====
+
+
+query=hello world+foo+bar
+query=hello world+foo+bar
+query=hello world+foo+bar
+query=hello world+foo+bar
+====FRAGMENT====
+
+
+a=b
+a=b
+a=b
+====QUERY STRING AND FRAGMENT====
+
+
+query=hello world+foo+bar
+query=hello world+foo+bar#a=b
+query=hello world+foo+bar#a=b
+query=hello world+foo+bar#a=b
+====CUT TO FIRST SIGNIFICANT SUBDOMAIN====
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+====CUT WWW====
+http://example.com
+http://example.com:1234
+http://example.com/a/b/c
+http://example.com/a/b/c?a=b
+http://example.com/a/b/c?a=b#d=f
+http://paul@example.com/a/b/c?a=b#d=f
+//paul@example.com/a/b/c?a=b#d=f
+====CUT QUERY STRING====
+http://www.example.com
+http://www.example.com:1234
+http://www.example.com/a/b/c
+http://www.example.com/a/b/c
+http://www.example.com/a/b/c#d=f
+http://paul@www.example.com/a/b/c#d=f
+//paul@www.example.com/a/b/c#d=f
+====CUT FRAGMENT====
+http://www.example.com
+http://www.example.com:1234
+http://www.example.com/a/b/c
+http://www.example.com/a/b/c?a=b
+http://www.example.com/a/b/c?a=b
+http://paul@www.example.com/a/b/c?a=b
+//paul@www.example.com/a/b/c?a=b
+====CUT QUERY STRING AND FRAGMENT====
+http://www.example.com
+http://www.example.com:1234
+http://www.example.com/a/b/c
+http://www.example.com/a/b/c
+http://www.example.com/a/b/c
+http://paul@www.example.com/a/b/c
+//paul@www.example.com/a/b/c
