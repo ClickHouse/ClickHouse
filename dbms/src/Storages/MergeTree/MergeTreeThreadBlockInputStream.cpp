@@ -34,6 +34,8 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
     }
     else
         min_marks_to_read = min_marks_to_read_;
+
+    ordered_names = getHeader().getNames();
 }
 
 
@@ -46,19 +48,10 @@ Block MergeTreeThreadBlockInputStream::getHeader() const
 };
 
 
-const Names & MergeTreeThreadBlockInputStream::getOrderedNames()
-{
-    if (ordered_names.empty())
-        ordered_names = getHeader().getNames();
-
-    return ordered_names;
-}
-
-
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadBlockInputStream::getNewTask()
 {
-    task = pool->getTask(min_marks_to_read, thread, getOrderedNames());
+    task = pool->getTask(min_marks_to_read, thread, ordered_names);
 
     if (!task)
     {

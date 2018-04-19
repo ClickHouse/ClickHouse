@@ -44,9 +44,8 @@ private:
     std::shared_ptr<MergeTreeReadPool> pool;
     size_t min_marks_to_read;
 
+    /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
-
-    const Names & getOrderedNames();
 };
 
 }

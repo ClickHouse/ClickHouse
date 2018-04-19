@@ -26,13 +26,13 @@ StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
 BlockInputStreams StorageSystemFunctions::read(
     const Names & column_names,
     const SelectQueryInfo &,
-    const Context &,
-    QueryProcessingStage::Enum & processed_stage,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
+    checkQueryProcessingStage(processed_stage, context);
 
     MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 

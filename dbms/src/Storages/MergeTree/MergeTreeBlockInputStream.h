@@ -48,10 +48,11 @@ protected:
     bool getNewTask() override;
 
 private:
-    mutable Block header;
+    Block header;
 
     /// Used by Task
     Names required_columns;
+    /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
     NameSet column_name_set;
     NamesAndTypesList columns;
@@ -72,8 +73,6 @@ private:
     bool is_first_task = true;
 
     Logger * log = &Logger::get("MergeTreeBlockInputStream");
-
-    const Names & getOrderedNames();
 };
 
 }

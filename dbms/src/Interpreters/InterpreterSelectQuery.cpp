@@ -19,7 +19,6 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
-#include <DataStreams/PrewhereFilterBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -352,27 +351,48 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
      *  then perform the remaining operations with one resulting stream.
      */
 
-    AnalysisResult expressions;
+    const Settings & settings = context.getSettingsRef();
+
+
+    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
+
+    query_analyzer->makeSetsForIndex();
+
+    /// PREWHERE optimization
+    if (storage)
     {
-        QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-        if (storage)
+        if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
 
-        expressions = analyzeExpressions(from_stage);
+        auto optimize_prewhere = [&](auto & merge_tree)
+        {
+            SelectQueryInfo query_info;
+            query_info.query = query_ptr;
+            query_info.sets = query_analyzer->getPreparedSets();
 
-        /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, dry_run, expressions.prewhere_info);
+            /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
+            if (settings.optimize_move_to_prewhere && query.where_expression && !query.prewhere_expression && !query.final())
+                MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), query_analyzer->getRequiredSourceColumns(), log};
+        };
 
-        if (from_stage == QueryProcessingStage::WithMergeableState &&
-            to_stage == QueryProcessingStage::WithMergeableState)
-            throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
-
-        if (!dry_run)
-            LOG_TRACE(log,
-                      QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
+        if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
+            optimize_prewhere(*merge_tree);
+        else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
+            optimize_prewhere(*merge_tree);
     }
 
-    const Settings & settings = context.getSettingsRef();
+    AnalysisResult expressions = analyzeExpressions(from_stage);
+
+    if (from_stage == QueryProcessingStage::WithMergeableState &&
+        to_stage == QueryProcessingStage::WithMergeableState)
+        throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+    /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
+    executeFetchColumns(from_stage, pipeline, dry_run, expressions.prewhere_info);
+
+    if (!dry_run)
+        LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
+
 
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
@@ -535,7 +555,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
     }
 }
 
-void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum from_stage, Pipeline & pipeline,
+void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
                                                  bool dry_run, const PrewhereInfoPtr & prewhere_info)
 {
     /// List of columns to read to execute the query.
@@ -654,8 +674,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum from
         max_streams = 1;
     }
 
-    query_analyzer->makeSetsForIndex();
-
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (!pipeline.streams.empty())
     {
@@ -686,23 +704,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum from
         query_info.sets = query_analyzer->getPreparedSets();
         query_info.prewhere_info = prewhere_info;
 
-        /// PREWHERE optimization
-        {
-            auto optimize_prewhere = [&](auto & merge_tree)
-            {
-                /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-                if (settings.optimize_move_to_prewhere && query.where_expression && !query.prewhere_expression && !query.final())
-                    MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), required_columns, log};
-            };
-
-            if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
-                optimize_prewhere(*merge_tree);
-            else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
-                optimize_prewhere(*merge_tree);
-        }
-
         if (!dry_run)
-            pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+            pipeline.streams = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (pipeline.streams.empty())
         {
@@ -759,15 +762,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum from
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
 
     /// Aliases in table declaration.
-    if (from_stage == QueryProcessingStage::FetchColumns && alias_actions)
+    if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)
     {
         pipeline.transform([&](auto & stream)
         {
             stream = std::make_shared<ExpressionBlockInputStream>(stream, alias_actions);
         });
     }
-
-    return from_stage;
 }
 
 

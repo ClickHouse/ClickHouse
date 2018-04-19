@@ -90,7 +90,6 @@ BlockInputStreams StorageMemory::read(
 {
     checkQueryProcessingStage(processed_stage, context);
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     std::lock_guard<std::mutex> lock(mutex);
 
