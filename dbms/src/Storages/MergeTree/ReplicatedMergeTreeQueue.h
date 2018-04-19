@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -69,7 +70,7 @@ private:
     /// Used to not perform other actions at the same time with these parts.
     StringSet future_parts;
 
-    /// Protects virtual_parts, log_pointer.
+    /// Protects virtual_parts, log_pointer, mutations.
     /// If you intend to lock both target_state_mutex and queue_mutex, lock target_state_mutex first.
     mutable std::mutex target_state_mutex;
 
@@ -81,8 +82,18 @@ private:
       */
     ActiveDataPartSet virtual_parts;
 
+    /// A set of mutations loaded from ZooKeeper.
+    /// mutations_by_partition is an index partition ID -> block ID -> mutation into this list.
+    /// Note that mutations are updated in such a way that they are always more recent than
+    /// log_pointer (see pullLogsToQueue()).
+    std::map<String, ReplicatedMergeTreeMutationEntry> mutations_by_znode;
+    std::unordered_map<String, std::map<Int64, const ReplicatedMergeTreeMutationEntry *>> mutations_by_partition;
+
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
+
+    /// Ensures that only one thread is simultaneously updating mutations.
+    std::mutex update_mutations_mutex;
 
     /// Put a set of (already existing) parts in virtual_parts.
     void initVirtualParts(const MergeTreeData::DataParts & parts);
@@ -174,6 +185,8 @@ public:
       * Returns true if new entries have been.
       */
     bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+
+    bool updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.

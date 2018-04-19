@@ -205,6 +205,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.shutdown_event.reset();
 
         storage.queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, &storage);
+        storage.mutations_updating_thread = std::thread(&StorageReplicatedMergeTree::mutationsUpdatingThread, &storage);
         storage.part_check_thread.start();
         storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
         storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
@@ -351,6 +352,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.shutdown_event.set();
     storage.merge_selecting_event.set();
     storage.queue_updating_event->set();
+    storage.mutations_updating_event->set();
     storage.alter_query_event->set();
     storage.cleanup_thread_event.set();
     storage.replica_is_active_node = nullptr;
@@ -361,6 +363,9 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     if (storage.queue_updating_thread.joinable())
         storage.queue_updating_thread.join();
+
+    if (storage.mutations_updating_thread.joinable())
+        storage.mutations_updating_thread.join();
 
     storage.cleanup_thread.reset();
     storage.alter_thread.reset();

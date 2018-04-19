@@ -1624,6 +1624,28 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 }
 
 
+void StorageReplicatedMergeTree::mutationsUpdatingThread()
+{
+    setThreadName("ReplMTMutUpd");
+
+    while (!shutdown_called)
+    {
+        try
+        {
+            queue.updateMutations(getZooKeeper(), mutations_updating_event);
+            mutations_updating_event->wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            mutations_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
+        }
+    }
+
+    LOG_DEBUG(log, "Mutations updating thread finished");
+}
+
+
 bool StorageReplicatedMergeTree::queueTask()
 {
     /// This object will mark the element of the queue as running.
