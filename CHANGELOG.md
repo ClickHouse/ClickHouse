@@ -9,7 +9,7 @@
 * Added information about the size of data parts in uncompressed form in the system table.
 * Server-to-server encryption support for distributed tables (`<secure>1</secure>` in the replica config in `<remote_servers>`).
 * Configuration of the table level for the `ReplicatedMergeTree` family in order to minimize the amount of data stored in zookeeper: `use_minimalistic_checksums_in_zookeeper = 1`
-* Configuration of the `clickhouse-client` prompt. By default, server names are now output to the prompt. The server's display name can be changed and sent in the `X-ClickHouse-Display-Name` HTTP header (Kirill Shvakov).
+* Configuration of the `clickhouse-client` prompt. By default, server names are now output to the prompt. The server's display name can be changed; it's also sent in the `X-ClickHouse-Display-Name` HTTP header (Kirill Shvakov).
 * Multiple comma-separated `topics` can be specified for the `Kafka` engine (Tobias Adamson).
 * When a query is stopped by `KILL QUERY` or `replace_running_query`, the client receives the `Query was cancelled` exception instead of an incomplete response.
 
