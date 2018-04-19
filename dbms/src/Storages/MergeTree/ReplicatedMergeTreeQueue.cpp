@@ -261,7 +261,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 
 bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
 {
-    std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
+    std::lock_guard lock(pull_logs_to_queue_mutex);
 
     std::set<Int64> new_ephemeral_block_numbers;
     {
@@ -281,6 +281,12 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
     UInt64 index;
 
     Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log", nullptr, next_update_event);
+
+    /// We update mutations after we have loaded the list of log entries, but before we insert them
+    /// in the queue.
+    /// With this we ensure that if you read the queue state Q1 and then the state of mutations M1,
+    /// then Q1 "happened-before" M1.
+    updateMutations(zookeeper, nullptr);
 
     if (index_str.empty())
     {
@@ -415,6 +421,82 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
     }
 
     return !log_entries.empty();
+}
+
+
+bool ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
+{
+    std::lock_guard lock(update_mutations_mutex);
+
+    Strings entries_in_zk = zookeeper->getChildren(zookeeper_path + "/mutations", nullptr, next_update_event);
+    std::sort(entries_in_zk.begin(), entries_in_zk.end());
+
+    /// Compare with the local state, delete obsolete entries and determine which new entries to load.
+    Strings entries_to_load;
+    {
+        std::lock_guard lock(mutex);
+
+        if (entries_in_zk.empty())
+        {
+            mutations_by_block_number.clear();
+            mutations.clear();
+        }
+        else
+        {
+            for (auto it = mutations.begin(); it != mutations.end(); )
+            {
+                if (it->znode_name < entries_in_zk.front())
+                {
+                    LOG_DEBUG(log, "Removing obsolete mutation " + it->znode_name + " from local state.");
+                    mutations_by_block_number.erase(it->block_number);
+                    it = mutations.erase(it);
+                }
+                else
+                    break;
+            }
+        }
+
+        if (mutations.empty())
+            entries_to_load = std::move(entries_in_zk);
+        else
+        {
+            for (auto it = entries_in_zk.rbegin(); it != entries_in_zk.rend(); ++it)
+            {
+                if (*it > mutations.back().znode_name)
+                    entries_to_load.push_back(std::move(*it));
+                else
+                    break;
+            }
+            std::reverse(entries_to_load.begin(), entries_to_load.end());
+        }
+    }
+
+    if (!entries_to_load.empty())
+    {
+        LOG_INFO(log, "Loading " + toString(entries_to_load.size()) + " mutation entries: "
+            + entries_to_load.front() + " - " + entries_to_load.back());
+
+        std::vector<std::future<zkutil::GetResponse>> futures;
+        for (const String & entry : entries_to_load)
+            futures.emplace_back(zookeeper->asyncGet(zookeeper_path + "/mutations/" + entry));
+
+        std::list<ReplicatedMergeTreeMutationEntry> new_mutations;
+        for (size_t i = 0; i < entries_to_load.size(); ++i)
+        {
+            new_mutations.push_back(
+                ReplicatedMergeTreeMutationEntry::parse(futures[i].get().data, entries_to_load[i]));
+        }
+
+        {
+            std::lock_guard lock(mutex);
+
+            for (const ReplicatedMergeTreeMutationEntry & mutation : new_mutations)
+                mutations_by_block_number.emplace(mutation.block_number, &mutation);
+            mutations.splice(mutations.end(), new_mutations);
+        }
+    }
+
+    return !entries_to_load.empty();
 }
 
 

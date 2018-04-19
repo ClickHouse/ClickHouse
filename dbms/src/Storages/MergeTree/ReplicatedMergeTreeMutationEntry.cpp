@@ -36,12 +36,15 @@ String ReplicatedMergeTreeMutationEntry::toString() const
     return out.str();
 }
 
-ReplicatedMergeTreeMutationEntry ReplicatedMergeTreeMutationEntry::parse(const String & str)
+ReplicatedMergeTreeMutationEntry ReplicatedMergeTreeMutationEntry::parse(const String & str, String znode_name)
 {
-    ReadBufferFromString in(str);
     ReplicatedMergeTreeMutationEntry res;
+    res.znode_name = std::move(znode_name);
+
+    ReadBufferFromString in(str);
     res.readText(in);
     assertEOF(in);
+
     return res;
 }
 

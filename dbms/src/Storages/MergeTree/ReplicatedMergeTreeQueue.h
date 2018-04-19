@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -68,6 +69,9 @@ private:
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
 
+    /// Ensures that only one thread is simultaneously updating mutations.
+    std::mutex update_mutations_mutex;
+
     /** What will be the set of active parts after running the entire current queue - adding new parts and performing merges.
       * Used to determine which merges have already been assigned:
       * - if there is a part in this set, then the smaller parts inside its range are not made.
@@ -78,6 +82,9 @@ private:
     ActiveDataPartSet virtual_parts;
 
     std::set<Int64> ephemeral_block_numbers;
+
+    std::list<ReplicatedMergeTreeMutationEntry> mutations;
+    std::map<Int64, const ReplicatedMergeTreeMutationEntry *> mutations_by_block_number;
 
     Logger * log = nullptr;
 
@@ -164,6 +171,8 @@ public:
       * Returns true if new entries have been.
       */
     bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+
+    bool updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.

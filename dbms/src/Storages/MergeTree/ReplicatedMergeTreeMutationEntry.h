@@ -18,7 +18,7 @@ struct ReplicatedMergeTreeMutationEntry
     void readText(ReadBuffer & in);
 
     String toString() const;
-    static ReplicatedMergeTreeMutationEntry parse(const String & str);
+    static ReplicatedMergeTreeMutationEntry parse(const String & str, String znode_name);
 
     String znode_name;
 
