@@ -17,7 +17,7 @@
 
 * `ALTER TABLE ... DROP/DETACH PARTITION` queries are run in the front of replication queue.
 * `SELECT ... FINAL` and `OPTIMIZE ... FINAL` can be used even when the table has a single data part.
-* A `query_log` table can be recreated on the fly if it was deleted manually (Kirill Shvakov).
+* A `query_log` table is recreated on the fly if it was deleted manually (Kirill Shvakov).
 * The `lengthUTF8` function runs faster (zhang2014).
 * Improved performance of synchronous inserts in `Distributed` tables (`insert_distributed_sync = 1`) when there is a very large number of shards.
 * The server accepts the `send_timeout` and `receive_timeout` settings from the client and applies them when connecting to the client (they are applied in reverse order: the server socket's `send_timeout` is set to the `receive_timeout` value received from the client, and vice versa).
