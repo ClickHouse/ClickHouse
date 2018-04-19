@@ -1,5 +1,5 @@
 #include <Interpreters/Cluster.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/SimpleCache.h>
@@ -47,7 +47,7 @@ inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAdd
 
 Poco::Net::SocketAddress resolveSocketAddress(const String & host, UInt16 port)
 {
-    return Poco::Net::SocketAddress(DNSCache::instance().resolveHost(host), port);
+    return Poco::Net::SocketAddress(DNSResolver::instance().resolveHost(host), port);
 }
 
 }

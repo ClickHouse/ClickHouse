@@ -29,7 +29,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/formatReadable.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
@@ -612,7 +612,7 @@ static ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, co
     res.is_remote = 1;
     for (auto & replica : replicas)
     {
-        if (isLocalAddress(DNSCache::instance().resolveHost(replica.host_name)))
+        if (isLocalAddress(DNSResolver::instance().resolveHost(replica.host_name)))
         {
             res.is_remote = 0;
             break;
