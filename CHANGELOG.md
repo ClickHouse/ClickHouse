@@ -1,3 +1,56 @@
+# ClickHouse release 1.1.54378, 2018-04-16
+## New features:
+
+* Logging level can be changed without restarting the server.
+* Added the `SHOW CREATE DATABASE` query.
+* The `query_id` can be passed to `clickhouse-client` (elBroom).
+* New setting: `max_network_bandwidth_for_all_users`.
+* Added support for `ALTER TABLE ... PARTITION ... ` for `MATERIALIZED VIEW`.
+* Added information about the size of data parts in uncompressed form in the system table.
+* Server-to-server encryption support for distributed tables (`<secure>1</secure>` in the replica config in `<remote_servers>`).
+* Configuration of the table level for the `ReplicatedMergeTree` family in order to minimize the amount of data stored in zookeeper: `use_minimalistic_checksums_in_zookeeper = 1`
+* Configuration of the `clickhouse-client` prompt. By default, server names are now output to the prompt. The server's display name can be changed; it's also sent in the `X-ClickHouse-Display-Name` HTTP header (Kirill Shvakov).
+* Multiple comma-separated `topics` can be specified for the `Kafka` engine (Tobias Adamson).
+* When a query is stopped by `KILL QUERY` or `replace_running_query`, the client receives the `Query was cancelled` exception instead of an incomplete response.
+
+## Improvements:
+
+* `ALTER TABLE ... DROP/DETACH PARTITION` queries are run in the front of replication queue.
+* `SELECT ... FINAL` and `OPTIMIZE ... FINAL` can be used even when the table has a single data part.
+* A `query_log` table is recreated on the fly if it was deleted manually (Kirill Shvakov).
+* The `lengthUTF8` function runs faster (zhang2014).
+* Improved performance of synchronous inserts in `Distributed` tables (`insert_distributed_sync = 1`) when there is a very large number of shards.
+* The server accepts the `send_timeout` and `receive_timeout` settings from the client and applies them when connecting to the client (they are applied in reverse order: the server socket's `send_timeout` is set to the `receive_timeout` value received from the client, and vice versa).
+* More robust crash recovery for asynchronous insertion into `Distributed` tables.
+* The return type of the `countEqual` function changed from `UInt32` to `UInt64` (谢磊).
+
+## Bug fixes:
+
+* Fixed an error with `IN` when the left side of the expression is `Nullable`.
+* Correct results are now returned when using tuples with `IN` when some of the tuple components are in the table index.
+* The `max_execution_time` limit now works correctly with distributed queries.
+* Fixed errors when calculating the size of composite columns in the `system.columns` table.
+* Fixed an error when creating a temporary table `CREATE TEMPORARY TABLE IF NOT EXISTS`.
+* Fixed errors in `StorageKafka` (#2075)
+* Fixed server crashes from invalid arguments of certain aggregate functions.
+* Fixed the error that prevented the `DETACH DATABASE` query from stopping background tasks for `ReplicatedMergeTree` tables.
+* `Too many parts` state is less likely to happen when inserting into aggregated materialized views (#2084).
+* Corrected recursive handling of substitutions in the config if a substitution must be followed by another substitution on the same level.
+* Corrected the syntax in the metadata file when creating a `VIEW` that uses a query with `UNION ALL`.
+* `SummingMergeTree` now works correctly for summation of nested data structures with a composite key.
+* Fixed the possibility of a race condition when choosing the leader for `ReplicatedMergeTree` tables.
+
+## Build changes:
+
+* The build supports `ninja` instead of `make` and uses it by default for building releases.
+* Renamed packages: `clickhouse-server-base` is now `clickhouse-common-static`; `clickhouse-server-common` is now `clickhouse-server`; `clickhouse-common-dbg` is now `clickhouse-common-static-dbg`. To install, use only `clickhouse-server clickhouse-client`. Packages with the old names will still load in the repositories for backward compatibility.
+
+## Backward-incompatible changes:
+
+* Removed the special interpretation of an IN expression if an array is specified on the left side. Previously, the expression `arr IN (set)` was interpreted as "at least one `arr` element belongs to the `set`". To get the same behavior in the new version, write `arrayExists(x -> x IN (set), arr)`.
+* Disabled the incorrect use of the socket option `SO_REUSEPORT`, which was incorrectly enabled by default in the Poco library. Note that on Linux there is no longer any reason to simultaneously specify the addresses `::` and `0.0.0.0` for listen – use just `::`, which allows listening to the connection both over IPv4 and IPv6 (with the default kernel config settings). You can also revert to the behavior from previous versions by specifying `<listen_reuse_port>1</listen_reuse_port>` in the config.
+
+
 # ClickHouse release 1.1.54370, 2018-03-16
 
 ## New features:

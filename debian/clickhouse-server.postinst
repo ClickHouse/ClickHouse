@@ -21,7 +21,11 @@ if [ "$1" = configure ]; then
     else
         # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
         if [ -x "/etc/init.d/clickhouse-server" ]; then
-            update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+            if [ "$OS" == "rhel" ] || [ "$OS" == "centos" ] || [ "$OS" == "fedora" ]; then
+                echo # TODO
+            else
+                update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+            fi
         fi
     fi
 

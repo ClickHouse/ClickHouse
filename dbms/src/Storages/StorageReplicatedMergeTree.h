@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -450,6 +451,9 @@ private:
     /// Remove block IDs from `blocks/` in ZooKeeper for the given partition ID in the given block number range.
     void clearBlocksInPartition(
         zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
+
+    /// Info about how other replicas can access this one.
+    ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
