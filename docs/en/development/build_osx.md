@@ -12,7 +12,7 @@ With appropriate changes, it should also work on any other Linux distribution.
 ## Install required compilers, tools, and libraries
 
 ```bash
-brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib readline boost --cc=gcc-7
+brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext zlib readline boost --cc=gcc-7
 ```
 
 ## Checkout ClickHouse sources

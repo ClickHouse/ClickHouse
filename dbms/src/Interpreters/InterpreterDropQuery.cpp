@@ -32,7 +32,7 @@ BlockIO InterpreterDropQuery::execute()
     checkAccess(drop);
 
     if (!drop.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+        return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();

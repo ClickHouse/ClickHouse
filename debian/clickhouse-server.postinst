@@ -21,7 +21,11 @@ if [ "$1" = configure ]; then
     else
         # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
         if [ -x "/etc/init.d/clickhouse-server" ]; then
-            update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+            if [ "$OS" == "rhel" ] || [ "$OS" == "centos" ] || [ "$OS" == "fedora" ]; then
+                echo # TODO
+            else
+                update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+            fi
         fi
     fi
 
@@ -29,10 +33,10 @@ if [ "$1" = configure ]; then
     if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
         if [ "$OS" == "rhel" ] || [ "$OS" == "centos" ] || [ "$OS" == "fedora" ]; then
             adduser --system --no-create-home --home /nonexistent \
-                --shell /bin/false clickhouse > /dev/null
+                --shell /bin/false ${CLICKHOUSE_USER} > /dev/null
         else
             adduser --system --disabled-login --no-create-home --home /nonexistent \
-                --shell /bin/false --group --gecos "ClickHouse server" clickhouse > /dev/null
+                --shell /bin/false --group --gecos "ClickHouse server" ${CLICKHOUSE_USER} > /dev/null
         fi
     fi
 
