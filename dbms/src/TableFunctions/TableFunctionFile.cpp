@@ -25,12 +25,12 @@ namespace DB
         ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
         if (args_func.size() != 1)
-            throw Exception("Table function 'file' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
         ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
         if (args.size() != 3)
-            throw Exception("Table function 'file' requires exactly 3 arguments: path, format and structure.",
+            throw Exception("Table function '" + getName() + "' requires exactly 3 arguments: path, format and structure.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < 3; ++i)
@@ -44,13 +44,13 @@ namespace DB
         std::vector<std::string> structure_vals;
         boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
 
-        if (structure_vals.size() & 1)
-            throw Exception("Odd number of attributes in section structure", ErrorCodes::LOGICAL_ERROR);
+        if (structure_vals.size() % 2 != 0)
+            throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
 
-        Block sample_block = Block();
+        Block sample_block;
         const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-        for (size_t i = 0; i < structure_vals.size(); i += 2)
+        for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
         {
             ColumnWithTypeAndName column;
             column.name = structure_vals[i];
