@@ -9,6 +9,20 @@
 namespace DB
 {
 
+static void getSelectsFromUnionListNode(ASTPtr & ast_select, ASTs & selects)
+{
+    if (ASTSelectWithUnionQuery * inner_union = typeid_cast<ASTSelectWithUnionQuery *>(ast_select.get()))
+    {
+        for (auto & child : inner_union->list_of_selects->children)
+            getSelectsFromUnionListNode(child, selects);
+
+        return;
+    }
+
+    selects.push_back(std::move(ast_select));
+}
+
+
 bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list_node;
@@ -28,19 +42,6 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         getSelectsFromUnionListNode(child, select_with_union_query->list_of_selects->children);
 
     return true;
-}
-
-void ParserSelectWithUnionQuery::getSelectsFromUnionListNode(ASTPtr & ast_select, ASTs & selects)
-{
-    if (ASTSelectWithUnionQuery * inner_union = typeid_cast<ASTSelectWithUnionQuery *>(ast_select.get()))
-    {
-        for (auto & child : inner_union->list_of_selects->children)
-            getSelectsFromUnionListNode(child, selects);
-
-        return;
-    }
-
-    selects.push_back(std::move(ast_select));
 }
 
 }
