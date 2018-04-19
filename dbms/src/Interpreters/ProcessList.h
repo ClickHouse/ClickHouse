@@ -4,8 +4,8 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <unordered_map>
-#include <Poco/Condition.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -91,8 +91,14 @@ private:
     BlockInputStreamPtr query_stream_in;
     BlockOutputStreamPtr query_stream_out;
 
-    bool query_streams_initialized{false};
-    bool query_streams_released{false};
+    enum QueryStreamsStatus
+    {
+        NotInitialized,
+        Initialized,
+        Released
+    };
+
+    QueryStreamsStatus query_streams_status{NotInitialized};
 
 public:
     ProcessListElement(
@@ -249,7 +255,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    mutable Poco::Condition have_space;        /// Number of currently running queries has become less than maximum.
+    mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
     /// List of queries
     Container cont;

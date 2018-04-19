@@ -2999,6 +2999,10 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
     table_name = new_table_name;
     full_path = new_full_path;
 
+    /// Update table name in zookeeper
+    auto zookeeper = getZooKeeper();
+    zookeeper->set(replica_path + "/host", getReplicatedMergeTreeAddress().toString());
+
     /// TODO: You can update names of loggers.
 }
 
@@ -3265,14 +3269,14 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
+    /// Query send with current user credentials
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        "", "", timeouts, "ClickHouse replica");
+        context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
     NullBlockOutputStream output({});
@@ -3759,6 +3763,19 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     }
 
     LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
+}
+
+ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAddress() const
+{
+    auto host_port = context.getInterserverIOAddress();
+
+    ReplicatedMergeTreeAddress res;
+    res.host = host_port.first;
+    res.replication_port = host_port.second;
+    res.queries_port = context.getTCPPort();
+    res.database = database_name;
+    res.table = table_name;
+    return res;
 }
 
 ReplicatedMergeTreeMergeSelectingThread::ReplicatedMergeTreeMergeSelectingThread(StorageReplicatedMergeTree* storage_) :
