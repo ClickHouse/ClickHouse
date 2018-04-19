@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 
@@ -278,13 +279,17 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     auto zookeeper = getZooKeeper();
 
     /// Working with quorum.
-    zookeeper->createIfNotExists(zookeeper_path + "/quorum", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/quorum/last_part", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/quorum/failed_parts", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/quorum", String());
+    zookeeper->createIfNotExists(zookeeper_path + "/quorum/last_part", String());
+    zookeeper->createIfNotExists(zookeeper_path + "/quorum/failed_parts", String());
 
     /// Tracking lag of replicas.
-    zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
-    zookeeper->createIfNotExists(replica_path + "/max_processed_insert_time", "");
+    zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", String());
+    zookeeper->createIfNotExists(replica_path + "/max_processed_insert_time", String());
+
+    /// Mutations
+    zookeeper->createIfNotExists(zookeeper_path + "/mutations", "0");
+    zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
 }
 
 
@@ -3535,6 +3540,50 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
     data.freezePartition(partition, with_name, context);
+}
+
+
+void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
+{
+    ReplicatedMergeTreeMutationEntry entry;
+    entry.source_replica = replica_name;
+    entry.commands = commands;
+
+    String mutations_path = zookeeper_path + "/mutations";
+
+    /// Store next mutation number in the mutations_path node and check its version to ensure that
+    /// nodes for mutations are created in the same order as the corresponding block numbers.
+    /// Should work well if the number of concurrent mutation requests is small.
+    while (true)
+    {
+        auto zookeeper = getZooKeeper();
+
+        zkutil::Stat mutations_stat;
+        String prev_mutation_number = zookeeper->get(mutations_path, &mutations_stat);
+        String mutation_number = padIndex(parse<Int64>(prev_mutation_number) + 1);
+
+        auto number_and_node = allocateBlockNumber(*zookeeper);
+
+        entry.create_time = time(nullptr);
+        entry.block_number = number_and_node.first;
+
+        zkutil::Requests requests;
+        requests.emplace_back(zkutil::makeSetRequest(mutations_path, mutation_number, mutations_stat.version));
+        requests.emplace_back(zkutil::makeCreateRequest(
+            mutations_path + "/" + mutation_number, entry.toString(), zkutil::CreateMode::Persistent));
+
+        zkutil::Responses responses;
+        int32_t rc = zookeeper->tryMulti(requests, responses);
+        if (rc == ZooKeeperImpl::ZooKeeper::ZOK)
+            break;
+        else if (rc == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+        {
+            LOG_TRACE(log, "Version conflict when trying to create a mutation node, retrying...");
+            continue;
+        }
+        else
+            throw zkutil::KeeperException("Unable to create a mutation znode", rc);
+    }
 }
 
 
