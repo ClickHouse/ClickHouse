@@ -82,7 +82,7 @@ public:
         /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
         String toStringFull() const;
 
-        /// Returns intially resolved address
+        /// Returns initially resolved address
         Poco::Net::SocketAddress getResolvedAddress() const
         {
             return initially_resolved_address;
