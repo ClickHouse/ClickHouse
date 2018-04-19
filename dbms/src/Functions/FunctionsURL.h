@@ -111,12 +111,9 @@ inline StringView getURLHost(const StringView & url)
     for (; pos < end; ++pos)
     {
         if (*pos == '@')
-        {
             start_of_host = pos + 1;
-        } else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
-        {
+        else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
             break;
-        }
     }
 
     return (pos == start_of_host) ? StringView() : StringView(start_of_host, pos - start_of_host);
@@ -415,12 +412,9 @@ struct ExtractWWW
             for (; pos < end; ++pos)
             {
                 if (*pos == '@')
-                {
                     start_of_host = pos + 1;
-                } else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
-                {
+                else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
                     break;
-                }
             }
 
             if (start_of_host + 4 < end && !strncmp(start_of_host, "www.", 4))
