@@ -117,6 +117,8 @@ public:
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
+    void mutate(const MutationCommands & commands, const Context & context) override;
+
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
     void drop() override;
