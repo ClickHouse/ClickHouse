@@ -299,7 +299,7 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(engine_args[1].get()))
+            if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(engine_args[1].get()))
             {
                 if (identifier->name == "stdin")
                     source_fd = STDIN_FILENO;
@@ -311,23 +311,22 @@ void registerStorageFile(StorageFactory & factory)
                     throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
-
-            if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
                     source_fd = static_cast<int>(literal->value.get<Int64>());
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
+                else if (type == Field::Types::String)
+                    source_path = literal->value.get<String>();
             }
-
-            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
-            source_path = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
         }
 
         return StorageFile::create(
             source_path, source_fd,
-            args.data_path, args.table_name, format_name, args.columns,
+            args.data_path,
+            args.table_name, format_name, args.columns,
             args.context);
     });
 }
