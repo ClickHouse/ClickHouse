@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -28,6 +29,9 @@ struct MutationCommand
         res.predicate = predicate;
         return res;
     }
+
+    void writeText(WriteBuffer & out) const;
+    void readText(ReadBuffer & in);
 };
 
 struct MutationCommands
@@ -35,6 +39,9 @@ struct MutationCommands
     std::vector<MutationCommand> commands;
 
     void validate(const IStorage & table, const Context & context);
+
+    void writeText(WriteBuffer & out) const;
+    void readText(ReadBuffer & in);
 };
 
 }
