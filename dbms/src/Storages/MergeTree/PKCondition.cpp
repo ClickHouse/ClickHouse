@@ -496,12 +496,6 @@ bool PKCondition::isTupleIndexable(
     std::vector<MergeTreeSetIndex::PKTuplePositionMapping> indexes_mapping;
 
     size_t num_key_columns = prepared_set->getDataTypes().size();
-    if (num_key_columns == 0)
-    {
-        /// Empty set. It is "indexable" in a sense, that it implies that condition is always false (or true for NOT IN).
-        out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
-        return true;
-    }
 
     const ASTFunction * node_tuple = typeid_cast<const ASTFunction *>(node.get());
     if (node_tuple && node_tuple->name == "tuple")

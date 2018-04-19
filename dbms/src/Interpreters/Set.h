@@ -38,6 +38,9 @@ public:
 
     bool empty() const { return data.empty(); }
 
+    /** Set can be created either from AST or from a stream of data (subquery result).
+      */
+
     /** Create a Set from expression (specified literally in the query).
       * 'types' - types of what are on the left hand side of IN.
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
@@ -45,8 +48,12 @@ public:
       */
     void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool fill_set_elements);
 
-    /** Returns false, if some limit was exceeded and no need to insert more data.
+    /** Create a Set from stream.
+      * Call setHeader, then call insertFromBlock for each block.
       */
+    void setHeader(const Block & header);
+
+    /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromBlock(const Block & block, bool fill_set_elements);
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
@@ -62,6 +69,7 @@ public:
     SetElements & getSetElements() { return *set_elements.get(); }
 
 private:
+    size_t keys_size;
     Sizes key_sizes;
 
     SetVariants data;

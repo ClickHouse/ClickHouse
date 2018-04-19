@@ -16,6 +16,26 @@ namespace ErrorCodes
 }
 
 
+CreatingSetsBlockInputStream::CreatingSetsBlockInputStream(
+    const BlockInputStreamPtr & input,
+    const SubqueriesForSets & subqueries_for_sets_,
+    const SizeLimits & network_transfer_limits)
+    : subqueries_for_sets(subqueries_for_sets_),
+    network_transfer_limits(network_transfer_limits)
+{
+    for (auto & elem : subqueries_for_sets)
+    {
+        if (elem.second.source)
+        {
+            children.push_back(elem.second.source);
+            elem.second.set->setHeader(elem.second.source->getHeader());
+        }
+    }
+
+    children.push_back(input);
+}
+
+
 Block CreatingSetsBlockInputStream::readImpl()
 {
     Block res;

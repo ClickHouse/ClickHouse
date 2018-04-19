@@ -1474,6 +1474,7 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
 
     SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
 
+    set->setHeader(res.in->getHeader());
     while (Block block = res.in->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
@@ -2067,7 +2068,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 const SetPtr & set = prepared_sets[child.get()];
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
-                ///  so that sets with the same record do not fuse together (they can have different types).
+                ///  so that sets with the same literal representation do not fuse together (they can have different types).
                 if (!set->empty())
                     column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
                 else
