@@ -175,14 +175,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
-
-BlockInputStreams StorageDistributed::read(
-    const Names & /*column_names*/,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
 {
     auto cluster = getCluster();
 
@@ -193,11 +186,24 @@ BlockInputStreams StorageDistributed::read(
     size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
 
     if (settings.distributed_group_by_no_merge)
-        processed_stage = QueryProcessingStage::Complete;
+        return QueryProcessingStage::Complete;
     else    /// Normal mode.
-        processed_stage = result_size == 1
-            ? QueryProcessingStage::Complete
-            : QueryProcessingStage::WithMergeableState;
+        return result_size == 1 ? QueryProcessingStage::Complete
+                                : QueryProcessingStage::WithMergeableState;
+}
+
+BlockInputStreams StorageDistributed::read(
+    const Names & /*column_names*/,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
+{
+    checkQueryProcessingStage(processed_stage, context);
+
+    auto cluster = getCluster();
+    const Settings & settings = context.getSettingsRef();
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);
