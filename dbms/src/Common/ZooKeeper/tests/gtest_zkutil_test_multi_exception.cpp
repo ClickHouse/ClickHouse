@@ -61,7 +61,7 @@ TEST(zkutil, multi_nice_exception_msg)
 
         String msg = getCurrentExceptionMessage(false);
 
-        bool msg_has_reqired_patterns = msg.find("/clickhouse_test/zkutil_multi/a") != std::string::npos && msg.find("#2") != std::string::npos;
+        bool msg_has_reqired_patterns = msg.find("#2") != std::string::npos;
         EXPECT_TRUE(msg_has_reqired_patterns) << msg;
     }
 }
@@ -129,40 +129,54 @@ TEST(zkutil, multi_async)
     }
 }
 
-/// Run this test under sudo
-TEST(zkutil, multi_async_libzookeeper_segfault)
+TEST(zkutil, watch_get_children_with_chroot)
 {
-    auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181", "", 1000);
-    zkutil::Requests ops;
+    try
+    {
+        const String zk_server = "localhost:2181";
+        const String prefix = "/clickhouse_test/zkutil/watch_get_children_with_chroot";
 
-    ops.emplace_back(zkutil::makeCheckRequest("/clickhouse_test/zkutil_multi", 0));
+        /// Create chroot node firstly
+        auto zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server);
+        zookeeper->createAncestors(prefix + "/");
+        zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server, "", zkutil::DEFAULT_SESSION_TIMEOUT, prefix);
 
-    /// Uncomment to test
-    //auto cmd = ShellCommand::execute("sudo service zookeeper restart");
-    //cmd->wait();
+        String queue_path = "/queue";
+        zookeeper->tryRemoveRecursive(queue_path);
+        zookeeper->createAncestors(queue_path + "/");
 
-    auto future = zookeeper->asyncMulti(ops);
-    auto res = future.get();
-
-    EXPECT_TRUE(zkutil::isHardwareError(res.error));
+        zkutil::EventPtr event = std::make_shared<Poco::Event>();
+        zookeeper->getChildren(queue_path, nullptr, event);
+        {
+            auto zookeeper2 = std::make_unique<zkutil::ZooKeeper>(zk_server, "", zkutil::DEFAULT_SESSION_TIMEOUT, prefix);
+            zookeeper2->create(queue_path + "/children-", "", zkutil::CreateMode::PersistentSequential);
+        }
+        event->wait();
+    }
+    catch (...)
+    {
+        std::cerr << getCurrentExceptionMessage(true);
+        throw;
+    }
 }
-
 
 TEST(zkutil, multi_create_sequential)
 {
     try
     {
+        const String zk_server = "localhost:2181";
+        const String prefix = "/clickhouse_test/zkutil";
+
         /// Create chroot node firstly
-        auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
-        zookeeper->createAncestors("/clickhouse_test/");
+        auto zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server);
+        zookeeper->createAncestors(prefix + "/");
+        zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server, "", zkutil::DEFAULT_SESSION_TIMEOUT, "/clickhouse_test");
 
-        zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181", "", zkutil::DEFAULT_SESSION_TIMEOUT, "/clickhouse_test");
-        zkutil::Requests ops;
-
-        String base_path = "/zkutil/multi_create_sequential";
+        String base_path = "/multi_create_sequential";
         zookeeper->tryRemoveRecursive(base_path);
         zookeeper->createAncestors(base_path + "/");
 
+        zkutil::Requests ops;
         String sequential_node_prefix = base_path + "/queue-";
         ops.emplace_back(zkutil::makeCreateRequest(sequential_node_prefix, "", zkutil::CreateMode::EphemeralSequential));
         auto results = zookeeper->multi(ops);
@@ -178,5 +192,6 @@ TEST(zkutil, multi_create_sequential)
         throw;
     }
 }
+
 
 
