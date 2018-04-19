@@ -147,7 +147,6 @@ public:
             }
 
             /// KILL QUERY could be killed also
-            /// Probably interpreting KILL QUERIES as complete (not internal) queries is extra functionality
             if (isCancelled())
                 break;
 

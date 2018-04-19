@@ -97,7 +97,7 @@ int main(int, char **)
 
         std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
         ParserSelectQuery parser;
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
@@ -126,10 +126,10 @@ int main(int, char **)
             "IsLink",
         };
 
-        QueryProcessingStage::Enum stage;
+        QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
         BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
-        in = std::make_shared<FilterBlockInputStream>(in, expression, 4, *remove_filter);
+        in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(URL, 'http://mail.yandex.ru/neo2/#inbox')", *remove_filter);
         //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
         WriteBufferFromOStream ob(std::cout);

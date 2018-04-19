@@ -31,7 +31,7 @@ Then run:
 ```bash
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server-common
+sudo apt-get install clickhouse-client clickhouse-server
 ```
 
 You can also download and install packages manually from here:

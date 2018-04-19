@@ -292,16 +292,10 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
 
 void ReplicatedMergeTreeRestartingThread::activateReplica()
 {
-    auto host_port = storage.context.getInterserverIOAddress();
     auto zookeeper = storage.getZooKeeper();
 
-    /// How other replicas can access this.
-    ReplicatedMergeTreeAddress address;
-    address.host = host_port.first;
-    address.replication_port = host_port.second;
-    address.queries_port = storage.context.getTCPPort();
-    address.database = storage.database_name;
-    address.table = storage.table_name;
+    /// How other replicas can access this one.
+    ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = storage.replica_path + "/is_active";
 

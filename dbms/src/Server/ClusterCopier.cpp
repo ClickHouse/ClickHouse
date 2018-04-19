@@ -547,14 +547,14 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
     engine_push_str = config.getString(table_prefix + "engine");
     {
         ParserStorage parser_storage;
-        engine_push_ast = parseQuery(parser_storage, engine_push_str);
+        engine_push_ast = parseQuery(parser_storage, engine_push_str, 0);
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
     }
 
     sharding_key_str = config.getString(table_prefix + "sharding_key");
     {
         ParserExpressionWithOptionalAlias parser_expression(false);
-        sharding_key_ast = parseQuery(parser_expression, sharding_key_str);
+        sharding_key_ast = parseQuery(parser_expression, sharding_key_str, 0);
         engine_split_ast = createASTStorageDistributed(cluster_push_name, table_push.first, table_push.second, sharding_key_ast);
     }
 
@@ -562,7 +562,7 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
     if (!where_condition_str.empty())
     {
         ParserExpressionWithOptionalAlias parser_expression(false);
-        where_condition_ast = parseQuery(parser_expression, where_condition_str);
+        where_condition_ast = parseQuery(parser_expression, where_condition_str, 0);
 
         // Will use canonical expression form
         where_condition_str = queryToString(where_condition_ast);
@@ -1487,7 +1487,7 @@ protected:
                 query += " LIMIT " + limit;
 
             ParserQuery p_query(query.data() + query.size());
-            return parseQuery(p_query, query);
+            return parseQuery(p_query, query, 0);
         };
 
         /// Load balancing
@@ -1642,7 +1642,7 @@ protected:
                 query += "INSERT INTO " + getDatabaseDotTable(task_shard.table_split_shard) + " VALUES ";
 
                 ParserQuery p_query(query.data() + query.size());
-                query_insert_ast = parseQuery(p_query, query);
+                query_insert_ast = parseQuery(p_query, query, 0);
 
                 LOG_DEBUG(log, "Executing INSERT query: " << query);
             }
@@ -1791,7 +1791,7 @@ protected:
                                                             &task_cluster->settings_pull);
 
         ParserCreateQuery parser_create_query;
-        return parseQuery(parser_create_query, create_query_pull_str);
+        return parseQuery(parser_create_query, create_query_pull_str, 0);
     }
 
     void createShardInternalTables(TaskShard & task_shard, bool create_split = true)
@@ -1842,7 +1842,7 @@ protected:
         }
 
         ParserQuery parser_query(query.data() + query.size());
-        ASTPtr query_ast = parseQuery(parser_query, query);
+        ASTPtr query_ast = parseQuery(parser_query, query, 0);
 
         LOG_DEBUG(log, "Computing destination partition set, executing query: " << query);
 
@@ -1889,7 +1889,7 @@ protected:
                        << partition_quoted_name << " existence, executing query: " << query);
 
         ParserQuery parser_query(query.data() + query.size());
-        ASTPtr query_ast = parseQuery(parser_query, query);
+        ASTPtr query_ast = parseQuery(parser_query, query, 0);
 
         Context local_context = context;
         local_context.setSettings(task_cluster->settings_pull);
@@ -1914,7 +1914,7 @@ protected:
         if (query_ast_ == nullptr)
         {
             ParserQuery p_query(query.data() + query.size());
-            query_ast = parseQuery(p_query, query);
+            query_ast = parseQuery(p_query, query, 0);
         }
         else
             query_ast = query_ast_;
