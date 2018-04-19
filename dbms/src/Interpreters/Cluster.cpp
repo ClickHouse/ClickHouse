@@ -44,12 +44,6 @@ inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAdd
     return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
 }
 
-
-Poco::Net::SocketAddress resolveSocketAddress(const String & host, UInt16 port)
-{
-    return Poco::Net::SocketAddress(DNSResolver::instance().resolveHost(host), port);
-}
-
 }
 
 /// Implementation of Cluster::Address class
@@ -63,7 +57,7 @@ Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const Stri
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    initially_resolved_address = resolveSocketAddress(host_name, port);
+    initially_resolved_address = DNSResolver::instance().resolveAddress(host_name, port);
     is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
@@ -77,7 +71,7 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
 
-    initially_resolved_address = resolveSocketAddress(parsed_host_port.first, parsed_host_port.second);
+    initially_resolved_address = DNSResolver::instance().resolveAddress(parsed_host_port.first, parsed_host_port.second);
     is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
 }
 
@@ -94,7 +88,16 @@ String Cluster::Address::toString(const String & host_name, UInt16 port)
 
 String Cluster::Address::readableString() const
 {
-    return host_name + ':' + DB::toString(port);
+    String res;
+
+    /// If it looks like IPv6 address add braces to avoid ambiguity in ipv6_host:port notation
+    if (host_name.find_first_of(':') != std::string::npos && !host_name.empty() && host_name.back() != ']')
+        res += '[' + host_name + ']';
+    else
+        res += host_name;
+
+    res += ':' + DB::toString(port);
+    return res;
 }
 
 void Cluster::Address::fromString(const String & host_port_string, String & host_name, UInt16 & port)
@@ -113,8 +116,8 @@ String Cluster::Address::toStringFull() const
     return
         escapeForFileName(user) +
         (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' +
-        escapeForFileName(initially_resolved_address.host().toString()) + ':' +
-        std::to_string(initially_resolved_address.port()) +
+        escapeForFileName(host_name) + ':' +
+        std::to_string(port) +
         (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
         + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
@@ -252,7 +255,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
             bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
-            /// in case of internal_replication we will be appending names to dir_name_for_internal_replication
+            /// In case of internal_replication we will be appending names to dir_name_for_internal_replication
             std::string dir_name_for_internal_replication;
 
             auto first = true;
