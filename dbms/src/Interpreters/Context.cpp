@@ -111,6 +111,7 @@ struct ContextShared
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
+    String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
@@ -482,19 +483,29 @@ String Context::getTemporaryPath() const
 String Context::getFlagsPath() const
 {
     auto lock = getLock();
-    if (!shared->flags_path.empty())
-        return shared->flags_path;
-
-    shared->flags_path = shared->path + "flags/";
-    Poco::File(shared->flags_path).createDirectories();
     return shared->flags_path;
 }
 
+String Context::getUserFilesPath() const
+{
+    auto lock = getLock();
+    return shared->user_files_path;
+}
 
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
+
     shared->path = path;
+
+    if (shared->tmp_path.empty())
+        shared->tmp_path = shared->path + "tmp/";
+
+    if (shared->flags_path.empty())
+        shared->flags_path = shared->path + "flags/";
+
+    if (shared->user_files_path.empty())
+        shared->user_files_path = shared->path + "user_files/";
 }
 
 void Context::setTemporaryPath(const String & path)
@@ -507,6 +518,12 @@ void Context::setFlagsPath(const String & path)
 {
     auto lock = getLock();
     shared->flags_path = path;
+}
+
+void Context::setUserFilesPath(const String & path)
+{
+    auto lock = getLock();
+    shared->user_files_path = path;
 }
 
 void Context::setConfig(const ConfigurationPtr & config)

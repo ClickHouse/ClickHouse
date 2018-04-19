@@ -61,7 +61,7 @@ namespace DB
 
         // Create table
         StoragePtr storage = StorageFile::create(
-                path, -1, context.getPath() + "data/", getName(), format,
+                path, -1, context.getUserFilesPath(), getName(), format,
                 ColumnsDescription{sample_block.getNamesAndTypesList()}, const_cast<Context &>(context));
 
         storage->startup();
