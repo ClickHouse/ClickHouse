@@ -9,13 +9,13 @@
 namespace DB
 {
 
-/// A singleton implementing global and permanent DNS cache
-/// It could be updated only manually via drop() method
-class DNSCache : public ext::singleton<DNSCache>
+/// A singleton implementing DNS names resolving with optional permanent DNS cache
+/// The cache could be updated only manually via drop() method
+class DNSResolver : public ext::singleton<DNSResolver>
 {
 public:
 
-    DNSCache(const DNSCache &) = delete;
+    DNSResolver(const DNSResolver &) = delete;
 
     /// Accepts host names like 'example.com' or '127.0.0.1' or '::1' and resolve its IP
     Poco::Net::IPAddress resolveHost(const std::string & host);
@@ -26,18 +26,18 @@ public:
     Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
 
     /// Disables caching
-    void setDisableFlag(bool is_disabled = true);
+    void setDisableCacheFlag(bool is_disabled = true);
 
     /// Drops all caches
-    void drop();
+    void dropCache();
 
-    ~DNSCache();
+    ~DNSResolver();
 
 protected:
 
-    DNSCache();
+    DNSResolver();
 
-    friend class ext::singleton<DNSCache>;
+    friend class ext::singleton<DNSResolver>;
 
     struct Impl;
     std::unique_ptr<Impl> impl;

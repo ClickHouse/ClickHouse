@@ -17,7 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
@@ -68,7 +68,7 @@ void Connection::connect()
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
 
-        current_resolved_address = DNSCache::instance().resolveAddress(host, port);
+        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
         socket->connect(current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
@@ -471,7 +471,7 @@ Poco::Net::SocketAddress Connection::getResolvedAddress() const
     if (connected)
         return current_resolved_address;
 
-    return DNSCache::instance().resolveAddress(host, port);
+    return DNSResolver::instance().resolveAddress(host, port);
 }
 
 

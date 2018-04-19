@@ -16,7 +16,7 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 
 #include <Common/getFQDNOrHostName.h>
@@ -94,7 +94,7 @@ struct HostID
     {
         try
         {
-            return DB::isLocalAddress(DNSCache::instance().resolveAddress(host_name, port), clickhouse_port);
+            return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
         }
         catch (const Poco::Net::NetException & e)
         {

@@ -1,5 +1,5 @@
 #include "DNSCacheUpdater.h"
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/ProfileEvents.h>
@@ -43,7 +43,7 @@ bool DNSCacheUpdater::run()
         {
             LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "Updating DNS cache");
 
-            DNSCache::instance().drop();
+            DNSResolver::instance().dropCache();
             context.reloadClusterConfig();
 
             last_num_network_erros = num_current_network_exceptions;
