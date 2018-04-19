@@ -100,7 +100,7 @@ try
 
     std::string input = "SELECT UniqID, URL, CounterID, IsLink";
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     formatAST(*ast, std::cerr);
     std::cerr << std::endl;

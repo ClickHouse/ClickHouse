@@ -192,7 +192,7 @@ private:
 
             host = config.getString("host", "localhost");
             port = config.getInt("port",
-                config.getInt(is_secure ? "tcp_secure_port" : "tcp_port",
+                config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
                     is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
             default_database = config.getString("database", "");
@@ -863,7 +863,7 @@ private:
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements);
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, 0);
 
             if (!res)
             {
@@ -872,7 +872,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements);
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, 0);
 
         if (is_interactive)
         {
