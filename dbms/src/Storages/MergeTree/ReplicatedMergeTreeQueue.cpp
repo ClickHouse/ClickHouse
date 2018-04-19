@@ -919,9 +919,30 @@ bool ReplicatedMergeTreeQueue::canMergeParts(const String & left, const String &
         if (!covered.empty())
         {
             if (out_reason)
-                *out_reason = "There are " + toString(covered.size()) + " parts that are still being not ready between " + left + " and " + right;
+                *out_reason = "There are " + toString(covered.size()) + " parts that are still not ready between " + left + " and " + right;
             return false;
         }
+    }
+
+    auto get_current_mutation_version = [&](const MergeTreePartInfo & part_info) -> Int64
+    {
+        Int64 data_version = part_info.version ? part_info.version : part_info.min_block;
+        auto it = mutations_by_block_number.upper_bound(data_version);
+        if (it == mutations_by_block_number.begin())
+            return 0;
+        --it;
+        return it->first;
+    };
+
+    Int64 left_mutation = get_current_mutation_version(left_info);
+    Int64 right_mutation = get_current_mutation_version(right_info);
+    if (left_mutation != right_mutation)
+    {
+        if (out_reason)
+            *out_reason = "Current mutation versions of parts " + left + " and " + right + " differ: "
+                + toString(left_mutation) + " and " + toString(right_mutation) + " respectively";
+
+        return false;
     }
 
     return true;
