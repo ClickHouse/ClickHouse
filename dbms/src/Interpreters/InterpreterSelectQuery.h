@@ -124,7 +124,6 @@ private:
         bool has_order_by   = false;
         bool has_limit_by   = false;
 
-        bool remove_prewhere_filter = false;
         bool remove_where_filter = false;
 
         ExpressionActionsPtr before_join;   /// including JOIN

@@ -107,12 +107,12 @@ BlockInputStreams StorageSystemZooKeeper::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
+    checkQueryProcessingStage(processed_stage, context);
 
     String path = extractPath(query_info.query);
     if (path.empty())

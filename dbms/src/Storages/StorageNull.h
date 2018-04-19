@@ -28,7 +28,7 @@ public:
         size_t,
         unsigned) override
     {
-        checkQueryProcessingStage(processed_stage, context);
+        checkQueryProcessingStage(processing_stage, context);
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
     }
 

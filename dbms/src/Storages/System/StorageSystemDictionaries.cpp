@@ -44,12 +44,12 @@ BlockInputStreams StorageSystemDictionaries::read(
     const Names & column_names,
     const SelectQueryInfo &,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t,
     const unsigned)
 {
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
+    checkQueryProcessingStage(processed_stage, context);
 
     const auto & external_dictionaries = context.getExternalDictionaries();
     auto objects_map = external_dictionaries.getObjectsMap();

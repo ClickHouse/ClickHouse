@@ -59,44 +59,34 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         << " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 
     addTotalRowsApprox(total_rows);
+
+    header = storage.getSampleBlockForColumns(required_columns);
+
+    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
+    /// NOTE: We may use similar code to implement non blocking ALTERs.
+    for (const auto & name_type : data_part->columns)
+    {
+        if (header.has(name_type.name))
+        {
+            auto & elem = header.getByName(name_type.name);
+            if (!elem.type->equals(*name_type.type))
+            {
+                elem.type = name_type.type;
+                elem.column = elem.type->createColumn();
+            }
+        }
+    }
+
+    injectVirtualColumns(header);
+    executePrewhereActions(header, prewhere_info);
+
+    ordered_names = getHeader().getNames();
 }
 
 
 Block MergeTreeBlockInputStream::getHeader() const
 {
-    if (!header)
-    {
-        header = storage.getSampleBlockForColumns(required_columns);
-        executePrewhereActions(header, prewhere_info);
-
-        /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-        /// NOTE: We may use similar code to implement non blocking ALTERs.
-        for (const auto & name_type : data_part->columns)
-        {
-            if (header.has(name_type.name))
-            {
-                auto & elem = header.getByName(name_type.name);
-                if (!elem.type->equals(*name_type.type))
-                {
-                    elem.type = name_type.type;
-                    elem.column = elem.type->createColumn();
-                }
-            }
-        }
-
-        injectVirtualColumns(header);
-    }
-
     return header;
-}
-
-
-const Names & MergeTreeBlockInputStream::getOrderedNames()
-{
-    if (ordered_names.empty())
-        ordered_names = getHeader().getNames();
-
-    return ordered_names;
 }
 
 
@@ -111,7 +101,8 @@ try
     }
     is_first_task = false;
 
-    Names pre_column_names, column_names = required_columns;
+    Names pre_column_names;
+    Names column_names = required_columns;
 
     /// inject columns required for defaults evaluation
     bool should_reorder = !injectRequiredColumns(storage, data_part, column_names).empty();
@@ -168,7 +159,7 @@ try
                           : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
 
     task = std::make_unique<MergeTreeReadTask>(
-            data_part, remaining_mark_ranges, part_index_in_query, getOrderedNames(), column_name_set, columns, pre_columns,
+            data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set, columns, pre_columns,
             prewhere_info && prewhere_info->remove_prewhere_column, should_reorder, std::move(size_predictor));
 
     if (!reader)
