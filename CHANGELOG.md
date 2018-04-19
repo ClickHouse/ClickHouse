@@ -15,7 +15,7 @@
 
 ## Improvements:
 
-* `ALTER TABLE ... DROP/DETACH PARTITION` queries are run before the replication queue.
+* `ALTER TABLE ... DROP/DETACH PARTITION` queries are run in the front of replication queue.
 * `SELECT ... FINAL` and `OPTIMIZE ... FINAL` can be used even when the table has a single data part.
 * A `query_log` table can be recreated on the fly if it was deleted manually (Kirill Shvakov).
 * The `lengthUTF8` function runs faster (zhang2014).
