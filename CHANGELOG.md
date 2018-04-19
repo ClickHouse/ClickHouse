@@ -34,7 +34,7 @@
 * Fixed errors in `StorageKafka` (#2075)
 * Fixed server crashes from invalid arguments of certain aggregate functions.
 * Fixed the error that prevented the `DETACH DATABASE` query from stopping background tasks for `ReplicatedMergeTree` tables.
-* `Too many parts` no longer appears in aggregated materialized views (#2084).
+* `Too many parts` error is less likely to happen when inserting into aggregated materialized views (#2084).
 * Corrected recursive handling of substitutions in the config if a substitution must be followed by another substitution on the same level.
 * Corrected the syntax in the metadata file when creating a `VIEW` that uses a query with `UNION ALL`.
 * `SummingMergeTree` now works correctly for summation of nested data structures with a composite key.
