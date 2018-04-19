@@ -43,7 +43,7 @@
 ## Build changes:
 
 * The build supports `ninja` instead of `make` and uses it by default for building releases.
-* Renamed packages: `clickhouse-server-base` is now `clickhouse-common-static`; `clickhouse-server-common` is now `clickhouse-server`; `clickhouse-common-dbg` is now `clickhouse-common-static-dbg`. To install, use only `clickhouse-server clickhouse-client`. Packages with the old names will still load in the repositories for backward compatibility.
+* Renamed packages: `clickhouse-server-base` is now `clickhouse-common-static`; `clickhouse-server-common` is now `clickhouse-server`; `clickhouse-common-dbg` is now `clickhouse-common-static-dbg`. To install, use `clickhouse-server clickhouse-client`. Packages with the old names will still load in the repositories for backward compatibility.
 
 ## Backward-incompatible changes:
 
