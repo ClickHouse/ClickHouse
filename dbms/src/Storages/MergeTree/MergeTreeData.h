@@ -652,7 +652,7 @@ private:
         std::lock_guard<std::mutex> & data_parts_lock) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
-    bool isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+    bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 };
 
 }
