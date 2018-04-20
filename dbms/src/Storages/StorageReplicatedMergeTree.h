@@ -351,7 +351,9 @@ private:
     void executeDropRange(const LogEntry & entry);
 
     /// Do the merge or recommend to make the fetch instead of the merge
-    void tryExecuteMerge(const LogEntry & entry, bool & do_fetch);
+    bool tryExecuteMerge(const LogEntry & entry);
+
+    bool tryExecutePartMutation(const LogEntry & entry);
 
     bool executeFetch(const LogEntry & entry);
 

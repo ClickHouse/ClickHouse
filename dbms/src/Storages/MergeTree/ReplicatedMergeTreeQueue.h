@@ -225,6 +225,8 @@ public:
 
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
 
+    MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
+
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
 

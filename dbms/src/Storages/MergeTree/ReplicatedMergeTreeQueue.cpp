@@ -893,6 +893,34 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
+MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
+    const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
+{
+    std::lock_guard lock(target_state_mutex);
+
+    auto in_partition = mutations_by_partition.find(part->info.partition_id);
+    if (in_partition == mutations_by_partition.end())
+        throw Exception("There are no mutations for partition ID " + part->info.partition_id
+            + " (trying to mutate part " + part->name + "to " + toString(desired_mutation_version) + ")",
+            ErrorCodes::LOGICAL_ERROR);
+
+    auto begin = in_partition->second.upper_bound(part->info.getDataVersion());
+
+    auto end = in_partition->second.find(desired_mutation_version);
+    if (end == in_partition->second.end())
+        throw Exception("Mutation with version " + toString(desired_mutation_version)
+            + " not found in partition ID " + part->info.partition_id
+            + " (trying to mutate part " + part->name + ")",
+            ErrorCodes::LOGICAL_ERROR);
+    ++end;
+
+    std::vector<MutationCommand> commands;
+    for (auto it = begin; it != end; ++it)
+        commands.insert(commands.end(), it->second->commands.commands.begin(), it->second->commands.commands.end());
+
+    return MutationCommands{commands};
+}
+
 void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
 {
     std::lock_guard lock(target_state_mutex);
