@@ -1105,7 +1105,8 @@ String KeyCondition::RPNElement::toString() const
         {
             ss << "(";
             print_wrapped_column(ss);
-            ss << (function == FUNCTION_IN_SET ? " in set" : " notIn set");
+            ss << (function == FUNCTION_IN_SET ? " in " : " notIn ");
+            ss << set_index->size() << "-element set";
             ss << ")";
             return ss.str();
         }

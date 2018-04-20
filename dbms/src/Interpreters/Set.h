@@ -176,7 +176,10 @@ public:
 
     MergeTreeSetIndex(const SetElements & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
+    size_t size() const { return ordered_set.size(); }
+
     BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+
 private:
     using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
     OrderedTuples ordered_set;
