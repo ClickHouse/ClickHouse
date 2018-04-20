@@ -38,6 +38,11 @@ pack_unpack_compare "SELECT name, is_aggregate FROM system.functions" "name Stri
 pack_unpack_compare "SELECT name, is_aggregate FROM system.functions" "name String, is_aggregate UInt8" "Native"
 pack_unpack_compare "SELECT name, is_aggregate FROM system.functions" "name String, is_aggregate UInt8" "TSKV"
 echo
+# Check settings are passed correctly
+${CLICKHOUSE_LOCAL} -s --max_rows_in_distinct=33 -q "SELECT name, value FROM system.settings WHERE name = 'max_rows_in_distinct'"
+${CLICKHOUSE_LOCAL} -s -q "SET max_rows_in_distinct=33; SELECT name, value FROM system.settings WHERE name = 'max_rows_in_distinct'"
+${CLICKHOUSE_LOCAL} -s --max_bytes_before_external_group_by=1 -q "SELECT sum(ignore(*)) FROM (SELECT number, count() FROM numbers(1000) GROUP BY number)"
+echo
 ${CLICKHOUSE_LOCAL} -s -q "CREATE TABLE sophisticated_default
 (
     a UInt8 DEFAULT
