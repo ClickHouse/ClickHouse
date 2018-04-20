@@ -236,7 +236,6 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 
 InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage)
 {
-    ExpressionActionsChain chain;
     AnalysisResult res;
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
@@ -255,6 +254,8 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     std::shared_ptr<bool> remove_prewhere_filter;
 
     {
+        ExpressionActionsChain chain;
+
         if (query_analyzer->appendPrewhere(chain, false, remove_prewhere_filter))
         {
             res.prewhere_info = std::make_shared<PrewhereInfo>(
@@ -356,8 +357,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
-    query_analyzer->makeSetsForIndex();
-
     /// PREWHERE optimization
     if (storage)
     {
@@ -379,6 +378,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             optimize_prewhere(*merge_tree);
         else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
             optimize_prewhere(*merge_tree);
+
+        query_analyzer->makeSetsForIndex();
     }
 
     AnalysisResult expressions = analyzeExpressions(from_stage);

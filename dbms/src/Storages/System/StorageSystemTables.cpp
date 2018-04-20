@@ -239,6 +239,8 @@ BlockInputStreams StorageSystemTables::read(
             res_columns[j++]->insert(table.first);
             res_columns[j++]->insert(table.second->getName());
             res_columns[j++]->insert(UInt64(1));
+            res_columns[j++]->insertDefault();
+            res_columns[j++]->insertDefault();
 
             if (has_metadata_modification_time)
                 res_columns[j++]->insertDefault();
