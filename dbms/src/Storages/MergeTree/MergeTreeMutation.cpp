@@ -100,6 +100,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeMutation::executeOnPart(const MergeTr
     in->readSuffix();
     out.writeSuffixAndFinalizePart(new_data_part);
 
+    if (!new_data_part->rows_count)
+        return nullptr;
+
     return new_data_part;
 }
 

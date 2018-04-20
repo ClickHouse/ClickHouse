@@ -976,6 +976,27 @@ bool ReplicatedMergeTreeQueue::canMutatePart(const MergeTreePartInfo & part_info
     return true;
 }
 
+MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
+    const MergeTreePartInfo & part_info, Int64 desired_mutation_version) const
+{
+    std::lock_guard lock(mutex);
+
+    Int64 data_version = part_info.version ? part_info.version : part_info.min_block;
+    auto begin = mutations_by_block_number.upper_bound(data_version);
+
+    auto end = mutations_by_block_number.find(desired_mutation_version);
+    if (end == mutations_by_block_number.end())
+        throw Exception("Mutation with version " + toString(desired_mutation_version) + " not found",
+            ErrorCodes::LOGICAL_ERROR);
+    ++end;
+
+    std::vector<MutationCommand> commands;
+    for (auto it = begin; it != end; ++it)
+        commands.insert(commands.end(), it->second->commands.commands.begin(), it->second->commands.commands.end());
+
+    return MutationCommands{commands};
+}
+
 void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
 {
     virtual_parts.add(part_name);

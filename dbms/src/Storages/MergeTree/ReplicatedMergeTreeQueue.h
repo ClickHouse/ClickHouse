@@ -217,6 +217,8 @@ public:
 
     bool canMutatePart(const MergeTreePartInfo & part_info, Int64 & desired_mutation_version) const;
 
+    MutationCommands getMutationCommands(const MergeTreePartInfo & part_info, Int64 desired_mutation_version) const;
+
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
 
