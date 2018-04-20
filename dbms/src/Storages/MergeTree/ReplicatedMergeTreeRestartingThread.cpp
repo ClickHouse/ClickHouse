@@ -168,9 +168,9 @@ void ReplicatedMergeTreeRestartingThread::run()
         storage.data_parts_exchange_endpoint_holder->cancelForever();
         storage.data_parts_exchange_endpoint_holder = nullptr;
 
-        /// Cancel fetches and merges to force the queue_task to finish ASAP.
+        /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
         storage.fetcher.blocker.cancelForever();
-        storage.merger.merges_blocker.cancelForever();
+        storage.merger_mutator.actions_blocker.cancelForever();
 
         partialShutdown();
 

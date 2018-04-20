@@ -14,7 +14,7 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
-class MergeTreeDataMerger;
+class MergeTreeDataMergerMutator;
 
 class ReplicatedMergeTreeMergePredicate;
 
@@ -114,7 +114,7 @@ private:
       */
     bool shouldExecuteLogEntry(
         const LogEntry & entry, String & out_postpone_reason,
-        MergeTreeDataMerger & merger, MergeTreeData & data,
+        MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
         std::lock_guard<std::mutex> & queue_lock) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
@@ -190,13 +190,13 @@ public:
       */
     void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
-    /// Load new mutation entries.
+    /// Load new mutation entries. If something new is loaded, notify storage.merge_selecting_event.
     void updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
     /** Disables future merges and fetches inside entry.new_part_name
      *  If there are currently executing merges or fetches then throws exception.
@@ -210,10 +210,10 @@ public:
     StringSet moveSiblingPartsForMergeToEndOfQueue(const String & part_name);
 
     /** Select the next action to process.
-      * merger is used only to check if the merges is not suspended.
+      * merger_mutator is used only to check if the merges is not suspended.
       */
     using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
-    SelectedEntry selectEntryToProcess(MergeTreeDataMerger & merger, MergeTreeData & data);
+    SelectedEntry selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
 
     /** Execute `func` function to handle the action.
       * In this case, at runtime, mark the queue element as running
@@ -239,11 +239,14 @@ public:
         UInt32 queue_size;
         UInt32 inserts_in_queue;
         UInt32 merges_in_queue;
+        UInt32 mutations_in_queue;
         UInt32 queue_oldest_time;
         UInt32 inserts_oldest_time;
         UInt32 merges_oldest_time;
+        UInt32 mutations_oldest_time;
         String oldest_part_to_get;
         String oldest_part_to_merge_to;
+        String oldest_part_to_mutate_to;
         UInt32 last_queue_update;
     };
 
@@ -270,8 +273,15 @@ public:
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
 
-    /// Count the number of merges in the queue.
-    size_t countMerges() const;
+    /// Count the number of merges and mutations of single parts in the queue.
+    size_t countMergesAndPartMutations() const;
+
+    /// Count the total number of active mutations.
+    size_t countMutations() const;
+
+    /// Return nonempty optional if the part can and should be mutated.
+    /// Returned mutation version number is always the biggest possible.
+    std::optional<Int64> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

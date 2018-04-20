@@ -16,7 +16,7 @@ class MergeProgressCallback;
 
 /** Can select the parts to merge and merge them.
   */
-class MergeTreeDataMerger
+class MergeTreeDataMergerMutator
 {
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
@@ -39,17 +39,17 @@ public:
     };
 
 public:
-    MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
+    MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
       */
-    size_t getMaxPartsSizeForMerge();
+    size_t getMaxSourcePartsSize();
 
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    size_t getMaxPartsSizeForMerge(size_t pool_size, size_t pool_used);
+    size_t getMaxSourcePartsSize(size_t pool_size, size_t pool_used);
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
@@ -81,7 +81,7 @@ public:
       *  is approximately proportional to the amount of data already written.
       *
       * Creates and returns a temporary part.
-      * To end the merge, call the function renameTemporaryMergedPart.
+      * To end the merge, call the function renameMergedTemporaryPart.
       *
       * time_of_merge - the time when the merge was assigned.
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
@@ -96,8 +96,8 @@ public:
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
-    /// The approximate amount of disk space needed for merge. With a surplus.
-    static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
+    /// The approximate amount of disk space needed for merge or mutation. With a surplus.
+    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
 
 private:
     /** Select all parts belonging to the same partition.
@@ -105,10 +105,10 @@ private:
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
 public:
-    /** Is used to cancel all merges. On cancel() call all currently running 'mergeParts' methods will throw exception soon.
-      * All new calls to 'mergeParts' will throw exception till all 'LockHolder' objects will be destroyed.
+    /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
+      * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
-    ActionBlocker merges_blocker;
+    ActionBlocker actions_blocker;
 
     enum class MergeAlgorithm
     {

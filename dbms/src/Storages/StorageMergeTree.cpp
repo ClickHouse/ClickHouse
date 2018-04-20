@@ -86,7 +86,7 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
-    merger.merges_blocker.cancelForever();
+    merger.actions_blocker.cancelForever();
     if (merge_task_handle)
         background_pool.removeTask(merge_task_handle);
 }
@@ -146,7 +146,7 @@ void StorageMergeTree::alter(
     const Context & context)
 {
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    auto merge_blocker = merger.merges_blocker.cancel();
+    auto merge_blocker = merger.actions_blocker.cancel();
 
     auto table_soft_lock = lockDataForAlter(__PRETTY_FUNCTION__);
 
@@ -277,7 +277,7 @@ bool StorageMergeTree::merge(
 
     size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-    MergeTreeDataMerger::FuturePart future_part;
+    MergeTreeDataMergerMutator::FuturePart future_part;
 
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
@@ -294,9 +294,9 @@ bool StorageMergeTree::merge(
 
         if (partition_id.empty())
         {
-            size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
-            if (max_parts_size_for_merge > 0)
-                selected = merger.selectPartsToMerge(future_part, aggressive, max_parts_size_for_merge, can_merge, out_disable_reason);
+            size_t max_source_parts_size = merger.getMaxSourcePartsSize();
+            if (max_source_parts_size > 0)
+                selected = merger.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
         }
         else
         {
@@ -306,7 +306,7 @@ bool StorageMergeTree::merge(
         if (!selected)
             return false;
 
-        merging_tagger.emplace(future_part.parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(future_part.parts), *this);
+        merging_tagger.emplace(future_part.parts, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
     }
 
     MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
@@ -401,7 +401,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger.merges_blocker.cancel();
+    auto merge_blocker = merger.actions_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
     auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
@@ -464,7 +464,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & pa
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger.merges_blocker.cancel();
+    auto merge_blocker = merger.actions_blocker.cancel();
     /// Waits for completion of merge and does not start new ones.
     auto lock = lockForAlter(__PRETTY_FUNCTION__);
 
