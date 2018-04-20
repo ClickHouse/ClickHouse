@@ -3,6 +3,7 @@
 #include <Poco/Util/Application.h>
 #include <memory>
 
+
 namespace DB
 {
 
@@ -34,7 +35,8 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-    void applyOptions();
+    void applyCmdOptions();
+    void applyCmdSettings(Context & context);
     void attachSystemTables();
     void processQueries();
     void setupUsers();

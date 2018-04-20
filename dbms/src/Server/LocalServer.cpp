@@ -154,27 +154,25 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
         .binding("help")
         .callback(Poco::Util::OptionCallback<LocalServer>(this, &LocalServer::handleHelp)));
 
-    /// These arrays prevent "variable tracking size limit exceeded" compiler notice.
-    static const char * settings_names[] = {
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) #NAME,
-    APPLY_FOR_SETTINGS(DECLARE_SETTING)
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    _options.addOption(Poco::Util::Option(#NAME, "", DESCRIPTION).required(false).argument("arg").repeatable(false).binding(#NAME));
+    APPLY_FOR_SETTINGS(DECLARE_SETTING);
 #undef DECLARE_SETTING
-    nullptr};
-
-    for (const char ** name = settings_names; *name; ++name)
-        _options.addOption(Poco::Util::Option(*name, "", "Settings.h").required(false).argument("<value>")
-        .repeatable(false).binding(*name));
 }
 
 
-void LocalServer::applyOptions()
+void LocalServer::applyCmdOptions()
 {
     context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings(*context);
+}
 
-    /// settings and limits could be specified in config file, but passed settings has higher priority
+void LocalServer::applyCmdSettings(Context & context)
+{
+    /// settings could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context->getSettingsRef().NAME.changed) \
-            context->setSetting(#NAME, config().getString(#NAME));
+        if (config().has(#NAME)) \
+            context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 }
@@ -187,8 +185,8 @@ void LocalServer::displayHelp()
     helpFormatter.setUsage("[initial table definition] [--query <query>]");
     helpFormatter.setHeader("\n"
         "clickhouse-local allows to execute SQL queries on your data files via single command line call.\n"
-        "To do so, intially you need to define your data source and its format.\n"
-        "After you can execute your SQL queries in the usual manner.\n"
+        "To do so, initially you need to define your data source and its format.\n"
+        "After you can execute your SQL queries in an usual manner.\n"
         "There are two ways to define initial table keeping your data:\n"
         "either just in first query like this:\n"
         "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
@@ -213,18 +211,23 @@ void LocalServer::handleHelp(const std::string & /*name*/, const std::string & /
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
 {
-    if (!config().has("path") || (path = config().getString("path")).empty())
-        return;
-
+    path = config().getString("path", "");
     Poco::trimInPlace(path);
-    if (path.empty())
+
+    if (!path.empty())
+    {
+        if (path.back() != '/')
+            path += '/';
+
+        context->setPath(path);
         return;
-    if (path.back() != '/')
-        path += '/';
+    }
 
-    context->setPath(path);
-
-    StatusFile status{path + "status"};
+    /// In case of empty path set paths to helpful directories
+    std::string cd = Poco::Path::current();
+    context->setTemporaryPath(cd + "tmp");
+    context->setFlagsPath(cd + "flags");
+    context->setUserFilesPath(""); // user's files are everywhere
 }
 
 
@@ -258,7 +261,7 @@ try
     context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
 
-    applyOptions();
+    std::optional<StatusFile> status;
 
     /// Skip temp path installation
 
@@ -307,9 +310,13 @@ try
     const std::string default_database = "_local";
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
+    applyCmdOptions();
 
     if (!path.empty())
     {
+        /// Lock path directory before read
+        status.emplace(context->getPath() + "status");
+
         LOG_DEBUG(log, "Loading metadata from " << path);
         loadMetadataSystem(*context);
         attachSystemTables();
@@ -410,8 +417,12 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
+    context->setSessionContext(*context);
+    context->setQueryContext(*context);
+
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
+    applyCmdSettings(*context);
 
     for (const auto & query : queries)
     {
