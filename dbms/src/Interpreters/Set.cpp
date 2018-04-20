@@ -389,19 +389,19 @@ void Set::executeOrdinary(
 }
 
 
-MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && index_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
     : ordered_set(),
     indexes_mapping(std::move(index_mapping_))
 {
     std::sort(indexes_mapping.begin(), indexes_mapping.end(),
-        [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
+        [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
             return std::forward_as_tuple(l.key_index, l.tuple_index) < std::forward_as_tuple(r.key_index, r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
-        [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
+        [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
             return l.key_index == r.key_index;
         }), indexes_mapping.end());

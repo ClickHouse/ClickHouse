@@ -167,21 +167,21 @@ public:
       * position of pk index and data type of this pk column
       * and functions chain applied to this column.
       */
-    struct PKTuplePositionMapping
+    struct KeyTuplePositionMapping
     {
         size_t tuple_index;
         size_t key_index;
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const SetElements & set_elements, std::vector<PKTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(const SetElements & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
     BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 private:
     using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
     OrderedTuples ordered_set;
 
-    std::vector<PKTuplePositionMapping> indexes_mapping;
+    std::vector<KeyTuplePositionMapping> indexes_mapping;
 };
 
  }
