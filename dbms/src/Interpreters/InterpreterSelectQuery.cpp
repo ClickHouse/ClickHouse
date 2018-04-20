@@ -655,6 +655,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
+        query_analyzer->makeSetsForIndex();
+
         SelectQueryInfo query_info;
         query_info.query = query_ptr;
         query_info.sets = query_analyzer->getPreparedSets();
@@ -673,8 +675,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
                 optimize_prewhere(*merge_tree);
         }
-
-        query_analyzer->makeSetsForIndex();
 
         if (!dry_run)
             pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
