@@ -432,6 +432,35 @@ void ZooKeeper::read(T & x)
 }
 
 
+void addRootPath(String & path, const String & root_path)
+{
+    if (path.empty())
+        throw Exception("Path cannot be empty", ZooKeeper::ZBADARGUMENTS);
+
+    if (path[0] != '/')
+        throw Exception("Path must begin with /", ZooKeeper::ZBADARGUMENTS);
+
+    if (root_path.empty())
+        return;
+
+    if (path.size() == 1)   /// "/"
+        path = root_path;
+    else
+        path = root_path + path;
+}
+
+void removeRootPath(String & path, const String & root_path)
+{
+    if (root_path.empty())
+        return;
+
+    if (path.size() <= root_path.size())
+        throw Exception("Received path is not longer than root_path", ZooKeeper::ZDATAINCONSISTENCY);
+
+    path = path.substr(root_path.size());
+}
+
+
 static constexpr int32_t protocol_version = 0;
 
 static constexpr ZooKeeper::XID watch_xid = -1;
@@ -735,6 +764,7 @@ void ZooKeeper::sendThread()
                     if (expired)
                         break;
 
+                    info.request->addRootPath(root_path);
                     info.request->write(*out);
 
                     if (info.request->xid == close_xid)
@@ -842,35 +872,6 @@ ZooKeeper::ResponsePtr ZooKeeper::ListRequest::makeResponse() const { return std
 ZooKeeper::ResponsePtr ZooKeeper::CheckRequest::makeResponse() const { return std::make_shared<CheckResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::MultiRequest::makeResponse() const { return std::make_shared<MultiResponse>(requests); }
 ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { return std::make_shared<CloseResponse>(); }
-
-
-void addRootPath(String & path, const String & root_path)
-{
-    if (path.empty())
-        throw Exception("Path cannot be empty", ZooKeeper::ZBADARGUMENTS);
-
-    if (path[0] != '/')
-        throw Exception("Path must begin with /", ZooKeeper::ZBADARGUMENTS);
-
-    if (root_path.empty())
-        return;
-
-    if (path.size() == 1)   /// "/"
-        path = root_path;
-    else
-        path = root_path + path;
-}
-
-void removeRootPath(String & path, const String & root_path)
-{
-    if (root_path.empty())
-        return;
-
-    if (path.size() <= root_path.size())
-        throw Exception("Received path is not longer than root_path", ZooKeeper::ZDATAINCONSISTENCY);
-
-    path = path.substr(root_path.size());
-}
 
 
 void ZooKeeper::CreateRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
@@ -1108,7 +1109,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
-
             }
             if (info.watch)
             {
@@ -1335,8 +1335,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 {
     try
     {
-        info.request->addRootPath(root_path);
-
         info.time = clock::now();
 
         if (!info.request->xid)

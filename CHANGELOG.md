@@ -15,7 +15,7 @@
 
 ## Improvements:
 
-* `ALTER TABLE ... DROP/DETACH PARTITION` queries are run in the front of replication queue.
+* `ALTER TABLE ... DROP/DETACH PARTITION` queries are run at the front of the replication queue.
 * `SELECT ... FINAL` and `OPTIMIZE ... FINAL` can be used even when the table has a single data part.
 * A `query_log` table is recreated on the fly if it was deleted manually (Kirill Shvakov).
 * The `lengthUTF8` function runs faster (zhang2014).
@@ -43,7 +43,7 @@
 ## Build changes:
 
 * The build supports `ninja` instead of `make` and uses it by default for building releases.
-* Renamed packages: `clickhouse-server-base` is now `clickhouse-common-static`; `clickhouse-server-common` is now `clickhouse-server`; `clickhouse-common-dbg` is now `clickhouse-common-static-dbg`. To install, use only `clickhouse-server clickhouse-client`. Packages with the old names will still load in the repositories for backward compatibility.
+* Renamed packages: `clickhouse-server-base` is now `clickhouse-common-static`; `clickhouse-server-common` is now `clickhouse-server`; `clickhouse-common-dbg` is now `clickhouse-common-static-dbg`. To install, use `clickhouse-server clickhouse-client`. Packages with the old names will still load in the repositories for backward compatibility.
 
 ## Backward-incompatible changes:
 

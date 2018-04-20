@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ZooKeeper.h"
+#include "KeeperException.h"
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
@@ -68,7 +69,7 @@ private:
 
     std::thread thread;
     std::atomic<bool> shutdown_called {false};
-    zkutil::EventPtr event = std::make_shared<Poco::Event>();
+    EventPtr event = std::make_shared<Poco::Event>();
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
 
@@ -114,6 +115,13 @@ private:
                     event->wait();
 
                 success = true;
+            }
+            catch (const KeeperException & e)
+            {
+                DB::tryLogCurrentException("LeaderElection");
+
+                if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                    break;
             }
             catch (...)
             {
