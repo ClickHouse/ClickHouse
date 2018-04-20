@@ -66,7 +66,7 @@ void ReplicatedMergeTreeAlterThread::run()
                 ActionBlocker::LockHolder merge_blocker;
 
                 if (changed_version || force_recheck_parts)
-                    merge_blocker = storage.merger.merges_blocker.cancel();
+                    merge_blocker = storage.merger_mutator.actions_blocker.cancel();
 
                 MergeTreeData::DataParts parts;
 

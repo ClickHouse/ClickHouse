@@ -84,7 +84,7 @@ namespace ErrorCodes
 /// To read and modify the data use other classes:
 /// - MergeTreeDataSelectExecutor
 /// - MergeTreeDataWriter
-/// - MergeTreeDataMerger
+/// - MergeTreeDataMergerMutator
 
 class MergeTreeData : public ITableDeclaration
 {
@@ -512,7 +512,7 @@ private:
     friend struct MergeTreeDataPart;
     friend class StorageMergeTree;
     friend class ReplicatedMergeTreeAlterThread;
-    friend class MergeTreeDataMerger;
+    friend class MergeTreeDataMergerMutator;
 
     bool require_part_metadata;
 

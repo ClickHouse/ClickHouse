@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
@@ -96,7 +96,7 @@ private:
     MergeTreeData data;
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
-    MergeTreeDataMerger merger;
+    MergeTreeDataMergerMutator merger;
 
     /// For block numbers.
     SimpleIncrement increment{0};

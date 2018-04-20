@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
@@ -54,7 +54,7 @@ namespace ErrorCodes
 }
 
 
-using MergeAlgorithm = MergeTreeDataMerger::MergeAlgorithm;
+using MergeAlgorithm = MergeTreeDataMergerMutator::MergeAlgorithm;
 
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
@@ -67,7 +67,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 
-void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector parts_)
+void MergeTreeDataMergerMutator::FuturePart::assign(MergeTreeData::DataPartsVector parts_)
 {
     if (parts_.empty())
         return;
@@ -110,25 +110,25 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
         name = part_info.getPartName();
 }
 
-MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
-    : data(data_), pool(pool_), log(&Logger::get(data.getLogName() + " (Merger)"))
+MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
+    : data(data_), pool(pool_), log(&Logger::get(data.getLogName() + " (MergerMutator)"))
 {
 }
 
 
-size_t MergeTreeDataMerger::getMaxPartsSizeForMerge()
+size_t MergeTreeDataMergerMutator::getMaxSourcePartsSize()
 {
     size_t total_threads_in_pool = pool.getNumberOfThreads();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
-    return getMaxPartsSizeForMerge(total_threads_in_pool, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
+    return getMaxSourcePartsSize(total_threads_in_pool, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
 }
 
 
-size_t MergeTreeDataMerger::getMaxPartsSizeForMerge(size_t pool_size, size_t pool_used)
+size_t MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_t pool_used)
 {
     if (pool_used > pool_size)
-        throw Exception("Logical error: invalid arguments passed to getMaxPartsSizeForMerge: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
 
     size_t free_entries = pool_size - pool_used;
 
@@ -145,7 +145,7 @@ size_t MergeTreeDataMerger::getMaxPartsSizeForMerge(size_t pool_size, size_t poo
 }
 
 
-bool MergeTreeDataMerger::selectPartsToMerge(
+bool MergeTreeDataMergerMutator::selectPartsToMerge(
     FuturePart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
@@ -232,7 +232,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 }
 
 
-bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
+bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FuturePart & future_part,
     size_t available_disk_space,
     const AllowedMergingPredicate & can_merge,
@@ -301,7 +301,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
 }
 
 
-MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(const String & partition_id)
+MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPartition(const String & partition_id)
 {
     MergeTreeData::DataPartsVector parts_from_partition;
 
@@ -438,7 +438,7 @@ public:
     : merge_entry(merge_entry_), watch_prev_elapsed(watch_prev_elapsed_) {}
 
     MergeProgressCallback(MergeList::Entry & merge_entry_, size_t num_total_rows, const ColumnSizeEstimator & column_sizes,
-        UInt64 & watch_prev_elapsed_, MergeTreeDataMerger::MergeAlgorithm merge_alg_ = MergeAlgorithm::Vertical)
+        UInt64 & watch_prev_elapsed_, MergeTreeDataMergerMutator::MergeAlgorithm merge_alg_ = MergeAlgorithm::Vertical)
     : merge_entry(merge_entry_), watch_prev_elapsed(watch_prev_elapsed_), merge_alg(merge_alg_)
     {
         average_elem_progress = (merge_alg == MergeAlgorithm::Horizontal)
@@ -505,13 +505,13 @@ public:
 
 
 /// parts should be sorted.
-MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart(
+MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FuturePart & future_part, MergeList::Entry & merge_entry,
     size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
-    if (merges_blocker.isCancelled())
+    if (actions_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
@@ -666,7 +666,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
     Block block;
-    while (!merges_blocker.isCancelled() && (block = merged_stream->read()))
+    while (!actions_blocker.isCancelled() && (block = merged_stream->read()))
     {
         rows_written += block.rows();
         to.write(block);
@@ -689,7 +689,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     merged_stream->readSuffix();
     merged_stream.reset();
 
-    if (merges_blocker.isCancelled())
+    if (actions_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     MergeTreeData::DataPart::Checksums checksums_gathered_columns;
@@ -762,7 +762,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
             merge_entry->progress.store(progress_before + column_sizes.columnProgress(column_name, sum_input_rows_exact, sum_input_rows_exact), std::memory_order_relaxed);
 
-            if (merges_blocker.isCancelled())
+            if (actions_blocker.isCancelled())
                 throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
         }
 
@@ -797,7 +797,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 }
 
 
-MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
+MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
     const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
     const NamesAndTypesList & gathering_columns, bool deduplicate) const
 {
@@ -825,7 +825,7 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 }
 
 
-MergeTreeData::DataPartPtr MergeTreeDataMerger::renameMergedTemporaryPart(
+MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(
     MergeTreeData::MutableDataPartPtr & new_data_part,
     const MergeTreeData::DataPartsVector & parts,
     MergeTreeData::Transaction * out_transaction)
@@ -877,10 +877,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::renameMergedTemporaryPart(
 }
 
 
-size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts)
+size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
 {
     size_t res = 0;
-    for (const MergeTreeData::DataPartPtr & part : parts)
+    for (const MergeTreeData::DataPartPtr & part : source_parts)
         res += part->bytes_on_disk;
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
