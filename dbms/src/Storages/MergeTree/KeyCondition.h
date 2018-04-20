@@ -224,16 +224,16 @@ private:
   * Constructs a reverse polish notation from these conditions
   *  and can calculate (interpret) its satisfiability over key ranges.
   */
-class PKCondition
+class KeyCondition
 {
 public:
     /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
-    PKCondition(
+    KeyCondition(
         const SelectQueryInfo & query_info,
         const Context & context,
         const NamesAndTypesList & all_columns,
         const SortDescription & sort_descr,
-        const ExpressionActionsPtr & pk_expr);
+        const ExpressionActionsPtr & key_expr);
 
     /// Whether the condition is feasible in the key range.
     /// left_pk and right_pk must contain all fields in the sort_descr in the appropriate order.
@@ -374,8 +374,8 @@ private:
     RPN rpn;
 
     SortDescription sort_descr;
-    ColumnIndices pk_columns;
-    ExpressionActionsPtr pk_expr;
+    ColumnIndices key_columns;
+    ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
 };
 
