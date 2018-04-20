@@ -359,6 +359,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
 
+        query_analyzer->makeSetsForIndex();
+
         auto optimize_prewhere = [&](auto & merge_tree)
         {
             SelectQueryInfo query_info;
@@ -374,8 +376,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             optimize_prewhere(*merge_tree);
         else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
             optimize_prewhere(*merge_tree);
-
-        query_analyzer->makeSetsForIndex();
     }
 
     AnalysisResult expressions = analyzeExpressions(from_stage);
