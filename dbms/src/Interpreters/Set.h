@@ -170,7 +170,7 @@ public:
     struct PKTuplePositionMapping
     {
         size_t tuple_index;
-        size_t pk_index;
+        size_t key_index;
         std::vector<FunctionBasePtr> functions;
     };
 

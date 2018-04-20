@@ -21,7 +21,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/NullableUtils.h>
 
-#include <Storages/MergeTree/PKCondition.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 
 namespace DB
@@ -396,14 +396,14 @@ MergeTreeSetIndex::MergeTreeSetIndex(const SetElements & set_elements, std::vect
     std::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
         {
-            return std::forward_as_tuple(l.pk_index, l.tuple_index) < std::forward_as_tuple(r.pk_index, r.tuple_index);
+            return std::forward_as_tuple(l.key_index, l.tuple_index) < std::forward_as_tuple(r.key_index, r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const PKTuplePositionMapping & l, const PKTuplePositionMapping & r)
         {
-            return l.pk_index == r.pk_index;
+            return l.key_index == r.key_index;
         }), indexes_mapping.end());
 
     for (size_t i = 0; i < set_elements.size(); ++i)
@@ -435,10 +435,10 @@ BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_rang
 
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
     {
-        std::optional<Range> new_range = PKCondition::applyMonotonicFunctionsChainToRange(
-            key_ranges[indexes_mapping[i].pk_index],
+        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
+            key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].pk_index]);
+            data_types[indexes_mapping[i].key_index]);
 
         if (!new_range)
             return {true, true};

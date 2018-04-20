@@ -502,7 +502,7 @@ public:
     Names minmax_idx_columns;
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
-    SortDescription minmax_idx_sort_descr; /// For use with PKCondition.
+    SortDescription minmax_idx_sort_descr; /// For use with KeyCondition.
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};

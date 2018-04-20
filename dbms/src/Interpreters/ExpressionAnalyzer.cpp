@@ -2021,7 +2021,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         }
 
         /// A special function `indexHint`. Everything that is inside it is not calculated
-        /// (and is used only for index analysis, see PKCondition).
+        /// (and is used only for index analysis, see KeyCondition).
         if (node->name == "indexHint")
         {
             actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
@@ -2888,7 +2888,7 @@ void ExpressionAnalyzer::getRequiredSourceColumnsImpl(const ASTPtr & ast,
         }
 
         /// A special function `indexHint`. Everything that is inside it is not calculated
-        /// (and is used only for index analysis, see PKCondition).
+        /// (and is used only for index analysis, see KeyCondition).
         if (node->name == "indexHint")
             return;
     }
