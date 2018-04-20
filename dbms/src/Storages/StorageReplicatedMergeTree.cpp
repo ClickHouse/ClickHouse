@@ -1484,7 +1484,7 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 {
     LOG_INFO(log, (entry.detach ? "Detaching" : "Removing") << " parts inside " << entry.new_part_name << ".");
 
-    queue.removeGetsAndMergesInRange(getZooKeeper(), entry.new_part_name);
+    queue.removePartProducingOpsInRange(getZooKeeper(), entry.new_part_name);
 
     LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
     size_t removed_parts = 0;
@@ -1634,7 +1634,9 @@ void StorageReplicatedMergeTree::mutationsUpdatingThread()
     {
         try
         {
-            queue.updateMutations(getZooKeeper(), mutations_updating_event);
+            if (queue.updateMutations(getZooKeeper(), mutations_updating_event))
+                merge_selecting_event.set();
+
             mutations_updating_event->wait();
         }
         catch (...)
@@ -1873,7 +1875,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
     auto can_merge = [&] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
     {
-        return queue.canMergeParts(left->name, right->name)
+        return queue.canMergeParts(*left, *right)
                && cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
     };
 
@@ -1897,27 +1899,54 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             /// If many merges is already queued, then will queue only small enough merges.
             /// Otherwise merge queue could be filled with only large merges,
             /// and in the same time, many small parts could be created and won't be merged.
-            size_t merges_queued = queue.countMerges();
+            size_t merges_and_mutations_queued = queue.countMergesAndPartMutations();
 
-            if (merges_queued >= data.settings.max_replicated_merges_in_queue)
+            if (merges_and_mutations_queued >= data.settings.max_replicated_merges_in_queue)
             {
-                LOG_TRACE(log, "Number of queued merges (" << merges_queued
+                LOG_TRACE(log, "Number of queued merges and part mutations (" << merges_and_mutations_queued
                     << ") is greater than max_replicated_merges_in_queue ("
-                    << data.settings.max_replicated_merges_in_queue << "), so won't select new parts to merge.");
+                    << data.settings.max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
             }
             else
             {
-                MergeTreeDataMerger::FuturePart future_merged_part;
-
-                size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
+                size_t max_future_part_size = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
 
                 now = std::chrono::steady_clock::now();
 
-                if (max_parts_size_for_merge > 0
-                    && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge))
+                MergeTreeDataMerger::FuturePart future_merged_part;
+                if (max_future_part_size > 0)
                 {
-                    merge_selecting_logs_pulling_is_required = true;
-                    success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate);
+                    MergeTreeDataMerger::FuturePart future_merged_part;
+                    if (merger.selectPartsToMerge(future_merged_part, false, max_future_part_size, can_merge))
+                    {
+                        merge_selecting_logs_pulling_is_required = true;
+                        success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate);
+                    }
+                    else
+                    {
+                        /// Choose a part to mutate.
+
+                        /// TODO finish early if there are no mutations.
+
+                        MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+                        for (const auto & part : data_parts)
+                        {
+                            /// Estimate that the part will not change its size much.
+                            if (part->bytes_on_disk > max_future_part_size)
+                                continue;
+
+                            Int64 desired_mutation_version;
+                            if (!queue.canMutatePart(part->info, desired_mutation_version))
+                                continue;
+
+                            if (createLogEntryToMutatePart(*part, desired_mutation_version))
+                            {
+                                merge_selecting_logs_pulling_is_required = true;
+                                success = true;
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1992,6 +2021,48 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
 
     return true;
 }
+
+
+bool StorageReplicatedMergeTree::createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version)
+{
+    auto zookeeper = getZooKeeper();
+
+    /// If there is no information about part in ZK, we will not mutate it.
+    if (!zookeeper->exists(replica_path + "/parts/" + part.name))
+    {
+        if (part.modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
+        {
+            LOG_WARNING(log, "Part " << part.name << " (that was selected for mutation)"
+                << " with age " << (time(nullptr) - part.modification_time)
+                << " seconds exists locally but not in ZooKeeper."
+                << " Won't mutate that part and will check it.");
+            enqueuePartForCheck(part.name);
+        }
+
+        return false;
+    }
+
+    MergeTreePartInfo new_part_info = part.info;
+    new_part_info.version = mutation_version;
+
+    /// TODO: extract common code.
+    String new_part_name;
+    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        new_part_name = new_part_info.getPartNameV0(part.getMinDate(), part.getMaxDate());
+    else
+        new_part_name = new_part_info.getPartName();
+
+    ReplicatedMergeTreeLogEntryData entry;
+    entry.type = LogEntry::MUTATE_PART;
+    entry.source_replica = replica_name;
+    entry.parts_to_merge.push_back(part.name);
+    entry.new_part_name = new_part_name;
+    entry.create_time = time(nullptr);
+
+    zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+    return true;
+}
+
 
 
 void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops)
@@ -2517,7 +2588,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
     auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String * out_reason)
     {
-        return queue.canMergeParts(left->name, right->name, out_reason)
+        return queue.canMergeParts(*left, *right, out_reason)
                && canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data, out_reason);
     };
 

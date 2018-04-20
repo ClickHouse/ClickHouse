@@ -45,6 +45,8 @@ public:
 
     void add(const String & name);
 
+    std::optional<MergeTreePartInfo> getContainingPart(const MergeTreePartInfo & part_info) const;
+
     /// If not found, returns an empty string.
     String getContainingPart(const String & name) const;
 
@@ -62,7 +64,7 @@ private:
 
     /// Do not block mutex.
     void addImpl(const String & name);
-    String getContainingPartImpl(const MergeTreePartInfo & part_info) const;
+    std::map<MergeTreePartInfo, String>::const_iterator getContainingPartImpl(const MergeTreePartInfo & part_info) const;
 };
 
 }

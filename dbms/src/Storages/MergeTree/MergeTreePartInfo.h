@@ -38,14 +38,25 @@ struct MergeTreePartInfo
 
     bool operator==(const MergeTreePartInfo & rhs) const
     {
-        return !(*this < rhs || rhs < *this);
+        return !(*this != rhs);
     }
 
-    /// Contains another part (obtained after merging another part with some other)
+    bool operator!=(const MergeTreePartInfo & rhs) const
+    {
+        return *this < rhs || rhs < *this;
+    }
+
+    /// True if contains rhs (this part is obtained after merging rhs with some other part or mutating rhs)
     bool contains(const MergeTreePartInfo & rhs) const
     {
-        return partition_id == rhs.partition_id        /// Parts for different partitions are not merged
-            && min_block <= rhs.min_block
+        if (partition_id != rhs.partition_id)  /// Parts for different partitions are not merged
+            return false;
+
+        /// Mutated parts have the same block numbers but greater version.
+        if (min_block == rhs.min_block && max_block == rhs.max_block && level == rhs.level)
+            return version >= rhs.version;
+
+        return min_block <= rhs.min_block
             && max_block >= rhs.max_block
             && level >= rhs.level;
     }

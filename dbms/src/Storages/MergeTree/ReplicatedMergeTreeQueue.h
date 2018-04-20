@@ -100,17 +100,23 @@ private:
     void remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
     /** Can I now try this action. If not, you need to leave it in the queue and try another one.
-      * Called under queue_mutex.
+      * Called under the main mutex.
       */
     bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data,
         std::lock_guard<std::mutex> &) const;
+
+    /// Return the version (block number) of the last mutation that we don't need to apply to the part
+    /// (either this mutation was already applied or the part was created after the mutation).
+    /// If there is no such mutation or it has already been executed and deleted, return -1.
+    /// Call under the main mutex.
+    Int64 getCurrentMutationVersion(const MergeTreePartInfo & part_info, std::lock_guard<std::mutex> &) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under queue's mutex.
       */
     bool isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason, std::lock_guard<std::mutex> &) const;
 
-    /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
+    /// After removing the queue element, update the insertion times in the RAM. Running under mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
     void updateTimesOnRemoval(const LogEntryPtr & entry,
         std::optional<time_t> & min_unprocessed_insert_time_changed,
@@ -177,7 +183,7 @@ public:
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
     /** Disables future merges and fetches inside entry.new_part_name
      *  If there are currently executing merges or fetches then throws exception.
@@ -204,8 +210,12 @@ public:
       */
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
-    /// Will a part in the future be merged into a larger part (or merges of parts in this range are prohibited)?
-    bool canMergeParts(const String & left, const String & right, String * out_reason = nullptr) const;
+    /// Can we merge two parts according to the queue? True if the parts are of the same mutation version,
+    /// there is no merge or mutation already selected for these parts
+    /// and there are no virtual parts or unfinished inserts between them.
+    bool canMergeParts(const MergeTreeDataPart & left, const MergeTreeDataPart & right, String * out_reason = nullptr) const;
+
+    bool canMutatePart(const MergeTreePartInfo & part_info, Int64 & desired_mutation_version) const;
 
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
@@ -215,8 +225,8 @@ public:
       */
     bool addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason);
 
-    /// Count the number of merges in the queue.
-    size_t countMerges() const;
+    /// Count the number of merges and mutations of single parts in the queue.
+    size_t countMergesAndPartMutations() const;
 
     struct Status
     {
@@ -224,11 +234,14 @@ public:
         UInt32 queue_size;
         UInt32 inserts_in_queue;
         UInt32 merges_in_queue;
+        UInt32 mutations_in_queue;
         UInt32 queue_oldest_time;
         UInt32 inserts_oldest_time;
         UInt32 merges_oldest_time;
+        UInt32 mutations_oldest_time;
         String oldest_part_to_get;
         String oldest_part_to_merge_to;
+        String oldest_part_to_mutate_to;
         UInt32 last_queue_update;
     };
 

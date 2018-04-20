@@ -35,6 +35,7 @@ struct ReplicatedMergeTreeLogEntryData
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         ATTACH_PART,    /// Move a part from the `detached` directory. Obsolete. TODO: Remove after half year.
         CLEAR_COLUMN,   /// Drop specific column from specified partition.
+        MUTATE_PART,    /// Apply one or several mutations to the part.
     };
 
     String typeToString() const
@@ -46,6 +47,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::DROP_RANGE:   return "DROP_RANGE";
             case ReplicatedMergeTreeLogEntryData::ATTACH_PART:  return "ATTACH_PART";
             case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN: return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:  return "MUTATE_PART";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }

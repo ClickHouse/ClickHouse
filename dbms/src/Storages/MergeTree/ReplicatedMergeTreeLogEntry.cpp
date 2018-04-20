@@ -46,6 +46,13 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << new_part_name;
             break;
 
+        case MUTATE_PART:
+            out << "mutate\n"
+                << parts_to_merge.at(0) << "\n"
+                << "to\n"
+                << new_part_name;
+            break;
+
         default:
             throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
     }
@@ -123,6 +130,15 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             throw Exception("Bad format: expected 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
         String source_part_name;
         in >> "\n" >> source_part_name >> "\ninto\n" >> new_part_name;
+    }
+    else if (type_str == "mutate")
+    {
+        type = MUTATE_PART;
+        String source_part;
+        in >> source_part >> "\n"
+           >> "to\n"
+           >> new_part_name;
+        parts_to_merge.push_back(source_part);
     }
 
     in >> "\n";
