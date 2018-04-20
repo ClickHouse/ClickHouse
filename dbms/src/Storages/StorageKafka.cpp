@@ -6,6 +6,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -225,7 +226,11 @@ StorageKafka::StorageKafka(
     const String & format_name_, const String & schema_name_, size_t num_consumers_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), context(context_),
-    topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
+    topics(context.getMacros()->expand(topics_)),
+    brokers(context.getMacros()->expand(brokers_)),
+    group(context.getMacros()->expand(group_)),
+    format_name(context.getMacros()->expand(format_name_)),
+    schema_name(context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
     semaphore(0, num_consumers_), mutex(), consumers(), event_update()
 {
