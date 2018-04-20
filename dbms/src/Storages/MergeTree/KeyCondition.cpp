@@ -403,8 +403,8 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
 
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const ASTPtr & node,
-    size_t & out_primary_key_column_num,
-    DataTypePtr & out_primary_key_column_type,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type)
 {
@@ -416,8 +416,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     bool found_transformation = false;
     for (const ExpressionAction & a : key_expr->getActions())
     {
-        /** The primary key functional expression constraint may be inferred from a plain column in the expression.
-          * For example, if the primary key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
+        /** The key functional expression constraint may be inferred from a plain column in the expression.
+          * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
           * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
           * condition also holds, so the index may be used to select only parts satisfying this condition.
           *
@@ -446,12 +446,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             out_type.swap(new_type);
             expr_name = a.result_name;
 
-            // Transformation results in a primary key expression, accept
+            // Transformation results in a key expression, accept
             auto it = key_columns.find(expr_name);
             if (key_columns.end() != it)
             {
-                out_primary_key_column_num = it->second;
-                out_primary_key_column_type = sample_block.getByName(it->first).type;
+                out_key_column_num = it->second;
+                out_key_column_type = sample_block.getByName(it->first).type;
                 found_transformation = true;
                 break;
             }
@@ -461,39 +461,39 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     return found_transformation;
 }
 
-void KeyCondition::getPKTuplePositionMapping(
+void KeyCondition::getKeyTuplePositionMapping(
     const ASTPtr & node,
     const Context & context,
-    std::vector<MergeTreeSetIndex::PKTuplePositionMapping> & indexes_mapping,
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
     const size_t tuple_index,
-    size_t & out_primary_key_column_num)
+    size_t & out_key_column_num)
 {
-    MergeTreeSetIndex::PKTuplePositionMapping index_mapping;
+    MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
     index_mapping.tuple_index = tuple_index;
     DataTypePtr data_type;
-    if (isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
+    if (isKeyPossiblyWrappedByMonotonicFunctions(
         node, context, index_mapping.key_index,
         data_type, index_mapping.functions))
     {
         indexes_mapping.push_back(index_mapping);
-        if (out_primary_key_column_num < index_mapping.key_index)
+        if (out_key_column_num < index_mapping.key_index)
         {
-            out_primary_key_column_num = index_mapping.key_index;
+            out_key_column_num = index_mapping.key_index;
         }
     }
 }
 
 
-/// Try to prepare PKTuplePositionMapping for tuples from IN expression.
+/// Try to prepare KeyTuplePositionMapping for tuples from IN expression.
 bool KeyCondition::isTupleIndexable(
     const ASTPtr & node,
     const Context & context,
     RPNElement & out,
     const SetPtr & prepared_set,
-    size_t & out_primary_key_column_num)
+    size_t & out_key_column_num)
 {
-    out_primary_key_column_num = 0;
-    std::vector<MergeTreeSetIndex::PKTuplePositionMapping> indexes_mapping;
+    out_key_column_num = 0;
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
 
     size_t num_key_columns = prepared_set->getDataTypes().size();
 
@@ -511,13 +511,13 @@ bool KeyCondition::isTupleIndexable(
         size_t current_tuple_index = 0;
         for (const auto & arg : node_tuple->arguments->children)
         {
-            getPKTuplePositionMapping(arg, context, indexes_mapping, current_tuple_index, out_primary_key_column_num);
+            getKeyTuplePositionMapping(arg, context, indexes_mapping, current_tuple_index, out_key_column_num);
             ++current_tuple_index;
         }
     }
     else
     {
-        getPKTuplePositionMapping(node, context, indexes_mapping, 0, out_primary_key_column_num);
+        getKeyTuplePositionMapping(node, context, indexes_mapping, 0, out_key_column_num);
     }
 
     if (indexes_mapping.empty())
@@ -530,44 +530,44 @@ bool KeyCondition::isTupleIndexable(
 }
 
 
-bool KeyCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
+bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const ASTPtr & node,
     const Context & context,
-    size_t & out_primary_key_column_num,
-    DataTypePtr & out_primary_key_res_column_type,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_res_column_type,
     RPNElement::MonotonicFunctionsChain & out_functions_chain)
 {
     std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
-    DataTypePtr primary_key_column_type;
+    DataTypePtr key_column_type;
 
-    if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_primary_key_column_num, primary_key_column_type, chain_not_tested_for_monotonicity))
+    if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_key_column_num, key_column_type, chain_not_tested_for_monotonicity))
         return false;
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
-        ColumnsWithTypeAndName arguments{{ nullptr, primary_key_column_type, "" }};
+        ColumnsWithTypeAndName arguments{{ nullptr, key_column_type, "" }};
         auto func = func_builder->build(arguments);
 
         if (!func || !func->hasInformationAboutMonotonicity())
             return false;
 
-        primary_key_column_type = func->getReturnType();
+        key_column_type = func->getReturnType();
         out_functions_chain.push_back(func);
     }
 
-    out_primary_key_res_column_type = primary_key_column_type;
+    out_key_res_column_type = key_column_type;
 
     return true;
 }
 
-bool KeyCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
+bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     const ASTPtr & node,
-    size_t & out_primary_key_column_num,
-    DataTypePtr & out_primary_key_column_type,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
     std::vector<const ASTFunction *> & out_functions_chain)
 {
-    /** By itself, the primary key column can be a functional expression. for example, `intHash32(UserID)`.
+    /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
       */
     const auto & sample_block = key_expr->getSampleBlock();
@@ -576,8 +576,8 @@ bool KeyCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
     {
-        out_primary_key_column_num = it->second;
-        out_primary_key_column_type = sample_block.getByName(it->first).type;
+        out_key_column_num = it->second;
+        out_key_column_type = sample_block.getByName(it->first).type;
         return true;
     }
 
@@ -589,8 +589,7 @@ bool KeyCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
         out_functions_chain.push_back(func);
 
-        if (!isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_primary_key_column_num, out_primary_key_column_type,
-                                                                 out_functions_chain))
+        if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain))
             return false;
 
         return true;
@@ -612,7 +611,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
     }
     catch (...)
     {
-        throw Exception("Primary key expression contains comparison between inconvertible types: " +
+        throw Exception("Key expression contains comparison between inconvertible types: " +
             desired_type->getName() + " and " + src_type->getName() +
             " inside " + queryToString(node),
             ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -622,7 +621,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 
 bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
-    /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of primary key,
+    /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
       *  or constant expression - number.
       */
@@ -635,9 +634,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         if (args.size() != 2)
             return false;
 
-        DataTypePtr key_expr_type;    /// Type of expression containing primary key column
-        size_t key_arg_pos;           /// Position of argument with primary key column (non-const argument)
-        size_t key_column_num;        /// Number of a primary key column (inside sort_descr array)
+        DataTypePtr key_expr_type;    /// Type of expression containing key column
+        size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
+        size_t key_column_num;        /// Number of a key column (inside sort_descr array)
         RPNElement::MonotonicFunctionsChain chain;
         bool is_set_const = false;
         bool is_constant_transformed = false;
@@ -649,7 +648,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             is_set_const = true;
         }
         else if (getConstant(args[1], block_with_constants, const_value, const_type)
-            && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+            && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
         {
             key_arg_pos = 0;
         }
@@ -660,7 +659,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             is_constant_transformed = true;
         }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+            && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
         {
             key_arg_pos = 1;
         }
@@ -777,16 +776,16 @@ String KeyCondition::toString() const
 }
 
 
-/** Index is the value of primary key every `index_granularity` rows.
+/** Index is the value of key every `index_granularity` rows.
   * This value is called a "mark". That is, the index consists of marks.
   *
-  * The primary key is the tuple.
-  * The data is sorted by primary key in the sense of lexicographic order over tuples.
+  * The key is the tuple.
+  * The data is sorted by key in the sense of lexicographic order over tuples.
   *
   * A pair of marks specifies a segment with respect to the order over the tuples.
   * Denote it like this: [ x1 y1 z1 .. x2 y2 z2 ],
-  *  where x1 y1 z1 - tuple - value of primary key in left border of segment;
-  *        x2 y2 z2 - tuple - value of primary key in right boundary of segment.
+  *  where x1 y1 z1 - tuple - value of key in left border of segment;
+  *        x2 y2 z2 - tuple - value of key in right boundary of segment.
   * In this section there are data between these marks.
   *
   * Or, the last mark specifies the range open on the right: [ a b c .. + inf )
@@ -898,8 +897,8 @@ static bool forAnyParallelogram(
 
 bool KeyCondition::mayBeTrueInRange(
     size_t used_key_size,
-    const Field * left_pk,
-    const Field * right_pk,
+    const Field * left_key,
+    const Field * right_key,
     const DataTypes & data_types,
     bool right_bounded) const
 {
@@ -907,19 +906,19 @@ bool KeyCondition::mayBeTrueInRange(
 
 /*  std::cerr << "Checking for: [";
     for (size_t i = 0; i != used_key_size; ++i)
-        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_pk[i]);
+        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_key[i]);
     std::cerr << " ... ";
 
     if (right_bounded)
     {
         for (size_t i = 0; i != used_key_size; ++i)
-            std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_pk[i]);
+            std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_key[i]);
         std::cerr << "]\n";
     }
     else
         std::cerr << "+inf)\n";*/
 
-    return forAnyParallelogram(used_key_size, left_pk, right_pk, true, right_bounded, key_ranges, 0,
+    return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
         [&] (const std::vector<Range> & key_ranges)
     {
         auto res = mayBeTrueInRangeImpl(key_ranges, data_types);
@@ -1065,15 +1064,15 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
 
 
 bool KeyCondition::mayBeTrueInRange(
-    size_t used_key_size, const Field * left_pk, const Field * right_pk, const DataTypes & data_types) const
+    size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_pk, right_pk, data_types, true);
+    return mayBeTrueInRange(used_key_size, left_key, right_key, data_types, true);
 }
 
 bool KeyCondition::mayBeTrueAfter(
-    size_t used_key_size, const Field * left_pk, const DataTypes & data_types) const
+    size_t used_key_size, const Field * left_key, const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_pk, nullptr, data_types, false);
+    return mayBeTrueInRange(used_key_size, left_key, nullptr, data_types, false);
 }
 
 
