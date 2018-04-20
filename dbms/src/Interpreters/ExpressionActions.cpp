@@ -1019,7 +1019,7 @@ void ExpressionActionsChain::finalize()
         std::unordered_map<String, size_t> required_output_indexes;
         for (size_t j = 0; j < required_output.size(); ++j)
             required_output_indexes[required_output[j]] = j;
-        auto & can_remove_required_output = steps[i].can_remove_required_output;
+        auto & can_remove_required_output = steps[i].not_need_in_future_steps;
 
         if (i + 1 < static_cast<int>(steps.size()))
         {

@@ -232,7 +232,10 @@ struct ExpressionActionsChain
         ExpressionActionsPtr actions;
         NameSet additional_input;
         Names required_output;
-        std::vector<std::shared_ptr<bool>> can_remove_required_output; /// Has the same size with required_output, is filled in finalize()
+        /// Columns which are used only for current steps and not used in next actions (and can be removed from block).
+        /// Example: filter column for where actions.
+        /// If not empty, has the same size with required_output; is filled in finalize().
+        std::vector<bool *> not_need_in_future_steps;
 
         Step(const ExpressionActionsPtr & actions_ = nullptr, const Names & required_output_ = Names())
             : actions(actions_), required_output(required_output_) {}
