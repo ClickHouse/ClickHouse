@@ -103,8 +103,8 @@ public:
     /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
-    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, std::shared_ptr<bool> & remove_filter);
-    bool appendWhere(ExpressionActionsChain & chain, bool only_types, std::shared_ptr<bool> & remove_filter);
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, bool & remove_filter);
+    bool appendWhere(ExpressionActionsChain & chain, bool only_types, bool & remove_filter);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 

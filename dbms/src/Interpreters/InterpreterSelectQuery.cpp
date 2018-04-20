@@ -250,13 +250,12 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
         */
 
-    std::shared_ptr<bool> remove_where_filter;
-    std::shared_ptr<bool> remove_prewhere_filter;
+    bool remove_prewhere_filter;
 
     {
         ExpressionActionsChain chain;
 
-        if (query_analyzer->appendPrewhere(chain, false, remove_prewhere_filter))
+        if (query_analyzer->appendPrewhere(chain, !res.first_stage, remove_prewhere_filter))
         {
             res.prewhere_info = std::make_shared<PrewhereInfo>(
                     chain.steps.front().actions, query.prewhere_expression->getColumnName());
@@ -274,7 +273,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             chain.addStep();
         }
 
-        if (query_analyzer->appendWhere(chain, !res.first_stage, remove_where_filter))
+        if (query_analyzer->appendWhere(chain, !res.first_stage, res.remove_where_filter))
         {
             res.has_where = true;
             res.before_where = chain.getLastActions();
@@ -320,14 +319,11 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     }
 
     if (res.prewhere_info)
-        res.prewhere_info->remove_prewhere_column = *remove_prewhere_filter;
+        res.prewhere_info->remove_prewhere_column = remove_prewhere_filter;
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
     if (res.has_where)
-    {
         res.before_where->prependProjectInput();
-        res.remove_where_filter = *remove_where_filter;
-    }
     if (res.has_having)
         res.before_having->prependProjectInput();
 
