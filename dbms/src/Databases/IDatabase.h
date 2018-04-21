@@ -6,6 +6,7 @@
 #include <ctime>
 #include <memory>
 #include <functional>
+#include <Poco/File.h>
 
 
 class ThreadPool;
@@ -143,7 +144,12 @@ public:
     virtual void shutdown() = 0;
 
     /// Delete metadata, the deletion of which differs from the recursive deletion of the directory, if any.
-    virtual void drop() = 0;
+    virtual void drop()
+    {
+        String metadata_path = getMetadataPath();
+        if (!metadata_path.empty())
+            Poco::File(metadata_path).remove(false);
+    };
 
     virtual ~IDatabase() {}
 };

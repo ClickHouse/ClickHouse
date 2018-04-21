@@ -22,6 +22,7 @@ public:
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
+    void shutdownAndDropAllData();
 private:
     void run();
     bool findFiles();

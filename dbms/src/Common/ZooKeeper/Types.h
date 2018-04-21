@@ -54,6 +54,9 @@ using SetResponse = ZooKeeperImpl::ZooKeeper::SetResponse;
 using ListResponse = ZooKeeperImpl::ZooKeeper::ListResponse;
 using CheckResponse = ZooKeeperImpl::ZooKeeper::CheckResponse;
 
+template <typename R>
+using MultiAsyncResponse = std::vector<std::pair<std::string, std::future<R>>>;
+
 RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode);
 RequestPtr makeRemoveRequest(const std::string & path, int version);
 RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
