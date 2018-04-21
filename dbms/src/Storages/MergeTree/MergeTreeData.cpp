@@ -797,7 +797,16 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
-    Poco::File(full_path).remove(true);
+    std::vector<Poco::File> data_dirs;
+
+    Poco::File(full_path).list(data_dirs);
+
+    auto detached_file = Poco::Path(full_path + "/detached").makeAbsolute().toString();
+    for (auto & data_dir : data_dirs)
+    {
+        if (Poco::Path(data_dir.path()).makeAbsolute().toString() != detached_file)
+            data_dir.remove(true);
+    }
 
     LOG_TRACE(log, "dropAllData: done.");
 }
@@ -1571,6 +1580,7 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part_to_detach, cons
         part->renameAddPrefix(move_to_detached, prefix);
     data_parts_indexes.erase(it_part);
 
+    std::cout << "MergeTreeData::renameAndDetachPart \n";
     if (restore_covered && part->info.level == 0)
     {
         LOG_WARNING(log, "Will not recover parts covered by zero-level part " << part->name);

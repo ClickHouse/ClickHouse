@@ -78,9 +78,4 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery(
     throw Exception("There is no CREATE DATABASE query for DatabaseMemory", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 }
 
-void DatabaseMemory::drop()
-{
-    /// Additional actions to delete database are not required.
-}
-
 }

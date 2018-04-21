@@ -57,8 +57,6 @@ public:
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
-    void drop() override;
-
 private:
     Poco::Logger * log;
 };

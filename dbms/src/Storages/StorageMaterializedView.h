@@ -31,6 +31,8 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
 
+    void truncate(const ASTPtr & query) override;
+
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;

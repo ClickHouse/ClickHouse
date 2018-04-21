@@ -40,6 +40,8 @@
 
 #include <boost/filesystem.hpp>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Interpreters/ClusterProxy/TruncateStreamFactory.h>
 
 
 namespace DB
@@ -296,6 +298,30 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
             describe_stream_factory, cluster, describe_query, context, settings);
 }
 
+void StorageDistributed::truncate(const ASTPtr & query)
+{
+    ClusterPtr cluster = getCluster();
+
+    ASTPtr ast_drop_query = query->clone();
+    ASTDropQuery & drop_query = typeid_cast<ASTDropQuery &>(*ast_drop_query);
+    drop_query.table = remote_table;
+    drop_query.database = remote_database;
+
+    {
+        std::lock_guard lock(cluster_nodes_mutex);
+
+        for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
+        {
+            it->second.shutdownAndDropAllData();
+            it = cluster_nodes_data.erase(it);
+        }
+    }
+
+    String storage_path = getDataPath();
+    ClusterProxy::TruncateStreamFactory truncate_stream_factory(cluster, storage_path);
+
+    ClusterProxy::executeQuery(truncate_stream_factory, cluster, ast_drop_query, context, context.getSettingsRef());
+}
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
@@ -362,6 +388,11 @@ void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::str
     requireConnectionPool(name, storage);
     if (!directory_monitor)
         directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+}
+
+void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
+{
+    directory_monitor->shutdownAndDropAllData();
 }
 
 

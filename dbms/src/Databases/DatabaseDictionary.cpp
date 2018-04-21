@@ -213,9 +213,4 @@ void DatabaseDictionary::shutdown()
 {
 }
 
-void DatabaseDictionary::drop()
-{
-    /// Additional actions to delete database are not required.
-}
-
 }
