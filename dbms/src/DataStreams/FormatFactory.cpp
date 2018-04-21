@@ -153,10 +153,16 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true), sample);
     else if (name == "TabSeparatedRaw" || name == "TSVRaw")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample), sample);
-    else if (name == "CSV")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample), sample);
-    else if (name == "CSVWithNames")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, true), sample);
+    else if (name == "CSV" || name == "CSVWithNames")
+    {
+        // TODO: remove self-repeating
+        String csv_delimiter = settings.format_csv_delimiter.toString();
+        if (csv_delimiter.size() != 1)
+            throw Exception("A format_csv_delimiter setting has to be an exactly one character long");
+
+        bool with_names = name == "CSVWithNames";
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, csv_delimiter[0], with_names), sample);
+    }
     else if (name == "Pretty")
         return std::make_shared<PrettyBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
     else if (name == "PrettyCompact")
