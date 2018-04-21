@@ -81,13 +81,14 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     {
         return wrap_row_stream(std::make_shared<ValuesRowInputStream>(buf, sample, context, settings.input_format_values_interpret_expressions));
     }
-    else if (name == "CSV")
+    else if (name == "CSV" || name == "CSVWithNames")
     {
-        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, ','));
-    }
-    else if (name == "CSVWithNames")
-    {
-        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, ',', true));
+        String csv_delimiter = settings.format_csv_delimiter.toString();
+        if (csv_delimiter.size() != 1)
+            throw Exception("A format_csv_delimiter setting has to be an exactly one character long");
+
+        bool with_names = name == "CSVWithNames";
+        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, csv_delimiter[0], with_names));
     }
     else if (name == "TSKV")
     {
