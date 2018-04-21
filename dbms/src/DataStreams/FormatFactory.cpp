@@ -83,12 +83,10 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     }
     else if (name == "CSV" || name == "CSVWithNames")
     {
-        String csv_delimiter = settings.format_csv_delimiter.toString();
-        if (csv_delimiter.size() != 1)
-            throw Exception("A format_csv_delimiter setting has to be an exactly one character long");
-
+        char csv_delimiter = settings.format_csv_delimiter;
         bool with_names = name == "CSVWithNames";
-        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, csv_delimiter[0], with_names));
+
+        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, csv_delimiter, with_names));
     }
     else if (name == "TSKV")
     {
@@ -155,13 +153,10 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample), sample);
     else if (name == "CSV" || name == "CSVWithNames")
     {
-        // TODO: remove self-repeating
-        String csv_delimiter = settings.format_csv_delimiter.toString();
-        if (csv_delimiter.size() != 1)
-            throw Exception("A format_csv_delimiter setting has to be an exactly one character long");
-
+        char csv_delimiter = settings.format_csv_delimiter;
         bool with_names = name == "CSVWithNames";
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, csv_delimiter[0], with_names), sample);
+
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, csv_delimiter, with_names), sample);
     }
     else if (name == "Pretty")
         return std::make_shared<PrettyBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
