@@ -1358,8 +1358,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
 bool Context::hasZooKeeper() const
 {
-    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
-    return shared->zookeeper != nullptr;
+    return getConfigRef().has("zookeeper");
 }
 
 
