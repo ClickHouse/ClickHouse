@@ -79,11 +79,17 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
+
+target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} ${REQUIRED_LLVM_LIBRARIES})
 
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
+target_include_directories (clickhouse_functions BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+
+# LLVM 5.0 has a bunch of unused parameters in its header files.
+set_source_files_properties(FunctionsLLVMTest.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -g")
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
