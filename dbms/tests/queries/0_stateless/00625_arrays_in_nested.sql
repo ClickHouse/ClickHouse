@@ -15,6 +15,11 @@ INSERT INTO nested VALUES (['Hello', 'World'], [['a'], ['b', 'c']], [['PU', 'US'
 
 SELECT * FROM nested;
 
+DETACH TABLE nested;
+ATTACH TABLE nested;
+
+SELECT * FROM nested;
+
 
 DROP TABLE IF EXISTS nested;
 CREATE TABLE nested
