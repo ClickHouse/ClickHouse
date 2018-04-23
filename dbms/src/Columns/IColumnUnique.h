@@ -74,6 +74,11 @@ public:
     {
         throw Exception("Method deserializeAndInsertFromArena is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    ColumnPtr index(const ColumnPtr & indexes, size_t limit) const override
+    {
+        throw Exception("Method index is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 }
