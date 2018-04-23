@@ -259,7 +259,7 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
     for (auto & arg : args)
     {
         auto & column = block.getByPosition(arg);
-        if (auto * column_with_dict = typeid_cast<const ColumnWithDictionary *>(column.column.get))
+        if (auto * column_with_dict = typeid_cast<const ColumnWithDictionary *>(column.column.get()))
         {
             auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(column.type.get());
             if (!type_with_dict)
@@ -297,7 +297,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             executeWithoutColumnsWithDictionary(temp_block, temp_numbers, 0);
             auto & res_col = block.getByPosition(result);
             res_col.column = res_col.type->createColumn();
-            res_col.column->insertRangeFrom(*temp_block.getByPosition(0).column, 0, temp_block.rows());
+            res_col.column->insertRangeFrom(temp_block.getByPosition(0).column->assumeMutableRef(), 0, temp_block.rows());
             return;
         }
     }
