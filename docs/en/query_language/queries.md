@@ -312,10 +312,10 @@ Data directory: `/var/lib/clickhouse/data/database/table/`,where `/var/lib/click
 ```bash
 $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse  4096 мая   13 02:55 detached
--rw-rw-rw- 1 clickhouse clickhouse     2 мая   13 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 may   13 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 may   13 02:58 increment.txt
 ```
 
 Here, `20140317_20140323_2_2_0` and ` 20140317_20140323_4_4_0` are the directories of data parts.
@@ -1507,4 +1507,3 @@ The response contains the `kill_status` column, which can take the following val
 3. The other values ​​explain why the query can't be stopped.
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.
-

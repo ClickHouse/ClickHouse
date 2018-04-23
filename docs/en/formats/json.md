@@ -27,19 +27,19 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
                         "c": "8267016"
                 },
                 {
-                        "SearchPhrase": "интерьер ванной комнаты",
+                        "SearchPhrase": "bathroom interior design",
                         "c": "2166"
                 },
                 {
-                        "SearchPhrase": "яндекс",
+                        "SearchPhrase": "yandex",
                         "c": "1655"
                 },
                 {
-                        "SearchPhrase": "весна 2014 мода",
+                        "SearchPhrase": "spring 2014 fashion",
                         "c": "1549"
                 },
                 {
-                        "SearchPhrase": "фриформ фото",
+                        "SearchPhrase": "freeform photos",
                         "c": "1480"
                 }
         ],
@@ -83,4 +83,3 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 See also the JSONEachRow format.
-
