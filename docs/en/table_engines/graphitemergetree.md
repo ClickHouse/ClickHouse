@@ -83,3 +83,4 @@ Example of settings:
     </default>
 </graphite_rollup>
 ```
+

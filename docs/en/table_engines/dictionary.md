@@ -54,6 +54,7 @@ SELECT
 FROM system.dictionaries 
 WHERE name = 'products'
 ```
+
 ```
 ┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
 │ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
@@ -102,5 +103,5 @@ LIMIT 1
 │        152689 │ Некоторый товар │
 └───────────────┴─────────────────┘
 
-1 rows in set. Elapsed: 0.006 sec.
+1 rows in set. Elapsed: 0.006 sec. 
 ```
