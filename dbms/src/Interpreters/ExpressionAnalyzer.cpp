@@ -2442,6 +2442,7 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
     String prewhere_column_name = select_query->prewhere_expression->getColumnName();
     step.required_output.push_back(prewhere_column_name);
     step.not_need_in_future_steps = {&remove_filter};
+    remove_filter = true;
 
     {
         /// Remove unused source_columns from prewhere actions.
@@ -2503,6 +2504,8 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
 
     step.required_output.push_back(select_query->where_expression->getColumnName());
     step.not_need_in_future_steps = {&remove_filter};
+    remove_filter = true;
+
     getRootActions(select_query->where_expression, only_types, false, step.actions);
 
     return true;

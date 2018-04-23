@@ -102,7 +102,7 @@ try
     /// read from it
     if (argc == 2 && 0 == strcmp(argv[1], "read"))
     {
-        QueryProcessingStage::Enum stage;
+        QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
         BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
         WriteBufferFromFileDescriptor out1(STDOUT_FILENO);
         CompressedWriteBuffer out2(out1);

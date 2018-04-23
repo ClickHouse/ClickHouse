@@ -130,7 +130,7 @@ try
     {
         WriteBufferFromFileDescriptor out_buf(STDOUT_FILENO);
 
-        QueryProcessingStage::Enum stage;
+        QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
 
         BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
         RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
