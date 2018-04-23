@@ -657,7 +657,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     }
 
     if (current_offset != 0)
-        res->data = data->index(nested_indexes_column, current_offset);
+        res->data = data->index(std::move(nested_indexes_column), current_offset);
 
     return std::move(res);
 }
