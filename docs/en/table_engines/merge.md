@@ -2,21 +2,21 @@
 
 The Merge engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
-The Merge engine accepts parameters: the database name and a regular expression for tables. Example:
+The Merge engine accepts parameters: the database name and a regular expression for tables. Example.
 
 ```text
 Merge(hits, '^WatchLog')
 ```
 
-- Data will be read from the tables in the 'hits' database that have names that match the regular expression '`^WatchLog`'.
+Data will be read from the tables in the 'hits' database that have names that match the regular expression '`^WatchLog`'.
 
 Instead of the database name, you can use a constant expression that returns a string. For example, `currentDatabase()`.
 
-Regular expressions are re2 (similar to PCRE), case-sensitive.
+Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
 
 When selecting tables to read, the Merge table itself will not be selected, even if it matches the regex. This is to avoid loops.
-It is possible to create two Merge tables that will endlessly try to read each others' data. But don't do this.
+It is possible to create two Merge tables that will endlessly try to read each others' data, but this is not a good idea.
 
 The typical way to use the Merge engine is for working with a large number of TinyLog tables as if with a single table.
 

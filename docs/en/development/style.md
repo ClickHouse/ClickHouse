@@ -93,14 +93,14 @@
 14. In classes and structures, public, private, and protected are written on the same level as the class/struct, but all other internal elements should be deeper.
 
    ```cpp
-   template <typename T>
-class MultiVersion
-{
-public:
-    /// Version of object for usage. shared_ptr manage lifetime of version.
-    using Version = std::shared_ptr<const T>;
-    ...
-}
+    template <typename T>
+    class MultiVersion
+    {
+    public:
+        /// Version of object for usage. shared_ptr manage lifetime of version.
+        using Version = std::shared_ptr<const T>;
+        ...
+    }
    ```
 
 15. If the same namespace is used for the entire file, and there isn't anything else significant, an offset is not necessary  inside namespace.
@@ -108,9 +108,9 @@ public:
 16. If the block for if, for, while... expressions consists of a single statement, you don't need to use curly brackets. Place the statement on a separate line, instead. The same is true for a nested if, for, while... statement. But if the inner statement contains curly brackets or else, the external block should be written in curly brackets.
 
    ```cpp
-   /// Finish write.
-for (auto & stream : streams)
-    stream.second->finalize();
+    /// Finish write.
+    for (auto & stream : streams)
+        stream.second->finalize();
    ```
 
 17. There should be any spaces at the ends of lines.
@@ -178,7 +178,6 @@ for (auto & stream : streams)
     //correct
     std::cerr << static_cast<int>(c) << std::endl;
    ```
-
 28. In classes and structs, group members and functions separately inside each visibility scope.
 
 29. For small classes and structs, it is not necessary to separate the method declaration from the implementation.
@@ -202,11 +201,11 @@ for (auto & stream : streams)
    This is very important. Writing the comment might help you realize that the code isn't necessary, or that it is designed wrong.
 
    ```cpp
-   /** How much of the piece of memory can be used.
-     * For example, if internal_buffer is 1 MB, and only 10 bytes were loaded to the buffer from the file for reading,
-     * then working_buffer will have a size of only 10 bytes
-     * (working_buffer.end() will point to the position right after those 10 bytes available for read).
-     */
+    /** Part of piece of memory, that can be used.
+      * For example, if internal_buffer is 1MB, and there was only 10 bytes loaded to buffer from file for reading,
+      * then working_buffer will have size of only 10 bytes
+      * (working_buffer.end() will point to the position right after those 10 bytes available for read).
+  */
    ```
 
 2. Comments can be as detailed as necessary.
@@ -214,15 +213,15 @@ for (auto & stream : streams)
 3. Place comments before the code they describe. In rare cases, comments can come after the code, on the same line.
 
    ```cpp
-   /** Parses and executes the query.
-   */
-   void executeQuery(
-       ReadBuffer & istr, /// Where to read the query from (and data for INSERT, if applicable)
-       WriteBuffer & ostr, /// Where to write the result
-       Context & context, /// DB, tables, data types, engines, functions, aggregate functions...
-       BlockInputStreamPtr & query_plan, /// A description of query processing can be included here
-       QueryProcessingStage::Enum stage = QueryProcessingStage::Complete /// The last stage to process the SELECT query to
-       )
+    /** Parses and executes the query.
+    */
+    void executeQuery(
+        ReadBuffer & istr, /// Where to read the query from (and data for INSERT, if applicable)
+        WriteBuffer & ostr, /// Where to write the result
+        Context & context, /// DB, tables, data types, engines, functions, aggregate functions...
+        BlockInputStreamPtr & query_plan, /// A description of query processing can be included here
+        QueryProcessingStage::Enum stage = QueryProcessingStage::Complete /// The last stage to process the SELECT query to
+        )
    ```
 
 4. Comments should be written in English only.
@@ -438,22 +437,19 @@ for (auto & stream : streams)
 
    In servers that handle user requests, it's usually enough to catch exceptions at the top level of the connection handler.
 
-   In thread functions, you should catch and keep all exceptions to rethrow them in the main thread after join.
+    ```cpp
+    /// If there were no other calculations yet, do it synchronously
+    if (!started)
+    {
+        calculate();
+        started = true;
+    }
+    else    /// If the calculations are already in progress, wait for results
+        pool.wait();
 
-   ```cpp
-   /// If there were no other calculations yet, do it synchronously
-   if (!started)
-   {
-       calculate();
-       started = true;
-   }
-   else    /// If the calculations are already in progress, wait for results
-       pool.wait();
-
-   if (exception)
-       exception->rethrow();
-   ```
-
+    if (exception)
+        exception->rethrow();
+    ```
    Never hide exceptions without handling. Never just blindly put all exceptions to log.
 
    Not `catch (...) {}`.
@@ -497,17 +493,16 @@ This is not recommended, but it is allowed.
    You can create a separate code block inside a single function in order to make certain variables local, so that the destructors are called when exiting the block.
 
    ```cpp
-   Block block = data.in->read();
+    Block block = data.in->read();
 
-   {
-       std::lock_guard<std::mutex> lock(mutex);
-       data.ready = true;
-       data.block = block;
-   }
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        data.ready = true;
+        data.block = block;
+    }
 
-   ready_any.set();
-   ```
-
+    ready_any.set();
+    ```
 7. Multithreading.
 
    For offline data processing applications:
@@ -569,14 +564,14 @@ This is not recommended, but it is allowed.
    ```cpp
    using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
    
-   /** Creates an aggregate function by name.  */
+   /** Creates an aggregate function by name.
+     */
    class AggregateFunctionFactory
    {
    public:
-       AggregateFunctionFactory();    
+       AggregateFunctionFactory();
        AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
    ```
-
 15. namespace.
 
    There is no need to use a separate namespace for application code or small libraries.
@@ -598,10 +593,10 @@ This is not recommended, but it is allowed.
    If later you’ll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use shared_ptr/unique_ptr.
 
    ```cpp
-   Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
-   
-   /// For delayed initialization
-   Loader() {}
+    Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
+
+    /// For delayed initialization
+    Loader() {}
    ```
 
 17. Virtual functions.
@@ -668,7 +663,6 @@ This is not recommended, but it is allowed.
     std::string s = "Hello";
     std::string s{"Hello"};
    ```
-
 26. For virtual functions, write 'virtual' in the base class, but write 'override' in descendent classes.
 
 ## Unused features of C++

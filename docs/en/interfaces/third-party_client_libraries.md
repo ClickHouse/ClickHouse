@@ -34,8 +34,8 @@ There are libraries for working with ClickHouse for:
 - C++
    - [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp/)
 - Elixir
-  - [clickhousex](https://github.com/appodeal/clickhousex/)
-  - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
+   - [clickhousex](https://github.com/appodeal/clickhousex/)
+   - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 
 We have not tested these libraries. They are listed in random order.
 
