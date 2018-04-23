@@ -634,8 +634,6 @@ ColumnPtr ColumnArray::index(const ColumnPtr & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
-    size_t size = indexes.size();
-
     if (limit == 0)
         return ColumnArray::create(data);
 
