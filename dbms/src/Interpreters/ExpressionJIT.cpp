@@ -29,7 +29,7 @@ namespace DB
 
 struct LLVMSharedData
 {
-    mutable llvm::LLVMContext context;
+    llvm::LLVMContext context;
     std::shared_ptr<llvm::Module> module;
     std::unique_ptr<llvm::TargetMachine> machine;
     llvm::orc::RTDyldObjectLinkingLayer objectLayer;
@@ -50,11 +50,21 @@ struct LLVMSharedData
         // TODO: throw in some optimization & verification layers
     }
 
-    llvm::Type * toNativeType(const DataTypePtr & type) const
+    llvm::Type * toNativeType(const DataTypePtr & type)
     {
+        // LLVM doesn't have unsigned types, it has unsigned instructions.
+        if (type->equals(DataTypeInt8{}) || type->equals(DataTypeUInt8{}))
+            return builder.getInt8Ty();
+        if (type->equals(DataTypeInt16{}) || type->equals(DataTypeUInt16{}))
+            return builder.getInt16Ty();
+        if (type->equals(DataTypeInt32{}) || type->equals(DataTypeUInt32{}))
+            return builder.getInt32Ty();
+        if (type->equals(DataTypeInt64{}) || type->equals(DataTypeUInt64{}))
+            return builder.getInt64Ty();
+        if (type->equals(DataTypeFloat32{}))
+            return builder.getFloatTy();
         if (type->equals(DataTypeFloat64{}))
-            return llvm::Type::getDoubleTy(context);
-        // TODO: numbers
+            return builder.getDoubleTy();
         return nullptr;
     }
 
@@ -64,7 +74,7 @@ struct LLVMSharedData
             llvm::cantFail(compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()));
     }
 
-    LLVMCompiledFunction * lookup(const std::string& name) /* const */
+    LLVMCompiledFunction * lookup(const std::string& name)
     {
         std::string mangledName;
         llvm::raw_string_ostream mangledNameStream(mangledName);
