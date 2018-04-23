@@ -15,15 +15,11 @@ class DNSCacheUpdater
 {
 public:
 
-    DNSCacheUpdater(Context & context);
+    explicit DNSCacheUpdater(Context & context);
     ~DNSCacheUpdater();
 
-    /// Call it inside catch section
-    /// Returns true if it is a network error
-    static bool isNetworkError();
-
     /// Checks if it is a network error and increments ProfileEvents::NetworkErrors
-    static bool incrementNetworkErrors();
+    static bool incrementNetworkErrorEventsIfNeeded();
 
 private:
     bool run();

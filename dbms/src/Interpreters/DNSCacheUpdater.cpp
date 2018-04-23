@@ -25,6 +25,36 @@ namespace ErrorCodes
 }
 
 
+/// Call it inside catch section
+/// Returns true if it is a network error
+static bool isNetworkError()
+{
+    try
+    {
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+            return true;
+    }
+    catch (Poco::Net::DNSException & e)
+    {
+        return true;
+    }
+    catch (Poco::TimeoutException & e)
+    {
+        return true;
+    }
+    catch (...)
+    {
+        /// Do nothing
+    }
+
+    return false;
+}
+
+
 DNSCacheUpdater::DNSCacheUpdater(Context & context_)
     : context(context_), pool(context_.getBackgroundPool())
 {
@@ -73,7 +103,7 @@ DNSCacheUpdater::~DNSCacheUpdater()
 }
 
 
-bool DNSCacheUpdater::incrementNetworkErrors()
+bool DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded()
 {
     if (isNetworkError())
     {
@@ -83,34 +113,6 @@ bool DNSCacheUpdater::incrementNetworkErrors()
 
     return false;
 }
-
-bool DNSCacheUpdater::isNetworkError()
-{
-    try
-    {
-        throw;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-            return true;
-    }
-    catch (Poco::Net::DNSException & e)
-    {
-        return true;
-    }
-    catch (Poco::TimeoutException & e)
-    {
-        return true;
-    }
-    catch (...)
-    {
-        /// Do nothing
-    }
-
-    return false;
-}
-
 
 }
 
