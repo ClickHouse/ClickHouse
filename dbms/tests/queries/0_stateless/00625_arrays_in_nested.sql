@@ -20,6 +20,17 @@ ATTACH TABLE nested;
 
 SELECT * FROM nested;
 
+INSERT INTO nested VALUES (['GoodBye'], [['1', '2']], [['PU', 'US', 'OTHER']]);
+
+SELECT * FROM nested ORDER BY column.name;
+OPTIMIZE TABLE nested PARTITION tuple() FINAL;
+SELECT * FROM nested ORDER BY column.name;
+
+DETACH TABLE nested;
+ATTACH TABLE nested;
+
+SELECT * FROM nested ORDER BY column.name;
+
 
 DROP TABLE IF EXISTS nested;
 CREATE TABLE nested
