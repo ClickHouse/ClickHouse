@@ -258,12 +258,16 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
 }
 
 template <typename T>
+template <>
 ColumnPtr ColumnVector<T>::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const;
 template <typename T>
+template <>
 ColumnPtr ColumnVector<T>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const;
 template <typename T>
+template <>
 ColumnPtr ColumnVector<T>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const;
 template <typename T>
+template <>
 ColumnPtr ColumnVector<T>::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
 
 template <typename T>
