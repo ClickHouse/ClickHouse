@@ -32,7 +32,7 @@ if (ENABLE_EMBEDDED_COMPILER)
     mark_as_advanced(LLVM_CONFIG_EXECUTABLE)
 
     if(NOT LLVM_CONFIG_EXECUTABLE)
-        message(FATAL_ERROR "Cannot find LLVM (looking for `llvm-config${LLVM_VERSION_POSTFIX}`, `llvm-config`, `llvm-config-devel`). Please, provide LLVM_ROOT environment variable.")
+        message(WARNING "Cannot find LLVM (looking for `llvm-config${LLVM_VERSION_POSTFIX}`, `llvm-config`, `llvm-config-devel`). Please, provide LLVM_ROOT environment variable.")
     else()
         set(LLVM_FOUND TRUE)
 
