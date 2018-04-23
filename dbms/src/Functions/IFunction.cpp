@@ -297,7 +297,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             executeWithoutColumnsWithDictionary(temp_block, temp_numbers, 0);
             auto & res_col = block.getByPosition(result);
             res_col.column = res_col.type->createColumn();
-            res_col.column->insertRangeFrom(temp_block.getByPosition(0).column->assumeMutableRef(), 0, temp_block.rows());
+            res_col.column->assumeMutableRef().insertRangeFrom(*temp_block.getByPosition(0).column, 0, temp_block.rows());
             return;
         }
     }
