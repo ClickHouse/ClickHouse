@@ -314,7 +314,7 @@ public:
         throw Exception("getReturnType is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    IColumn::Ptr createResultColumn(const DataTypes & /*arguments*/, size_t /*size*/) const
+    virtual IColumn::Ptr createResultColumn(const DataTypes & /*arguments*/, size_t /*size*/) const
     {
         throw Exception("createResultColumn is not implemented in a non-jitted function", ErrorCodes::NOT_IMPLEMENTED);
     }

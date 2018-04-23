@@ -59,18 +59,18 @@ public:
     };
 };
 
-class LLVMFunction : public IFunctionBase, std::enable_shared_from_this<LLVMFunction>
+class LLVMFunction : public std::enable_shared_from_this<LLVMFunction>, public IFunctionBase
 {
     ExpressionActions::Actions actions; // all of them must have type APPLY_FUNCTION
     Names arg_names;
     DataTypes arg_types;
     LLVMSharedDataPtr context;
 
+public:
     LLVMFunction(ExpressionActions::Actions actions, Names arg_names, DataTypes arg_types, LLVMSharedDataPtr context)
         : actions(std::move(actions)), arg_names(std::move(arg_names)), arg_types(std::move(arg_types)), context(context)
     {}
 
-public:
     static std::shared_ptr<LLVMFunction> create(ExpressionActions::Actions actions, LLVMSharedDataPtr context);
 
     String getName() const override { return actions.back().result_name; }
