@@ -127,7 +127,7 @@ ORDER BY h ASC
 
 ```sql
 SELECT
-    transform(SearchEngineID, [2, 3], ['Яндекс', 'Google'], 'Остальные') AS title,
+    transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
 FROM test.hits
 WHERE SearchEngineID != 0
@@ -137,9 +137,9 @@ ORDER BY c DESC
 
 ```text
 ┌─title─────┬──────c─┐
-│ Яндекс    │ 498635 │
+│ Yandex    │ 498635 │
 │ Google    │ 229872 │
-│ Остальные │ 104472 │
+│ Other     │ 104472 │
 └───────────┴────────┘
 ```
 
