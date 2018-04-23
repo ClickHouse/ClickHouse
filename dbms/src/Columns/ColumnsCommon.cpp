@@ -321,11 +321,11 @@ namespace detail
 
         return nullptr;
     }
-}
 
-const PaddedPODArray<UInt8> * detail::getIndexesData<UInt8>(const DB::ColumnPtr & indexes);
-const PaddedPODArray<UInt16> * detail::getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
-const PaddedPODArray<UInt32> * detail::getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
-const PaddedPODArray<UInt64> * detail::getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
+    const PaddedPODArray<UInt8> * getIndexesData<UInt8>(const DB::ColumnPtr & indexes);
+    const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
+    const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
+    const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
+}
 
 }
