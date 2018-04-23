@@ -287,10 +287,22 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 {
     if (useDefaultImplementationForColumnsWithDictionary())
     {
+        Block temp_block = removeColumnsWithDictionary(block, args, result);
+        if (temp_block)
+        {
+            ColumnNumbers temp_numbers(args.size());
+            for (size_t i = 0; i < args.size(); ++i)
+                temp_numbers[i] = i + 1;
 
+            executeWithoutColumnsWithDictionary(temp_block, temp_numbers, 0);
+            auto & res_col = block.getByPosition(result);
+            res_col.column = res_col.type->createColumn();
+            res_col.column->insertRangeFrom(*temp_block.getByPosition(0).column, 0, temp_block.rows());
+            return;
+        }
     }
 
-    return executeWithoutColumnsWithDictionary(block, args, result);
+    executeWithoutColumnsWithDictionary(block, args, result);
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const

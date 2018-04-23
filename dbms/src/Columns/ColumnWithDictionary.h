@@ -39,19 +39,7 @@ public:
 
     ColumnPtr convertToFullColumn() const
     {
-        auto & nested = getUnique()->getNestedColumn();
-        auto * indexes = getIndexes();
-        if (auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(indexes))
-            return nested->sample(column_uint8->getData());
-        else if (auto * column_uint16 = typeid_cast<const ColumnUInt16 *>(indexes))
-            return nested->sample(column_uint16->getData());
-        else if (auto * column_uint32 = typeid_cast<const ColumnUInt32 *>(indexes))
-            return nested->sample(column_uint32->getData());
-        else if (auto * column_uint64 = typeid_cast<const ColumnUInt64 *>(indexes))
-            return nested->sample(column_uint64->getData());
-        else
-            throw Exception("Indexes column for ColumnWithDictionary expected to be ColumnUInt, got "
-                            + indexes->getName(), ErrorCodes::LOGICAL_ERROR);
+        return getUnique()->getNestedColumn()->index(indexes, 0);
     }
 
     MutableColumnPtr cloneResized(size_t size) const override
@@ -133,6 +121,11 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         return ColumnWithDictionary::create(column_unique, indexes->permute(perm, limit));
+    }
+
+    ColumnPtr index(const ColumnPtr & indexes_, size_t limit) const override
+    {
+        return ColumnWithDictionary::create(column_unique, indexes->index(indexes_, limit));
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
