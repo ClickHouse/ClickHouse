@@ -313,7 +313,7 @@ INSTANTIATE(Float64)
 namespace detail
 {
     template <typename T>
-    PaddedPODArray<T> * const getIndexesData(const ColumnPtr & indexes)
+    const PaddedPODArray<T> * getIndexesData(const ColumnPtr & indexes)
     {
         auto * column = typeid_cast<const ColumnVector<T> *>(indexes.get());
         if (column)
@@ -323,9 +323,9 @@ namespace detail
     }
 }
 
-PaddedPODArray<UInt8> * const detail::getIndexesData<UInt8>(const DB::ColumnPtr & indexes);
-PaddedPODArray<UInt16> * const detail::getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
-PaddedPODArray<UInt32> * const detail::getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
-PaddedPODArray<UInt64> * const detail::getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
+const PaddedPODArray<UInt8> * detail::getIndexesData<UInt8>(const DB::ColumnPtr & indexes);
+const PaddedPODArray<UInt16> * detail::getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
+const PaddedPODArray<UInt32> * detail::getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
+const PaddedPODArray<UInt64> * detail::getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
 
 }
