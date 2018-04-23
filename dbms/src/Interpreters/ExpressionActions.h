@@ -211,6 +211,8 @@ private:
     void optimize();
     /// Move all arrayJoin as close as possible to the end.
     void optimizeArrayJoin();
+    /// Try to JIT-compile all functions and remove unnecessary materialization of intermediate results.
+    void compileFunctions();
 };
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;

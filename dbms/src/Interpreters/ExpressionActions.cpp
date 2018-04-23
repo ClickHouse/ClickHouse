@@ -1,5 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/Join.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -907,6 +908,7 @@ std::string ExpressionActions::dumpActions() const
 void ExpressionActions::optimize()
 {
     optimizeArrayJoin();
+    compileFunctions();
 }
 
 void ExpressionActions::optimizeArrayJoin()
@@ -988,6 +990,25 @@ void ExpressionActions::optimizeArrayJoin()
             }
         }
     }
+}
+
+void ExpressionActions::compileFunctions()
+{
+//#if USE_EMBEDDED_COMPILER
+    LLVMSharedDataPtr context;
+    for (auto & action : actions)
+    {
+        if (action.type != ExpressionAction::APPLY_FUNCTION)
+            continue;
+        // TODO: if a result of one action is only used once and even that is as an input to another, fuse them
+        if (auto fn = LLVMFunction::create({action}, context))
+        {
+            action.function = fn;
+            action.argument_names = fn->getArgumentNames();
+        }
+    }
+    context.finalize();
+//#endif
 }
 
 

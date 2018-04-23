@@ -82,6 +82,15 @@ list (APPEND dbms_headers
 list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
+if (USE_EMBEDDED_COMPILER)
+    # LLVM 5.0 has a bunch of unused parameters in its header files.
+    # TODO: global-disable this warning
+    set_source_files_properties(src/Interpreters/ExpressionJIT.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter")
+else ()
+    list (REMOVE dbms_sources src/Interpreters/ExpressionJIT.cpp)
+    list (REMOVE dbms_headers src/Interpreters/ExpressionJIT.h)
+endif ()
+
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (ARCH_FREEBSD)
@@ -97,6 +106,12 @@ else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
     set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
     install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
+endif ()
+
+if (USE_EMBEDDED_COMPILER)
+    llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
+    target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
 
