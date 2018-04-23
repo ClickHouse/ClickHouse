@@ -27,6 +27,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 struct LLVMSharedData
 {
     llvm::LLVMContext context;
@@ -96,28 +101,11 @@ void LLVMSharedDataPtr::finalize()
 LLVMPreparedFunction::LLVMPreparedFunction(LLVMSharedDataPtr context, std::shared_ptr<const IFunctionBase> parent)
     : parent(parent), context(context), function(context->lookup(parent->getName()))
 {}
-#if 0
-template <typename It>
-static void unpack(It it, It end)
-{
-    if (it != end)
-        throw std::invalid_argument("unpacked range contains excess elements");
-}
 
-template <typename It, typename H, typename... T>
-static void unpack(It it, It end, H& h, T&... t)
-{
-    if (it == end)
-        throw std::invalid_argument("unpacked range does not contain enough elements");
-    h = *it;
-    unpack(++it, t...);
-}
-#endif
 std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions actions, LLVMSharedDataPtr context)
 {
     Names arg_names;
     DataTypes arg_types;
-    std::unordered_map<std::string, size_t> arg_index;
     std::unordered_set<std::string> seen;
     for (const auto & action : actions)
         seen.insert(action.result_name);
@@ -129,7 +117,6 @@ std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions ac
         {
             if (seen.emplace(names[i]).second)
             {
-                arg_index[names[i]] = arg_names.size();
                 arg_names.push_back(names[i]);
                 arg_types.push_back(types[i]);
             }
@@ -144,29 +131,52 @@ std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions ac
     if (!return_type)
         return nullptr;
 
-    auto & name = actions.back().result_name;
-    auto char_ptr = llvm::PointerType::getUnqual(context->builder.getInt8Ty());
-    auto void_ptr = llvm::PointerType::getUnqual(context->builder.getVoidTy());
-    auto void_ptr_ptr = llvm::PointerType::getUnqual(void_ptr);
-    auto func_type = llvm::FunctionType::get(context->builder.getDoubleTy(), {void_ptr_ptr, char_ptr, void_ptr}, /*isVarArg=*/false);
-    auto func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, name);
-//    llvm::Argument * in_arg, is_const_arg, out_arg;
-//    unpack(func->args().begin(), func->args().end(), in_arg, is_const_arg, out_arg);
-    context->builder.SetInsertPoint(llvm::BasicBlock::Create(context->context, name, func));
-    // TODO: cast each element of void** to corresponding native type
+    llvm::FunctionType * func_type = llvm::FunctionType::get(context->builder.getVoidTy(), {
+        llvm::PointerType::getUnqual(llvm::PointerType::getUnqual(context->builder.getVoidTy())),
+        llvm::PointerType::getUnqual(context->builder.getInt8Ty()),
+        llvm::PointerType::getUnqual(return_type),
+    }, /*isVarArg=*/false);
+    std::unique_ptr<llvm::Function> func{llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name)};
+    context->builder.SetInsertPoint(llvm::BasicBlock::Create(context->context, "entry", func.get()));
+
+    // prologue: cast each input column to appropriate type
+    auto args = func->args().begin();
+    llvm::Value * in_arg = &*args++;
+    llvm::Value * is_const_arg = &*args++;
+    llvm::Value * out_arg = &*args++;
+    std::unordered_map<std::string, llvm::Value *> by_name;
+    for (size_t i = 0; i < native_types.size(); i++)
+    {
+        // not sure if this is the correct ir instruction
+        llvm::Value * ptr = i ? context->builder.CreateConstGEP1_32(in_arg, i) : in_arg;
+        ptr = context->builder.CreateLoad(ptr);
+        ptr = context->builder.CreatePointerCast(ptr, llvm::PointerType::getUnqual(native_types[i]));
+        if (!by_name.emplace(arg_names[i], context->builder.CreateLoad(ptr)).second)
+            throw Exception("duplicate input column name", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    // main loop over the columns
+    (void)is_const_arg;
     for (const auto & action : actions)
     {
-        // TODO: generate code to fill the next entry
-        if (auto * val = action.function->compile(context->builder, {}))
-            context->builder.CreateRet(val);
-        else
+        ValuePlaceholders inputs;
+        inputs.reserve(action.argument_names.size());
+        for (const auto & name : action.argument_names)
+            inputs.push_back(by_name.at(name));
+        llvm::Value * val = action.function->compile(context->builder, inputs);
+        if (!val)
+            // TODO: separate checks from compilation
             return nullptr;
+        if (!by_name.emplace(action.result_name, val).second)
+            throw Exception("duplicate action result name", ErrorCodes::LOGICAL_ERROR);
     }
+    context->builder.CreateStore(by_name.at(actions.back().result_name), out_arg);
+    context->builder.CreateRetVoid();
     // TODO: increment each pointer if column is not constant then loop
+
     func->print(llvm::errs());
-    // context->module->add(func); or something like this, don't know the api
-    // return std::make_shared<LLVMFunction>(std::move(actions), std::move(arg_names), std::move(arg_types), context);
-    return nullptr;
+    context->module->getFunctionList().push_back(func.release());
+    return std::make_shared<LLVMFunction>(std::move(actions), std::move(arg_names), std::move(arg_types), context);
 }
 
 }

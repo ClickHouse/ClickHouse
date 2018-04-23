@@ -1,3 +1,4 @@
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -23,12 +24,20 @@ public:
     static constexpr auto name = "something";
 
 //#if USE_EMBEDDED_COMPILER
-    llvm::Value * compile(llvm::IRBuilderBase & builder, const DataTypes &, const ValuePlaceholders &) const override
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const DataTypes & types, const ValuePlaceholders & values) const override
     {
-        // if (types.size() != 2 || types[0] != DataTypeFloat64 || types[1] != DataTypeFloat64)
-        //     throw Exception("invalid arguments for " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        // return static_cast<llvm::IRBuilder<>>(builder).CreateFAdd(values[0], values[1], "add");
-        return llvm::ConstantFP::get(builder.getDoubleTy(), 12345.0);
+        if (types.size() != 2 || !types[0]->equals(DataTypeFloat64{}) || !types[1]->equals(DataTypeFloat64{}))
+            throw Exception("invalid arguments for " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return static_cast<llvm::IRBuilder<>&>(builder).CreateFAdd(values[0], values[1]);
+    }
+
+    IColumn::Ptr createResultColumn(const DataTypes &, size_t size) const
+    {
+        // actually probably better to put type checks here? then this function could be reused in `executeImpl`.
+        // should pass `NamesAndTypesList` instead of `DataTypes` for better error messages, though.
+        auto column = ColumnVector<Float64>::create();
+        column->getData().resize(size);
+        return column;
     }
 //#endif
 
@@ -36,7 +45,7 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 2; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
