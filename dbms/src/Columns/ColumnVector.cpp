@@ -239,38 +239,6 @@ ColumnPtr ColumnVector<T>::index(const ColumnPtr & indexes, size_t limit) const
 }
 
 template <typename T>
-template <typename Type>
-ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
-{
-    size_t size = indexes.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
-
-    auto res = this->create(limit);
-    typename Self::Container & res_data = res->getData();
-    for (size_t i = 0; i < limit; ++i)
-        res_data[i] = data[indexes[i]];
-
-    return std::move(res);
-}
-
-template <>
-template <typename T>
-ColumnPtr ColumnVector<T>::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const;
-template <>
-template <typename T>
-ColumnPtr ColumnVector<T>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const;
-template <>
-template <typename T>
-ColumnPtr ColumnVector<T>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const;
-template <>
-template <typename T>
-ColumnPtr ColumnVector<T>::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
-
-template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
