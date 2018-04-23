@@ -42,6 +42,7 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsCharset(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
+void registerFunctionsLLVMTest(FunctionFactory &);
 
 
 void registerFunctions()
@@ -79,6 +80,7 @@ void registerFunctions()
     registerFunctionsCharset(factory);
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
+    registerFunctionsLLVMTest(factory);
 }
 
 }
