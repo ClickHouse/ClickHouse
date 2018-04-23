@@ -22,7 +22,7 @@ ClickHouse:
     <!--Необязательный элемент, имя файла с подстановками-->
     <include_from>/etc/metrika.xml</include_from>
 
-    
+
     <dictionary>
         <!-- Конфигурация словаря -->
     </dictionary>
@@ -44,10 +44,3 @@ ClickHouse:
 Вы можете преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../functions/other_functions.md#other_functions-transform)). Эта функциональность не связана с внешними словарями.
 
 </div>
-
-```eval_rst
-.. toctree::
-    :glob:
-   
-    external_dicts_dict*
-```

@@ -338,3 +338,4 @@ It works for JSONEachRow and TSKV formats.
 ## output_format_json_quote_64bit_integers
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats  (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+
