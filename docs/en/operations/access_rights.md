@@ -2,14 +2,14 @@
 
 Users and access rights are set up in the user config. This is usually `users.xml`.
 
-Users are recorded in the 'users' section. Here is a fragment of the `users.xml` file:
+Users are recorded in the `users` section. Here is a fragment of the `users.xml` file:
 
 ```xml
 <!-- Users and ACL. -->
 <users>
     <!-- If the user name is not specified, the 'default' user is used. -->
     <default>
-                <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
 
              If you want to specify the password in plain text (not recommended), place it in the 'password' element.
              Example: <password>qwerty</password>.
@@ -43,21 +43,22 @@ Users are recorded in the 'users' section. Here is a fragment of the `users.xml`
          
          <!-- Quota for the user. -->        
          <quota>default</quota>    
-         </default>    
+    </default>    
          
-         <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->    
-         <web>        
-             <password></password>        
-             <networks incl="networks" />        
-             <profile>web</profile>        
-             <quota>default</quota>        
-             <allow_databases>           
-             <database>test</database>
+    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->    
+    <web>        
+        <password></password>        
+        <networks incl="networks" />        
+        <profile>web</profile>        
+        <quota>default</quota>        
+        <allow_databases>           
+            <database>test</database>
         </allow_databases>
     </web>
+</users>
 ```
 
-You can see a declaration from two users: `default`and`web`. We added the `web` user separately.
+You can see a declaration from two users: `default` and `web`. We added the `web` user separately.
 
 The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn't specify the `user` and `password` (see the section on the [Distributed](../table_engines/distributed.md#table_engines-distributed) engine).
 
