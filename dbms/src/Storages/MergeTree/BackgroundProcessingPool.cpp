@@ -181,7 +181,7 @@ void BackgroundProcessingPool::threadFunction()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            DNSCacheUpdater::incrementNetworkErrors();
+            DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
         }
 
         if (shutdown)
