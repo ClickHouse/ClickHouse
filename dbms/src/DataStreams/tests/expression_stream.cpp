@@ -47,7 +47,7 @@ try
     Names column_names;
     column_names.push_back("number");
 
-    QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
     BlockInputStreamPtr in;
     in = table->read(column_names, {}, context, stage, 8192, 1)[0];

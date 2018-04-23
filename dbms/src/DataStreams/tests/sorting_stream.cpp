@@ -143,7 +143,7 @@ try
     sort_columns.push_back(SortColumnDescription(0, 1, 1));
     sort_columns.push_back(SortColumnDescription(3, 1, 1));
 
-    QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
 
     BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, argc == 2 ? atoi(argv[1]) : 65536, 1)[0];
     in = std::make_shared<PartialSortingBlockInputStream>(in, sort_columns);

@@ -230,10 +230,12 @@ struct ExpressionActionsChain
     struct Step
     {
         ExpressionActionsPtr actions;
+        /// Columns were added to the block before current step in addition to prev step output.
         NameSet additional_input;
+        /// Columns which are required in the result of current step.
         Names required_output;
-        /// Columns which are used only for current steps and not used in next actions (and can be removed from block).
-        /// Example: filter column for where actions.
+        /// True if column from required_output is needed only for current step and not used in next actions
+        /// (and can be removed from block). Example: filter column for where actions.
         /// If not empty, has the same size with required_output; is filled in finalize().
         std::vector<bool *> not_need_in_future_steps;
 
