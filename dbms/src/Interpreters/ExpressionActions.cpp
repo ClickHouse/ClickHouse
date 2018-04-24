@@ -995,17 +995,15 @@ void ExpressionActions::optimizeArrayJoin()
 void ExpressionActions::compileFunctions()
 {
 //#if USE_EMBEDDED_COMPILER
-    LLVMSharedDataPtr context;
+    LLVMContext context;
     for (auto & action : actions)
     {
-        if (action.type != ExpressionAction::APPLY_FUNCTION)
+        if (action.type != ExpressionAction::APPLY_FUNCTION || !context.isCompilable(*action.function))
             continue;
         // TODO: if a result of one action is only used once and even that is as an input to another, fuse them
-        if (auto fn = LLVMFunction::create({action}, context))
-        {
-            action.function = fn;
-            action.argument_names = fn->getArgumentNames();
-        }
+        auto fn = std::make_shared<LLVMFunction>(Actions{action}, context);
+        action.function = fn;
+        action.argument_names = fn->getArgumentNames();
     }
     context.finalize();
 //#endif

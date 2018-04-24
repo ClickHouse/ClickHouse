@@ -94,7 +94,7 @@ public:
     /// Create an empty result column of a given size. Only called on JIT-compilable functions.
     virtual IColumn::Ptr createResultColumn(size_t /*size*/) const
     {
-        throw Exception("createResultColumn is not implemented in a non-jitted function", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Do preparations and return executable.
@@ -107,10 +107,12 @@ public:
         return prepare(block)->execute(block, arguments, result);
     }
 
-    /** Produce LLVM IR code that operates on *scalar* values. Should return null if the function can't be compiled.
-      * JIT-compilation is only supported for native data types, i.e. numbers. This method will never be called
-      * if there is a non-number argument or a non-number result type. Also, for any compilable function default
-      * behavior on NULL values is assumed, i.e. the result is NULL if and only if any argument is NULL.
+    virtual bool isCompilable() const { return false; }
+
+    /** Produce LLVM IR code that operates on *scalar* values. JIT-compilation is only supported for native
+      * data types, i.e. numbers. This method will never be called if there is a non-number argument or
+      * a non-number result type. Also, for any compilable function default behavior on NULL values is assumed,
+      * i.e. the result is NULL if and only if any argument is NULL.
       *
       * NOTE: the builder is actually guaranteed to be exactly `llvm::IRBuilder<>`, so you may safely
       *       downcast it to that type. This method is specified with `IRBuilderBase` because forward-declaring
@@ -119,7 +121,7 @@ public:
       */
     virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const ValuePlaceholders & /*values*/) const
     {
-        return nullptr;
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
@@ -294,6 +296,8 @@ public:
 
     using FunctionBuilderImpl::getReturnType;
 
+    virtual bool isCompilable(const DataTypes & /*types*/) const { return false; }
+
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const final
     {
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
@@ -301,7 +305,7 @@ public:
 
     virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const DataTypes & /*types*/, const ValuePlaceholders & /*values*/) const
     {
-        return nullptr;
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     const DataTypes & getArgumentTypes() const final
@@ -316,7 +320,7 @@ public:
 
     virtual IColumn::Ptr createResultColumn(const DataTypes & /*arguments*/, size_t /*size*/) const
     {
-        throw Exception("createResultColumn is not implemented in a non-jitted function", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 protected:
@@ -360,6 +364,8 @@ public:
     const DataTypePtr & getReturnType() const override { return return_type; }
 
     IColumn::Ptr createResultColumn(size_t size) const override { return function->createResultColumn(arguments, size); }
+
+    bool isCompilable() const override { return function->isCompilable(arguments); }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuePlaceholders & values) const override { return function->compile(builder, arguments, values); }
 

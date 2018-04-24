@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct LLVMSharedData
+struct LLVMContext::Data
 {
     llvm::LLVMContext context;
     std::shared_ptr<llvm::Module> module;
@@ -42,7 +42,7 @@ struct LLVMSharedData
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
 
-    LLVMSharedData()
+    Data()
         : module(std::make_shared<llvm::Module>("jit", context))
         , machine(llvm::EngineBuilder().selectTarget())
         , objectLayer([]() { return std::make_shared<llvm::SectionMemoryManager>(); })
@@ -73,12 +73,6 @@ struct LLVMSharedData
         return nullptr;
     }
 
-    void finalize()
-    {
-        if (module->size())
-            llvm::cantFail(compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()));
-    }
-
     LLVMCompiledFunction * lookup(const std::string& name)
     {
         std::string mangledName;
@@ -89,23 +83,33 @@ struct LLVMSharedData
     }
 };
 
-LLVMSharedDataPtr::LLVMSharedDataPtr()
-    : std::shared_ptr<LLVMSharedData>(std::make_shared<LLVMSharedData>())
+LLVMContext::LLVMContext()
+    : shared(std::make_shared<LLVMContext::Data>())
 {}
 
-void LLVMSharedDataPtr::finalize()
+void LLVMContext::finalize()
 {
-    (*this)->finalize();
+    if (shared->module->size())
+        llvm::cantFail(shared->compileLayer.addModule(shared->module, std::make_shared<llvm::orc::NullResolver>()));
 }
 
-LLVMPreparedFunction::LLVMPreparedFunction(LLVMSharedDataPtr context, std::shared_ptr<const IFunctionBase> parent)
+bool LLVMContext::isCompilable(const IFunctionBase& function) const
+{
+    if (!function.isCompilable() || !shared->toNativeType(function.getReturnType()))
+        return false;
+    for (const auto & type : function.getArgumentTypes())
+        if (!shared->toNativeType(type))
+            return false;
+    return true;
+}
+
+LLVMPreparedFunction::LLVMPreparedFunction(LLVMContext context, std::shared_ptr<const IFunctionBase> parent)
     : parent(parent), context(context), function(context->lookup(parent->getName()))
 {}
 
-std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions actions, LLVMSharedDataPtr context)
+LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext context)
+    : actions(std::move(actions_)), context(context)
 {
-    Names arg_names;
-    DataTypes arg_types;
     std::unordered_set<std::string> seen;
     for (const auto & action : actions)
         seen.insert(action.result_name);
@@ -123,18 +127,10 @@ std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions ac
         }
     }
 
-    std::vector<llvm::Type *> native_types(arg_types.size());
-    for (size_t i = 0; i < arg_types.size(); i++)
-        if (!(native_types[i] = context->toNativeType(arg_types[i])))
-            return nullptr;
-    llvm::Type * return_type = context->toNativeType(actions.back().function->getReturnType());
-    if (!return_type)
-        return nullptr;
-
     llvm::FunctionType * func_type = llvm::FunctionType::get(context->builder.getVoidTy(), {
         llvm::PointerType::getUnqual(llvm::PointerType::getUnqual(context->builder.getVoidTy())),
         llvm::PointerType::getUnqual(context->builder.getInt8Ty()),
-        llvm::PointerType::getUnqual(return_type),
+        llvm::PointerType::getUnqual(context->toNativeType(actions.back().function->getReturnType())),
     }, /*isVarArg=*/false);
     std::unique_ptr<llvm::Function> func{llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name)};
     context->builder.SetInsertPoint(llvm::BasicBlock::Create(context->context, "entry", func.get()));
@@ -145,12 +141,12 @@ std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions ac
     llvm::Value * is_const_arg = &*args++;
     llvm::Value * out_arg = &*args++;
     std::unordered_map<std::string, llvm::Value *> by_name;
-    for (size_t i = 0; i < native_types.size(); i++)
+    for (size_t i = 0; i < arg_types.size(); i++)
     {
         // not sure if this is the correct ir instruction
         llvm::Value * ptr = i ? context->builder.CreateConstGEP1_32(in_arg, i) : in_arg;
         ptr = context->builder.CreateLoad(ptr);
-        ptr = context->builder.CreatePointerCast(ptr, llvm::PointerType::getUnqual(native_types[i]));
+        ptr = context->builder.CreatePointerCast(ptr, llvm::PointerType::getUnqual(context->toNativeType(arg_types[i])));
         if (!by_name.emplace(arg_names[i], context->builder.CreateLoad(ptr)).second)
             throw Exception("duplicate input column name", ErrorCodes::LOGICAL_ERROR);
     }
@@ -163,11 +159,7 @@ std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions ac
         inputs.reserve(action.argument_names.size());
         for (const auto & name : action.argument_names)
             inputs.push_back(by_name.at(name));
-        llvm::Value * val = action.function->compile(context->builder, inputs);
-        if (!val)
-            // TODO: separate checks from compilation
-            return nullptr;
-        if (!by_name.emplace(action.result_name, val).second)
+        if (!by_name.emplace(action.result_name, action.function->compile(context->builder, inputs)).second)
             throw Exception("duplicate action result name", ErrorCodes::LOGICAL_ERROR);
     }
     context->builder.CreateStore(by_name.at(actions.back().result_name), out_arg);
@@ -176,7 +168,6 @@ std::shared_ptr<LLVMFunction> LLVMFunction::create(ExpressionActions::Actions ac
 
     func->print(llvm::errs());
     context->module->getFunctionList().push_back(func.release());
-    return std::make_shared<LLVMFunction>(std::move(actions), std::move(arg_names), std::move(arg_types), context);
 }
 
 }
