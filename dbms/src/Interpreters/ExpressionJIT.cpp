@@ -89,8 +89,10 @@ LLVMContext::LLVMContext()
 
 void LLVMContext::finalize()
 {
+    shared->module->print(llvm::errs(), nullptr, false, true);
     if (shared->module->size())
         llvm::cantFail(shared->compileLayer.addModule(shared->module, std::make_shared<llvm::orc::NullResolver>()));
+    shared->module->print(llvm::errs(), nullptr, false, true);
 }
 
 bool LLVMContext::isCompilable(const IFunctionBase& function) const
@@ -131,43 +133,72 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         llvm::PointerType::getUnqual(llvm::PointerType::getUnqual(context->builder.getVoidTy())),
         llvm::PointerType::getUnqual(context->builder.getInt8Ty()),
         llvm::PointerType::getUnqual(context->toNativeType(actions.back().function->getReturnType())),
+        context->builder.getIntNTy(sizeof(size_t) * 8),
     }, /*isVarArg=*/false);
-    std::unique_ptr<llvm::Function> func{llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name)};
-    context->builder.SetInsertPoint(llvm::BasicBlock::Create(context->context, "entry", func.get()));
-
-    // prologue: cast each input column to appropriate type
+    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name, context->module.get());
     auto args = func->args().begin();
-    llvm::Value * in_arg = &*args++;
-    llvm::Value * is_const_arg = &*args++;
-    llvm::Value * out_arg = &*args++;
-    std::unordered_map<std::string, llvm::Value *> by_name;
+    llvm::Value * inputs = &*args++; // void** - tuple of columns, each a contiguous data block
+    llvm::Value * consts = &*args++; // char* - for each column, 0 if it is full, 1 if it points to a single constant value
+    llvm::Value * output = &*args++; // void* - space for the result
+    llvm::Value * counter = &*args++; // size_t - number of entries to read from non-const values and write to output
+
+    auto * entry = llvm::BasicBlock::Create(context->context, "entry", func);
+    context->builder.SetInsertPoint(entry);
+
+    std::vector<llvm::Value *> inputs_v(arg_types.size());
+    std::vector<llvm::Value *> deltas_v(arg_types.size());
     for (size_t i = 0; i < arg_types.size(); i++)
     {
-        // not sure if this is the correct ir instruction
-        llvm::Value * ptr = i ? context->builder.CreateConstGEP1_32(in_arg, i) : in_arg;
-        ptr = context->builder.CreateLoad(ptr);
-        ptr = context->builder.CreatePointerCast(ptr, llvm::PointerType::getUnqual(context->toNativeType(arg_types[i])));
-        if (!by_name.emplace(arg_names[i], context->builder.CreateLoad(ptr)).second)
-            throw Exception("duplicate input column name", ErrorCodes::LOGICAL_ERROR);
+        if (i != 0)
+        {
+            inputs = context->builder.CreateConstGEP1_32(inputs, 1);
+            consts = context->builder.CreateConstGEP1_32(consts, 1);
+        }
+        auto * type = llvm::PointerType::getUnqual(context->toNativeType(arg_types[i]));
+        auto * step = context->builder.CreateICmpEQ(context->builder.CreateLoad(consts), llvm::ConstantInt::get(context->builder.getInt8Ty(), 0));
+        inputs_v[i] = context->builder.CreatePointerCast(context->builder.CreateLoad(inputs), type);
+        deltas_v[i] = context->builder.CreateZExt(step, context->builder.getInt32Ty());
     }
 
-    // main loop over the columns
-    (void)is_const_arg;
+    auto * loop = llvm::BasicBlock::Create(context->context, "loop", func);
+    context->builder.CreateBr(loop); // assume nonzero initial value in `counter`
+    context->builder.SetInsertPoint(loop);
+
+    std::unordered_map<std::string, llvm::Value *> by_name;
+    std::vector<llvm::PHINode *> phi(inputs_v.size());
+    for (size_t i = 0; i < inputs_v.size(); i++)
+    {
+        phi[i] = context->builder.CreatePHI(inputs_v[i]->getType(), 2);
+        phi[i]->addIncoming(inputs_v[i], entry);
+    }
+    auto * output_phi = context->builder.CreatePHI(output->getType(), 2);
+    auto * counter_phi = context->builder.CreatePHI(counter->getType(), 2);
+    output_phi->addIncoming(output, entry);
+    counter_phi->addIncoming(counter, entry);
+
+    for (size_t i = 0; i < phi.size(); i++)
+        if (!by_name.emplace(arg_names[i], context->builder.CreateLoad(phi[i])).second)
+            throw Exception("duplicate input column name", ErrorCodes::LOGICAL_ERROR);
     for (const auto & action : actions)
     {
-        ValuePlaceholders inputs;
-        inputs.reserve(action.argument_names.size());
+        ValuePlaceholders action_input;
+        action_input.reserve(action.argument_names.size());
         for (const auto & name : action.argument_names)
-            inputs.push_back(by_name.at(name));
-        if (!by_name.emplace(action.result_name, action.function->compile(context->builder, inputs)).second)
+            action_input.push_back(by_name.at(name));
+        if (!by_name.emplace(action.result_name, action.function->compile(context->builder, action_input)).second)
             throw Exception("duplicate action result name", ErrorCodes::LOGICAL_ERROR);
     }
-    context->builder.CreateStore(by_name.at(actions.back().result_name), out_arg);
-    context->builder.CreateRetVoid();
-    // TODO: increment each pointer if column is not constant then loop
+    context->builder.CreateStore(by_name.at(actions.back().result_name), output_phi);
 
-    func->print(llvm::errs());
-    context->module->getFunctionList().push_back(func.release());
+    for (size_t i = 0; i < phi.size(); i++)
+        phi[i]->addIncoming(context->builder.CreateGEP(phi[i], deltas_v[i]), loop);
+    output_phi->addIncoming(context->builder.CreateConstGEP1_32(output_phi, 1), loop);
+    counter_phi->addIncoming(context->builder.CreateSub(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), loop);
+
+    auto * end = llvm::BasicBlock::Create(context->context, "end", func);
+    context->builder.CreateCondBr(context->builder.CreateICmpNE(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), loop, end);
+    context->builder.SetInsertPoint(end);
+    context->builder.CreateRetVoid();
 }
 
 }

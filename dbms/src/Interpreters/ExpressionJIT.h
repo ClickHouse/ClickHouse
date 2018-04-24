@@ -38,9 +38,6 @@ public:
 
     String getName() const override { return parent->getName(); }
 
-    // TODO: more efficient implementation for constants
-    bool useDefaultImplementationForConstants() const override { return true; }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t block_size = 0;
