@@ -21,6 +21,7 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #include <stdexcept>
 
@@ -52,7 +53,6 @@ struct LLVMContext::Data
     {
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
-        // TODO: throw in some optimization & verification layers
     }
 
     llvm::Type * toNativeType(const DataTypePtr & type)
@@ -89,9 +89,16 @@ LLVMContext::LLVMContext()
 
 void LLVMContext::finalize()
 {
+    if (!shared->module->size())
+        return;
     shared->module->print(llvm::errs(), nullptr, false, true);
-    if (shared->module->size())
-        llvm::cantFail(shared->compileLayer.addModule(shared->module, std::make_shared<llvm::orc::NullResolver>()));
+    llvm::PassManagerBuilder builder;
+    llvm::legacy::FunctionPassManager fpm(shared->module.get());
+    builder.OptLevel = 2;
+    builder.populateFunctionPassManager(fpm);
+    for (auto & function : *shared->module)
+        fpm.run(function);
+    llvm::cantFail(shared->compileLayer.addModule(shared->module, std::make_shared<llvm::orc::NullResolver>()));
     shared->module->print(llvm::errs(), nullptr, false, true);
 }
 
