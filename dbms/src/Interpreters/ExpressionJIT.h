@@ -1,11 +1,18 @@
 #pragma once
 
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class LLVMContext
 {
@@ -54,11 +61,38 @@ public:
             is_const[i] = column->isColumnConst();
             block_size = column->size();
         }
-        auto col_res = parent->createResultColumn(block_size);
-        if (!col_res->isColumnConst() && !col_res->isDummy() && block_size)
+        auto col_res = createColumn(parent->getReturnType(), block_size);
+        if (block_size)
             function(columns.data(), is_const.data(), const_cast<char *>(col_res->getDataAt(0).data), block_size);
         block.getByPosition(result).column = std::move(col_res);
     };
+
+private:
+    static IColumn::Ptr createColumn(const DataTypePtr & type, size_t size)
+    {
+        if (type->equals(DataTypeInt8{}))
+            return ColumnVector<Int8>::create(size);
+        if (type->equals(DataTypeInt16{}))
+            return ColumnVector<Int16>::create(size);
+        if (type->equals(DataTypeInt32{}))
+            return ColumnVector<Int32>::create(size);
+        if (type->equals(DataTypeInt64{}))
+            return ColumnVector<Int64>::create(size);
+        if (type->equals(DataTypeUInt8{}))
+            return ColumnVector<UInt8>::create(size);
+        if (type->equals(DataTypeUInt16{}))
+            return ColumnVector<UInt16>::create(size);
+        if (type->equals(DataTypeUInt32{}))
+            return ColumnVector<UInt32>::create(size);
+        if (type->equals(DataTypeUInt64{}))
+            return ColumnVector<UInt64>::create(size);
+        if (type->equals(DataTypeFloat32{}))
+            return ColumnVector<Float32>::create(size);
+        if (type->equals(DataTypeFloat64{}))
+            return ColumnVector<Float64>::create(size);
+        throw Exception("LLVMPreparedFunction::createColumn received an unsupported data type; check "
+                        "that the list is consistent with LLVMContext::Data::toNativeType", ErrorCodes::LOGICAL_ERROR);
+    }
 };
 
 class LLVMFunction : public std::enable_shared_from_this<LLVMFunction>, public IFunctionBase
@@ -80,8 +114,6 @@ public:
     const DataTypePtr & getReturnType() const override { return actions.back().function->getReturnType(); }
 
     PreparedFunctionPtr prepare(const Block &) const override { return std::make_shared<LLVMPreparedFunction>(context, shared_from_this()); }
-
-    IColumn::Ptr createResultColumn(size_t size) const override { return actions.back().function->createResultColumn(size); }
 
     bool isDeterministic() override
     {
