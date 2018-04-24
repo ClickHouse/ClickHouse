@@ -1,4 +1,4 @@
-option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" FALSE)
+option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" 1)
 
 if (ENABLE_EMBEDDED_COMPILER)
     # Based on source code of YT.
@@ -102,6 +102,6 @@ if (ENABLE_EMBEDDED_COMPILER)
     endif()
 
     if (LLVM_FOUND AND LLVM_INCLUDE_DIRS AND LLVM_LIBRARY_DIRS)
-        set(USE_EMBEDDED_COMPILER TRUE)
+        set (USE_EMBEDDED_COMPILER 1)
     endif()
 endif()

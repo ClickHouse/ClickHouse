@@ -53,8 +53,13 @@ ifndef DH_VERBOSE
     CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
 endif
 
+# Useful for bulding on low memory systems
+ifndef DISABLE_PARALLEL
+    DH_FLAGS += --parallel
+endif
+
 %:
-	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILDDIR)
+	dh $@ $(DH_FLAGS) --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
