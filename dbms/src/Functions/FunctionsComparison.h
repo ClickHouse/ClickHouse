@@ -758,7 +758,7 @@ private:
 
     void executeDateOrDateTimeOrEnumWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num)
+        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, size_t input_rows_count)
     {
         /// This is no longer very special case - comparing dates, datetimes, and enumerations with a string constant.
         const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
@@ -794,7 +794,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for Date: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(block.rows(), UInt64(date));
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, UInt64(date));
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
@@ -808,7 +808,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for DateTime: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(block.rows(), UInt64(date_time));
+            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(input_rows_count, UInt64(date_time));
             const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date_time,
@@ -822,7 +822,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for UUID: " + string_value.toString());
 
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(block.rows(), UInt128(uuid));
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, UInt128(uuid));
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
@@ -831,29 +831,30 @@ private:
 
         else if (is_enum8)
             executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
-                number_type, left_is_num);
+                number_type, left_is_num, input_rows_count);
         else if (is_enum16)
             executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
-                number_type, left_is_num);
+                number_type, left_is_num, input_rows_count);
     }
 
     /// Comparison between DataTypeEnum<T> and string constant containing the name of an enum element
     template <typename EnumType>
     void executeEnumWithConstString(
         Block & block, const size_t result, const IColumn * column_number, const ColumnConst * column_string,
-        const IDataType * type_untyped, const bool left_is_num)
+        const IDataType * type_untyped, const bool left_is_num, size_t input_rows_count)
     {
         const auto type = static_cast<const EnumType *>(type_untyped);
 
         const Field x = nearestFieldType(type->getValue(column_string->getValue<String>()));
-        const auto enum_col = type->createColumnConst(block.rows(), x);
+        const auto enum_col = type->createColumnConst(input_rows_count, x);
 
         executeNumLeftType<typename EnumType::FieldType>(block, result,
             left_is_num ? column_number : enum_col.get(),
             left_is_num ? enum_col.get() : column_number);
     }
 
-    void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
+    void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
+                          size_t input_rows_count)
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -902,13 +903,16 @@ private:
             y[i].column = y_columns[i];
         }
 
-        executeTupleImpl(block, result, x, y, tuple_size);
+        executeTupleImpl(block, result, x, y, tuple_size, input_rows_count);
     }
 
-    void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size);
+    void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                              const ColumnsWithTypeAndName & y, size_t tuple_size,
+                              size_t input_rows_count);
 
     template <typename ComparisonFunction, typename ConvolutionFunction>
-    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y,
+                                      size_t tuple_size, size_t input_rows_count)
     {
         ComparisonFunction func_compare;
         ConvolutionFunction func_convolution;
@@ -921,7 +925,7 @@ private:
 
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2);
+            func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
         }
 
         /// Logical convolution.
@@ -931,12 +935,13 @@ private:
         for (size_t i = 0; i < tuple_size; ++i)
             convolution_args[i] = i * 3 + 2;
 
-        func_convolution.execute(tmp_block, convolution_args, tuple_size * 3);
+        func_convolution.execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
         block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
     }
 
     template <typename HeadComparisonFunction, typename TailComparisonFunction>
-    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                         const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count)
     {
         HeadComparisonFunction func_compare_head;
         TailComparisonFunction func_compare_tail;
@@ -956,14 +961,14 @@ private:
 
             if (i + 1 != tuple_size)
             {
-                func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2);
+                func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
                 tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-                func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3);
+                func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
-                func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2);
+                func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
         }
 
         /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
@@ -971,9 +976,9 @@ private:
         while (i > 0)
         {
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_and.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 3 },  tmp_block.columns() - 1);
+            func_and.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_or.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 2 },  tmp_block.columns() - 1);
+            func_or.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
             --i;
         }
 
@@ -1094,7 +1099,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
@@ -1122,7 +1127,7 @@ public:
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
-            executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
+            executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
             ;
         else if (col_with_type_and_name_left.type->equals(*col_with_type_and_name_right.type))
@@ -1131,7 +1136,7 @@ public:
             executeDateOrDateTimeOrEnumWithConstString(
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
-                left_is_num);
+                left_is_num, input_rows_count);
     }
 };
 
