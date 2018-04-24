@@ -7,16 +7,21 @@
 namespace DB
 {
 
-struct LLVMSharedData;
-
-struct LLVMSharedDataPtr : std::shared_ptr<LLVMSharedData>
+class LLVMContext
 {
-    // just like `IFunctionBase::compile` accepting `llvm::IRBuilderBase`, this weird wrapper exists to allow
-    // other code not to depend on LLVM headers.
-    LLVMSharedDataPtr();
+    struct Data;
+    std::shared_ptr<Data> shared;
 
-    // also, this is not a destructor because it's probably not `noexcept`.
+public:
+    LLVMContext();
+
     void finalize();
+
+    bool isCompilable(const IFunctionBase& function) const;
+
+    Data * operator->() const {
+        return shared.get();
+    }
 };
 
 // second array is of `char` because `LLVMPreparedFunction::executeImpl` can't use a `std::vector<bool>` for this
@@ -25,11 +30,11 @@ using LLVMCompiledFunction = void(const void ** inputs, const char * is_constant
 class LLVMPreparedFunction : public PreparedFunctionImpl
 {
     std::shared_ptr<const IFunctionBase> parent;
-    LLVMSharedDataPtr context;
+    LLVMContext context;
     LLVMCompiledFunction * function;
 
 public:
-    LLVMPreparedFunction(LLVMSharedDataPtr context, std::shared_ptr<const IFunctionBase> parent);
+    LLVMPreparedFunction(LLVMContext context, std::shared_ptr<const IFunctionBase> parent);
 
     String getName() const override { return parent->getName(); }
 
@@ -64,14 +69,10 @@ class LLVMFunction : public std::enable_shared_from_this<LLVMFunction>, public I
     ExpressionActions::Actions actions; // all of them must have type APPLY_FUNCTION
     Names arg_names;
     DataTypes arg_types;
-    LLVMSharedDataPtr context;
+    LLVMContext context;
 
 public:
-    LLVMFunction(ExpressionActions::Actions actions, Names arg_names, DataTypes arg_types, LLVMSharedDataPtr context)
-        : actions(std::move(actions)), arg_names(std::move(arg_names)), arg_types(std::move(arg_types)), context(context)
-    {}
-
-    static std::shared_ptr<LLVMFunction> create(ExpressionActions::Actions actions, LLVMSharedDataPtr context);
+    LLVMFunction(ExpressionActions::Actions actions, LLVMContext context);
 
     String getName() const override { return actions.back().result_name; }
 
