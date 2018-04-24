@@ -1029,7 +1029,7 @@ void ExpressionActions::compileFunctions(const Names & output_columns)
                 // unlike `REMOVE_COLUMN`, we know the exact set of columns that will survive a `PROJECT`,
                 // so we can simply poison them to prevent any inlining chain from crossing this barrier.
                 // note that this would generate suboptimal action sequences if, for example, in the example above
-                // `REMOVE_COLUMN x ` was replaced with `PROJECT {f(x)}` -- it is more optimal to remove the `PROJECT`
+                // `REMOVE_COLUMN x` was replaced with `PROJECT {g(x)}` -- it is more optimal to remove the `PROJECT`
                 // and inline `g`. however, that sequence would at least still execute correctly.
                 for (const auto & proj : actions[i].projection)
                     current_dependents[proj.first].emplace();

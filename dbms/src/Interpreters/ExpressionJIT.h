@@ -56,7 +56,7 @@ public:
             if (column->size())
                 // assume the column is a `ColumnVector<T>`. there's probably no good way to actually
                 // check that at runtime, so let's just hope it's always true for columns containing types
-                // for which `LLVMSharedData::toNativeType` returns non-null.
+                // for which `LLVMContext::Data::toNativeType` returns non-null.
                 columns[i] = column->getDataAt(0).data;
             is_const[i] = column->isColumnConst();
             block_size = column->size();
