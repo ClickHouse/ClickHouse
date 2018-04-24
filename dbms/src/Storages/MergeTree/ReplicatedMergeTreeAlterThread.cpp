@@ -189,12 +189,21 @@ void ReplicatedMergeTreeAlterThread::run()
             /// It's important that parts and merge_blocker are destroyed before the wait.
         }
     }
+    catch (const zkutil::KeeperException & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            return;
+
+        force_recheck_parts = true;
+        task_handle->scheduleAfter(ALTER_ERROR_SLEEP_MS);
+    }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         force_recheck_parts = true;
-
         task_handle->scheduleAfter(ALTER_ERROR_SLEEP_MS);
     }
 }

@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/PKCondition.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -43,7 +43,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
             [] (const SortColumnDescription & col) { return col.column_name; })},
         table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
-        block_with_constants{PKCondition::getBlockWithConstants(query_info.query, context, data.getColumns().getAllPhysical())},
+        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, context, data.getColumns().getAllPhysical())},
         prepared_sets(query_info.sets),
         log{log}
 {
@@ -321,7 +321,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const IAST * const ast) const
 {
     if (const auto func = typeid_cast<const ASTFunction *>(ast))
     {
-        if (!PKCondition::atom_map.count(func->name))
+        if (!KeyCondition::atom_map.count(func->name))
             return false;
 
         const auto & args = func->arguments->children;

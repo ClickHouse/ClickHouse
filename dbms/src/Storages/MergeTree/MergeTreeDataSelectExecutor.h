@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class PKCondition;
+class KeyCondition;
 
 
 /** Executes SELECT queries on data from the merge tree.
@@ -60,7 +60,7 @@ private:
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
-        const PKCondition & key_condition,
+        const KeyCondition & key_condition,
         const Settings & settings) const;
 
     /// Create the expression "Sign == 1".
@@ -71,7 +71,7 @@ private:
 
     MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPart::Index & index,
-        const PKCondition & key_condition,
+        const KeyCondition & key_condition,
         const Settings & settings) const;
 };
 

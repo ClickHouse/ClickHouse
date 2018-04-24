@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ZooKeeper.h"
+#include "KeeperException.h"
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
@@ -114,6 +115,13 @@ private:
                 task_handle->schedule();
 
             success = true;
+        }
+        catch (const KeeperException & e)
+        {
+            DB::tryLogCurrentException("LeaderElection");
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                return;
         }
         catch (...)
         {
