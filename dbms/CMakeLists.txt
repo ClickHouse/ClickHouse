@@ -87,8 +87,8 @@ if (USE_EMBEDDED_COMPILER)
     # TODO: global-disable no-unused-parameter
     set_source_files_properties(src/Interpreters/ExpressionJIT.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-non-virtual-dtor")
 else ()
-    list (REMOVE dbms_sources src/Interpreters/ExpressionJIT.cpp)
-    list (REMOVE dbms_headers src/Interpreters/ExpressionJIT.h)
+    list (REMOVE_ITEM dbms_sources src/Interpreters/ExpressionJIT.cpp)
+    list (REMOVE_ITEM dbms_headers src/Interpreters/ExpressionJIT.h)
 endif ()
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
