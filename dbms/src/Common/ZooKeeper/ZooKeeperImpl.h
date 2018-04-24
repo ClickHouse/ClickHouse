@@ -596,7 +596,7 @@ private:
     std::mutex operations_mutex;
 
     using WatchCallbacks = std::vector<WatchCallback>;
-    using Watches = std::map<String /* path */, WatchCallbacks>;
+    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Watches watches;
     std::mutex watches_mutex;

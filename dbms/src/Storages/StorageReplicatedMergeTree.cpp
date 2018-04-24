@@ -211,7 +211,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
     : context(context_),
-    current_zookeeper(context.getZooKeeper()), database_name(database_name_),
+    database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
     replica_name(context.getMacros()->expand(replica_name_)),
@@ -235,6 +235,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
+
+    if (context.hasZooKeeper())
+        current_zookeeper = context.getZooKeeper();
 
     merge_sel_state.reset(new ReplicatedMergeTreeMergeSelectingThread(this));
     merge_selecting_task_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree::mergeSelectingThread", [this] { mergeSelectingThread(); });
@@ -1616,6 +1619,15 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
         pullLogsToQueue(queue_updating_task_handle);
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            return;
+
+        queue_updating_task_handle->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
     catch (...)
     {
