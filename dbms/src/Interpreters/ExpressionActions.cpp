@@ -11,6 +11,7 @@
 
 #include <set>
 #include <optional>
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -880,7 +881,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         std::cerr << action.toString() << "\n";
     std::cerr << "\n";*/
 
-    optimize();
+    optimize(output_columns);
     checkLimits(sample_block);
 }
 
@@ -905,10 +906,10 @@ std::string ExpressionActions::dumpActions() const
     return ss.str();
 }
 
-void ExpressionActions::optimize()
+void ExpressionActions::optimize(const Names & output_columns)
 {
     optimizeArrayJoin();
-    compileFunctions();
+    compileFunctions(output_columns);
 }
 
 void ExpressionActions::optimizeArrayJoin()
@@ -992,19 +993,92 @@ void ExpressionActions::optimizeArrayJoin()
     }
 }
 
-void ExpressionActions::compileFunctions()
+void ExpressionActions::compileFunctions(const Names & output_columns)
 {
 //#if USE_EMBEDDED_COMPILER
     LLVMContext context;
-    for (auto & action : actions)
+    std::vector<bool> redundant(actions.size());
+    // an empty optional is a poisoned value prohibiting the column's producer from being removed
+    // (which it could be, if it was inlined into every dependent function).
+    std::unordered_map<std::string, std::unordered_set<std::optional<size_t>>> current_dependents;
+    for (const auto & name : output_columns)
+        current_dependents[name].emplace();
+    // a snapshot of each compilable function's dependents at the time of its execution.
+    std::vector<std::unordered_set<std::optional<size_t>>> dependents(actions.size());
+    for (size_t i = actions.size(); i--;)
     {
-        if (action.type != ExpressionAction::APPLY_FUNCTION || !context.isCompilable(*action.function))
-            continue;
-        // TODO: if a result of one action is only used once and even that is as an input to another, fuse them
-        auto fn = std::make_shared<LLVMFunction>(Actions{action}, context);
-        action.function = fn;
-        action.argument_names = fn->getArgumentNames();
+        switch (actions[i].type)
+        {
+            case ExpressionAction::ADD_COLUMN:
+                break;
+
+            case ExpressionAction::REMOVE_COLUMN:
+                current_dependents.erase(actions[i].source_name);
+                // temporarily discard all `REMOVE_COLUMN`s because inlining will change dependency sets.
+                // for example, if there's a column `x` and we want to compile `f(g(x))`, said `x` might get removed
+                // between `g(x)` and `f(g(x))`. it's easier to reintroduce removals later than move them around.
+                redundant[i] = true;
+                break;
+
+            case ExpressionAction::COPY_COLUMN:
+                current_dependents[actions[i].source_name].emplace();
+                break;
+
+            case ExpressionAction::PROJECT:
+                current_dependents.clear();
+                // unlike `REMOVE_COLUMN`, we know the exact set of columns that will survive a `PROJECT`,
+                // so we can simply poison them to prevent any inlining chain from crossing this barrier.
+                // note that this would generate suboptimal action sequences if, for example, in the example above
+                // `REMOVE_COLUMN x ` was replaced with `PROJECT {f(x)}` -- it is more optimal to remove the `PROJECT`
+                // and inline `g`. however, that sequence would at least still execute correctly.
+                for (const auto & proj : actions[i].projection)
+                    current_dependents[proj.first].emplace();
+                break;
+
+            case ExpressionAction::ARRAY_JOIN:
+            case ExpressionAction::JOIN:
+                // assume these actions can read everything; all columns not removed before this point are poisoned.
+                for (size_t j = i; j--;)
+                    current_dependents[actions[j].result_name].emplace();
+                break;
+
+            case ExpressionAction::APPLY_FUNCTION:
+            {
+                dependents[i] = current_dependents[actions[i].result_name];
+                const bool compilable = context.isCompilable(*actions[i].function);
+                for (const auto & name : actions[i].argument_names)
+                {
+                    if (compilable)
+                        current_dependents[name].emplace(i);
+                    else
+                        current_dependents[name].emplace();
+                }
+                break;
+            }
+        }
     }
+
+    std::vector<Actions> fused(actions.size());
+    for (size_t i = 0; i < actions.size(); i++)
+    {
+        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !context.isCompilable(*actions[i].function))
+            continue;
+        if (dependents[i].find({}) != dependents[i].end())
+        {
+            fused[i].push_back(actions[i]);
+            auto fn = std::make_shared<LLVMFunction>(std::move(fused[i]), context);
+            actions[i].function = fn;
+            actions[i].argument_names = fn->getArgumentNames();
+            continue;
+        }
+        // TODO: determine whether it's profitable to inline the function if there's more than one dependent.
+        for (const auto & dep : dependents[i])
+            fused[*dep].push_back(actions[i]);
+        redundant[i] = true;
+    }
+    size_t i = 0;
+    actions.erase(std::remove_if(actions.begin(), actions.end(), [&](const auto&) { return redundant[i++]; }), actions.end());
+    // TODO: insert `REMOVE_COLUMN`s according to new dependency sets
     context.finalize();
 //#endif
 }

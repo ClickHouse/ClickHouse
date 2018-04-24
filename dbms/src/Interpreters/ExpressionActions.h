@@ -208,11 +208,11 @@ private:
     void addImpl(ExpressionAction action, Names & new_names);
 
     /// Try to improve something without changing the lists of input and output columns.
-    void optimize();
+    void optimize(const Names & output_columns);
     /// Move all arrayJoin as close as possible to the end.
     void optimizeArrayJoin();
     /// Try to JIT-compile all functions and remove unnecessary materialization of intermediate results.
-    void compileFunctions();
+    void compileFunctions(const Names & output_columns);
 };
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
