@@ -36,6 +36,13 @@ void ReplicatedMergeTreeCleanupThread::run()
         {
             iterate();
         }
+        catch (const zkutil::KeeperException & e)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                break;
+        }
         catch (...)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);

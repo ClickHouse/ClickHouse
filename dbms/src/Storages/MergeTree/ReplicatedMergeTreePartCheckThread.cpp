@@ -381,6 +381,15 @@ void ReplicatedMergeTreePartCheckThread::run()
                 }
             }
         }
+        catch (const zkutil::KeeperException & e)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                break;
+
+            wakeup_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
+        }
         catch (...)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);

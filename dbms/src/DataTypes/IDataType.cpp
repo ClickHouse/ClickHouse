@@ -70,8 +70,13 @@ size_t IDataType::getSizeOfValueInMemory() const
 
 String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
 {
+    /// Sizes of arrays (elements of Nested type) are shared (all reside in single file).
     String nested_table_name = Nested::extractTableName(column_name);
-    bool is_sizes_of_nested_type = !path.empty() && path.back().type == IDataType::Substream::ArraySizes
+
+    bool is_sizes_of_nested_type =
+        path.size() == 1    /// Nested structure may have arrays as nested elements (so effectively we have multidimentional arrays).
+                            /// Sizes of arrays are shared only at first level.
+        && path[0].type == IDataType::Substream::ArraySizes
         && nested_table_name != column_name;
 
     size_t array_level = 0;
