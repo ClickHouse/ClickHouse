@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
 #include <Core/Block.h>
@@ -90,12 +89,6 @@ public:
 
     virtual const DataTypes & getArgumentTypes() const = 0;
     virtual const DataTypePtr & getReturnType() const = 0;
-
-    /// Create an empty result column of a given size. Only called on JIT-compilable functions.
-    virtual IColumn::Ptr createResultColumn(size_t /*size*/) const
-    {
-        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     /// Do preparations and return executable.
     /// sample_block should contain data types of arguments and values of constants, if relevant.
@@ -318,11 +311,6 @@ public:
         throw Exception("getReturnType is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual IColumn::Ptr createResultColumn(const DataTypes & /*arguments*/, size_t /*size*/) const
-    {
-        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*return_type*/) const final
     {
@@ -362,8 +350,6 @@ public:
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getReturnType() const override { return return_type; }
-
-    IColumn::Ptr createResultColumn(size_t size) const override { return function->createResultColumn(arguments, size); }
 
     bool isCompilable() const override { return function->isCompilable(arguments); }
 

@@ -1,4 +1,3 @@
-#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -35,31 +34,6 @@ public:
         if (types[0]->equals(DataTypeFloat32{}) || types[0]->equals(DataTypeFloat64{}))
             return static_cast<llvm::IRBuilder<>&>(builder).CreateFAdd(values[0], values[1]);
         return static_cast<llvm::IRBuilder<>&>(builder).CreateAdd(values[0], values[1]);
-    }
-
-    IColumn::Ptr createResultColumn(const DataTypes & types, size_t size) const
-    {
-        if (types[0]->equals(DataTypeInt8{}))
-            return ColumnVector<Int8>::create(size);
-        if (types[0]->equals(DataTypeInt16{}))
-            return ColumnVector<Int16>::create(size);
-        if (types[0]->equals(DataTypeInt32{}))
-            return ColumnVector<Int32>::create(size);
-        if (types[0]->equals(DataTypeInt64{}))
-            return ColumnVector<Int64>::create(size);
-        if (types[0]->equals(DataTypeUInt8{}))
-            return ColumnVector<UInt8>::create(size);
-        if (types[0]->equals(DataTypeUInt16{}))
-            return ColumnVector<UInt16>::create(size);
-        if (types[0]->equals(DataTypeUInt32{}))
-            return ColumnVector<UInt32>::create(size);
-        if (types[0]->equals(DataTypeUInt64{}))
-            return ColumnVector<UInt64>::create(size);
-        if (types[0]->equals(DataTypeFloat32{}))
-            return ColumnVector<Float32>::create(size);
-        if (types[0]->equals(DataTypeFloat64{}))
-            return ColumnVector<Float64>::create(size);
-        throw Exception("invalid input type", ErrorCodes::LOGICAL_ERROR);
     }
 //#endif
 
