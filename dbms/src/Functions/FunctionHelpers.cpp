@@ -44,7 +44,6 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 static Block createBlockWithNestedColumnsImpl(const Block & block, const std::unordered_set<size_t> & args)
 {
     Block res;
-    size_t rows = block.rows();
     size_t columns = block.columns();
 
     for (size_t i = 0; i < columns; ++i)
@@ -70,7 +69,7 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
                 const auto & nested_col = static_cast<const ColumnNullable &>(
                     static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumnPtr();
 
-                res.insert({ ColumnConst::create(nested_col, rows), nested_type, col.name});
+                res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
