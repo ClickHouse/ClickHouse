@@ -84,8 +84,8 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 if (USE_EMBEDDED_COMPILER)
     # LLVM 5.0 has a bunch of unused parameters in its header files.
-    # TODO: global-disable this warning
-    set_source_files_properties(src/Interpreters/ExpressionJIT.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter")
+    # TODO: global-disable no-unused-parameter
+    set_source_files_properties(src/Interpreters/ExpressionJIT.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-non-virtual-dtor")
 else ()
     list (REMOVE dbms_sources src/Interpreters/ExpressionJIT.cpp)
     list (REMOVE dbms_headers src/Interpreters/ExpressionJIT.h)
