@@ -76,7 +76,7 @@ private:
     bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result);
 };
 
-using ValuePlaceholders = std::vector<llvm::Value *>;
+using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
 
 /// Function with known arguments and return type.
 class IFunctionBase

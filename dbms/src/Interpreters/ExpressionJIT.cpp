@@ -170,7 +170,7 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     context->builder.CreateBr(loop); // assume nonzero initial value in `counter`
     context->builder.SetInsertPoint(loop);
 
-    std::unordered_map<std::string, llvm::Value *> by_name;
+    std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
     std::vector<llvm::PHINode *> phi(inputs_v.size());
     for (size_t i = 0; i < inputs_v.size(); i++)
     {
@@ -183,7 +183,7 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     counter_phi->addIncoming(counter, entry);
 
     for (size_t i = 0; i < phi.size(); i++)
-        if (!by_name.emplace(arg_names[i], context->builder.CreateLoad(phi[i])).second)
+        if (!by_name.emplace(arg_names[i], [&, i]() { return context->builder.CreateLoad(phi[i]); }).second)
             throw Exception("duplicate input column name", ErrorCodes::LOGICAL_ERROR);
     for (const auto & action : actions)
     {
@@ -191,15 +191,20 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         action_input.reserve(action.argument_names.size());
         for (const auto & name : action.argument_names)
             action_input.push_back(by_name.at(name));
-        if (!by_name.emplace(action.result_name, action.function->compile(context->builder, action_input)).second)
+        auto generator = [&action, &context, action_input{std::move(action_input)}]()
+        {
+            return action.function->compile(context->builder, action_input);
+        };
+        if (!by_name.emplace(action.result_name, std::move(generator)).second)
             throw Exception("duplicate action result name", ErrorCodes::LOGICAL_ERROR);
     }
-    context->builder.CreateStore(by_name.at(actions.back().result_name), output_phi);
+    context->builder.CreateStore(by_name.at(actions.back().result_name)(), output_phi);
 
+    auto * cur_block = context->builder.GetInsertBlock();
     for (size_t i = 0; i < phi.size(); i++)
-        phi[i]->addIncoming(context->builder.CreateGEP(phi[i], deltas_v[i]), loop);
-    output_phi->addIncoming(context->builder.CreateConstGEP1_32(output_phi, 1), loop);
-    counter_phi->addIncoming(context->builder.CreateSub(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), loop);
+        phi[i]->addIncoming(context->builder.CreateGEP(phi[i], deltas_v[i]), cur_block);
+    output_phi->addIncoming(context->builder.CreateConstGEP1_32(output_phi, 1), cur_block);
+    counter_phi->addIncoming(context->builder.CreateSub(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), cur_block);
 
     auto * end = llvm::BasicBlock::Create(context->context, "end", func);
     context->builder.CreateCondBr(context->builder.CreateICmpNE(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), loop, end);
