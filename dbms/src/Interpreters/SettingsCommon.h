@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
+    extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
 }
 
 
@@ -709,9 +710,10 @@ struct SettingString
 struct SettingChar
 {
 private:
-    void checkStringIsACharacter(const String & x) const {
+    void checkStringIsACharacter(const String & x) const
+    {
         if (x.size() != 1)
-            throw Exception(std::string("A setting's value string has to be an exactly one character long"));
+            throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
     }
 public:
     char value;
@@ -741,8 +743,7 @@ public:
 
     void set(const Field & x)
     {
-        String s = safeGet<const String &>(x);
-        checkStringIsACharacter(s);
+        const String &s = safeGet<const String &>(x);
         set(s);
     }
 
