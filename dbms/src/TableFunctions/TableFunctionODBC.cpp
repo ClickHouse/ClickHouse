@@ -39,9 +39,9 @@ DataTypePtr getDataType(SQLSMALLINT type)
     switch (type)
     {
         case SQL_INTEGER:
-            return factory.get("UInt32");
+            return factory.get("Int32");
         case SQL_SMALLINT:
-            return factory.get("UInt16");
+            return factory.get("Int16");
         case SQL_FLOAT:
             return factory.get("Float32");
         case SQL_REAL:
