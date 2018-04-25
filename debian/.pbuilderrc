@@ -55,13 +55,6 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
 # List of Ubuntu suites. Update these when needed.
 UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
-# Mirrors to use. Update these to your preferred mirror.
-DEBIAN_MIRROR=${DEBIAN_MIRROR:=deb.debian.org}
-UBUNTU_MIRROR=${UBUNTU_MIRROR:=archive.ubuntu.com}
-
-#DEBIAN_MIRROR="mirror.yandex.ru"
-#UBUNTU_MIRROR="mirror.yandex.ru"
-
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
 : ${DIST:="$HOST_DIST"}
@@ -104,7 +97,7 @@ ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
 if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
     # Debian configuration
     OSNAME=debian
-    MIRRORSITE="http://$DEBIAN_MIRROR/$OSNAME/"
+    MIRRORSITE=${MIRRORSITE="http://deb.debian.org/$OSNAME/"}
     COMPONENTS="main contrib non-free"
     if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
         OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
@@ -123,7 +116,7 @@ if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
 elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     # Ubuntu configuration
     OSNAME=ubuntu
-    MIRRORSITE="http://$UBUNTU_MIRROR/$OSNAME/"
+    MIRRORSITE=${MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
     COMPONENTS="main restricted universe multiverse"
 
     OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-updates main restricted universe multiverse"
