@@ -1006,18 +1006,11 @@ void ExpressionActions::compileFunctions([[maybe_unused]] const NameSet & final_
     {
         switch (actions[i].type)
         {
-            case ExpressionAction::ADD_COLUMN:
-                break;
-
             case ExpressionAction::REMOVE_COLUMN:
                 current_dependents.erase(actions[i].source_name);
                 /// poison every other column used after this point so that inlining chains do not cross it.
                 for (auto & dep : current_dependents)
                     dep.second.emplace();
-                break;
-
-            case ExpressionAction::COPY_COLUMN:
-                current_dependents[actions[i].source_name].emplace();
                 break;
 
             case ExpressionAction::PROJECT:
@@ -1026,12 +1019,16 @@ void ExpressionActions::compileFunctions([[maybe_unused]] const NameSet & final_
                     current_dependents[proj.first].emplace();
                 break;
 
+            case ExpressionAction::ADD_COLUMN:
+            case ExpressionAction::COPY_COLUMN:
             case ExpressionAction::ARRAY_JOIN:
             case ExpressionAction::JOIN:
-                /// assume these actions can read everything; all columns not removed before this point are poisoned.
-                for (size_t j = i; j--;)
-                    current_dependents[actions[j].result_name].emplace();
+            {
+                Names columns = actions[i].getNeededColumns();
+                for (const auto & column : columns)
+                    current_dependents[column].emplace();
                 break;
+            }
 
             case ExpressionAction::APPLY_FUNCTION:
             {
