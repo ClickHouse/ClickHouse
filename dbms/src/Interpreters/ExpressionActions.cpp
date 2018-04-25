@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
@@ -993,9 +994,9 @@ void ExpressionActions::optimizeArrayJoin()
     }
 }
 
-void ExpressionActions::compileFunctions(const Names & output_columns)
+void ExpressionActions::compileFunctions([[maybe_unused]] const Names & output_columns)
 {
-//#if USE_EMBEDDED_COMPILER
+#if USE_EMBEDDED_COMPILER
     LLVMContext context;
     std::vector<bool> redundant(actions.size());
     // an empty optional is a poisoned value prohibiting the column's producer from being removed
@@ -1080,7 +1081,7 @@ void ExpressionActions::compileFunctions(const Names & output_columns)
     actions.erase(std::remove_if(actions.begin(), actions.end(), [&](const auto&) { return redundant[i++]; }), actions.end());
     // TODO: insert `REMOVE_COLUMN`s according to new dependency sets
     context.finalize();
-//#endif
+#endif
 }
 
 

@@ -1,12 +1,13 @@
+#include <Common/config.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
-//#if USE_EMBEDDED_COMPILER
+#if USE_EMBEDDED_COMPILER
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Type.h>
-//#endif
+#endif
 
 
 namespace DB
@@ -23,7 +24,7 @@ class FunctionSomething : public IFunction
 public:
     static constexpr auto name = "something";
 
-//#if USE_EMBEDDED_COMPILER
+#if USE_EMBEDDED_COMPILER
     bool isCompilable(const DataTypes & types) const override
     {
         return types.size() == 2 && types[0]->equals(*types[1]);
@@ -35,7 +36,7 @@ public:
             return static_cast<llvm::IRBuilder<>&>(builder).CreateFAdd(values[0](), values[1]());
         return static_cast<llvm::IRBuilder<>&>(builder).CreateAdd(values[0](), values[1]());
     }
-//#endif
+#endif
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionSomething>(); }
 
