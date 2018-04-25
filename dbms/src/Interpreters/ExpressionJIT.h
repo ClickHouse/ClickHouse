@@ -24,7 +24,7 @@ public:
     }
 };
 
-// second array is of `char` because `LLVMPreparedFunction::executeImpl` can't use a `std::vector<bool>` for this
+/// second array is of `char` because `LLVMPreparedFunction::executeImpl` can't use a `std::vector<bool>` for this
 using LLVMCompiledFunction = void(const void ** inputs, const char * is_constant, void * output, size_t block_size);
 
 class LLVMPreparedFunction : public PreparedFunctionImpl
@@ -43,7 +43,8 @@ public:
 
 class LLVMFunction : public std::enable_shared_from_this<LLVMFunction>, public IFunctionBase
 {
-    ExpressionActions::Actions actions; // all of them must have type APPLY_FUNCTION
+    /// all actions must have type APPLY_FUNCTION
+    ExpressionActions::Actions actions;
     Names arg_names;
     DataTypes arg_types;
     LLVMContext context;
@@ -77,11 +78,13 @@ public:
         return true;
     }
 
-    // TODO: these methods require reconstructing the call tree:
-    // bool isSuitableForConstantFolding() const;
-    // bool isInjective(const Block & sample_block);
-    // bool hasInformationAboutMonotonicity() const;
-    // Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const;
+    /// TODO: these methods require reconstructing the call tree:
+    /*
+    bool isSuitableForConstantFolding() const;
+    bool isInjective(const Block & sample_block);
+    bool hasInformationAboutMonotonicity() const;
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const;
+    */
 };
 
 }

@@ -68,7 +68,7 @@ struct LLVMContext::Data
 
     llvm::Type * toNativeType(const DataTypePtr & type)
     {
-        // LLVM doesn't have unsigned types, it has unsigned instructions.
+        /// LLVM doesn't have unsigned types, it has unsigned instructions.
         if (typeIsA<DataTypeInt8>(type) || typeIsA<DataTypeUInt8>(type))
             return builder.getInt8Ty();
         if (typeIsA<DataTypeInt16>(type) || typeIsA<DataTypeUInt16>(type))
@@ -89,7 +89,7 @@ struct LLVMContext::Data
         std::string mangledName;
         llvm::raw_string_ostream mangledNameStream(mangledName);
         llvm::Mangler::getNameWithPrefix(mangledNameStream, name, layout);
-        // why is `findSymbol` not const? we may never know.
+        /// why is `findSymbol` not const? we may never know.
         return reinterpret_cast<LLVMCompiledFunction *>(compileLayer.findSymbol(mangledNameStream.str(), false).getAddress().get());
     }
 };
@@ -143,14 +143,14 @@ void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & argu
     {
         auto * column = block.getByPosition(arguments[i]).column.get();
         if (column->size())
-            // assume the column is a `ColumnVector<T>`. there's probably no good way to actually
-            // check that at runtime, so let's just hope it's always true for columns containing types
-            // for which `LLVMContext::Data::toNativeType` returns non-null.
+            /// assume the column is a `ColumnVector<T>`. there's probably no good way to actually
+            /// check that at runtime, so let's just hope it's always true for columns containing types
+            /// for which `LLVMContext::Data::toNativeType` returns non-null.
             columns[i] = column->getDataAt(0).data;
         is_const[i] = column->isColumnConst();
         block_size = column->size();
     }
-    // assuming that the function has default behavior on NULL, the column will be wrapped by `PreparedFunctionImpl::execute`.
+    /// assuming that the function has default behavior on NULL, the column will be wrapped by `PreparedFunctionImpl::execute`.
     auto col_res = createNonNullableColumn(parent->getReturnType())->cloneResized(block_size);
     if (block_size)
         function(columns.data(), is_const.data(), const_cast<char *>(col_res->getDataAt(0).data), block_size);
@@ -185,10 +185,10 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     }, /*isVarArg=*/false);
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name, context->module.get());
     auto args = func->args().begin();
-    llvm::Value * inputs = &*args++; // void** - tuple of columns, each a contiguous data block
-    llvm::Value * consts = &*args++; // char* - for each column, 0 if it is full, 1 if it points to a single constant value
-    llvm::Value * output = &*args++; // void* - space for the result
-    llvm::Value * counter = &*args++; // size_t - number of entries to read from non-const values and write to output
+    llvm::Value * inputs = &*args++; /// void** - tuple of columns, each a contiguous data block
+    llvm::Value * consts = &*args++; /// char* - for each column, 0 if it is full, 1 if it points to a single constant value
+    llvm::Value * output = &*args++; /// void* - space for the result
+    llvm::Value * counter = &*args++; /// size_t - number of entries to read from non-const values and write to output
 
     auto * entry = llvm::BasicBlock::Create(context->context, "entry", func);
     context->builder.SetInsertPoint(entry);
@@ -208,8 +208,9 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         deltas_v[i] = context->builder.CreateZExt(step, context->builder.getInt32Ty());
     }
 
+    /// assume nonzero initial value in `counter`
     auto * loop = llvm::BasicBlock::Create(context->context, "loop", func);
-    context->builder.CreateBr(loop); // assume nonzero initial value in `counter`
+    context->builder.CreateBr(loop);
     context->builder.SetInsertPoint(loop);
 
     std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
