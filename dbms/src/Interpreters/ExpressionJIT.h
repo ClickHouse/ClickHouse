@@ -78,13 +78,31 @@ public:
         return true;
     }
 
-    /// TODO: these methods require reconstructing the call tree:
-    /*
-    bool isSuitableForConstantFolding() const;
-    bool isInjective(const Block & sample_block);
-    bool hasInformationAboutMonotonicity() const;
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const;
-    */
+    bool isSuitableForConstantFolding() const override
+    {
+        for (const auto & action : actions)
+            if (!action.function->isSuitableForConstantFolding())
+                return false;
+        return true;
+    }
+
+    bool isInjective(const Block & sample_block) override
+    {
+        for (const auto & action : actions)
+            if (!action.function->isInjective(sample_block))
+                return false;
+        return true;
+    }
+
+    bool hasInformationAboutMonotonicity() const override
+    {
+        for (const auto & action : actions)
+            if (!action.function->hasInformationAboutMonotonicity())
+                return false;
+        return true;
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override;
 };
 
 }
