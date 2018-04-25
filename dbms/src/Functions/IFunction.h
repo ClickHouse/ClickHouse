@@ -291,6 +291,11 @@ public:
 
     virtual bool isCompilable(const DataTypes & /*types*/) const { return false; }
 
+    bool isCompilable() const final
+    {
+        throw Exception("isCompilable without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const final
     {
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
@@ -299,6 +304,11 @@ public:
     virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const DataTypes & /*types*/, const ValuePlaceholders & /*values*/) const
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const ValuePlaceholders & /*values*/) const final
+    {
+        throw Exception("compile without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     const DataTypes & getArgumentTypes() const final
