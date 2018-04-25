@@ -155,15 +155,12 @@ case "$DIST" in
 esac
 
 case "$DIST" in
-    "bionic" )
+    "bionic" | "experimental" | "unstable" | "testing")
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
-        export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=1 -DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
+        export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;
-    "artful" | "experimental" | "unstable" | "testing" )
-        if [ "$ARCH" != arm64 ]; then
-            EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
-            export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
-        fi
+    "artful" )
+        EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         ;;
 esac
 
@@ -175,7 +172,7 @@ case "$ARCH" in
 esac
 
 # will test symbols
-EXTRAPACKAGES+=" gdb "
+#EXTRAPACKAGES+=" gdb "
 
 [[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX "
 
