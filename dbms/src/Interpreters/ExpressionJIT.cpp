@@ -40,9 +40,7 @@ namespace ErrorCodes
 template <typename T>
 static bool typeIsA(const DataTypePtr & type)
 {
-    if (auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return typeIsA<T>(nullable->getNestedType());
-    return typeid_cast<const T *>(type.get());;
+    return typeid_cast<const T *>(removeNullable(type).get());;
 }
 
 struct LLVMContext::Data
@@ -128,33 +126,28 @@ LLVMPreparedFunction::LLVMPreparedFunction(LLVMContext context, std::shared_ptr<
     : parent(parent), context(context), function(context->lookup(parent->getName()))
 {}
 
-static MutableColumnPtr createNonNullableColumn(const DataTypePtr & type)
-{
-    if (auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return createNonNullableColumn(nullable->getNestedType());
-    return type->createColumn();
-}
-
 void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    size_t block_size = 0;
-    std::vector<const void *> columns(arguments.size());
-    std::vector<char> is_const(arguments.size());
-    for (size_t i = 0; i < arguments.size(); i++)
-    {
-        auto * column = block.getByPosition(arguments[i]).column.get();
-        if (column->size())
-            /// assume the column is a `ColumnVector<T>`. there's probably no good way to actually
-            /// check that at runtime, so let's just hope it's always true for columns containing types
-            /// for which `LLVMContext::Data::toNativeType` returns non-null.
-            columns[i] = column->getDataAt(0).data;
-        is_const[i] = column->isColumnConst();
-        block_size = column->size();
-    }
     /// assuming that the function has default behavior on NULL, the column will be wrapped by `PreparedFunctionImpl::execute`.
-    auto col_res = createNonNullableColumn(parent->getReturnType())->cloneResized(block_size);
+    size_t block_size = block.rows();
+    auto col_res = removeNullable(parent->getReturnType())->createColumn()->cloneResized(block_size);
     if (block_size)
-        function(columns.data(), is_const.data(), const_cast<char *>(col_res->getDataAt(0).data), block_size);
+    {
+        std::vector<const void *> columns(arguments.size());
+        std::vector<char> is_const(arguments.size());
+        for (size_t i = 0; i < arguments.size(); i++)
+        {
+            auto * column = block.getByPosition(arguments[i]).column.get();
+            if (!column)
+                throw Exception("column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
+            if (!column->isFixedAndContiguous())
+                throw Exception("column type " + column->getName() + " is not a contiguous array; its data type "
+                                "should've had no native equivalent in LLVMContext::Data::toNativeType", ErrorCodes::LOGICAL_ERROR);
+            columns[i] = column->getRawData().data;
+            is_const[i] = column->isColumnConst();
+        }
+        function(columns.data(), is_const.data(), const_cast<char *>(col_res->getRawData().data), block_size);
+    }
     block.getByPosition(result).column = std::move(col_res);
 };
 
