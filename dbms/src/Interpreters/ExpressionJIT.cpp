@@ -131,8 +131,8 @@ LLVMPreparedFunction::LLVMPreparedFunction(LLVMContext context, std::shared_ptr<
 
 void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    /// assuming that the function has default behavior on NULL, the column will be wrapped by `PreparedFunctionImpl::execute`.
     size_t block_size = block.rows();
+    /// assuming that the function has default behavior on NULL, the column will be wrapped by `PreparedFunctionImpl::execute`.
     auto col_res = removeNullable(parent->getReturnType())->createColumn()->cloneResized(block_size);
     if (block_size)
     {
@@ -209,7 +209,6 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     context->builder.CreateBr(loop);
     context->builder.SetInsertPoint(loop);
 
-    std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
     std::vector<llvm::PHINode *> phi(inputs_v.size());
     for (size_t i = 0; i < inputs_v.size(); i++)
     {
@@ -221,6 +220,7 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     output_phi->addIncoming(output, entry);
     counter_phi->addIncoming(counter, entry);
 
+    std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
     for (size_t i = 0; i < phi.size(); i++)
         if (!by_name.emplace(arg_names[i], [&, i]() { return context->builder.CreateLoad(phi[i]); }).second)
             throw Exception("duplicate input column name", ErrorCodes::LOGICAL_ERROR);
@@ -270,7 +270,7 @@ IFunctionBase::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataTyp
     Field left_ = left;
     Field right_ = right;
     Monotonicity result(true, true, true);
-    /// monotonicity is only defined for unary functions, to the chain must describe a sequence of nested calls
+    /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
     for (size_t i = 0; i < actions.size(); i++)
     {
         Monotonicity m = actions[i].function->getMonotonicityForRange(type, left_, right_);
