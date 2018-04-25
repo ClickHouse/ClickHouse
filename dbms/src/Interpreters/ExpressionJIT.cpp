@@ -163,8 +163,6 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
 {
     std::unordered_set<std::string> seen;
     for (const auto & action : actions)
-        seen.insert(action.result_name);
-    for (const auto & action : actions)
     {
         const auto & names = action.argument_names;
         const auto & types = action.function->getArgumentTypes();
@@ -176,6 +174,7 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
                 arg_types.push_back(types[i]);
             }
         }
+        seen.insert(action.result_name);
     }
 
     llvm::FunctionType * func_type = llvm::FunctionType::get(context->builder.getVoidTy(), {
@@ -292,7 +291,6 @@ IFunctionBase::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataTyp
             if (!m.is_positive)
                 std::swap(left_, right_);
             type_ = actions[i].function->getReturnType().get();
-            return Monotonicity{};
         }
     }
     return result;
