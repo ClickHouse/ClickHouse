@@ -1,9 +1,12 @@
+#include <Interpreters/ExpressionJIT.h>
+
+#if USE_EMBEDDED_COMPILER
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/ExpressionJIT.h>
 
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -307,3 +310,5 @@ struct LLVMTargetInitializer
 }
 
 static LLVMTargetInitializer llvmInitializer;
+
+#endif
