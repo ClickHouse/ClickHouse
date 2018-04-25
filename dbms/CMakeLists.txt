@@ -82,15 +82,6 @@ list (APPEND dbms_headers
 list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
-if (USE_EMBEDDED_COMPILER)
-    # LLVM 5.0 has a bunch of unused parameters in its header files.
-    # TODO: global-disable no-unused-parameter
-    set_source_files_properties(src/Interpreters/ExpressionJIT.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-non-virtual-dtor")
-else ()
-    list (REMOVE_ITEM dbms_sources src/Interpreters/ExpressionJIT.cpp)
-    list (REMOVE_ITEM dbms_headers src/Interpreters/ExpressionJIT.h)
-endif ()
-
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (ARCH_FREEBSD)
@@ -112,6 +103,9 @@ if (USE_EMBEDDED_COMPILER)
     llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+    # LLVM 5.0 has a bunch of unused parameters in its header files.
+    # TODO: global-disable no-unused-parameter
+    set_source_files_properties(src/Interpreters/ExpressionJIT.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-non-virtual-dtor")
 endif ()
 
 

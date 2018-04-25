@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_EMBEDDED_COMPILER
+
 #include <Functions/IFunction.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -106,3 +110,5 @@ public:
 };
 
 }
+
+#endif
