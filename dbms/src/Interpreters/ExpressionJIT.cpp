@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -253,6 +254,48 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     context->builder.CreateCondBr(context->builder.CreateICmpNE(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), loop, end);
     context->builder.SetInsertPoint(end);
     context->builder.CreateRetVoid();
+}
+
+static Field evaluateFunction(IFunctionBase & function, const IDataType & type, const Field & arg)
+{
+    const auto & arg_types = function.getArgumentTypes();
+    if (arg_types.size() != 1 || !arg_types[0]->equals(type))
+        return {};
+    auto column = arg_types[0]->createColumn();
+    column->insert(arg);
+    Block block = {{ ColumnConst::create(std::move(column), 1), arg_types[0], "_arg" }, { nullptr, function.getReturnType(), "_result" }};
+    function.execute(block, {0}, 1);
+    auto result = block.getByPosition(1).column;
+    return result && result->size() == 1 ? (*result)[0] : Field();
+}
+
+IFunctionBase::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
+{
+    const IDataType * type_ = &type;
+    Field left_ = left;
+    Field right_ = right;
+    Monotonicity result(true, true, true);
+    /// monotonicity is only defined for unary functions, to the chain must describe a sequence of nested calls
+    for (size_t i = 0; i < actions.size(); i++)
+    {
+        Monotonicity m = actions[i].function->getMonotonicityForRange(type, left_, right_);
+        if (!m.is_monotonic)
+            return m;
+        result.is_positive ^= !m.is_positive;
+        result.is_always_monotonic &= m.is_always_monotonic;
+        if (i + 1 < actions.size())
+        {
+            if (left_ != Field())
+                left_ = evaluateFunction(*actions[i].function, *type_, left_);
+            if (right_ != Field())
+                right_ = evaluateFunction(*actions[i].function, *type_, right_);
+            if (!m.is_positive)
+                std::swap(left_, right_);
+            type_ = actions[i].function->getReturnType().get();
+            return Monotonicity{};
+        }
+    }
+    return result;
 }
 
 }
