@@ -8,12 +8,7 @@ add_library(clickhouse-compiler-lib
 
 target_compile_options(clickhouse-compiler-lib PRIVATE -fno-rtti -fno-exceptions -g0)
 
-llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
-
-# We link statically with zlib, and LLVM (sometimes) tries to bring its own dependency.
-list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
-# Wrong library in freebsd:
-list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-l/usr/lib/libexecinfo.so")
+llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
 
 message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
@@ -51,8 +46,3 @@ libtinfo.a
 
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
-
-if (MAKE_STATIC_LIBRARIES)
-    # fix strange static error: undefined reference to 'std::error_category::~error_category()'
-    target_link_libraries(clickhouse-compiler-lib PUBLIC stdc++)
-endif ()
