@@ -33,6 +33,8 @@
 #include <Common/NetException.h>
 #include <ext/scope_guard.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -501,6 +503,7 @@ void TCPHandler::receiveHello()
     }
 
     readStringBinary(client_name, *in);
+DUMP(client_name);
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
     readVarUInt(client_revision, *in);
