@@ -54,7 +54,7 @@ class LLVMFunction : public std::enable_shared_from_this<LLVMFunction>, public I
     LLVMContext context;
 
 public:
-    LLVMFunction(ExpressionActions::Actions actions, LLVMContext context);
+    LLVMFunction(ExpressionActions::Actions actions, LLVMContext context, const Block & sample_block);
 
     String getName() const override { return actions.back().result_name; }
 

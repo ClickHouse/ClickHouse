@@ -706,6 +706,10 @@ void ExpressionActions::finalize(const Names & output_columns)
         final_columns.insert(name);
     }
 
+    /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
+    /// because inlining may change dependency sets.
+    compileFunctions(output_columns);
+
     /// Which columns are needed to perform actions from the current to the last.
     NameSet needed_columns = final_columns;
     /// Which columns nobody will touch from the current action to the last.
@@ -822,9 +826,6 @@ void ExpressionActions::finalize(const Names & output_columns)
             input_columns.erase(it0);
         }
     }
-
-    /// This has to be done before inserting REMOVE_COLUMNs because inlining may change dependency sets.
-    compileFunctions(final_columns);
 
 /*    std::cerr << "\n";
     for (const auto & action : actions)
@@ -991,14 +992,14 @@ void ExpressionActions::optimizeArrayJoin()
     }
 }
 
-void ExpressionActions::compileFunctions([[maybe_unused]] const NameSet & final_columns)
+void ExpressionActions::compileFunctions([[maybe_unused]] const Names & output_columns)
 {
 #if USE_EMBEDDED_COMPILER
     LLVMContext context;
     /// an empty optional is a poisoned value prohibiting the column's producer from being removed
     /// (which it could be, if it was inlined into every dependent function).
     std::unordered_map<std::string, std::unordered_set<std::optional<size_t>>> current_dependents;
-    for (const auto & name : final_columns)
+    for (const auto & name : output_columns)
         current_dependents[name].emplace();
     /// a snapshot of each compilable function's dependents at the time of its execution.
     std::vector<std::unordered_set<std::optional<size_t>>> dependents(actions.size());
@@ -1047,7 +1048,6 @@ void ExpressionActions::compileFunctions([[maybe_unused]] const NameSet & final_
     }
 
     std::vector<Actions> fused(actions.size());
-    std::vector<bool> redundant(actions.size());
     for (size_t i = 0; i < actions.size(); i++)
     {
         if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !context.isCompilable(*actions[i].function))
@@ -1055,7 +1055,7 @@ void ExpressionActions::compileFunctions([[maybe_unused]] const NameSet & final_
         if (dependents[i].find({}) != dependents[i].end())
         {
             fused[i].push_back(actions[i]);
-            auto fn = std::make_shared<LLVMFunction>(std::move(fused[i]), context);
+            auto fn = std::make_shared<LLVMFunction>(std::move(fused[i]), context, sample_block);
             actions[i].function = fn;
             actions[i].argument_names = fn->getArgumentNames();
             continue;
@@ -1063,11 +1063,7 @@ void ExpressionActions::compileFunctions([[maybe_unused]] const NameSet & final_
         /// TODO: determine whether it's profitable to inline the function if there's more than one dependent.
         for (const auto & dep : dependents[i])
             fused[*dep].push_back(actions[i]);
-        redundant[i] = true;
-        sample_block.erase(actions[i].result_name);
     }
-    size_t i = 0;
-    actions.erase(std::remove_if(actions.begin(), actions.end(), [&](const auto&) { return redundant[i++]; }), actions.end());
     context.finalize();
 #endif
 }

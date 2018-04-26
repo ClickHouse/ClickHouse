@@ -154,9 +154,27 @@ void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & argu
     block.getByPosition(result).column = std::move(col_res);
 };
 
-LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext context)
+LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext context, const Block & sample_block)
     : actions(std::move(actions_)), context(context)
 {
+    std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
+    for (const auto & c : sample_block)
+    {
+        auto generator = [&]() -> llvm::Value *
+        {
+            auto * type = context->toNativeType(c.type);
+            if (typeIsA<DataTypeFloat32>(c.type))
+                return llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float32> *>(c.column.get())->getElement(0));
+            if (typeIsA<DataTypeFloat64>(c.type))
+                return llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float64> *>(c.column.get())->getElement(0));
+            if (type && type->isIntegerTy())
+                return llvm::ConstantInt::get(type, c.column->getUInt(0));
+            return nullptr;
+        };
+        if (c.column && generator() && !by_name.emplace(c.name, std::move(generator)).second)
+            throw Exception("duplicate constant column " + c.name, ErrorCodes::LOGICAL_ERROR);
+    }
+
     std::unordered_set<std::string> seen;
     for (const auto & action : actions)
     {
@@ -164,7 +182,7 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         const auto & types = action.function->getArgumentTypes();
         for (size_t i = 0; i < names.size(); i++)
         {
-            if (seen.emplace(names[i]).second)
+            if (seen.emplace(names[i]).second && by_name.find(names[i]) == by_name.end())
             {
                 arg_names.push_back(names[i]);
                 arg_types.push_back(types[i]);
@@ -220,10 +238,9 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     output_phi->addIncoming(output, entry);
     counter_phi->addIncoming(counter, entry);
 
-    std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
     for (size_t i = 0; i < phi.size(); i++)
         if (!by_name.emplace(arg_names[i], [&, i]() { return context->builder.CreateLoad(phi[i]); }).second)
-            throw Exception("duplicate input column name", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("duplicate input column name " + arg_names[i], ErrorCodes::LOGICAL_ERROR);
     for (const auto & action : actions)
     {
         ValuePlaceholders action_input;
@@ -235,7 +252,7 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
             return action.function->compile(context->builder, action_input);
         };
         if (!by_name.emplace(action.result_name, std::move(generator)).second)
-            throw Exception("duplicate action result name", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("duplicate action result name " + action.result_name, ErrorCodes::LOGICAL_ERROR);
     }
     context->builder.CreateStore(by_name.at(actions.back().result_name)(), output_phi);
 
