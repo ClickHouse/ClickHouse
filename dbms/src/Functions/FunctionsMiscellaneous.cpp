@@ -813,7 +813,7 @@ public:
 
 /** The `indexHint` function takes any number of any arguments and always returns one.
   *
-  * This function has a special meaning (see ExpressionAnalyzer, PKCondition)
+  * This function has a special meaning (see ExpressionAnalyzer, KeyCondition)
   * - the expressions inside it are not evaluated;
   * - but when analyzing the index (selecting ranges for reading), this function is treated the same way,
   *   as if instead of using it the expression itself would be.

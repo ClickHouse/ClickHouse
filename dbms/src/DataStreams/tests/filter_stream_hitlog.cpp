@@ -128,7 +128,7 @@ int main(int, char **)
         QueryProcessingStage::Enum stage;
 
         BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
-        in = std::make_shared<FilterBlockInputStream>(in, expression, 4);
+        in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(URL, 'http://mail.yandex.ru/neo2/#inbox')");
         //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
         WriteBufferFromOStream ob(std::cout);

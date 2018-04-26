@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake3 | cmake,
-               ninja-build,
+               ninja-build [amd64 i386],
                gcc-7, g++-7,
                libc6-dev,
                libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
@@ -16,7 +16,7 @@ Build-Depends: debhelper (>= 9),
 Standards-Version: 3.9.8
 
 Package: clickhouse-client
-Architecture: any
+Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
@@ -38,7 +38,7 @@ Description: Common files for clickhouse
  This package provides common files for both clickhouse server and client
 
 Package: clickhouse-server
-Architecture: any
+Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser
 Replaces: clickhouse-server-common, clickhouse-server-base
 Provides: clickhouse-server-common
@@ -60,7 +60,7 @@ Description: debugging symbols for clickhouse-common-static
 
 Package: clickhouse-test
 Priority: optional
-Architecture: any
+Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, python-requests, curl, perl, sudo, openssl
 Description: Clickhouse tests
 
@@ -72,10 +72,10 @@ Package: clickhouse-server-base
 Architecture: any
 Priority: optional
 Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
-Description: DEPRECATED PACKAGE: Server binary for clickhouse
+Description: DEPRECATED PACKAGE (use clickhouse-common-static): Server binary for clickhouse
 
 Package: clickhouse-server-common
-Architecture: any
+Architecture: all
 Priority: optional
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
-Description: DEPRECATED PACKAGE: Common configuration files for clickhouse-server-base package
+Description: DEPRECATED PACKAGE (use clickhouse-server): Common configuration files for clickhouse-server-base package

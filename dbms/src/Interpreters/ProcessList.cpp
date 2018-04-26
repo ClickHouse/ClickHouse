@@ -10,6 +10,8 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 
+#include <chrono>
+
 
 namespace DB
 {
@@ -33,6 +35,10 @@ static bool isUnlimitedQuery(const IAST * ast)
         return true;
 
     /// It is SELECT FROM system.processes
+    /// NOTE: This is very rough check.
+    /// False negative: USE system; SELECT * FROM processes;
+    /// False positive: SELECT * FROM system.processes CROSS JOIN (SELECT ...)
+
     if (auto ast_selects = typeid_cast<const ASTSelectWithUnionQuery *>(ast))
     {
         if (!ast_selects->list_of_selects || ast_selects->list_of_selects->children.empty())
@@ -77,14 +83,14 @@ ProcessList::EntryPtr ProcessList::insert(
     bool is_unlimited_query = isUnlimitedQuery(ast);
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::unique_lock lock(mutex);
 
         if (!is_unlimited_query && max_size && cur_size >= max_size)
         {
-            if (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds()))
-            {
+            auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
+
+            if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]{ return cur_size < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
-            }
         }
 
         /** Why we use current user?
@@ -224,7 +230,7 @@ ProcessListEntry::~ProcessListEntry()
         user_process_list.reset();
 
     --parent.cur_size;
-    parent.have_space.signal();
+    parent.have_space.notify_one();
 
     /// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
     if (parent.cur_size == 0)

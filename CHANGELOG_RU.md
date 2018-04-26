@@ -1,3 +1,23 @@
+# ClickHouse release 1.1.54380, 2018-04-21
+
+## Новые возможности:
+* Добавлена табличная функция `file(path, format, structure)`. Пример, читающий байты из `/dev/urandom`: `ln -s /dev/urandom /var/lib/clickhouse/user_files/random` `clickhouse-client -q "SELECT * FROM file('random', 'RowBinary', 'd UInt8') LIMIT 10"`.
+
+## Улучшения:
+* Добавлена возможность оборачивать подзапросы скобками `()` для повышения читаемости запросов. Например: `(SELECT 1) UNION ALL (SELECT 1)`.
+* Простые запросы `SELECT` из таблицы `system.processes` не учитываются в ограничении `max_concurrent_queries`.
+* Возможность отключить логирование путем удаления `<log/>` или `<errorlog/>` из конфигурации сервера.
+
+## Исправление ошибок:
+* Убрана поддержка выражений типа `(a, b) IN (SELECT (a, b))` (можно использовать эквивалентные выражение `(a, b) IN (SELECT a, b)`), которые приводили к недетерминированному поведению фильтрации `WHERE`.
+* Исправлена неправильная работа оператора `IN` в `MATERIALIZED VIEW`.
+* Исправлена неправильная работа индекса по ключу партиционирования в выражениях типа `partition_key_column IN (...)`.
+* Исправлена невозможность выполнить `OPTIMIZE` запрос на лидирующей реплике после выполнения `RENAME` таблицы.
+* Исправлены ошибки авторизации возникающие при выполнении запросов `OPTIMIZE` и `ALTER` на нелидирующей реплике.
+* Исправлены зависания запросов `KILL QUERY`.
+* Исправлена ошибка в клиентской библиотеке ZooKeeper, которая при использовании непустого префикса `chroot` в конфигурации приводила к потере watch'ей, остановке очереди distributed DDL запросов и замедлению репликации.
+
+
 # ClickHouse release 1.1.54378, 2018-04-16
 
 ## Новые возможности:
@@ -44,7 +64,7 @@
 ## Изменения сборки:
 
 * Поддержка `ninja` вместо `make` при сборке. `ninja` используется по-умолчанию при сборке релизов.
-* Переименованы пакеты `clickhouse-server-base` в `clickhouse-common-static`; `clickhouse-server-common` в `clickhouse-server`; `clickhouse-common-dbg` в `clickhouse-common-static-dbg`. Для установки используйте только `clickhouse-server clickhouse-client`. Для совместимости, пакеты со старыми именами продолжают загружаться в репозиторий.
+* Переименованы пакеты `clickhouse-server-base` в `clickhouse-common-static`; `clickhouse-server-common` в `clickhouse-server`; `clickhouse-common-dbg` в `clickhouse-common-static-dbg`. Для установки используйте `clickhouse-server clickhouse-client`. Для совместимости, пакеты со старыми именами продолжают загружаться в репозиторий.
 
 ## Обратно несовместимые изменения:
 
