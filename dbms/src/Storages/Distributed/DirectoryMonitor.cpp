@@ -167,7 +167,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         return std::make_shared<ConnectionPool>(
             1, host, port, default_database,
             user, password, timeouts,
-            storage.getName() + '_' + name,
+            storage.getName() + '_' + user,
             Protocol::Compression::Enable,
             secure);
     };
