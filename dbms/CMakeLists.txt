@@ -100,7 +100,7 @@ else ()
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
-    llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
+    llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
     # LLVM 5.0 has a bunch of unused parameters in its header files.
