@@ -191,7 +191,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
     : context(context_),
-    current_zookeeper(context.getZooKeeper()), database_name(database_name_),
+    database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
     replica_name(context.getMacros()->expand(replica_name_)),
@@ -215,6 +215,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
+
+    if (context.hasZooKeeper())
+        current_zookeeper = context.getZooKeeper();
 
     bool skip_sanity_checks = false;
 
@@ -1595,6 +1598,15 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
             last_queue_update_finish_time.store(time(nullptr));
             update_in_progress = false;
             queue_updating_event->wait();
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                break;
+            else
+                queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
         }
         catch (...)
         {
@@ -3004,6 +3016,10 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
     table_name = new_table_name;
     full_path = new_full_path;
 
+    /// Update table name in zookeeper
+    auto zookeeper = getZooKeeper();
+    zookeeper->set(replica_path + "/host", getReplicatedMergeTreeAddress().toString());
+
     /// TODO: You can update names of loggers.
 }
 
@@ -3270,14 +3286,14 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    /// NOTE Works only if there is access from the default user without a password. You can fix it by adding a parameter to the server config.
+    /// Query send with current user credentials
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        "", "", timeouts, "ClickHouse replica");
+        context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
     NullBlockOutputStream output({});
@@ -3764,6 +3780,19 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     }
 
     LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
+}
+
+ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAddress() const
+{
+    auto host_port = context.getInterserverIOAddress();
+
+    ReplicatedMergeTreeAddress res;
+    res.host = host_port.first;
+    res.replication_port = host_port.second;
+    res.queries_port = context.getTCPPort();
+    res.database = database_name;
+    res.table = table_name;
+    return res;
 }
 
 }

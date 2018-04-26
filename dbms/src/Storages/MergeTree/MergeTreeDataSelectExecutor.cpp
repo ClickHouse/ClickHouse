@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
-#include <Storages/MergeTree/PKCondition.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
@@ -85,7 +85,7 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
 
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
-    const MergeTreeData::DataPartsVector & parts, const PKCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPartsVector & parts, const KeyCondition & key_condition, const Settings & settings) const
 {
     size_t full_marks_count = 0;
 
@@ -198,7 +198,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Settings & settings = context.getSettingsRef();
     SortDescription sort_descr = data.getPrimarySortDescription();
 
-    PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
+    KeyCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
         data.getPrimaryExpression());
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
@@ -212,7 +212,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
     }
 
-    std::optional<PKCondition> minmax_idx_condition;
+    std::optional<KeyCondition> minmax_idx_condition;
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(
@@ -843,7 +843,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
-    const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPart::Index & index, const KeyCondition & key_condition, const Settings & settings) const
 {
     size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
 
@@ -866,7 +866,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             */
         std::vector<MarkRange> ranges_stack{ {0, marks_count} };
 
-        /// NOTE Creating temporary Field objects to pass to PKCondition.
+        /// NOTE Creating temporary Field objects to pass to KeyCondition.
         Row index_left(used_key_size);
         Row index_right(used_key_size);
 

@@ -706,17 +706,18 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
     Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
     auto log_level = config.getString("logger.level", "trace");
-    if (config.hasProperty("logger.log"))
+    const auto log_path = config.getString("logger.log", "");
+    if (!log_path.empty())
     {
-        createDirectory(config.getString("logger.log"));
-        std::cerr << "Logging " << log_level << " to " << config.getString("logger.log") << std::endl;
+        createDirectory(log_path);
+        std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log_file = new FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.log")).absolute().toString());
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(log_path).absolute().toString());
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
@@ -728,17 +729,18 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         log_file->open();
     }
 
-    if (config.hasProperty("logger.errorlog"))
+    const auto errorlog_path = config.getString("logger.errorlog", "");
+    if (!errorlog_path.empty())
     {
-        createDirectory(config.getString("logger.errorlog"));
-        std::cerr << "Logging errors to " << config.getString("logger.errorlog") << std::endl;
+        createDirectory(errorlog_path);
+        std::cerr << "Logging errors to " << errorlog_path << std::endl;
         Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
         level->setLevel(Message::PRIO_NOTICE);
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
         error_log_file = new FileChannel;
-        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.errorlog")).absolute().toString());
+        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(errorlog_path).absolute().toString());
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
@@ -965,9 +967,9 @@ void BaseDaemon::initialize(Application & self)
     }
 
     /// Change path for logging.
-    if (config().hasProperty("logger.log"))
+    if (!log_path.empty())
     {
-        std::string path = createDirectory(config().getString("logger.log"));
+        std::string path = createDirectory(log_path);
         if (is_daemon
             && chdir(path.c_str()) != 0)
             throw Poco::Exception("Cannot change directory to " + path);

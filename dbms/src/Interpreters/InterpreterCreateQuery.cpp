@@ -66,7 +66,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
 
     String database_name = create.database;
 
@@ -291,7 +291,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const auto end = pos + type_name->size();
 
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type");
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
@@ -315,7 +315,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto end = pos + type_name->size();
 
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type");
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         column_declaration->type->owned_string = type_name;
 
         const auto it = columns.defaults.find(column.name);
@@ -439,7 +439,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+    {
+        NameSet databases{create.database};
+        if (!create.to_table.empty())
+            databases.emplace(create.to_database);
+
+        return executeDDLQueryOnCluster(query_ptr, context, databases);
+    }
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();

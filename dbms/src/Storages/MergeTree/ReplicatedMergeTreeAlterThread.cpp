@@ -188,12 +188,21 @@ void ReplicatedMergeTreeAlterThread::run()
 
             wakeup_event->wait();
         }
+        catch (const zkutil::KeeperException & e)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                break;
+
+            force_recheck_parts = true;
+            wakeup_event->tryWait(ALTER_ERROR_SLEEP_MS);
+        }
         catch (...)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
             force_recheck_parts = true;
-
             wakeup_event->tryWait(ALTER_ERROR_SLEEP_MS);
         }
     }
