@@ -3635,7 +3635,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     }
     catch (...)
     {
-        LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(false));
+        LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(true));
     }
 
     /// Part names that were reliably deleted from ZooKeeper should be deleted from filesystem
