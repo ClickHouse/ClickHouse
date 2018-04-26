@@ -17,8 +17,11 @@ namespace ErrorCodes
 }
 
 
-static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level)
+static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, int level, int max_level)
 {
+    if (max_level >= 0 && level > max_level)
+        return;
+
     if (level >= 1000)
         throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
 
@@ -37,6 +40,8 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
 
             std::string source_str = source.toString();
             std::string destination_str = destination.toString();
+
+            std::cerr << source_str << "\n";
 
             /** We are trying to create a hard link.
               * If it already exists, we check that source and destination point to the same inode.
@@ -65,12 +70,12 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
         }
         else
         {
-            localBackupImpl(source, destination, level + 1);
+            localBackupImpl(source, destination, level + 1, max_level);
         }
     }
 }
 
-void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path)
+void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, int max_level)
 {
     if (Poco::File(destination_path).exists()
         && Poco::DirectoryIterator(destination_path) != Poco::DirectoryIterator())
@@ -89,7 +94,7 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
     {
         try
         {
-            localBackupImpl(source_path, destination_path, 0);
+            localBackupImpl(source_path, destination_path, 0, max_level);
         }
         catch (const DB::ErrnoException & e)
         {

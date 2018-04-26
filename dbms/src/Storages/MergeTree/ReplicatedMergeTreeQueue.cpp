@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 
-void ReplicatedMergeTreeQueue::initVirtualParts(const MergeTreeData::DataParts & parts)
+void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & parts)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -87,19 +87,15 @@ void ReplicatedMergeTreeQueue::initialize(
     logger_name = logger_name_;
     log = &Logger::get(logger_name);
 
-    initVirtualParts(parts);
+    addVirtualParts(parts);
     load(zookeeper);
 }
 
 
 void ReplicatedMergeTreeQueue::insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &)
 {
-    if (!entry->new_part_name.empty())
-        virtual_parts.add(entry->new_part_name);
-    else if (entry->type == LogEntry::REPLACE_RANGE)
-        virtual_parts.add(entry->replace_range_entry->drop_range_part_name); // It will block merges in drop_range
-    else
-        throw Exception("Unexpected log entry with empty new_part_name. This is a bug", ErrorCodes::LOGICAL_ERROR);
+    for (const String & virtual_part_name : entry->getVirtualPartNames())
+        virtual_parts.add(virtual_part_name);
 
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
     if (entry->type != LogEntry::DROP_RANGE)
@@ -500,28 +496,22 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
 }
 
 
-ReplicatedMergeTreeQueue::Queue ReplicatedMergeTreeQueue::getConflictsForClearColumnCommand(
-    const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> &) const
+size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(const MergeTreePartInfo & range, const String & range_znode,
+    String * out_conflicts_description, std::lock_guard<std::mutex> &) const
 {
-    Queue conflicts;
+    std::vector<std::pair<LogEntryPtr, String>> conflicts;
 
     for (auto & elem : queue)
     {
-        if (elem->currently_executing && elem->znode_name != entry.znode_name)
+        if (!elem->currently_executing || elem->znode_name == range_znode)
+            continue;
+
+        for (const String & new_part_name : elem->getVirtualPartNames())
         {
-            if (elem->type == LogEntry::MERGE_PARTS || elem->type == LogEntry::GET_PART)
+            if (!range.isDisjoint(MergeTreePartInfo::fromPartName(new_part_name, format_version)))
             {
-                if (MergeTreePartInfo::contains(entry.new_part_name, elem->new_part_name, format_version))
-                    conflicts.emplace_back(elem);
-            }
-
-            if (elem->type == LogEntry::CLEAR_COLUMN)
-            {
-                auto cur_part = MergeTreePartInfo::fromPartName(elem->new_part_name, format_version);
-                auto part = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
-
-                if (part.partition_id == cur_part.partition_id)
-                    conflicts.emplace_back(elem);
+                conflicts.emplace_back(elem, new_part_name);
+                continue;
             }
         }
     }
@@ -529,28 +519,25 @@ ReplicatedMergeTreeQueue::Queue ReplicatedMergeTreeQueue::getConflictsForClearCo
     if (out_conflicts_description)
     {
         std::stringstream ss;
-        ss << "Can't execute " << entry.typeToString() << " entry " << entry.znode_name << ". ";
+        ss << "Can't execute command for range " << range.getPartName() << " (entry " << range_znode << "). ";
         ss << "There are " << conflicts.size() << " currently executing entries blocking it: ";
         for (const auto & conflict : conflicts)
-            ss << conflict->typeToString() << " " << conflict->new_part_name << " " << conflict->znode_name << ", ";
+            ss << conflict.first->typeToString() << " part " << conflict.second << ", ";
 
         *out_conflicts_description = ss.str();
     }
 
-    return conflicts;
+    return conflicts.size();
 }
 
 
-void ReplicatedMergeTreeQueue::disableMergesAndFetchesInRange(const LogEntry & entry)
+void ReplicatedMergeTreeQueue::checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const String & range_znode_name)
 {
-    std::lock_guard<std::mutex> lock(mutex);
     String conflicts_description;
+    std::lock_guard<std::mutex> lock(mutex);
 
-    if (!getConflictsForClearColumnCommand(entry, &conflicts_description, lock).empty())
+    if (0 != getConflictsCountForRange(range, range_znode_name, &conflicts_description, lock))
         throw Exception(conflicts_description, ErrorCodes::UNFINISHED);
-
-    if (!future_parts.count(entry.new_part_name))
-        throw Exception("Expected that merges and fetches should be blocked in range " + entry.new_part_name + ". This is a bug", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -581,6 +568,8 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const String & new_
 
         if (future_part.contains(result_part))
         {
+            out_reason = "Not executing log entry for part " + new_part_name + " because it is covered by part "
+                         + future_part_name + " that is currently executing";
             return false;
         }
     }
@@ -611,11 +600,14 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 {
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART)
     {
-        if (!isNotCoveredByFuturePartsImpl(entry.new_part_name, out_postpone_reason, lock))
+        for (const String & new_part_name : entry.getVirtualPartNames())
         {
-            if (!out_postpone_reason.empty())
-                LOG_DEBUG(log, out_postpone_reason);
-            return false;
+            if (!isNotCoveredByFuturePartsImpl(new_part_name, out_postpone_reason, lock))
+            {
+                if (!out_postpone_reason.empty())
+                    LOG_DEBUG(log, out_postpone_reason);
+                return false;
+            }
         }
     }
 
@@ -668,10 +660,14 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    if (entry.type == LogEntry::CLEAR_COLUMN)
+    /// TODO: it makes sense to check DROP_RANGE also
+    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::REPLACE_RANGE)
     {
         String conflicts_description;
-        if (!getConflictsForClearColumnCommand(entry, &conflicts_description, lock).empty())
+        String range_name = (entry.type == LogEntry::REPLACE_RANGE) ? entry.replace_range_entry->drop_range_part_name : entry.new_part_name;
+        auto range = MergeTreePartInfo::fromPartName(range_name, format_version);
+
+        if (0 != getConflictsCountForRange(range, entry.znode_name, &conflicts_description, lock))
         {
             LOG_DEBUG(log, conflicts_description);
             return false;
@@ -689,8 +685,11 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(ReplicatedMerge
     ++entry->num_tries;
     entry->last_attempt_time = time(nullptr);
 
-    if (!queue.future_parts.insert(entry->new_part_name).second)
-        throw Exception("Tagging already tagged future part " + entry->new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+    for (const String & new_part_name : entry->getVirtualPartNames())
+    {
+        if (!queue.future_parts.insert(new_part_name).second)
+            throw Exception("Tagging already tagged future part " + new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 
@@ -718,8 +717,11 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
 
-    if (!queue.future_parts.erase(entry->new_part_name))
-        LOG_ERROR(queue.log, "Untagging already untagged future part " + entry->new_part_name + ". This is a bug.");
+    for (const String & new_part_name : entry->getVirtualPartNames())
+    {
+        if (!queue.future_parts.erase(new_part_name))
+            LOG_ERROR(queue.log, "Untagging already untagged future part " + new_part_name + ". This is a bug.");
+    }
 
     if (!entry->actual_new_part_name.empty())
     {
@@ -733,12 +735,9 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 
 ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMerger & merger, MergeTreeData & data)
 {
-    if (block.isCancelled())
-        return {};
+    LogEntryPtr entry;
 
     std::lock_guard<std::mutex> lock(mutex);
-
-    LogEntryPtr entry;
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
     {

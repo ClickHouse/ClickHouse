@@ -401,9 +401,10 @@ void MergeTreeDataPart::renameToDetached(const String & prefix) const
 
 void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 {
-    Poco::Path src(storage.full_path);
+    Poco::Path src(getFullPath());
     Poco::Path dst(storage.full_path + getRelativePathForDetachedPart(prefix));
-    localBackup(src, dst);
+    /// Backup is not recursive (max_level is 0), so do not copy inner directories
+    localBackup(src, dst, 0);
 }
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)

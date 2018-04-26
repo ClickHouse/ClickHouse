@@ -21,8 +21,8 @@ SELECT '===Replicated case===';
 
 DROP TABLE IF EXISTS test.clear_column1;
 DROP TABLE IF EXISTS test.clear_column2;
-CREATE TABLE test.clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/clear_column', '1', d, d, 8192);
-CREATE TABLE test.clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/clear_column', '2', d, d, 8192);
+CREATE TABLE test.clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '1', d, d, 8192);
+CREATE TABLE test.clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192);
 
 INSERT INTO test.clear_column1 (d) VALUES ('2000-01-01'), ('2000-02-01');
 

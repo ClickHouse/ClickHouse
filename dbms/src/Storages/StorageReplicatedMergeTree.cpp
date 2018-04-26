@@ -1529,11 +1529,11 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 {
     LOG_INFO(log, "Clear column " << entry.column_name << " in parts inside " << entry.new_part_name << " range");
 
+    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
+
     /// Assume optimistic scenario, i.e. conflicts are very rare
     /// So, if conflicts are found, throw an exception and will retry execution later
-    queue.disableMergesAndFetchesInRange(entry);
-
-    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
+    queue.checkThereAreNoConflictsInRange(entry_part_info, entry.znode_name);
 
     /// We don't change table structure, only data in some parts
     /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
@@ -1588,6 +1588,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
     auto & entry_replace = *entry.replace_range_entry;
 
     MergeTreePartInfo drop_range = MergeTreePartInfo::fromPartName(entry_replace.drop_range_part_name, data.format_version);
+    /// Range with only one block has special meaning ATTACH PARTITION
+    bool replace = drop_range.getBlocksCount() > 1;
 
     queue.removeGetsAndMergesInRange(getZooKeeper(), drop_range);
 
@@ -1649,7 +1651,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
                 parts_to_add.emplace_back(part_desc);
         }
 
-        if (parts_to_add.empty())
+        if (parts_to_add.empty() && replace)
             parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
 
@@ -1867,7 +1869,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
         auto data_parts_lock = data.lockParts();
 
         transaction.commit(&data_parts_lock);
-        parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+        if (replace)
+            parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
 
     removePartsFromZooKeeperWithRetries(parts_to_remove);
@@ -1919,6 +1922,13 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 bool StorageReplicatedMergeTree::queueTask()
 {
+    /// If replication queue is stopped exit immediately as we successfully executed the task
+    if (queue.block.isCancelled())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        return true;
+    }
+
     /// This object will mark the element of the queue as running.
     ReplicatedMergeTreeQueue::SelectedEntry selected;
 
@@ -4056,7 +4066,7 @@ bool StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strin
     size_t num_tries = 0;
     bool sucess = false;
 
-    while (!sucess && num_tries < max_retries)
+    while (!sucess && (max_retries == 0 || num_tries < max_retries))
     {
         std::vector<MultiFuture> futures;
         futures.reserve(part_names.size());
@@ -4242,6 +4252,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     auto zookeeper = getZooKeeper();
 
     /// Firstly, generate last block number and compute drop_range
+    /// NOTE: Even if we make ATTACH PARTITION instead of REPLACE PARTITION drop_range will not be empty, it will contain a block.
+    /// So, such case has special meaning, if drop_range contains only one block it means that nothing to drop.
     MergeTreePartInfo drop_range;
     drop_range.partition_id = partition_id;
     drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
@@ -4351,7 +4363,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         auto data_parts_lock = data.lockParts();
 
         transaction.commit(&data_parts_lock);
-        parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+        if (replace)
+            parts_to_remove = data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
     }
 
     String log_znode_path = dynamic_cast<const zkutil::CreateResponse &>(*op_results.back()).path_created;
@@ -4440,6 +4453,9 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {
+    /// Let's fetch new log entries firstly
+    pullLogsToQueue();
+
     Stopwatch watch;
     Poco::Event event;
     std::atomic<bool> cond_reached{false};

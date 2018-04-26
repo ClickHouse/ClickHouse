@@ -37,6 +37,10 @@ set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBS
 
 include (cmake/arch.cmake)
 
+if (CMAKE_BUILD_TYPE STREQUAL "ASan")
+    add_definitions(-DBUILD_TYPE_Asan=1)
+endif()
+
 if (NOT MSVC)
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 endif ()

@@ -65,8 +65,8 @@ struct ReplicatedMergeTreeLogEntryData
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
 
-    /// The name of resulting part.
-    /// For DROP_RANGE, the name of a non-existent part. You need to remove all the parts covered by it.
+    /// The name of resulting part for GET_PART and MERGE_PARTS
+    /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
@@ -95,6 +95,23 @@ struct ReplicatedMergeTreeLogEntryData
     };
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
+
+    /// Part names that supposed to be added to virtual_parts and future_parts
+    Strings getVirtualPartNames() const
+    {
+        /// TODO: Instead of new_part_name use another field for these commands
+        if (type == DROP_RANGE || type == CLEAR_COLUMN)
+            return {new_part_name};
+
+        if (type == REPLACE_RANGE)
+        {
+            Strings res = replace_range_entry->new_part_names;
+            res.emplace_back(replace_range_entry->drop_range_part_name);
+            return res;
+        }
+
+        return {new_part_name};
+    }
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.

@@ -106,7 +106,7 @@ private:
 
 
     /// Put a set of (already existing) parts in virtual_parts.
-    void initVirtualParts(const MergeTreeData::DataParts & parts);
+    void addVirtualParts(const MergeTreeData::DataParts & parts);
 
     /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
     bool load(zkutil::ZooKeeperPtr zookeeper);
@@ -138,8 +138,9 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
-    /// Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
-    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> &) const;
+    /// Returns list of currently executing entries blocking execution a command modifying specified range
+    size_t getConflictsCountForRange(const MergeTreePartInfo & range, const String & range_znode, String * out_conflicts_description,
+                               std::lock_guard<std::mutex> &) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -194,10 +195,9 @@ public:
       */
     void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info);
 
-    /** Disables future merges and fetches inside entry.new_part_name
-     *  If there are currently executing merges or fetches then throws exception.
+    /** Throws and exception if there are currently executing entries in the range .
      */
-    void disableMergesAndFetchesInRange(const LogEntry & entry);
+    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const String & range_znode_name);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -232,6 +232,11 @@ public:
 
     /// Count the number of merges in the queue.
     size_t countMerges() const;
+
+    Strings getVirtualParts() const
+    {
+        return virtual_parts.getParts();
+    }
 
     /// A blocker that stops selects from the queue
     ActionBlocker block;

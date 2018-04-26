@@ -1594,9 +1594,10 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
 
         if (part->info.min_block < drop_range.min_block)
         {
-            if (part->info.max_block >= drop_range.min_block)
+            if (drop_range.min_block <= part->info.max_block)
             {
-                String error = "Unexpected merged part " + part->name + " intersecting drop range.";
+                /// Intersect left border
+                String error = "Unexpected merged part " + part->name + " intersecting drop range " + drop_range.getPartName();
                 if (!skip_intersecting_parts)
                     throw Exception(error, ErrorCodes::LOGICAL_ERROR);
 
@@ -1610,9 +1611,10 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         if (part->info.min_block > drop_range.max_block)
             break;
 
-        if (part->info.min_block <= drop_range.max_block && part->info.max_block > drop_range.max_block)
+        if (part->info.min_block <= drop_range.max_block && drop_range.max_block < part->info.max_block)
         {
-            String error = "Unexpected merged part " + part->name + " intersecting drop range.";
+            /// Intersect right border
+            String error = "Unexpected merged part " + part->name + " intersecting drop range " + drop_range.getPartName();
             if (!skip_intersecting_parts)
                 throw Exception(error, ErrorCodes::LOGICAL_ERROR);
 
@@ -1620,10 +1622,8 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             continue;
         }
 
-        if (part->state == DataPartState::Deleting)
-            continue;
-
-        parts_to_remove.emplace_back(part);
+        if (part->state != DataPartState::Deleting)
+            parts_to_remove.emplace_back(part);
     }
 
     removePartsFromWorkingSetImpl(parts_to_remove, clear_without_timeout, lock);
