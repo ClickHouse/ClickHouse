@@ -169,7 +169,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone `" << DateLUT::instance().getTimeZone() << "'.");
 
-    /// Directory with temporary data for processing of hard queries.
+    /// Directory with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
         global_context->setTemporaryPath(tmp_path);
@@ -191,8 +191,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
-    Poco::File(path + "flags/").createDirectories();
-    global_context->setFlagsPath(path + "flags/");
+    {
+        Poco::File(path + "flags/").createDirectories();
+        global_context->setFlagsPath(path + "flags/");
+    }
+
+    /** Directory with user provided files that are usable by 'file' table function.
+      */
+    {
+
+        std::string user_files_path = config().getString("user_files_path", path + "user_files/");
+        global_context->setUserFilesPath(user_files_path);
+        Poco::File(user_files_path).createDirectories();
+    }
 
     if (config().has("interserver_http_port"))
     {

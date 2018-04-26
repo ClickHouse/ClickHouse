@@ -167,8 +167,10 @@ case "$DIST" in
         export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=1 -DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;
     "artful" | "experimental" | "unstable" | "testing" )
-        EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
-        export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+        if [ "$ARCH" != arm64 ]; then
+            EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
+            export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+        fi
         ;;
 esac
 

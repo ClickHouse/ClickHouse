@@ -132,9 +132,12 @@ public:
     String getPath() const;
     String getTemporaryPath() const;
     String getFlagsPath() const;
+    String getUserFilesPath() const;
+
     void setPath(const String & path);
     void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
+    void setUserFilesPath(const String & path);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -301,6 +304,7 @@ public:
     const MergeList & getMergeList() const;
 
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
+    /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;

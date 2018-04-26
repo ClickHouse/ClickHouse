@@ -4,8 +4,8 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <unordered_map>
-#include <Poco/Condition.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -255,7 +255,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    mutable Poco::Condition have_space;        /// Number of currently running queries has become less than maximum.
+    mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
     /// List of queries
     Container cont;

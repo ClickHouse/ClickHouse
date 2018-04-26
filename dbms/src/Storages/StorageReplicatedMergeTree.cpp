@@ -191,7 +191,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
     : context(context_),
-    current_zookeeper(context.getZooKeeper()), database_name(database_name_),
+    database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
     replica_name(context.getMacros()->expand(replica_name_)),
@@ -215,6 +215,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
+
+    if (context.hasZooKeeper())
+        current_zookeeper = context.getZooKeeper();
 
     bool skip_sanity_checks = false;
 
@@ -1595,6 +1598,15 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
             last_queue_update_finish_time.store(time(nullptr));
             update_in_progress = false;
             queue_updating_event->wait();
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                break;
+            else
+                queue_updating_event->tryWait(QUEUE_UPDATE_ERROR_SLEEP_MS);
         }
         catch (...)
         {

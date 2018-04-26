@@ -6,12 +6,12 @@
 namespace DB
 {
 
-struct ASTShowProcesslisIDAndQueryNames
+struct ASTShowProcesslistIDAndQueryNames
 {
     static constexpr auto ID = "ShowProcesslistQuery";
     static constexpr auto Query = "SHOW PROCESSLIST";
 };
 
-using ASTShowProcesslistQuery = ASTQueryWithOutputImpl<ASTShowProcesslisIDAndQueryNames>;
+using ASTShowProcesslistQuery = ASTQueryWithOutputImpl<ASTShowProcesslistIDAndQueryNames>;
 
 }
