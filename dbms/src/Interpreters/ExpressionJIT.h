@@ -28,14 +28,11 @@ public:
     }
 };
 
-/// second array is of `char` because `LLVMPreparedFunction::executeImpl` can't use a `std::vector<bool>` for this
-using LLVMCompiledFunction = void(const void ** inputs, const char * is_constant, void * output, size_t block_size);
-
 class LLVMPreparedFunction : public PreparedFunctionImpl
 {
     std::shared_ptr<const IFunctionBase> parent;
     LLVMContext context;
-    LLVMCompiledFunction * function;
+    const void * function;
 
 public:
     LLVMPreparedFunction(LLVMContext context, std::shared_ptr<const IFunctionBase> parent);
