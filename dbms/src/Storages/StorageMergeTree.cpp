@@ -568,6 +568,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);
     auto lock2 = source_table->lockStructure(false, __PRETTY_FUNCTION__);
 
+    Stopwatch watch;
     MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);
     String partition_id = data.getPartitionIDFromQuery(partition, context);
 
@@ -600,22 +601,32 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 
     /// Atomically add new parts and remove old ones
+    try
     {
-        /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
-        ///  and we should be able to rollback already added (Precomitted) parts
-        MergeTreeData::Transaction transaction;
+        {
+            /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
+            ///  and we should be able to rollback already added (Precomitted) parts
+            MergeTreeData::Transaction transaction;
 
-        auto data_parts_lock = data.lockParts();
+            auto data_parts_lock = data.lockParts();
 
-        /// Populate transaction
-        for (MergeTreeData::MutableDataPartPtr & part : dst_parts)
-            data.renameTempPartAndReplaceImpl(part, &increment, &transaction, data_parts_lock);
+            /// Populate transaction
+            for (MergeTreeData::MutableDataPartPtr & part : dst_parts)
+                data.renameTempPartAndReplaceImpl(part, &increment, &transaction, data_parts_lock);
 
-        transaction.commit(&data_parts_lock);
+            transaction.commit(&data_parts_lock);
 
-        /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
-        if (replace)
-            data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+            /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
+            if (replace)
+                data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+        }
+
+        PartLog::addNewParts(this->context, dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(this->context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
     }
 }
 

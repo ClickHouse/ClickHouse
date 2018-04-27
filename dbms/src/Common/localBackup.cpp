@@ -41,8 +41,6 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
             std::string source_str = source.toString();
             std::string destination_str = destination.toString();
 
-            std::cerr << source_str << "\n";
-
             /** We are trying to create a hard link.
               * If it already exists, we check that source and destination point to the same inode.
               */

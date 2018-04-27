@@ -249,7 +249,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
         return;
 
     /// Firstly, remove parts from ZooKeeper
-    storage.removePartsFromZooKeeperWithRetries(failed_parts);
+    storage.tryRemovePartsFromZooKeeperWithRetries(failed_parts);
 
     for (auto part_name : failed_parts)
     {

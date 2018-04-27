@@ -88,33 +88,45 @@ void PartLogElement::appendToBlock(Block & block) const
 }
 
 
-bool PartLog::addNewPartToTheLog(Context & context, const MergeTreeDataPart & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+bool PartLog::addNewPart(Context & context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
 {
+    return addNewParts(context, {part}, elapsed_ns, execution_status);
+}
+
+bool PartLog::addNewParts(Context & context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns,
+                          const ExecutionStatus & execution_status)
+{
+    if (parts.empty())
+        return true;
+
     PartLog * part_log = nullptr;
 
     try
     {
-        part_log = context.getPartLog(part.storage.getDatabaseName());
+        part_log = context.getPartLog(parts.front()->storage.getDatabaseName()); // assume parts belong to the same table
         if (!part_log)
             return false;
 
-        PartLogElement elem;
+        for (const auto & part : parts)
+        {
+            PartLogElement elem;
 
-        elem.event_type = PartLogElement::NEW_PART;
-        elem.event_time = time(nullptr);
-        elem.duration_ms = elapsed_ns / 1000000;
+            elem.event_type = PartLogElement::NEW_PART;
+            elem.event_time = time(nullptr);
+            elem.duration_ms = elapsed_ns / 1000000;
 
-        elem.database_name = part.storage.getDatabaseName();
-        elem.table_name = part.storage.getTableName();
-        elem.part_name = part.name;
+            elem.database_name = part->storage.getDatabaseName();
+            elem.table_name = part->storage.getTableName();
+            elem.part_name = part->name;
 
-        elem.bytes_compressed_on_disk = part.bytes_on_disk;
-        elem.rows = part.rows_count;
+            elem.bytes_compressed_on_disk = part->bytes_on_disk;
+            elem.rows = part->rows_count;
 
-        elem.error = static_cast<UInt16>(execution_status.code);
-        elem.exception = execution_status.message;
+            elem.error = static_cast<UInt16>(execution_status.code);
+            elem.exception = execution_status.message;
 
-        part_log->add(elem);
+            part_log->add(elem);
+        }
     }
     catch (...)
     {
