@@ -148,11 +148,8 @@ public:
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
     int32_t tryMulti(const Requests & requests, Responses & responses);
-    /// Throws nothing, just alias of multiImpl
-    int32_t tryMultiNoThrow(const Requests & requests, Responses & responses)
-    {
-        return multiImpl(requests, responses);
-    }
+    /// Throws nothing (even session expired errors)
+    int32_t tryMultiNoThrow(const Requests & requests, Responses & responses);
 
     Int64 getClientID();
 
