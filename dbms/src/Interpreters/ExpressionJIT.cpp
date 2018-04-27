@@ -81,12 +81,12 @@ void LLVMContext::finalize()
 
 bool LLVMContext::isCompilable(const IFunctionBase& function) const
 {
-    if (!function.isCompilable() || !toNativeType(shared->builder, function.getReturnType()))
+    if (!toNativeType(shared->builder, function.getReturnType()))
         return false;
     for (const auto & type : function.getArgumentTypes())
         if (!toNativeType(shared->builder, type))
             return false;
-    return true;
+    return function.isCompilable();
 }
 
 LLVMPreparedFunction::LLVMPreparedFunction(LLVMContext context, std::shared_ptr<const IFunctionBase> parent)
