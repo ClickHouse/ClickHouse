@@ -11,8 +11,6 @@ INSERT INTO test.src VALUES (1, '0', 1);
 INSERT INTO test.src VALUES (1, '1', 1);
 INSERT INTO test.src VALUES (2, '0', 1);
 
-SET replication_alter_partitions_sync = 1;
-
 SELECT 'Initial';
 INSERT INTO test.dst_r1 VALUES (0, '1', 2);
 INSERT INTO test.dst_r1 VALUES (1, '1', 2), (1, '2', 2);
@@ -24,7 +22,7 @@ SELECT count(), sum(d) FROM test.dst_r1;
 SELECT count(), sum(d) FROM test.dst_r2;
 
 
-SELECT 'REPLACE #1';
+SELECT 'REPLACE simple';
 ALTER TABLE test.dst_r1 REPLACE PARTITION 1 FROM test.src;
 ALTER TABLE test.src DROP PARTITION 1;
 
@@ -34,7 +32,7 @@ SELECT count(), sum(d) FROM test.dst_r1;
 SELECT count(), sum(d) FROM test.dst_r2;
 
 
-SELECT 'REPLACE empty #1';
+SELECT 'REPLACE empty';
 ALTER TABLE test.src DROP PARTITION 1;
 ALTER TABLE test.dst_r1 REPLACE PARTITION 1 FROM test.src;
 
@@ -56,11 +54,11 @@ SELECT count(), sum(d) FROM test.dst_r1;
 SELECT count(), sum(d) FROM test.dst_r2;
 
 INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='test' AND  table='dst_r1' AND active AND name LIKE '1_%';
-SELECT max(m) - min(m) FROM test_block_numbers;
+SELECT (max(m) - min(m) > 1) AS new_block_is_generated FROM test_block_numbers;
 DROP TABLE test_block_numbers;
 
 
-SELECT 'ATTACH';
+SELECT 'ATTACH FROM';
 ALTER TABLE test.dst_r1 DROP PARTITION 1;
 DROP TABLE test.src;
 
@@ -94,7 +92,7 @@ SELECT count(), sum(d) FROM test.dst_r1;
 SELECT count(), sum(d) FROM test.dst_r2;
 
 
-SELECT 'REPLACE with fetch merged';
+SELECT 'REPLACE with fetch of merged';
 DROP TABLE IF EXISTS test.src;
 ALTER TABLE test.dst_r1 DROP PARTITION 1;
 
@@ -110,27 +108,23 @@ DROP TABLE test.src;
 
 -- do not wait other replicas to execute OPTIMIZE
 SET replication_alter_partitions_sync=0, optimize_throw_if_noop=1;
-SELECT count(), sum(d) FROM test.dst_r1 WHERE _part LIKE '1_%';
+SELECT count(), sum(d), uniqExact(_part) FROM test.dst_r1;
 OPTIMIZE TABLE test.dst_r1 PARTITION 1;
 SET replication_alter_partitions_sync=1;
 SYSTEM SYNC REPLICA test.dst_r1;
-SELECT count(), sum(d) FROM test.dst_r1 WHERE _part LIKE '1_%';
-
-SELECT uniqExact(_part) FROM test.dst_r1 WHERE _part LIKE '1_%';
-SELECT count(), sum(d) FROM test.dst_r1 WHERE _part LIKE '1_%';
+SELECT count(), sum(d), uniqExact(_part) FROM test.dst_r1;
 
 SYSTEM START REPLICATION QUEUES test.dst_r2;
 SYSTEM START MERGES test.dst_r2;
 SYSTEM SYNC REPLICA test.dst_r2;
-SELECT uniqExact(_part) FROM test.dst_r2 WHERE _part LIKE '1_%';
-SELECT count(), sum(d) FROM test.dst_r2 WHERE _part LIKE '1_%';
+SELECT count(), sum(d), uniqExact(_part) FROM test.dst_r2;
 
 SELECT 'After restart';
 SYSTEM RESTART REPLICAS;
 SELECT count(), sum(d) FROM test.dst_r1;
 SELECT count(), sum(d) FROM test.dst_r2;
 
-SELECT 'DETACH/ATTACH PARTITION';
+SELECT 'DETACH+ATTACH PARTITION';
 ALTER TABLE test.dst_r1 DETACH PARTITION 0;
 ALTER TABLE test.dst_r1 DETACH PARTITION 1;
 ALTER TABLE test.dst_r1 DETACH PARTITION 2;
