@@ -4505,16 +4505,10 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     while (true)
     {
-        if (max_wait_milliseconds)
-        {
-            UInt64 elapsed_ms = watch.elapsedMilliseconds();
-            if (elapsed_ms >= max_wait_milliseconds)
-                break;
+        event.tryWait(50);
 
-            event.tryWait(max_wait_milliseconds - elapsed_ms);
-        }
-        else
-            event.wait();
+        if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
+            break;
 
         if (cond_reached)
             break;
