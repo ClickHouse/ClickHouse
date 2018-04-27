@@ -6,7 +6,6 @@
 ## Improvements:
 * Subqueries could be wrapped by `()` braces (to enhance queries readability). For example, `(SELECT 1) UNION ALL (SELECT 1)`.
 * Simple `SELECT` queries  from table `system.processes` are not counted in `max_concurrent_queries` limit.
-* Add an ability to turn off logging. To do so just delete `<log/>` or `<errorlog/>` section from server config.
 
 ## Bug fixes:
 * Fixed incorrect behaviour of `IN` operator when select from `MATERIALIZED VIEW`.
@@ -17,7 +16,7 @@
 * Fixed an error in ZooKeeper client library which led to watches loses, freezing of distributed DDL queue and slowing replication queue if non-empty `chroot` prefix is used in ZooKeeper configuration.
 
 ## Backward incompatible changes:
-* Removed support of expressions like `(a, b) IN (SELECT (a, b))` (instead of them you could their equivalent `(a, b) IN (SELECT a, b)`). In previous releases, these expressions led to undermined filtering in `WHERE`.
+* Removed support of expressions like `(a, b) IN (SELECT (a, b))` (instead of them you can use their equivalent `(a, b) IN (SELECT a, b)`). In previous releases, these expressions led to undermined data filtering or caused errors.
 
 # ClickHouse release 1.1.54378, 2018-04-16
 ## New features:
