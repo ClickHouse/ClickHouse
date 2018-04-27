@@ -86,13 +86,13 @@ struct LLVMContext::Data
         return nullptr;
     }
 
-    LLVMCompiledFunction * lookup(const std::string& name)
+    const void * lookup(const std::string& name)
     {
         std::string mangledName;
         llvm::raw_string_ostream mangledNameStream(mangledName);
         llvm::Mangler::getNameWithPrefix(mangledNameStream, name, layout);
         /// why is `findSymbol` not const? we may never know.
-        return reinterpret_cast<LLVMCompiledFunction *>(compileLayer.findSymbol(mangledNameStream.str(), false).getAddress().get());
+        return reinterpret_cast<const void *>(compileLayer.findSymbol(mangledNameStream.str(), false).getAddress().get());
     }
 };
 
@@ -129,6 +129,24 @@ LLVMPreparedFunction::LLVMPreparedFunction(LLVMContext context, std::shared_ptr<
     : parent(parent), context(context), function(context->lookup(parent->getName()))
 {}
 
+namespace
+{
+    struct ColumnData
+    {
+        const char * data;
+        size_t stride;
+    };
+}
+
+static ColumnData getColumnData(const IColumn * column)
+{
+    if (!column->isFixedAndContiguous())
+        throw Exception("column type " + column->getName() + " is not a contiguous array; its data type "
+                        "should've had no native equivalent in LLVMContext::Data::toNativeType", ErrorCodes::LOGICAL_ERROR);
+    /// TODO: handle ColumnNullable
+    return {column->getRawData().data, !column->isColumnConst() ? column->sizeOfValueIfFixed() : 0};
+}
+
 void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     size_t block_size = block.rows();
@@ -136,20 +154,16 @@ void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & argu
     auto col_res = removeNullable(parent->getReturnType())->createColumn()->cloneResized(block_size);
     if (block_size)
     {
-        std::vector<const void *> columns(arguments.size());
-        std::vector<char> is_const(arguments.size());
+        std::vector<ColumnData> columns(arguments.size() + 1);
         for (size_t i = 0; i < arguments.size(); i++)
         {
             auto * column = block.getByPosition(arguments[i]).column.get();
             if (!column)
                 throw Exception("column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
-            if (!column->isFixedAndContiguous())
-                throw Exception("column type " + column->getName() + " is not a contiguous array; its data type "
-                                "should've had no native equivalent in LLVMContext::Data::toNativeType", ErrorCodes::LOGICAL_ERROR);
-            columns[i] = column->getRawData().data;
-            is_const[i] = column->isColumnConst();
+            columns[i] = getColumnData(column);
         }
-        function(columns.data(), is_const.data(), const_cast<char *>(col_res->getRawData().data), block_size);
+        columns[arguments.size()] = getColumnData(col_res.get());
+        reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
     }
     block.getByPosition(result).column = std::move(col_res);
 };
@@ -191,55 +205,47 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         seen.insert(action.result_name);
     }
 
-    llvm::FunctionType * func_type = llvm::FunctionType::get(context->builder.getVoidTy(), {
-        llvm::PointerType::getUnqual(llvm::PointerType::getUnqual(context->builder.getVoidTy())),
-        llvm::PointerType::getUnqual(context->builder.getInt8Ty()),
-        llvm::PointerType::getUnqual(context->toNativeType(actions.back().function->getReturnType())),
-        context->builder.getIntNTy(sizeof(size_t) * 8),
-    }, /*isVarArg=*/false);
+    auto * char_type = context->builder.getInt8Ty();
+    auto * size_type = context->builder.getIntNTy(sizeof(size_t) * 8);
+    auto * data_type = llvm::StructType::get(llvm::PointerType::get(char_type, 0), size_type);
+    auto * func_type = llvm::FunctionType::get(context->builder.getVoidTy(), { size_type, llvm::PointerType::get(data_type, 0) }, /*isVarArg=*/false);
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name, context->module.get());
     auto args = func->args().begin();
-    llvm::Value * inputs = &*args++; /// void** - tuple of columns, each a contiguous data block
-    llvm::Value * consts = &*args++; /// char* - for each column, 0 if it is full, 1 if it points to a single constant value
-    llvm::Value * output = &*args++; /// void* - space for the result
-    llvm::Value * counter = &*args++; /// size_t - number of entries to read from non-const values and write to output
+    llvm::Value * counter = &*args++;
+    llvm::Value * columns = &*args++;
 
     auto * entry = llvm::BasicBlock::Create(context->context, "entry", func);
     context->builder.SetInsertPoint(entry);
 
-    std::vector<llvm::Value *> inputs_v(arg_types.size());
-    std::vector<llvm::Value *> deltas_v(arg_types.size());
-    for (size_t i = 0; i < arg_types.size(); i++)
+    struct CastedColumnData
     {
-        if (i != 0)
-        {
-            inputs = context->builder.CreateConstGEP1_32(inputs, 1);
-            consts = context->builder.CreateConstGEP1_32(consts, 1);
-        }
-        auto * type = llvm::PointerType::getUnqual(context->toNativeType(arg_types[i]));
-        auto * step = context->builder.CreateICmpEQ(context->builder.CreateLoad(consts), llvm::ConstantInt::get(context->builder.getInt8Ty(), 0));
-        inputs_v[i] = context->builder.CreatePointerCast(context->builder.CreateLoad(inputs), type);
-        deltas_v[i] = context->builder.CreateZExt(step, context->builder.getInt32Ty());
+        llvm::PHINode * data;
+        llvm::Value * data_init;
+        llvm::Value * stride;
+    };
+    std::vector<CastedColumnData> columns_v(arg_types.size() + 1);
+    for (size_t i = 0; i <= arg_types.size(); i++)
+    {
+        auto * type = llvm::PointerType::getUnqual(context->toNativeType(i == arg_types.size() ? getReturnType() : arg_types[i]));
+        auto * data = context->builder.CreateConstInBoundsGEP2_32(data_type, columns, i, 0);
+        auto * stride = context->builder.CreateConstInBoundsGEP2_32(data_type, columns, i, 1);
+        columns_v[i] = { nullptr, context->builder.CreatePointerCast(context->builder.CreateLoad(data), type), context->builder.CreateLoad(stride) };
     }
 
     /// assume nonzero initial value in `counter`
     auto * loop = llvm::BasicBlock::Create(context->context, "loop", func);
     context->builder.CreateBr(loop);
     context->builder.SetInsertPoint(loop);
-
-    std::vector<llvm::PHINode *> phi(inputs_v.size());
-    for (size_t i = 0; i < inputs_v.size(); i++)
-    {
-        phi[i] = context->builder.CreatePHI(inputs_v[i]->getType(), 2);
-        phi[i]->addIncoming(inputs_v[i], entry);
-    }
-    auto * output_phi = context->builder.CreatePHI(output->getType(), 2);
     auto * counter_phi = context->builder.CreatePHI(counter->getType(), 2);
-    output_phi->addIncoming(output, entry);
     counter_phi->addIncoming(counter, entry);
+    for (auto & col : columns_v)
+    {
+        col.data = context->builder.CreatePHI(col.data_init->getType(), 2);
+        col.data->addIncoming(col.data_init, entry);
+    }
 
-    for (size_t i = 0; i < phi.size(); i++)
-        if (!by_name.emplace(arg_names[i], [&, i]() { return context->builder.CreateLoad(phi[i]); }).second)
+    for (size_t i = 0; i < arg_types.size(); i++)
+        if (!by_name.emplace(arg_names[i], [&, i]() { return context->builder.CreateLoad(columns_v[i].data); }).second)
             throw Exception("duplicate input column name " + arg_names[i], ErrorCodes::LOGICAL_ERROR);
     for (const auto & action : actions)
     {
@@ -254,12 +260,15 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         if (!by_name.emplace(action.result_name, std::move(generator)).second)
             throw Exception("duplicate action result name " + action.result_name, ErrorCodes::LOGICAL_ERROR);
     }
-    context->builder.CreateStore(by_name.at(actions.back().result_name)(), output_phi);
+    context->builder.CreateStore(by_name.at(actions.back().result_name)(), columns_v[arg_types.size()].data);
 
     auto * cur_block = context->builder.GetInsertBlock();
-    for (size_t i = 0; i < phi.size(); i++)
-        phi[i]->addIncoming(context->builder.CreateGEP(phi[i], deltas_v[i]), cur_block);
-    output_phi->addIncoming(context->builder.CreateConstGEP1_32(output_phi, 1), cur_block);
+    for (auto & col : columns_v)
+    {
+        auto * as_char = context->builder.CreatePointerCast(col.data, llvm::PointerType::get(char_type, 0));
+        auto * as_type = context->builder.CreatePointerCast(context->builder.CreateGEP(as_char, col.stride), col.data->getType());
+        col.data->addIncoming(as_type, cur_block);
+    }
     counter_phi->addIncoming(context->builder.CreateSub(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), cur_block);
 
     auto * end = llvm::BasicBlock::Create(context->context, "end", func);
@@ -314,18 +323,14 @@ IFunctionBase::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataTyp
 
 namespace
 {
-
-struct LLVMTargetInitializer
-{
-    LLVMTargetInitializer()
+    struct LLVMTargetInitializer
     {
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
-    }
-};
-
+        LLVMTargetInitializer()
+        {
+            llvm::InitializeNativeTarget();
+            llvm::InitializeNativeTargetAsmPrinter();
+        }
+    } llvmInitializer;
 }
-
-static LLVMTargetInitializer llvmInitializer;
 
 #endif
