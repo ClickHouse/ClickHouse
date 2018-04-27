@@ -28,7 +28,7 @@ public:
     }
 };
 
-class LLVMPreparedFunction : public PreparedFunctionImpl
+class LLVMPreparedFunction : public IPreparedFunction
 {
     std::shared_ptr<const IFunctionBase> parent;
     LLVMContext context;
@@ -39,7 +39,7 @@ public:
 
     String getName() const override { return parent->getName(); }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 class LLVMFunction : public std::enable_shared_from_this<LLVMFunction>, public IFunctionBase

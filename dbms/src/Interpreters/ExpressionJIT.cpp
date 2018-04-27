@@ -3,10 +3,12 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Native.h>
 
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -17,7 +19,6 @@
 #include <llvm/IR/Mangler.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
-#include <llvm/IR/Verifier.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
@@ -25,12 +26,10 @@
 #include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
 #include <llvm/ExecutionEngine/Orc/NullResolver.h>
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
-#include <stdexcept>
 
 namespace DB
 {
@@ -38,12 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-template <typename T>
-static bool typeIsA(const DataTypePtr & type)
-{
-    return typeid_cast<const T *>(removeNullable(type).get());;
 }
 
 struct LLVMContext::Data
@@ -67,33 +60,6 @@ struct LLVMContext::Data
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
     }
-
-    llvm::Type * toNativeType(const DataTypePtr & type)
-    {
-        /// LLVM doesn't have unsigned types, it has unsigned instructions.
-        if (typeIsA<DataTypeInt8>(type) || typeIsA<DataTypeUInt8>(type))
-            return builder.getInt8Ty();
-        if (typeIsA<DataTypeInt16>(type) || typeIsA<DataTypeUInt16>(type))
-            return builder.getInt16Ty();
-        if (typeIsA<DataTypeInt32>(type) || typeIsA<DataTypeUInt32>(type))
-            return builder.getInt32Ty();
-        if (typeIsA<DataTypeInt64>(type) || typeIsA<DataTypeUInt64>(type))
-            return builder.getInt64Ty();
-        if (typeIsA<DataTypeFloat32>(type))
-            return builder.getFloatTy();
-        if (typeIsA<DataTypeFloat64>(type))
-            return builder.getDoubleTy();
-        return nullptr;
-    }
-
-    const void * lookup(const std::string& name)
-    {
-        std::string mangledName;
-        llvm::raw_string_ostream mangledNameStream(mangledName);
-        llvm::Mangler::getNameWithPrefix(mangledNameStream, name, layout);
-        /// why is `findSymbol` not const? we may never know.
-        return reinterpret_cast<const void *>(compileLayer.findSymbol(mangledNameStream.str(), false).getAddress().get());
-    }
 };
 
 LLVMContext::LLVMContext()
@@ -104,7 +70,6 @@ void LLVMContext::finalize()
 {
     if (!shared->module->size())
         return;
-    shared->module->print(llvm::errs(), nullptr, false, true);
     llvm::PassManagerBuilder builder;
     llvm::legacy::FunctionPassManager fpm(shared->module.get());
     builder.OptLevel = 2;
@@ -112,46 +77,67 @@ void LLVMContext::finalize()
     for (auto & function : *shared->module)
         fpm.run(function);
     llvm::cantFail(shared->compileLayer.addModule(shared->module, std::make_shared<llvm::orc::NullResolver>()));
-    shared->module->print(llvm::errs(), nullptr, false, true);
 }
 
 bool LLVMContext::isCompilable(const IFunctionBase& function) const
 {
-    if (!function.isCompilable() || !shared->toNativeType(function.getReturnType()))
+    if (!function.isCompilable() || !toNativeType(shared->builder, function.getReturnType()))
         return false;
     for (const auto & type : function.getArgumentTypes())
-        if (!shared->toNativeType(type))
+        if (!toNativeType(shared->builder, type))
             return false;
     return true;
 }
 
 LLVMPreparedFunction::LLVMPreparedFunction(LLVMContext context, std::shared_ptr<const IFunctionBase> parent)
-    : parent(parent), context(context), function(context->lookup(parent->getName()))
-{}
+    : parent(parent), context(context)
+{
+    std::string mangledName;
+    llvm::raw_string_ostream mangledNameStream(mangledName);
+    llvm::Mangler::getNameWithPrefix(mangledNameStream, parent->getName(), context->layout);
+    function = reinterpret_cast<const void *>(context->compileLayer.findSymbol(mangledNameStream.str(), false).getAddress().get());
+}
 
 namespace
 {
     struct ColumnData
     {
-        const char * data;
+        const char * data = nullptr;
+        const char * null = nullptr;
         size_t stride;
+    };
+
+    struct ColumnDataPlaceholders
+    {
+        llvm::PHINode * data;
+        llvm::PHINode * null;
+        llvm::Value * data_init;
+        llvm::Value * null_init;
+        llvm::Value * stride;
+        llvm::Value * is_const;
     };
 }
 
 static ColumnData getColumnData(const IColumn * column)
 {
-    if (!column->isFixedAndContiguous())
-        throw Exception("column type " + column->getName() + " is not a contiguous array; its data type "
-                        "should've had no native equivalent in LLVMContext::Data::toNativeType", ErrorCodes::LOGICAL_ERROR);
-    /// TODO: handle ColumnNullable
-    return {column->getRawData().data, !column->isColumnConst() ? column->sizeOfValueIfFixed() : 0};
+    ColumnData result;
+    const bool is_const = column->isColumnConst();
+    if (is_const)
+        column = &reinterpret_cast<const ColumnConst *>(column)->getDataColumn();
+    if (auto * nullable = typeid_cast<const ColumnNullable *>(column))
+    {
+        result.null = nullable->getNullMapColumn().getRawData().data;
+        column = &nullable->getNestedColumn();
+    }
+    result.data = column->getRawData().data;
+    result.stride = is_const ? 0 : column->sizeOfValueIfFixed();
+    return result;
 }
 
-void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+void LLVMPreparedFunction::execute(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     size_t block_size = block.rows();
-    /// assuming that the function has default behavior on NULL, the column will be wrapped by `PreparedFunctionImpl::execute`.
-    auto col_res = removeNullable(parent->getReturnType())->createColumn()->cloneResized(block_size);
+    auto col_res = parent->getReturnType()->createColumn()->cloneResized(block_size);
     if (block_size)
     {
         std::vector<ColumnData> columns(arguments.size() + 1);
@@ -171,22 +157,34 @@ void LLVMPreparedFunction::executeImpl(Block & block, const ColumnNumbers & argu
 LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext context, const Block & sample_block)
     : actions(std::move(actions_)), context(context)
 {
+    auto & b = context->builder;
+    auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
+    auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
+    auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, llvm::PointerType::get(data_type, 0) }, /*isVarArg=*/false);
+    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name, context->module.get());
+    auto args = func->args().begin();
+    llvm::Value * counter = &*args++;
+    llvm::Value * columns = &*args++;
+
+    auto * entry = llvm::BasicBlock::Create(context->context, "entry", func);
+    b.SetInsertPoint(entry);
+
     std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
     for (const auto & c : sample_block)
     {
-        auto generator = [&]() -> llvm::Value *
-        {
-            auto * type = context->toNativeType(c.type);
-            if (typeIsA<DataTypeFloat32>(c.type))
-                return llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float32> *>(c.column.get())->getElement(0));
-            if (typeIsA<DataTypeFloat64>(c.type))
-                return llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float64> *>(c.column.get())->getElement(0));
-            if (type && type->isIntegerTy())
-                return llvm::ConstantInt::get(type, c.column->getUInt(0));
-            return nullptr;
-        };
-        if (c.column && generator() && !by_name.emplace(c.name, std::move(generator)).second)
-            throw Exception("duplicate constant column " + c.name, ErrorCodes::LOGICAL_ERROR);
+        auto * type = toNativeType(b, c.type);
+        if (!type || !c.column)
+            continue;
+        llvm::Value * value = nullptr;
+        if (type->isFloatTy())
+            value = llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float32> *>(c.column.get())->getElement(0));
+        else if (type->isDoubleTy())
+            value = llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float64> *>(c.column.get())->getElement(0));
+        else if (type->isIntegerTy())
+            value = llvm::ConstantInt::get(type, c.column->getUInt(0));
+        /// TODO: handle nullable (create a pointer)
+        if (value)
+            by_name[c.name] = [=]() { return value; };
     }
 
     std::unordered_set<std::string> seen;
@@ -196,85 +194,100 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         const auto & types = action.function->getArgumentTypes();
         for (size_t i = 0; i < names.size(); i++)
         {
-            if (seen.emplace(names[i]).second && by_name.find(names[i]) == by_name.end())
-            {
-                arg_names.push_back(names[i]);
-                arg_types.push_back(types[i]);
-            }
+            if (!seen.emplace(names[i]).second || by_name.find(names[i]) != by_name.end())
+                continue;
+            arg_names.push_back(names[i]);
+            arg_types.push_back(types[i]);
         }
         seen.insert(action.result_name);
     }
 
-    auto * char_type = context->builder.getInt8Ty();
-    auto * size_type = context->builder.getIntNTy(sizeof(size_t) * 8);
-    auto * data_type = llvm::StructType::get(llvm::PointerType::get(char_type, 0), size_type);
-    auto * func_type = llvm::FunctionType::get(context->builder.getVoidTy(), { size_type, llvm::PointerType::get(data_type, 0) }, /*isVarArg=*/false);
-    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name, context->module.get());
-    auto args = func->args().begin();
-    llvm::Value * counter = &*args++;
-    llvm::Value * columns = &*args++;
-
-    auto * entry = llvm::BasicBlock::Create(context->context, "entry", func);
-    context->builder.SetInsertPoint(entry);
-
-    struct CastedColumnData
-    {
-        llvm::PHINode * data;
-        llvm::Value * data_init;
-        llvm::Value * stride;
-    };
-    std::vector<CastedColumnData> columns_v(arg_types.size() + 1);
+    std::vector<ColumnDataPlaceholders> columns_v(arg_types.size() + 1);
     for (size_t i = 0; i <= arg_types.size(); i++)
     {
-        auto * type = llvm::PointerType::getUnqual(context->toNativeType(i == arg_types.size() ? getReturnType() : arg_types[i]));
-        auto * data = context->builder.CreateConstInBoundsGEP2_32(data_type, columns, i, 0);
-        auto * stride = context->builder.CreateConstInBoundsGEP2_32(data_type, columns, i, 1);
-        columns_v[i] = { nullptr, context->builder.CreatePointerCast(context->builder.CreateLoad(data), type), context->builder.CreateLoad(stride) };
+        auto & column_type = (i == arg_types.size()) ? getReturnType() : arg_types[i];
+        auto * type = llvm::PointerType::get(toNativeType(b, removeNullable(column_type)), 0);
+        columns_v[i].data_init = b.CreatePointerCast(b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 0)), type);
+        columns_v[i].stride = b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 2));
+        if (column_type->isNullable())
+        {
+            columns_v[i].null_init = b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 1));
+            columns_v[i].is_const = b.CreateICmpEQ(columns_v[i].stride, b.getIntN(sizeof(size_t) * 8, 0));
+        }
+    }
+
+    for (size_t i = 0; i < arg_types.size(); i++)
+    {
+        by_name[arg_names[i]] = [&, &col = columns_v[i]]() -> llvm::Value *
+        {
+            if (!col.null)
+                return b.CreateLoad(col.data);
+            auto * is_valid = b.CreateICmpNE(b.CreateLoad(col.null), b.getInt8(1));
+            auto * null_ptr = llvm::ConstantPointerNull::get(reinterpret_cast<llvm::PointerType *>(col.data->getType()));
+            return b.CreateSelect(is_valid, col.data, null_ptr);
+        };
+    }
+    for (const auto & action : actions)
+    {
+        ValuePlaceholders input;
+        for (const auto & name : action.argument_names)
+            input.push_back(by_name.at(name));
+        /// TODO: pass compile-time constant arguments to `compilePrologue`?
+        auto extra = action.function->compilePrologue(b);
+        for (auto * value : extra)
+            input.emplace_back([=]() { return value; });
+        by_name[action.result_name] = [&, input = std::move(input)]() { return action.function->compile(b, input); };
     }
 
     /// assume nonzero initial value in `counter`
     auto * loop = llvm::BasicBlock::Create(context->context, "loop", func);
-    context->builder.CreateBr(loop);
-    context->builder.SetInsertPoint(loop);
-    auto * counter_phi = context->builder.CreatePHI(counter->getType(), 2);
+    b.CreateBr(loop);
+    b.SetInsertPoint(loop);
+    auto * counter_phi = b.CreatePHI(counter->getType(), 2);
     counter_phi->addIncoming(counter, entry);
     for (auto & col : columns_v)
     {
-        col.data = context->builder.CreatePHI(col.data_init->getType(), 2);
+        col.data = b.CreatePHI(col.data_init->getType(), 2);
         col.data->addIncoming(col.data_init, entry);
-    }
-
-    for (size_t i = 0; i < arg_types.size(); i++)
-        if (!by_name.emplace(arg_names[i], [&, i]() { return context->builder.CreateLoad(columns_v[i].data); }).second)
-            throw Exception("duplicate input column name " + arg_names[i], ErrorCodes::LOGICAL_ERROR);
-    for (const auto & action : actions)
-    {
-        ValuePlaceholders action_input;
-        action_input.reserve(action.argument_names.size());
-        for (const auto & name : action.argument_names)
-            action_input.push_back(by_name.at(name));
-        auto generator = [&action, &context, action_input{std::move(action_input)}]()
+        if (col.null_init)
         {
-            return action.function->compile(context->builder, action_input);
-        };
-        if (!by_name.emplace(action.result_name, std::move(generator)).second)
-            throw Exception("duplicate action result name " + action.result_name, ErrorCodes::LOGICAL_ERROR);
+            col.null = b.CreatePHI(col.null_init->getType(), 2);
+            col.null->addIncoming(col.null_init, entry);
+        }
     }
-    context->builder.CreateStore(by_name.at(actions.back().result_name)(), columns_v[arg_types.size()].data);
 
-    auto * cur_block = context->builder.GetInsertBlock();
+    auto * result = by_name.at(actions.back().result_name)();
+    if (columns_v[arg_types.size()].null)
+    {
+        auto * read = llvm::BasicBlock::Create(context->context, "not_null", func);
+        auto * join = llvm::BasicBlock::Create(context->context, "join", func);
+        b.CreateCondBr(b.CreateIsNull(result), join, read);
+        b.SetInsertPoint(read);
+        b.CreateStore(b.getInt8(0), columns_v[arg_types.size()].null); /// column initialized to all-NULL
+        b.CreateStore(b.CreateLoad(result), columns_v[arg_types.size()].data);
+        b.CreateBr(join);
+        b.SetInsertPoint(join);
+    }
+    else
+    {
+        b.CreateStore(result, columns_v[arg_types.size()].data);
+    }
+
+    auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns_v)
     {
-        auto * as_char = context->builder.CreatePointerCast(col.data, llvm::PointerType::get(char_type, 0));
-        auto * as_type = context->builder.CreatePointerCast(context->builder.CreateGEP(as_char, col.stride), col.data->getType());
+        auto * as_char = b.CreatePointerCast(col.data, b.getInt8PtrTy());
+        auto * as_type = b.CreatePointerCast(b.CreateGEP(as_char, col.stride), col.data->getType());
         col.data->addIncoming(as_type, cur_block);
+        if (col.null)
+            col.null->addIncoming(b.CreateSelect(col.is_const, col.null, b.CreateConstGEP1_32(col.null, 1)), cur_block);
     }
-    counter_phi->addIncoming(context->builder.CreateSub(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), cur_block);
+    counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
 
     auto * end = llvm::BasicBlock::Create(context->context, "end", func);
-    context->builder.CreateCondBr(context->builder.CreateICmpNE(counter_phi, llvm::ConstantInt::get(counter_phi->getType(), 1)), loop, end);
-    context->builder.SetInsertPoint(end);
-    context->builder.CreateRetVoid();
+    b.CreateCondBr(b.CreateICmpNE(counter_phi, llvm::ConstantInt::get(size_type, 1)), loop, end);
+    b.SetInsertPoint(end);
+    b.CreateRetVoid();
 }
 
 static Field evaluateFunction(IFunctionBase & function, const IDataType & type, const Field & arg)

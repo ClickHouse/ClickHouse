@@ -25,12 +25,12 @@ public:
     static constexpr auto name = "something";
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilable(const DataTypes & types) const override
+    bool isCompilableImpl(const DataTypes & types) const override
     {
         return types.size() == 2 && types[0]->equals(*types[1]);
     }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, const DataTypes & types, const ValuePlaceholders & values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
         if (types[0]->equals(DataTypeFloat32{}) || types[0]->equals(DataTypeFloat64{}))
             return static_cast<llvm::IRBuilder<>&>(builder).CreateFAdd(values[0](), values[1]());
