@@ -102,17 +102,25 @@ public:
 
     virtual bool isCompilable() const { return false; }
 
-    /** Produce LLVM IR code that operates on *scalar* values. JIT-compilation is only supported for native
-      * data types, i.e. numbers. This method will never be called if there is a non-number argument or
-      * a non-number result type. Also, for any compilable function default behavior on NULL values is assumed,
-      * i.e. the result is NULL if and only if any argument is NULL.
+    /// Produce LLVM IR code that runs before the loop over the input rows. Mostly useful for allocating stack variables.
+    virtual std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase &) const
+    {
+        return {};
+    }
+
+    /** Produce LLVM IR code that operates on scalar values.
+      *
+      * The first `getArgumentTypes().size()` values describe the current row of each column. Supported value types:
+      *   - numbers, represented as native numbers;
+      *   - nullable numbers, as pointers to native numbers or a null pointer.
+      * The rest are values returned by `compilePrologue`.
       *
       * NOTE: the builder is actually guaranteed to be exactly `llvm::IRBuilder<>`, so you may safely
       *       downcast it to that type. This method is specified with `IRBuilderBase` because forward-declaring
       *       templates with default arguments is impossible and including LLVM in such a generic header
       *       as this one is a major pain.
       */
-    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const ValuePlaceholders & /*values*/) const
+    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -286,10 +294,7 @@ public:
     using PreparedFunctionImpl::execute;
     using FunctionBuilderImpl::getReturnTypeImpl;
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
-
     using FunctionBuilderImpl::getReturnType;
-
-    virtual bool isCompilable(const DataTypes & /*types*/) const { return false; }
 
     bool isCompilable() const final
     {
@@ -301,12 +306,12 @@ public:
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const DataTypes & /*types*/, const ValuePlaceholders & /*values*/) const
+    std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase &) const final
     {
-        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("compilePrologue without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, const ValuePlaceholders & /*values*/) const final
+    llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const final
     {
         throw Exception("compile without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -321,7 +326,25 @@ public:
         throw Exception("getReturnType is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    bool isCompilable(const DataTypes & arguments) const;
+
+    std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase &, const DataTypes & arguments) const;
+
+    llvm::Value * compile(llvm::IRBuilderBase &, const DataTypes & arguments, ValuePlaceholders values) const;
+
 protected:
+    virtual bool isCompilableImpl(const DataTypes &) const { return false; }
+
+    virtual std::vector<llvm::Value *> compilePrologueImpl(llvm::IRBuilderBase &, const DataTypes &) const
+    {
+        return {};
+    }
+
+    virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, ValuePlaceholders) const
+    {
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*return_type*/) const final
     {
         throw Exception("buildImpl is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
@@ -363,7 +386,9 @@ public:
 
     bool isCompilable() const override { return function->isCompilable(arguments); }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuePlaceholders & values) const override { return function->compile(builder, arguments, values); }
+    std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase & builder) const override { return function->compilePrologue(builder, arguments); }
+
+    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return function->compile(builder, arguments, std::move(values)); }
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override { return std::make_shared<DefaultExecutable>(function); }
 

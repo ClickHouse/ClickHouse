@@ -1,13 +1,19 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Columns/ColumnConst.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Common/config.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Native.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
+
+#if USE_EMBEDDED_COMPILER
+#include <llvm/IR/IRBuilder.h>
+#endif
 
 
 namespace DB
@@ -254,4 +260,75 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
     return getReturnTypeImpl(arguments);
 }
+
+static bool anyNullable(const DataTypes & types)
+{
+    for (const auto & type : types)
+        if (typeid_cast<const DataTypeNullable *>(type.get()))
+            return true;
+    return false;
+}
+
+bool IFunction::isCompilable(const DataTypes & arguments) const
+{
+    if (useDefaultImplementationForNulls() && anyNullable(arguments))
+    {
+        DataTypes filtered;
+        for (const auto & type : arguments)
+            filtered.emplace_back(removeNullable(type));
+        return isCompilableImpl(filtered);
+    }
+    return isCompilableImpl(arguments);
+}
+
+std::vector<llvm::Value *> IFunction::compilePrologue(llvm::IRBuilderBase & builder, const DataTypes & arguments) const
+{
+    auto result = compilePrologueImpl(builder, arguments);
+#if USE_EMBEDDED_COMPILER
+    if (useDefaultImplementationForNulls() && anyNullable(arguments))
+        result.push_back(static_cast<llvm::IRBuilder<> &>(builder).CreateAlloca(toNativeType(builder, getReturnTypeImpl(arguments))));
+#endif
+    return result;
+}
+
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
+{
+#if USE_EMBEDDED_COMPILER
+    if (useDefaultImplementationForNulls() && anyNullable(arguments))
+    {
+        /// FIXME: when only one column is nullable, this is actually slower than the non-jitted version
+        ///        because this involves copying the null map while `wrapInNullable` reuses it.
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+        auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+        auto * space = values.back()();
+        values.pop_back();
+        for (size_t i = 0; i < arguments.size(); i++)
+        {
+            if (!arguments[i]->isNullable())
+                continue;
+            values[i] = [&, previous = std::move(values[i])]()
+            {
+                auto * value = previous();
+                auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+                b.CreateCondBr(b.CreateIsNull(value), fail, ok);
+                b.SetInsertPoint(ok);
+                return b.CreateLoad(value);
+            };
+        }
+        b.CreateStore(compileImpl(builder, arguments, std::move(values)), space);
+        b.CreateBr(join);
+        auto * result_block = b.GetInsertBlock();
+        b.SetInsertPoint(fail); /// an empty joining block to avoid keeping track of where we could jump from
+        b.CreateBr(join);
+        b.SetInsertPoint(join);
+        auto * phi = b.CreatePHI(space->getType(), 2);
+        phi->addIncoming(space, result_block);
+        phi->addIncoming(llvm::ConstantPointerNull::get(static_cast<llvm::PointerType *>(space->getType())), fail);
+        return phi;
+    }
+#endif
+    return compileImpl(builder, arguments, std::move(values));
+}
+
 }
