@@ -707,6 +707,7 @@ struct SettingString
     }
 };
 
+
 struct SettingChar
 {
 private:
@@ -743,7 +744,7 @@ public:
 
     void set(const Field & x)
     {
-        const String &s = safeGet<const String &>(x);
+        const String & s = safeGet<const String &>(x);
         set(s);
     }
 
