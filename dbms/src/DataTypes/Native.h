@@ -40,14 +40,16 @@ static llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePt
     return nullptr;
 }
 
-static llvm::Constant * getDefaultNativeValue(llvm::IRBuilder<> & builder, llvm::Type * type)
+static llvm::Constant * getDefaultNativeValue(llvm::Type * type)
 {
     if (type->isIntegerTy())
         return llvm::ConstantInt::get(type, 0);
     if (type->isFloatTy() || type->isDoubleTy())
         return llvm::ConstantFP::get(type, 0.0);
-    auto * as_struct = static_cast<llvm::StructType *>(type); /// nullable
-    return llvm::ConstantStruct::get(as_struct, getDefaultNativeValue(builder, as_struct->getElementType(0)), builder.getTrue());
+    /// else nullable
+    auto * value = getDefaultNativeValue(type->getContainedType(0));
+    auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), 1);
+    return llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null);
 }
 
 }

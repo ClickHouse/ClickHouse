@@ -298,12 +298,12 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
     {
         if (auto denulled = removeNullables(arguments))
         {
-            /// FIXME: when only one column is nullable, this is actually slower than the non-jitted version
+            /// FIXME: when only one column is nullable, this can actually be slower than the non-jitted version
             ///        because this involves copying the null map while `wrapInNullable` reuses it.
             auto & b = static_cast<llvm::IRBuilder<> &>(builder);
             auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
             auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-            auto * init = getDefaultNativeValue(b, toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
+            auto * init = getDefaultNativeValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
             for (size_t i = 0; i < arguments.size(); i++)
             {
                 if (!arguments[i]->isNullable())
