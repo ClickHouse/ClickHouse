@@ -339,3 +339,6 @@ It works for JSONEachRow and TSKV formats.
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats  (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
+## format_csv_delimiter
+
+The character to be considered as a delimiter in CSV data. By default, `,`.
