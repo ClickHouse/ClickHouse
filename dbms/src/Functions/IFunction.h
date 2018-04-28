@@ -102,17 +102,8 @@ public:
 
     virtual bool isCompilable() const { return false; }
 
-    /// Produce LLVM IR code that runs before the loop over the input rows. Mostly useful for allocating stack variables.
-    virtual std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase &) const
-    {
-        return {};
-    }
-
-    /** Produce LLVM IR code that operates on scalar values.
-      *
-      * The first `getArgumentTypes().size()` values describe the current row of each column. (See
-      * `toNativeType` in DataTypes/Native.h for supported value types and how they map to LLVM types.)
-      * The rest are values returned by `compilePrologue`.
+    /** Produce LLVM IR code that operates on scalar values. See `toNativeType` in DataTypes/Native.h
+      * for supported value types and how they map to LLVM types.
       *
       * NOTE: the builder is actually guaranteed to be exactly `llvm::IRBuilder<>`, so you may safely
       *       downcast it to that type. This method is specified with `IRBuilderBase` because forward-declaring
@@ -305,11 +296,6 @@ public:
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase &) const final
-    {
-        throw Exception("compilePrologue without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const final
     {
         throw Exception("compile without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
@@ -327,17 +313,10 @@ public:
 
     bool isCompilable(const DataTypes & arguments) const;
 
-    std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase &, const DataTypes & arguments) const;
-
     llvm::Value * compile(llvm::IRBuilderBase &, const DataTypes & arguments, ValuePlaceholders values) const;
 
 protected:
     virtual bool isCompilableImpl(const DataTypes &) const { return false; }
-
-    virtual std::vector<llvm::Value *> compilePrologueImpl(llvm::IRBuilderBase &, const DataTypes &) const
-    {
-        return {};
-    }
 
     virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, ValuePlaceholders) const
     {
@@ -384,8 +363,6 @@ public:
     const DataTypePtr & getReturnType() const override { return return_type; }
 
     bool isCompilable() const override { return function->isCompilable(arguments); }
-
-    std::vector<llvm::Value *> compilePrologue(llvm::IRBuilderBase & builder) const override { return function->compilePrologue(builder, arguments); }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return function->compile(builder, arguments, std::move(values)); }
 

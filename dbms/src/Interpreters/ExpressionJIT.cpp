@@ -119,7 +119,6 @@ namespace
         llvm::Value * data_init;
         llvm::Value * null_init;
         llvm::Value * stride;
-        llvm::Value * is_const;
     };
 }
 
@@ -202,10 +201,7 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         columns_v[i].data_init = b.CreatePointerCast(b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 0)), type);
         columns_v[i].stride = b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 2));
         if (column_type->isNullable())
-        {
             columns_v[i].null_init = b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 1));
-            columns_v[i].is_const = b.CreateICmpEQ(columns_v[i].stride, b.getIntN(sizeof(size_t) * 8, 0));
-        }
     }
 
     for (size_t i = 0; i < arg_types.size(); i++)
@@ -225,10 +221,6 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         ValuePlaceholders input;
         for (const auto & name : action.argument_names)
             input.push_back(by_name.at(name));
-        /// TODO: pass compile-time constant arguments to `compilePrologue`?
-        auto extra = action.function->compilePrologue(b);
-        for (auto * value : extra)
-            input.emplace_back([=]() { return value; });
         by_name[action.result_name] = [&, input = std::move(input)]() {
             auto * result = action.function->compile(b, input);
             if (result->getType() != toNativeType(b, action.function->getReturnType()))
@@ -273,7 +265,10 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         auto * as_type = b.CreatePointerCast(b.CreateInBoundsGEP(as_char, col.stride), col.data->getType());
         col.data->addIncoming(as_type, cur_block);
         if (col.null)
-            col.null->addIncoming(b.CreateSelect(col.is_const, col.null, b.CreateConstInBoundsGEP1_32(b.getInt8Ty(), col.null, 1)), cur_block);
+        {
+            auto * is_const = b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
+            col.null->addIncoming(b.CreateSelect(is_const, col.null, b.CreateConstInBoundsGEP1_32(b.getInt8Ty(), col.null, 1)), cur_block);
+        }
     }
     counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
 

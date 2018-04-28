@@ -283,14 +283,6 @@ bool IFunction::isCompilable(const DataTypes & arguments) const
     return isCompilableImpl(arguments);
 }
 
-std::vector<llvm::Value *> IFunction::compilePrologue(llvm::IRBuilderBase & builder, const DataTypes & arguments) const
-{
-    if (useDefaultImplementationForNulls())
-        if (auto denulled = removeNullables(arguments))
-            return compilePrologueImpl(builder, *denulled);
-    return compilePrologueImpl(builder, arguments);
-}
-
 llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
 {
 #if USE_EMBEDDED_COMPILER
