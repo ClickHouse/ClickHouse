@@ -213,7 +213,7 @@ pages:
 - 'Dictionaries':
   - 'Introduction': 'dicts/index.md'
   - 'External dictionaries':
-    - 'External dictionaries': 'dicts/external_dicts.md'
+    - 'General desription': 'dicts/external_dicts.md'
     - 'Configuring an external dictionary': 'dicts/external_dicts_dict.md'
     - 'Storing dictionaries in memory': 'dicts/external_dicts_dict_layout.md'
     - 'Dictionary updates': 'dicts/external_dicts_dict_lifetime.md'
