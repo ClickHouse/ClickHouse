@@ -312,10 +312,10 @@ Data directory: `/var/lib/clickhouse/data/database/table/`,where `/var/lib/click
 ```bash
 $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse  4096 may   13 02:55 detached
--rw-rw-rw- 1 clickhouse clickhouse     2 may   13 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 May  5 02:58 increment.txt
 ```
 
 Here, `20140317_20140323_2_2_0` and ` 20140317_20140323_4_4_0` are the directories of data parts.

@@ -51,7 +51,7 @@ The maximum amount of RAM to use for running a user's queries on a single server
 
 Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L244). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
-See also the descriptions of [max_memory_usage]( and #settings_max_memory_usage).
+See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 ## max_memory_usage_for_all_queries
 
@@ -59,7 +59,7 @@ The maximum amount of RAM to use for running all queries on a single server.
 
 Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L245). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
 
-See also the descriptions of [max_memory_usage]( and #settings_max_memory_usage).
+See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 ## max_rows_to_read
 
@@ -193,4 +193,3 @@ Maximum number of bytes (uncompressed data) that can be passed to a remote serve
 ## transfer_overflow_mode
 
 What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
-
