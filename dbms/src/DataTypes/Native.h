@@ -1,18 +1,13 @@
 #pragma once
 
 #include <Common/config.h>
+
+#if USE_EMBEDDED_COMPILER
+
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
-namespace llvm
-{
-    class IRBuilderBase;
-    class Type;
-}
-
-#if USE_EMBEDDED_COMPILER
 #include <llvm/IR/IRBuilder.h>
-#endif
 
 namespace DB
 {
@@ -22,13 +17,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-static llvm::Type * toNativeType([[maybe_unused]] llvm::IRBuilderBase & builder, [[maybe_unused]] const DataTypePtr & type)
+static llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
 {
-#if USE_EMBEDDED_COMPILER
     if (auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
     {
         auto * wrapped = toNativeType(builder, nullable->getNestedType());
-        return wrapped ? llvm::PointerType::get(wrapped, 0) : nullptr;
+        return wrapped ? llvm::StructType::get(wrapped, /* is null = */ builder.getInt1Ty()) : nullptr;
     }
     /// LLVM doesn't have unsigned types, it has unsigned instructions.
     if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeUInt8 *>(type.get()))
@@ -44,9 +38,18 @@ static llvm::Type * toNativeType([[maybe_unused]] llvm::IRBuilderBase & builder,
     if (typeid_cast<const DataTypeFloat64 *>(type.get()))
         return builder.getDoubleTy();
     return nullptr;
-#else
-    throw Exception("JIT-compilation is disabled", ErrorCodes::NOT_IMPLEMENTED);
-#endif
+}
+
+static llvm::Constant * getDefaultNativeValue(llvm::IRBuilder<> & builder, llvm::Type * type)
+{
+    if (type->isIntegerTy())
+        return llvm::ConstantInt::get(type, 0);
+    if (type->isFloatTy() || type->isDoubleTy())
+        return llvm::ConstantFP::get(type, 0.0);
+    auto * as_struct = static_cast<llvm::StructType *>(type); /// nullable
+    return llvm::ConstantStruct::get(as_struct, getDefaultNativeValue(builder, as_struct->getElementType(0)), builder.getTrue());
 }
 
 }
+
+#endif

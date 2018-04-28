@@ -72,7 +72,12 @@ void LLVMContext::finalize()
         return;
     llvm::PassManagerBuilder builder;
     llvm::legacy::FunctionPassManager fpm(shared->module.get());
-    builder.OptLevel = 2;
+    builder.OptLevel = 3;
+    builder.SLPVectorize = true;
+    builder.LoopVectorize = true;
+    builder.RerollLoops = true;
+    builder.VerifyInput = true;
+    builder.VerifyOutput = true;
     builder.populateFunctionPassManager(fpm);
     for (auto & function : *shared->module)
         fpm.run(function);
@@ -218,13 +223,14 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
 
     for (size_t i = 0; i < arg_types.size(); i++)
     {
-        by_name[arg_names[i]] = [&, &col = columns_v[i]]() -> llvm::Value *
+        by_name[arg_names[i]] = [&, &col = columns_v[i], i]() -> llvm::Value *
         {
+            auto * value = b.CreateLoad(col.data);
             if (!col.null)
-                return b.CreateLoad(col.data);
-            auto * is_valid = b.CreateICmpNE(b.CreateLoad(col.null), b.getInt8(1));
-            auto * null_ptr = llvm::ConstantPointerNull::get(reinterpret_cast<llvm::PointerType *>(col.data->getType()));
-            return b.CreateSelect(is_valid, col.data, null_ptr);
+                return value;
+            auto * is_null = b.CreateICmpEQ(b.CreateLoad(col.null), b.getInt8(1));
+            auto * nullable = getDefaultNativeValue(b, toNativeType(b, arg_types[i]));
+            return b.CreateInsertValue(b.CreateInsertValue(nullable, value, {0}), is_null, {1});
         };
     }
     for (const auto & action : actions)
@@ -259,14 +265,9 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     auto * result = by_name.at(actions.back().result_name)();
     if (columns_v[arg_types.size()].null)
     {
-        auto * read = llvm::BasicBlock::Create(context->context, "not_null", func);
-        auto * join = llvm::BasicBlock::Create(context->context, "join", func);
-        b.CreateCondBr(b.CreateIsNull(result), join, read);
-        b.SetInsertPoint(read);
-        b.CreateStore(b.getInt8(0), columns_v[arg_types.size()].null); /// column initialized to all-NULL
-        b.CreateStore(b.CreateLoad(result), columns_v[arg_types.size()].data);
-        b.CreateBr(join);
-        b.SetInsertPoint(join);
+        b.CreateStore(b.CreateExtractValue(result, {0}), columns_v[arg_types.size()].data);
+        /// XXX: should zero-extend it to 1 instead of sign-extending to -1?
+        b.CreateStore(b.CreateExtractValue(result, {1}), columns_v[arg_types.size()].null);
     }
     else
     {
@@ -277,10 +278,10 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
     for (auto & col : columns_v)
     {
         auto * as_char = b.CreatePointerCast(col.data, b.getInt8PtrTy());
-        auto * as_type = b.CreatePointerCast(b.CreateGEP(as_char, col.stride), col.data->getType());
+        auto * as_type = b.CreatePointerCast(b.CreateInBoundsGEP(as_char, col.stride), col.data->getType());
         col.data->addIncoming(as_type, cur_block);
         if (col.null)
-            col.null->addIncoming(b.CreateSelect(col.is_const, col.null, b.CreateConstGEP1_32(col.null, 1)), cur_block);
+            col.null->addIncoming(b.CreateSelect(col.is_const, col.null, b.CreateConstInBoundsGEP1_32(b.getInt8Ty(), col.null, 1)), cur_block);
     }
     counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
 

@@ -110,9 +110,8 @@ public:
 
     /** Produce LLVM IR code that operates on scalar values.
       *
-      * The first `getArgumentTypes().size()` values describe the current row of each column. Supported value types:
-      *   - numbers, represented as native numbers;
-      *   - nullable numbers, as pointers to native numbers or a null pointer.
+      * The first `getArgumentTypes().size()` values describe the current row of each column. (See
+      * `toNativeType` in DataTypes/Native.h for supported value types and how they map to LLVM types.)
       * The rest are values returned by `compilePrologue`.
       *
       * NOTE: the builder is actually guaranteed to be exactly `llvm::IRBuilder<>`, so you may safely

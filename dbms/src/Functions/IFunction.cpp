@@ -261,71 +261,74 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
     return getReturnTypeImpl(arguments);
 }
 
-static bool anyNullable(const DataTypes & types)
+static std::optional<DataTypes> removeNullables(const DataTypes & types)
 {
     for (const auto & type : types)
-        if (typeid_cast<const DataTypeNullable *>(type.get()))
-            return true;
-    return false;
+    {
+        if (!typeid_cast<const DataTypeNullable *>(type.get()))
+            continue;
+        DataTypes filtered;
+        for (const auto & type : types)
+            filtered.emplace_back(removeNullable(type));
+        return filtered;
+    }
+    return {};
 }
 
 bool IFunction::isCompilable(const DataTypes & arguments) const
 {
-    if (useDefaultImplementationForNulls() && anyNullable(arguments))
-    {
-        DataTypes filtered;
-        for (const auto & type : arguments)
-            filtered.emplace_back(removeNullable(type));
-        return isCompilableImpl(filtered);
-    }
+    if (useDefaultImplementationForNulls())
+        if (auto denulled = removeNullables(arguments))
+            return isCompilableImpl(*denulled);
     return isCompilableImpl(arguments);
 }
 
 std::vector<llvm::Value *> IFunction::compilePrologue(llvm::IRBuilderBase & builder, const DataTypes & arguments) const
 {
-    auto result = compilePrologueImpl(builder, arguments);
-#if USE_EMBEDDED_COMPILER
-    if (useDefaultImplementationForNulls() && anyNullable(arguments))
-        result.push_back(static_cast<llvm::IRBuilder<> &>(builder).CreateAlloca(toNativeType(builder, getReturnTypeImpl(arguments))));
-#endif
-    return result;
+    if (useDefaultImplementationForNulls())
+        if (auto denulled = removeNullables(arguments))
+            return compilePrologueImpl(builder, *denulled);
+    return compilePrologueImpl(builder, arguments);
 }
 
 llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
 {
 #if USE_EMBEDDED_COMPILER
-    if (useDefaultImplementationForNulls() && anyNullable(arguments))
+    if (useDefaultImplementationForNulls())
     {
-        /// FIXME: when only one column is nullable, this is actually slower than the non-jitted version
-        ///        because this involves copying the null map while `wrapInNullable` reuses it.
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-        auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-        auto * space = values.back()();
-        values.pop_back();
-        for (size_t i = 0; i < arguments.size(); i++)
+        if (auto denulled = removeNullables(arguments))
         {
-            if (!arguments[i]->isNullable())
-                continue;
-            values[i] = [&, previous = std::move(values[i])]()
+            /// FIXME: when only one column is nullable, this is actually slower than the non-jitted version
+            ///        because this involves copying the null map while `wrapInNullable` reuses it.
+            auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+            auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+            auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+            auto * init = getDefaultNativeValue(b, toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
+            for (size_t i = 0; i < arguments.size(); i++)
             {
-                auto * value = previous();
-                auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-                b.CreateCondBr(b.CreateIsNull(value), fail, ok);
-                b.SetInsertPoint(ok);
-                return b.CreateLoad(value);
-            };
+                if (!arguments[i]->isNullable())
+                    continue;
+                values[i] = [&, previous = std::move(values[i])]()
+                {
+                    auto * value = previous();
+                    auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+                    b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
+                    b.SetInsertPoint(ok);
+                    return b.CreateExtractValue(value, {0});
+                };
+            }
+            auto * result = compileImpl(builder, *denulled, std::move(values));
+            auto * result_nullable = b.CreateInsertValue(b.CreateInsertValue(init, result, {0}), b.getFalse(), {1});
+            auto * result_block = b.GetInsertBlock();
+            b.CreateBr(join);
+            b.SetInsertPoint(fail); /// an empty joining block to avoid keeping track of where we could jump from
+            b.CreateBr(join);
+            b.SetInsertPoint(join);
+            auto * phi = b.CreatePHI(result_nullable->getType(), 2);
+            phi->addIncoming(result_nullable, result_block);
+            phi->addIncoming(init, fail);
+            return phi;
         }
-        b.CreateStore(compileImpl(builder, arguments, std::move(values)), space);
-        b.CreateBr(join);
-        auto * result_block = b.GetInsertBlock();
-        b.SetInsertPoint(fail); /// an empty joining block to avoid keeping track of where we could jump from
-        b.CreateBr(join);
-        b.SetInsertPoint(join);
-        auto * phi = b.CreatePHI(space->getType(), 2);
-        phi->addIncoming(space, result_block);
-        phi->addIncoming(llvm::ConstantPointerNull::get(static_cast<llvm::PointerType *>(space->getType())), fail);
-        return phi;
     }
 #endif
     return compileImpl(builder, arguments, std::move(values));
