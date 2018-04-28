@@ -12,12 +12,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-static llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
+static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
 {
     if (auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
     {
@@ -40,7 +35,7 @@ static llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePt
     return nullptr;
 }
 
-static llvm::Constant * getDefaultNativeValue(llvm::Type * type)
+static inline llvm::Constant * getDefaultNativeValue(llvm::Type * type)
 {
     if (type->isIntegerTy())
         return llvm::ConstantInt::get(type, 0);
@@ -50,6 +45,27 @@ static llvm::Constant * getDefaultNativeValue(llvm::Type * type)
     auto * value = getDefaultNativeValue(type->getContainedType(0));
     auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), 1);
     return llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null);
+}
+
+static inline llvm::Constant * getNativeValue(llvm::Type * type, const IColumn * column, size_t i)
+{
+    if (!column || !type)
+        return nullptr;
+    if (auto * constant = typeid_cast<const ColumnConst *>(column))
+        return getNativeValue(type, &constant->getDataColumn(), 0);
+    if (auto * nullable = typeid_cast<const ColumnNullable *>(column))
+    {
+        auto * value = getNativeValue(type->getContainedType(0), &nullable->getNestedColumn(), i);
+        auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), nullable->isNullAt(i));
+        return value ? llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null) : nullptr;
+    }
+    if (type->isFloatTy())
+        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float32> *>(column)->getElement(i));
+    if (type->isDoubleTy())
+        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float64> *>(column)->getElement(i));
+    if (type->isIntegerTy())
+        return llvm::ConstantInt::get(type, column->getUInt(i));
+    return nullptr;
 }
 
 }
