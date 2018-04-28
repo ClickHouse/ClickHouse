@@ -20,7 +20,11 @@ Example:
 <profiles>
     <!-- Default settings -->
     <default>
-        <!-- The maximum number of threads when running a single query. -->        <max_threads>8</max_threads>    </default>    <!-- Settings for queries from the user interface -->
+        <!-- The maximum number of threads when running a single query. -->
+        <max_threads>8</max_threads>
+    </default>
+
+    <!-- Settings for quries from the user interface -->
     <web>
         <max_rows_to_read>1000000000</max_rows_to_read>
         <max_bytes_to_read>100000000000</max_bytes_to_read>
