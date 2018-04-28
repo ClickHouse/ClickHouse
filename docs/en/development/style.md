@@ -14,7 +14,7 @@
 
 **1.** Most of the formatting will be done automatically by `clang-format`.
 
-**2.** Offsets are 4 spaces. Configure your development environment so that a tab adds four spaces.
+**2.** Indents are 4 spaces. Configure your development environment so that a tab adds four spaces.
 
 **3.** A left curly bracket must be separated on a new line. (And the right one, as well.)
 

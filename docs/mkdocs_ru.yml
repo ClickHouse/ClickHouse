@@ -213,7 +213,7 @@ pages:
 - 'Словари':
   - 'Введение': 'dicts/index.md'
   - 'Внешние словари':
-    - 'Внешние словари': 'dicts/external_dicts.md'
+    - 'Общее описание': 'dicts/external_dicts.md'
     - 'Настройка внешнего словаря': 'dicts/external_dicts_dict.md'
     - 'Хранение словарей в памяти': 'dicts/external_dicts_dict_layout.md'
     - 'Обновление словарей': 'dicts/external_dicts_dict_lifetime.md'
