@@ -4,35 +4,55 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <llvm/IR/IRBuilder.h>
 
 namespace DB
 {
 
-static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
+template <typename... Ts>
+static inline bool typeIsEither(const IDataType & type)
 {
-    if (auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    return (typeid_cast<const Ts *>(&type) || ...);
+}
+
+static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
+{
+    if (auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
     {
-        auto * wrapped = toNativeType(builder, nullable->getNestedType());
+        auto * wrapped = toNativeType(builder, *nullable->getNestedType());
         return wrapped ? llvm::StructType::get(wrapped, /* is null = */ builder.getInt1Ty()) : nullptr;
     }
     /// LLVM doesn't have unsigned types, it has unsigned instructions.
-    if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeUInt8 *>(type.get()))
+    if (typeIsEither<DataTypeInt8, DataTypeUInt8>(type))
         return builder.getInt8Ty();
-    if (typeid_cast<const DataTypeInt16 *>(type.get()) || typeid_cast<const DataTypeUInt16 *>(type.get()))
+    if (typeIsEither<DataTypeInt16, DataTypeUInt16, DataTypeDate>(type))
         return builder.getInt16Ty();
-    if (typeid_cast<const DataTypeInt32 *>(type.get()) || typeid_cast<const DataTypeUInt32 *>(type.get()))
+    if (typeIsEither<DataTypeInt32, DataTypeUInt32, DataTypeDateTime>(type))
         return builder.getInt32Ty();
-    if (typeid_cast<const DataTypeInt64 *>(type.get()) || typeid_cast<const DataTypeUInt64 *>(type.get()))
+    if (typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeInterval>(type))
         return builder.getInt64Ty();
-    if (typeid_cast<const DataTypeFloat32 *>(type.get()))
+    if (typeIsEither<DataTypeUUID>(type))
+        return builder.getInt128Ty();
+    if (typeIsEither<DataTypeFloat32>(type))
         return builder.getFloatTy();
-    if (typeid_cast<const DataTypeFloat64 *>(type.get()))
+    if (typeIsEither<DataTypeFloat64>(type))
         return builder.getDoubleTy();
+    if (auto * fixed_string = typeid_cast<const DataTypeFixedString *>(&type))
+        return llvm::VectorType::get(builder.getInt8Ty(), fixed_string->getN());
     return nullptr;
+}
+
+static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
+{
+    return toNativeType(builder, *type);
 }
 
 static inline llvm::Constant * getDefaultNativeValue(llvm::Type * type)
@@ -41,6 +61,8 @@ static inline llvm::Constant * getDefaultNativeValue(llvm::Type * type)
         return llvm::ConstantInt::get(type, 0);
     if (type->isFloatTy() || type->isDoubleTy())
         return llvm::ConstantFP::get(type, 0.0);
+    if (type->isVectorTy())
+        return llvm::ConstantVector::getSplat(type->getVectorNumElements(), getDefaultNativeValue(type->getVectorElementType()));
     /// else nullable
     auto * value = getDefaultNativeValue(type->getContainedType(0));
     auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), 1);
@@ -65,6 +87,7 @@ static inline llvm::Constant * getNativeValue(llvm::Type * type, const IColumn *
         return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float64> *>(column)->getElement(i));
     if (type->isIntegerTy())
         return llvm::ConstantInt::get(type, column->getUInt(i));
+    /// TODO: if (type->isVectorTy())
     return nullptr;
 }
 
