@@ -2,9 +2,11 @@
 
 The Merge engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
-The Merge engine accepts parameters: the database name and a regular expression for tables. Example.
+The Merge engine accepts parameters: the database name and a regular expression for tables.
 
-```text
+Example:
+
+```
 Merge(hits, '^WatchLog')
 ```
 
@@ -35,4 +37,3 @@ Virtual columns differ from normal columns in the following ways:
 A Merge type table contains a virtual _table column with the String type. (If the table already has a _table column, the virtual column is named _table1, and if it already has _table1, it is named _table2, and so on.) It contains the name of the table that data was read from.
 
 If the WHERE or PREWHERE clause contains conditions for the '_table' column that do not depend on other table columns (as one of the conjunction elements, or as an entire expression), these conditions are used as an index. The conditions are performed on a data set of table names to read data from, and the read operation will be performed from only those tables that the condition was triggered on.
-
