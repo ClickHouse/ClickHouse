@@ -159,6 +159,27 @@ void LLVMPreparedFunction::execute(Block & block, const ColumnNumbers & argument
     block.getByPosition(result).column = std::move(col_res);
 };
 
+static llvm::Constant * getConstantValue(const IColumn * column, llvm::Type * type)
+{
+    if (!column || !type)
+        return nullptr;
+    if (auto * constant = typeid_cast<const ColumnConst *>(column))
+        return getConstantValue(&constant->getDataColumn(), type);
+    if (auto * nullable = typeid_cast<const ColumnNullable *>(column))
+    {
+        auto * value = getConstantValue(&nullable->getNestedColumn(), type->getContainedType(0));
+        auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), nullable->isNullAt(0));
+        return value ? llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null) : nullptr;
+    }
+    if (type->isFloatTy())
+        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float32> *>(column)->getElement(0));
+    if (type->isDoubleTy())
+        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float64> *>(column)->getElement(0));
+    if (type->isIntegerTy())
+        return llvm::ConstantInt::get(type, column->getUInt(0));
+    return nullptr;
+}
+
 LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext context, const Block & sample_block)
     : actions(std::move(actions_)), context(context)
 {
@@ -176,21 +197,8 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
 
     std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
     for (const auto & c : sample_block)
-    {
-        auto * type = toNativeType(b, c.type);
-        if (!type || !c.column)
-            continue;
-        llvm::Value * value = nullptr;
-        if (type->isFloatTy())
-            value = llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float32> *>(c.column.get())->getElement(0));
-        else if (type->isDoubleTy())
-            value = llvm::ConstantFP::get(type, typeid_cast<const ColumnVector<Float64> *>(c.column.get())->getElement(0));
-        else if (type->isIntegerTy())
-            value = llvm::ConstantInt::get(type, c.column->getUInt(0));
-        /// TODO: handle nullable (create a pointer)
-        if (value)
+        if (auto * value = getConstantValue(c.column.get(), toNativeType(b, c.type)))
             by_name[c.name] = [=]() { return value; };
-    }
 
     std::unordered_set<std::string> seen;
     for (const auto & action : actions)
@@ -228,8 +236,8 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
             auto * value = b.CreateLoad(col.data);
             if (!col.null)
                 return value;
-            auto * is_null = b.CreateICmpEQ(b.CreateLoad(col.null), b.getInt8(1));
-            auto * nullable = getDefaultNativeValue(b, toNativeType(b, arg_types[i]));
+            auto * is_null = b.CreateICmpNE(b.CreateLoad(col.null), b.getInt8(0));
+            auto * nullable = getDefaultNativeValue(toNativeType(b, arg_types[i]));
             return b.CreateInsertValue(b.CreateInsertValue(nullable, value, {0}), is_null, {1});
         };
     }
@@ -242,7 +250,13 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         auto extra = action.function->compilePrologue(b);
         for (auto * value : extra)
             input.emplace_back([=]() { return value; });
-        by_name[action.result_name] = [&, input = std::move(input)]() { return action.function->compile(b, input); };
+        by_name[action.result_name] = [&, input = std::move(input)]() {
+            auto * result = action.function->compile(b, input);
+            if (result->getType() != toNativeType(b, action.function->getReturnType()))
+                throw Exception("function " + action.function->getName() + " generated an llvm::Value of invalid type",
+                    ErrorCodes::LOGICAL_ERROR);
+            return result;
+        };
     }
 
     /// assume nonzero initial value in `counter`
@@ -262,12 +276,11 @@ LLVMFunction::LLVMFunction(ExpressionActions::Actions actions_, LLVMContext cont
         }
     }
 
-    auto * result = by_name.at(actions.back().result_name)();
+    auto * result = by_name.at(getName())();
     if (columns_v[arg_types.size()].null)
     {
         b.CreateStore(b.CreateExtractValue(result, {0}), columns_v[arg_types.size()].data);
-        /// XXX: should zero-extend it to 1 instead of sign-extending to -1?
-        b.CreateStore(b.CreateExtractValue(result, {1}), columns_v[arg_types.size()].null);
+        b.CreateStore(b.CreateSelect(b.CreateExtractValue(result, {1}), b.getInt8(1), b.getInt8(0)), columns_v[arg_types.size()].null);
     }
     else
     {
