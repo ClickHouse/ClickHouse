@@ -160,7 +160,9 @@ case "$DIST" in
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;
     "artful" )
-        EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
+        if [ "$ARCH" != arm64 ]; then
+            EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
+        fi
         ;;
 esac
 
