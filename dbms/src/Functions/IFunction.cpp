@@ -296,7 +296,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
             auto & b = static_cast<llvm::IRBuilder<> &>(builder);
             auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
             auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-            auto * init = getDefaultNativeValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
+            auto * zero = llvm::Constant::getNullValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
             for (size_t i = 0; i < arguments.size(); i++)
             {
                 if (!arguments[i]->isNullable())
@@ -310,16 +310,16 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
                     return b.CreateExtractValue(value, {0});
                 };
             }
-            auto * result = compileImpl(builder, *denulled, std::move(values));
-            auto * result_nullable = b.CreateInsertValue(b.CreateInsertValue(init, result, {0}), b.getFalse(), {1});
+            auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
             auto * result_block = b.GetInsertBlock();
             b.CreateBr(join);
             b.SetInsertPoint(fail); /// an empty joining block to avoid keeping track of where we could jump from
+            auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
             b.CreateBr(join);
             b.SetInsertPoint(join);
-            auto * phi = b.CreatePHI(result_nullable->getType(), 2);
-            phi->addIncoming(result_nullable, result_block);
-            phi->addIncoming(init, fail);
+            auto * phi = b.CreatePHI(result->getType(), 2);
+            phi->addIncoming(result, result_block);
+            phi->addIncoming(null, fail);
             return phi;
         }
     }
