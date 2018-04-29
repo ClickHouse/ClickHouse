@@ -169,7 +169,7 @@ void ConditionalTree::restoreColumn(
         function_builder,
         {
             getProjectionColumnName(target_node, current_node),
-            getColumnNameByIndex(default_values_name, target_node),
+            getColumnNameByIndex(default_values_name, current_node),
             getColumnNameByIndex(new_values_name, current_node)
         },
         getColumnNameByIndex(result_name, target_node), getProjectionExpression()));

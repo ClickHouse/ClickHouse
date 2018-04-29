@@ -76,7 +76,7 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & func
 
 ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_,
                                              const std::string & input_row_projection_expression,
-                                             const is_row_projection_complementary)
+                                             bool is_row_projection_complementary)
 {
     ExpressionAction a;
     a.type = ADD_COLUMN;
