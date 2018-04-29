@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <Common/config.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
 #include <Core/Block.h>
@@ -100,6 +101,8 @@ public:
         return prepare(block)->execute(block, arguments, result);
     }
 
+#if USE_EMBEDDED_COMPILER
+
     virtual bool isCompilable() const { return false; }
 
     /** Produce LLVM IR code that operates on scalar values. See `toNativeType` in DataTypes/Native.h
@@ -114,6 +117,8 @@ public:
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+#endif
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
@@ -286,20 +291,24 @@ public:
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
     using FunctionBuilderImpl::getReturnType;
 
-    bool isCompilable() const final
-    {
-        throw Exception("isCompilable without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const final
     {
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const final
+    {
+        throw Exception("isCompilable without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const final
     {
         throw Exception("compile without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+#endif
 
     const DataTypes & getArgumentTypes() const final
     {
@@ -311,17 +320,26 @@ public:
         throw Exception("getReturnType is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+#if USE_EMBEDDED_COMPILER
+
     bool isCompilable(const DataTypes & arguments) const;
 
     llvm::Value * compile(llvm::IRBuilderBase &, const DataTypes & arguments, ValuePlaceholders values) const;
 
+#endif
+
 protected:
+
+#if USE_EMBEDDED_COMPILER
+
     virtual bool isCompilableImpl(const DataTypes &) const { return false; }
 
     virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, ValuePlaceholders) const
     {
         throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+#endif
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*return_type*/) const final
     {
@@ -362,9 +380,13 @@ public:
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
+#if USE_EMBEDDED_COMPILER
+
     bool isCompilable() const override { return function->isCompilable(arguments); }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return function->compile(builder, arguments, std::move(values)); }
+
+#endif
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override { return std::make_shared<DefaultExecutable>(function); }
 

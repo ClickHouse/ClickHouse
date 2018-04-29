@@ -1,12 +1,9 @@
-#include <Common/config.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
 #if USE_EMBEDDED_COMPILER
-#include <llvm/IR/Constants.h>
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Type.h>
 #endif
 
 
