@@ -19,7 +19,7 @@ public:
     /** with_names - output in the first line a header with column names
       * with_types - output in the next line header with the names of the types
       */
-    CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
+    CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const char delimiter_, bool with_names_ = false, bool with_types_ = false);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
@@ -44,6 +44,7 @@ protected:
 
     WriteBuffer & ostr;
     const Block sample;
+    const char delimiter;
     bool with_names;
     bool with_types;
     DataTypes data_types;
