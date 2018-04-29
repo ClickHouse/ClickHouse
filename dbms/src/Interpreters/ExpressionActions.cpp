@@ -12,7 +12,6 @@
 
 #include <set>
 #include <optional>
-#include <algorithm>
 
 
 namespace ProfileEvents

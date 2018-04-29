@@ -485,9 +485,9 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     {
         if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(context->builder, *actions[i].function))
             continue;
+        fused[i].push_back(actions[i]);
         if (dependents[i].find({}) != dependents[i].end())
         {
-            fused[i].push_back(actions[i]);
             auto fn = std::make_shared<LLVMFunction>(std::move(fused[i]), context, sample_block);
             actions[i].function = fn;
             actions[i].argument_names = fn->getArgumentNames();
@@ -495,7 +495,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
         }
         /// TODO: determine whether it's profitable to inline the function if there's more than one dependent.
         for (const auto & dep : dependents[i])
-            fused[*dep].push_back(actions[i]);
+            fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
     context->finalize();
 }
