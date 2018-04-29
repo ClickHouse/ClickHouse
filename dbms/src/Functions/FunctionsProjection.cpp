@@ -1,6 +1,7 @@
 #include <Functions/FunctionsProjection.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <memory>
+#include <vector>
 
 namespace DB {
 
@@ -141,17 +142,23 @@ size_t FunctionRestoreProjection::getNumberOfArguments() const
 
 DataTypePtr FunctionRestoreProjection::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    if (arguments.size() < 2) {
+        throw Exception("Wrong argument count: " + std::to_string(arguments.size()), ErrorCodes::BAD_ARGUMENTS);
+    }
     return arguments[1];
 }
 
 void FunctionRestoreProjection::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
+    if (arguments.size() < 2) {
+        throw Exception("Wrong argument count: " + std::to_string(arguments.size()), ErrorCodes::BAD_ARGUMENTS);
+    }
     const auto & projection_column = block.getByPosition(arguments[0]).column;
     auto col_res = block.getByPosition(arguments[1]).column->cloneEmpty();
     std::vector<size_t> override_indices(arguments.size() - 1, 0);
     for (size_t i = 0; i < projection_column->size(); ++i) {
-        size_t argument_index = projection_column->getUInt8(i) + 1;
-        col_res->insertFrom(*block.getByPosition(arguments[argument_index]).column, ++override_indices[argument_index]);
+        size_t argument_index = projection_column->getUInt8(i);
+        col_res->insertFrom(*block.getByPosition(arguments[argument_index + 1]).column, override_indices[argument_index]++);
     }
     block.getByPosition(result).column = std::move(col_res);
 }
