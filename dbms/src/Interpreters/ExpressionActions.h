@@ -69,9 +69,10 @@ public:
     std::string result_name;
     DataTypePtr result_type;
 
-    /// For projections
-    std::string input_projection_expression;
-    std::string output_projection_expression;
+    /// For conditional projections (projections on subset of rows)
+    std::string input_row_projection_expression;
+    bool is_row_projection_complementary = false;
+    std::string output_row_projection_expression;
 
     /// For ADD_COLUMN.
     ColumnPtr added_column;
@@ -95,16 +96,17 @@ public:
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
         const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "",
-        const std::string & input_projection_expression = "");
+        const std::string & input_row_projection_expression = "");
 
     static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_,
-                                      const std::string & input_projection_expression);
+                                      const std::string & input_row_projection_expression,
+                                      bool is_row_projection_complementary);
     static ExpressionAction removeColumn(const std::string & removed_name);
     static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction measureInputRowsCount(const std::string & source_name,
-                                              const std::string & output_projection_expression);
+                                                  const std::string & output_row_projection_expression);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
 

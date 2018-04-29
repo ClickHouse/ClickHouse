@@ -2055,7 +2055,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ColumnWithTypeAndName fake_column;
                     fake_column.name = projection_manipulator->getColumnName(node->getColumnName());
                     fake_column.type = std::make_shared<DataTypeUInt8>();
-                    actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionExpression()));
+                    actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionExpression(), false));
                     getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
                                    projection_manipulator);
                 }
@@ -2069,7 +2069,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         {
             actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
                 ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(),
-                    projection_manipulator->getColumnName(node->getColumnName())), projection_manipulator->getProjectionExpression()));
+                    projection_manipulator->getColumnName(node->getColumnName())), projection_manipulator->getProjectionExpression(), false));
             return;
         }
 
@@ -2125,7 +2125,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 {
                     column.column = ColumnSet::create(1, set);
 
-                    actions_stack.addAction(ExpressionAction::addColumn(column, projection_manipulator->getProjectionExpression()));
+                    actions_stack.addAction(ExpressionAction::addColumn(column, projection_manipulator->getProjectionExpression(), false));
                 }
 
                 argument_types.push_back(column.type);
@@ -2255,7 +2255,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         column.type = type;
         column.name = node->getColumnName();
 
-        actions_stack.addAction(ExpressionAction::addColumn(column, ""));
+        actions_stack.addAction(ExpressionAction::addColumn(column, "", false));
         projection_manipulator->isAlreadyComputed(column.name);
     }
     else
