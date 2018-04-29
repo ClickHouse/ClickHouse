@@ -104,10 +104,7 @@ if (ENABLE_TESTS)
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
-    #llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
-    #target_link_libraries(clickhouse_functions PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (clickhouse_functions BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
-    # LLVM 5.0 has a bunch of unused parameters in its header files.
-    # TODO: global-disable this warning
-    set_source_files_properties(FunctionsLLVMTest.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -g")
+    # LLVM has a bunch of unused parameters in its header files.
+    target_compile_options (clickhouse_functions PRIVATE "-Wno-unused-parameter")
 endif ()
