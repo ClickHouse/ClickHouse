@@ -517,7 +517,8 @@ struct GreatestBaseImpl
     {
         if (!left->getType()->isIntegerTy())
             /// XXX maxnum is basically fmax(), it may or may not match whatever apply() does
-            return b.CreateMaxNum(left, right);
+            /// XXX CreateMaxNum is broken on LLVM 5.0 and 6.0 (generates minnum instead; fixed in 7)
+            return b.CreateBinaryIntrinsic(llvm::Intrinsic::maxnum, left, right);
         return b.CreateSelect(is_signed ? b.CreateICmpSGT(left, right) : b.CreateICmpUGT(left, right), left, right);
     }
 #endif
