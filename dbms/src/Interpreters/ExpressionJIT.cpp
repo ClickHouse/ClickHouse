@@ -226,7 +226,7 @@ public:
                 if (!col.null)
                     return value;
                 auto * is_null = b.CreateICmpNE(b.CreateLoad(col.null), b.getInt8(0));
-                auto * nullable = getDefaultNativeValue(toNativeType(b, arg_types[i]));
+                auto * nullable = llvm::Constant::getNullValue(toNativeType(b, arg_types[i]));
                 return b.CreateInsertValue(b.CreateInsertValue(nullable, value, {0}), is_null, {1});
             };
         }

@@ -55,20 +55,6 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const Dat
     return toNativeType(builder, *type);
 }
 
-static inline llvm::Constant * getDefaultNativeValue(llvm::Type * type)
-{
-    if (type->isIntegerTy())
-        return llvm::ConstantInt::get(type, 0);
-    if (type->isFloatTy() || type->isDoubleTy())
-        return llvm::ConstantFP::get(type, 0.0);
-    if (type->isVectorTy())
-        return llvm::ConstantVector::getSplat(type->getVectorNumElements(), getDefaultNativeValue(type->getVectorElementType()));
-    /// else nullable
-    auto * value = getDefaultNativeValue(type->getContainedType(0));
-    auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), 1);
-    return llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null);
-}
-
 static inline llvm::Constant * getNativeValue(llvm::Type * type, const IColumn * column, size_t i)
 {
     if (!column || !type)
