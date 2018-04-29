@@ -103,8 +103,7 @@ if (USE_EMBEDDED_COMPILER)
     llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
-    # LLVM 5.0 has a bunch of unused parameters in its header files.
-    # TODO: global-disable no-unused-parameter
+    # LLVM has a bunch of unused parameters in its header files.
     set_source_files_properties(src/Functions/IFunction.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter")
     set_source_files_properties(src/Interpreters/ExpressionJIT.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter -Wno-non-virtual-dtor")
 endif ()
