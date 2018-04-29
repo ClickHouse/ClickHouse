@@ -4,6 +4,7 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -53,6 +54,21 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
 {
     return toNativeType(builder, *type);
+}
+
+static inline llvm::Value * castNativeNumber(llvm::IRBuilder<> & builder, llvm::Value * value, llvm::Type * type, bool is_signed)
+{
+    if (value->getType() == type)
+        return value;
+    if (value->getType()->isIntegerTy())
+    {
+        if (type->isIntegerTy())
+            return builder.CreateIntCast(value, type, is_signed);
+        return is_signed ? builder.CreateSIToFP(value, type) : builder.CreateUIToFP(value, type);
+    }
+    if (type->isFloatingPointTy())
+        return builder.CreateFPCast(value, type);
+    return is_signed ? builder.CreateFPToSI(value, type) : builder.CreateFPToUI(value, type);
 }
 
 }
