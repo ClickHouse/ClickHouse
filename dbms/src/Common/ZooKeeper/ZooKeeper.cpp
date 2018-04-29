@@ -739,6 +739,22 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
     return future;
 }
 
+int32_t ZooKeeper::tryMultiNoThrow(const Requests & requests, Responses & responses)
+{
+    try
+    {
+        return multiImpl(requests, responses);
+    }
+    catch (ZooKeeperImpl::Exception & e)
+    {
+        return e.code;
+    }
+    catch (...)
+    {
+        throw;
+    }
+}
+
 
 size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses) const
 {
