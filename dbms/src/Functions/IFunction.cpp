@@ -261,6 +261,8 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
     return getReturnTypeImpl(arguments);
 }
 
+#if USE_EMBEDDED_COMPILER
+
 static std::optional<DataTypes> removeNullables(const DataTypes & types)
 {
     for (const auto & type : types)
@@ -285,7 +287,6 @@ bool IFunction::isCompilable(const DataTypes & arguments) const
 
 llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
 {
-#if USE_EMBEDDED_COMPILER
     if (useDefaultImplementationForNulls())
     {
         if (auto denulled = removeNullables(arguments))
@@ -322,8 +323,9 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
             return phi;
         }
     }
-#endif
     return compileImpl(builder, arguments, std::move(values));
 }
+
+#endif
 
 }
