@@ -313,7 +313,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
             auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
             auto * result_block = b.GetInsertBlock();
             b.CreateBr(join);
-            b.SetInsertPoint(fail); /// an empty joining block to avoid keeping track of where we could jump from
+            b.SetInsertPoint(fail);
             auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
             b.CreateBr(join);
             b.SetInsertPoint(join);
