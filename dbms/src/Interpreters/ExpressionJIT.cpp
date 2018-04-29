@@ -49,7 +49,7 @@ namespace
         size_t stride;
     };
 
-    struct ColumnDataPlaceholders
+    struct ColumnDataPlaceholder
     {
         llvm::Value * data_init; /// first row
         llvm::Value * null_init;
@@ -163,181 +163,226 @@ public:
     };
 };
 
+static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
+{
+    auto & arg_types = f.getArgumentTypes();
+    auto & b = context->builder;
+    auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
+    auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
+    auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, llvm::PointerType::get(data_type, 0) }, /*isVarArg=*/false);
+    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), context->module.get());
+    auto args = func->args().begin();
+    llvm::Value * counter_arg = &*args++;
+    llvm::Value * columns_arg = &*args++;
+
+    auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
+    b.SetInsertPoint(entry);
+    std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
+    for (size_t i = 0; i <= arg_types.size(); i++)
+    {
+        auto & type = i == arg_types.size() ? f.getReturnType() : arg_types[i];
+        auto * native = llvm::PointerType::get(toNativeType(b, removeNullable(type)), 0);
+        columns[i].data_init = b.CreatePointerCast(b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns_arg, i, 0)), native);
+        columns[i].null_init = type->isNullable() ? b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns_arg, i, 1)) : nullptr;
+        columns[i].stride = b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns_arg, i, 2));
+    }
+
+    /// assume nonzero initial value in `counter_arg`
+    auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", func);
+    b.CreateBr(loop);
+    b.SetInsertPoint(loop);
+    auto * counter_phi = b.CreatePHI(counter_arg->getType(), 2);
+    counter_phi->addIncoming(counter_arg, entry);
+    for (auto & col : columns)
+    {
+        col.data = b.CreatePHI(col.data_init->getType(), 2);
+        col.data->addIncoming(col.data_init, entry);
+        if (col.null_init)
+        {
+            col.null = b.CreatePHI(col.null_init->getType(), 2);
+            col.null->addIncoming(col.null_init, entry);
+        }
+    }
+    ValuePlaceholders arguments(arg_types.size());
+    for (size_t i = 0; i < arguments.size(); i++)
+    {
+        arguments[i] = [&b, &col = columns[i], &type = arg_types[i]]() -> llvm::Value *
+        {
+            auto * value = b.CreateLoad(col.data);
+            if (!col.null)
+                return value;
+            auto * is_null = b.CreateICmpNE(b.CreateLoad(col.null), b.getInt8(0));
+            auto * nullable = llvm::Constant::getNullValue(toNativeType(b, type));
+            return b.CreateInsertValue(b.CreateInsertValue(nullable, value, {0}), is_null, {1});
+        };
+    }
+    auto * result = f.compile(b, std::move(arguments));
+    if (columns.back().null)
+    {
+        b.CreateStore(b.CreateExtractValue(result, {0}), columns.back().data);
+        b.CreateStore(b.CreateSelect(b.CreateExtractValue(result, {1}), b.getInt8(1), b.getInt8(0)), columns.back().null);
+    }
+    else
+    {
+        b.CreateStore(result, columns.back().data);
+    }
+    auto * cur_block = b.GetInsertBlock();
+    for (auto & col : columns)
+    {
+        auto * as_char = b.CreatePointerCast(col.data, b.getInt8PtrTy());
+        auto * as_type = b.CreatePointerCast(b.CreateInBoundsGEP(as_char, col.stride), col.data->getType());
+        col.data->addIncoming(as_type, cur_block);
+        if (col.null)
+        {
+            auto * is_const = b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
+            col.null->addIncoming(b.CreateSelect(is_const, col.null, b.CreateConstInBoundsGEP1_32(b.getInt8Ty(), col.null, 1)), cur_block);
+        }
+    }
+    counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
+
+    auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
+    b.CreateCondBr(b.CreateICmpNE(counter_phi, llvm::ConstantInt::get(size_type, 1)), loop, end);
+    b.SetInsertPoint(end);
+    b.CreateRetVoid();
+}
+
+static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column, size_t i)
+{
+    if (!type)
+        return nullptr;
+    if (auto * constant = typeid_cast<const ColumnConst *>(&column))
+        return getNativeValue(type, constant->getDataColumn(), 0);
+    if (auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        auto * value = getNativeValue(type->getContainedType(0), nullable->getNestedColumn(), i);
+        auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), nullable->isNullAt(i));
+        return value ? llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null) : nullptr;
+    }
+    if (type->isFloatTy())
+        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float32> &>(column).getElement(i));
+    if (type->isDoubleTy())
+        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float64> &>(column).getElement(i));
+    if (type->isIntegerTy())
+        return llvm::ConstantInt::get(type, column.getUInt(i));
+    /// TODO: if (type->isVectorTy())
+    return nullptr;
+}
+
+/// Same as IFunctionBase::compile, but also for constants and input columns.
+using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &, const ValuePlaceholders &)>;
+
+static CompilableExpression subexpression(ColumnPtr c, DataTypePtr type)
+{
+    return [=](llvm::IRBuilderBase & b, const ValuePlaceholders &) { return getNativeValue(toNativeType(b, type), *c, 0); };
+}
+
+static CompilableExpression subexpression(size_t i)
+{
+    return [=](llvm::IRBuilderBase &, const ValuePlaceholders & inputs) { return inputs[i](); };
+}
+
+static CompilableExpression subexpression(const IFunctionBase & f, std::vector<CompilableExpression> args)
+{
+    return [&, args = std::move(args)](llvm::IRBuilderBase & builder, const ValuePlaceholders & inputs)
+    {
+        ValuePlaceholders input;
+        for (const auto & arg : args)
+            input.push_back([&]() { return arg(builder, inputs); });
+        auto * result = f.compile(builder, input);
+        if (result->getType() != toNativeType(builder, f.getReturnType()))
+            throw Exception("function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
+        return result;
+    };
+}
+
 class LLVMFunction : public IFunctionBase
 {
-    /// all actions must have type APPLY_FUNCTION
-    ExpressionActions::Actions actions;
+    std::string name;
     Names arg_names;
     DataTypes arg_types;
     std::shared_ptr<LLVMContext> context;
+    std::vector<FunctionBasePtr> originals;
+    std::unordered_map<StringRef, CompilableExpression> subexpressions;
 
 public:
-    LLVMFunction(ExpressionActions::Actions actions_, std::shared_ptr<LLVMContext> context, const Block & sample_block)
-        : actions(std::move(actions_)), context(context)
+    LLVMFunction(const ExpressionActions::Actions & actions, std::shared_ptr<LLVMContext> context, const Block & sample_block)
+        : name(actions.back().result_name), context(context)
     {
-        auto & b = context->builder;
-        auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
-        auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
-        auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, llvm::PointerType::get(data_type, 0) }, /*isVarArg=*/false);
-        auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, actions.back().result_name, context->module.get());
-        auto args = func->args().begin();
-        llvm::Value * counter = &*args++;
-        llvm::Value * columns = &*args++;
-
-        auto * entry = llvm::BasicBlock::Create(context->context, "entry", func);
-        b.SetInsertPoint(entry);
-
-        std::unordered_map<std::string, std::function<llvm::Value * ()>> by_name;
         for (const auto & c : sample_block)
-            if (auto * value = getNativeValue(toNativeType(b, c.type), c.column.get(), 0))
-                by_name[c.name] = [=]() { return value; };
-
-        std::unordered_set<std::string> seen;
+            /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
+            if (c.column && getNativeValue(toNativeType(context->builder, c.type), *c.column, 0))
+                subexpressions[c.name] = subexpression(c.column, c.type);
         for (const auto & action : actions)
         {
             const auto & names = action.argument_names;
             const auto & types = action.function->getArgumentTypes();
+            std::vector<CompilableExpression> args;
             for (size_t i = 0; i < names.size(); i++)
             {
-                if (!seen.emplace(names[i]).second || by_name.find(names[i]) != by_name.end())
-                    continue;
-                arg_names.push_back(names[i]);
-                arg_types.push_back(types[i]);
+                auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
+                if (inserted.second)
+                {
+                    arg_names.push_back(names[i]);
+                    arg_types.push_back(types[i]);
+                }
+                args.push_back(inserted.first->second);
             }
-            seen.insert(action.result_name);
+            subexpressions[action.result_name] = subexpression(*action.function, std::move(args));
+            originals.push_back(action.function);
         }
-
-        std::vector<ColumnDataPlaceholders> columns_v(arg_types.size() + 1);
-        for (size_t i = 0; i <= arg_types.size(); i++)
-        {
-            auto & column_type = (i == arg_types.size()) ? getReturnType() : arg_types[i];
-            auto * type = llvm::PointerType::get(toNativeType(b, removeNullable(column_type)), 0);
-            columns_v[i].data_init = b.CreatePointerCast(b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 0)), type);
-            columns_v[i].stride = b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 2));
-            if (column_type->isNullable())
-                columns_v[i].null_init = b.CreateLoad(b.CreateConstInBoundsGEP2_32(data_type, columns, i, 1));
-        }
-
-        for (size_t i = 0; i < arg_types.size(); i++)
-        {
-            by_name[arg_names[i]] = [&, &col = columns_v[i], i]() -> llvm::Value *
-            {
-                auto * value = b.CreateLoad(col.data);
-                if (!col.null)
-                    return value;
-                auto * is_null = b.CreateICmpNE(b.CreateLoad(col.null), b.getInt8(0));
-                auto * nullable = llvm::Constant::getNullValue(toNativeType(b, arg_types[i]));
-                return b.CreateInsertValue(b.CreateInsertValue(nullable, value, {0}), is_null, {1});
-            };
-        }
-        for (const auto & action : actions)
-        {
-            ValuePlaceholders input;
-            for (const auto & name : action.argument_names)
-                input.push_back(by_name.at(name));
-            by_name[action.result_name] = [&, input = std::move(input)]() {
-                auto * result = action.function->compile(b, input);
-                if (result->getType() != toNativeType(b, action.function->getReturnType()))
-                    throw Exception("function " + action.function->getName() + " generated an llvm::Value of invalid type",
-                        ErrorCodes::LOGICAL_ERROR);
-                return result;
-            };
-        }
-
-        /// assume nonzero initial value in `counter`
-        auto * loop = llvm::BasicBlock::Create(context->context, "loop", func);
-        b.CreateBr(loop);
-        b.SetInsertPoint(loop);
-        auto * counter_phi = b.CreatePHI(counter->getType(), 2);
-        counter_phi->addIncoming(counter, entry);
-        for (auto & col : columns_v)
-        {
-            col.data = b.CreatePHI(col.data_init->getType(), 2);
-            col.data->addIncoming(col.data_init, entry);
-            if (col.null_init)
-            {
-                col.null = b.CreatePHI(col.null_init->getType(), 2);
-                col.null->addIncoming(col.null_init, entry);
-            }
-        }
-
-        auto * result = by_name.at(getName())();
-        if (columns_v[arg_types.size()].null)
-        {
-            b.CreateStore(b.CreateExtractValue(result, {0}), columns_v[arg_types.size()].data);
-            b.CreateStore(b.CreateSelect(b.CreateExtractValue(result, {1}), b.getInt8(1), b.getInt8(0)), columns_v[arg_types.size()].null);
-        }
-        else
-        {
-            b.CreateStore(result, columns_v[arg_types.size()].data);
-        }
-
-        auto * cur_block = b.GetInsertBlock();
-        for (auto & col : columns_v)
-        {
-            auto * as_char = b.CreatePointerCast(col.data, b.getInt8PtrTy());
-            auto * as_type = b.CreatePointerCast(b.CreateInBoundsGEP(as_char, col.stride), col.data->getType());
-            col.data->addIncoming(as_type, cur_block);
-            if (col.null)
-            {
-                auto * is_const = b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
-                col.null->addIncoming(b.CreateSelect(is_const, col.null, b.CreateConstInBoundsGEP1_32(b.getInt8Ty(), col.null, 1)), cur_block);
-            }
-        }
-        counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
-
-        auto * end = llvm::BasicBlock::Create(context->context, "end", func);
-        b.CreateCondBr(b.CreateICmpNE(counter_phi, llvm::ConstantInt::get(size_type, 1)), loop, end);
-        b.SetInsertPoint(end);
-        b.CreateRetVoid();
+        compileFunction(context, *this);
     }
 
-    String getName() const override { return actions.back().result_name; }
+    bool isCompilable() const override { return true; }
+
+    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return subexpressions.at(name)(builder, values); }
+
+    String getName() const override { return name; }
 
     const Names & getArgumentNames() const { return arg_names; }
 
     const DataTypes & getArgumentTypes() const override { return arg_types; }
 
-    const DataTypePtr & getReturnType() const override { return actions.back().function->getReturnType(); }
+    const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
 
-    PreparedFunctionPtr prepare(const Block &) const override { return std::make_shared<LLVMPreparedFunction>(getName(), context); }
+    PreparedFunctionPtr prepare(const Block &) const override { return std::make_shared<LLVMPreparedFunction>(name, context); }
 
     bool isDeterministic() override
     {
-        for (const auto & action : actions)
-            if (!action.function->isDeterministic())
+        for (const auto & f : originals)
+            if (!f->isDeterministic())
                 return false;
         return true;
     }
 
     bool isDeterministicInScopeOfQuery() override
     {
-        for (const auto & action : actions)
-            if (!action.function->isDeterministicInScopeOfQuery())
+        for (const auto & f : originals)
+            if (!f->isDeterministicInScopeOfQuery())
                 return false;
         return true;
     }
 
     bool isSuitableForConstantFolding() const override
     {
-        for (const auto & action : actions)
-            if (!action.function->isSuitableForConstantFolding())
+        for (const auto & f : originals)
+            if (!f->isSuitableForConstantFolding())
                 return false;
         return true;
     }
 
     bool isInjective(const Block & sample_block) override
     {
-        for (const auto & action : actions)
-            if (!action.function->isInjective(sample_block))
+        for (const auto & f : originals)
+            if (!f->isInjective(sample_block))
                 return false;
         return true;
     }
 
     bool hasInformationAboutMonotonicity() const override
     {
-        for (const auto & action : actions)
-            if (!action.function->hasInformationAboutMonotonicity())
+        for (const auto & f : originals)
+            if (!f->hasInformationAboutMonotonicity())
                 return false;
         return true;
     }
@@ -349,22 +394,22 @@ public:
         Field right_ = right;
         Monotonicity result(true, true, true);
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
-        for (size_t i = 0; i < actions.size(); i++)
+        for (size_t i = 0; i < originals.size(); i++)
         {
-            Monotonicity m = actions[i].function->getMonotonicityForRange(*type_, left_, right_);
+            Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
             if (!m.is_monotonic)
                 return m;
             result.is_positive ^= !m.is_positive;
             result.is_always_monotonic &= m.is_always_monotonic;
-            if (i + 1 < actions.size())
+            if (i + 1 < originals.size())
             {
                 if (left_ != Field())
-                    applyFunction(*actions[i].function, left_);
+                    applyFunction(*originals[i], left_);
                 if (right_ != Field())
-                    applyFunction(*actions[i].function, right_);
+                    applyFunction(*originals[i], right_);
                 if (!m.is_positive)
                     std::swap(left_, right_);
-                type_ = actions[i].function->getReturnType().get();
+                type_ = originals[i]->getReturnType().get();
             }
         }
         return result;
