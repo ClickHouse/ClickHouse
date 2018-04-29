@@ -130,29 +130,28 @@ String FunctionRestoreProjection::getName() const
     return name;
 }
 
+bool FunctionRestoreProjection::isVariadic() const {
+    return true;
+}
+
 size_t FunctionRestoreProjection::getNumberOfArguments() const
 {
-    return 3;
+    return 0;
 }
 
 DataTypePtr FunctionRestoreProjection::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    return arguments[0];
+    return arguments[1];
 }
 
 void FunctionRestoreProjection::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
-    const auto & projection_column = block.getByPosition(arguments[1]).column;
-    const auto & initial_values_column = block.getByPosition(arguments[0]).column;
-    const auto & override_values_column = block.getByPosition(arguments[2]).column;
-    auto col_res = initial_values_column->cloneEmpty();
-    size_t override_index = 0;
-    for (size_t i = 0; i < initial_values_column->size(); ++i) {
-        if (projection_column->getUInt8(i)) {
-            col_res->insertFrom(*override_values_column, override_index++);
-        } else {
-            col_res->insertFrom(*initial_values_column, i);
-        }
+    const auto & projection_column = block.getByPosition(arguments[0]).column;
+    auto col_res = block.getByPosition(arguments[1]).column->cloneEmpty();
+    std::vector<size_t> override_indices(arguments.size() - 1, 0);
+    for (size_t i = 0; i < projection_column->size(); ++i) {
+        size_t argument_index = projection_column->getUInt8(i) + 1;
+        col_res->insertFrom(*block.getByPosition(arguments[argument_index]).column, ++override_indices[argument_index]);
     }
     block.getByPosition(result).column = std::move(col_res);
 }

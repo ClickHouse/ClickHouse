@@ -152,7 +152,7 @@ void ConditionalTree::goToProjection(const std::string & field_name)
 }
 
 void ConditionalTree::restoreColumn(
-    const std::string & inital_values_name,
+    const std::string & default_values_name,
     const std::string & new_values_name,
     const size_t levels_up,
     const std::string & result_name
@@ -168,8 +168,8 @@ void ConditionalTree::restoreColumn(
     scopes.addAction(ExpressionAction::applyFunction(
         function_builder,
         {
-            getColumnNameByIndex(inital_values_name, target_node),
             getProjectionColumnName(target_node, current_node),
+            getColumnNameByIndex(default_values_name, target_node),
             getColumnNameByIndex(new_values_name, current_node)
         },
         getColumnNameByIndex(result_name, target_node), getProjectionExpression()));
@@ -257,18 +257,13 @@ void AndOperatorProjectionAction::createZerosColumn()
     {
         scopes.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
             ColumnUInt8::create(0, 1), std::make_shared<DataTypeUInt8>(), zeros_column_name),
-                                                     projection_manipulator->getProjectionExpression()));
+                                                     projection_manipulator->getProjectionExpression(), true));
     }
 }
 
 void AndOperatorProjectionAction::preArgumentAction()
 {
-    if (previous_argument_name.empty())
-    {
-        // Before processing first argument
-        createZerosColumn();
-    }
-    else
+    if (!previous_argument_name.empty())
     {
         // Before processing arguments starting from second to last
         if (auto * conditional_tree = typeid_cast<ConditionalTree *>(projection_manipulator.get())) {
@@ -297,6 +292,7 @@ void AndOperatorProjectionAction::preCalculation()
                 },
                 projection_manipulator->getColumnName(final_column),
                 projection_manipulator->getProjectionExpression()));
+        createZerosColumn();
         conditional_tree->restoreColumn(getZerosColumnName(), final_column,
                                         projection_levels_count, expression_name);
         conditional_tree->goUp(projection_levels_count);

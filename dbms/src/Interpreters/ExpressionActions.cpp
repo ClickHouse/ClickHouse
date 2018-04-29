@@ -51,7 +51,7 @@ Names ExpressionAction::getNeededColumns() const
 ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_,
-    const std::string & input_projection_expression)
+    const std::string & input_row_projection_expression)
 {
     if (result_name_ == "")
     {
@@ -70,19 +70,21 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & func
     a.result_name = result_name_;
     a.function_builder = function_;
     a.argument_names = argument_names_;
-    a.input_projection_expression = input_projection_expression;
+    a.input_row_projection_expression = input_row_projection_expression;
     return a;
 }
 
 ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_,
-                                             const std::string & input_projection_expression)
+                                             const std::string & input_row_projection_expression,
+                                             const is_row_projection_complementary)
 {
     ExpressionAction a;
     a.type = ADD_COLUMN;
     a.result_name = added_column_.name;
     a.result_type = added_column_.type;
     a.added_column = added_column_.column;
-    a.input_projection_expression = input_projection_expression;
+    a.input_row_projection_expression = input_row_projection_expression;
+    a.is_row_projection_complementary = is_row_projection_complementary;
     return a;
 }
 
@@ -122,12 +124,12 @@ ExpressionAction ExpressionAction::project(const Names & projected_columns_)
 }
 
 ExpressionAction ExpressionAction::measureInputRowsCount(const std::string & source_name,
-                                                     const std::string & output_projection_expression)
+                                                         const std::string & output_row_projection_expression)
 {
     ExpressionAction a;
     a.type = MEASURE_INPUT_ROWS_COUNT;
     a.source_name = source_name;
-    a.output_projection_expression = output_projection_expression;
+    a.output_row_projection_expression = output_row_projection_expression;
     return a;
 }
 
@@ -300,7 +302,10 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
 {
 //    std::cerr << "executing: " << toString() << std::endl;
 
-    size_t input_rows_count = input_rows_counts[input_projection_expression];
+    size_t input_rows_count = input_rows_counts[input_row_projection_expression];
+    if (is_row_projection_complementary) {
+        input_rows_count = input_rows_counts[""] - input_rows_count;
+    }
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)
         if (!block.has(source_name))
@@ -342,7 +347,7 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                 }
             }
 
-            input_rows_counts[output_projection_expression] = projection_size;
+            input_rows_counts[output_row_projection_expression] = projection_size;
 
             break;
         }
