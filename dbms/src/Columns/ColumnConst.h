@@ -91,9 +91,9 @@ public:
         return data->getInt(0);
     }
 
-    UInt8 getUInt8(size_t) const override
+    UInt8 getBoolRepresentation(size_t) const override
     {
-        return data->getUInt8(0);
+        return data->getBoolRepresentation(0);
     }
 
     bool isNullAt(size_t) const override

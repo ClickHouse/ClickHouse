@@ -33,6 +33,9 @@ std::string DefaultProjectionManipulator::getProjectionExpression() {
     return "";
 }
 
+std::string DefaultProjectionManipulator::getProjectionSourceColumn() const {
+    return "";
+}
 
 ConditionalTree::Node::Node()
     : projection_expression_string(),
@@ -72,12 +75,12 @@ std::string ConditionalTree::getColumnName(const std::string & col_name) const
 }
 
 std::string ConditionalTree::getProjectionColumnName(const std::string & first_projection_expr,
-                                                     const std::string & second_projection_expr)
+                                                     const std::string & second_projection_expr) const
 {
     return std::string("P<") + first_projection_expr + "><" + second_projection_expr + ">";
 }
 
-std::string ConditionalTree::getProjectionColumnName(const size_t first_index, const size_t second_index)
+std::string ConditionalTree::getProjectionColumnName(const size_t first_index, const size_t second_index) const
 {
     return getProjectionColumnName(
         nodes[first_index].projection_expression_string,
@@ -102,7 +105,7 @@ void ConditionalTree::buildProjectionCompositionRecursive(const std::vector<size
                 getProjectionColumnName(path[parent_index], path[middle_index]),
                 getProjectionColumnName(path[middle_index], path[child_index])
             },
-            projection_name, getProjectionExpression()));
+            projection_name, getProjectionSourceColumn()));
     }
 }
 
@@ -120,6 +123,16 @@ void ConditionalTree::buildProjectionComposition(const size_t child_node, const 
     buildProjectionCompositionRecursive(path, 0, path.size() - 1);
 }
 
+std::string ConditionalTree::getProjectionSourceColumn(size_t node) const {
+    if (nodes[node].is_root)
+    {
+        return "";
+    }
+    else
+    {
+        return ConditionalTree::getProjectionColumnName(nodes[node].getParentNode(), node);
+    }
+}
 
 ConditionalTree::ConditionalTree(ScopeStack & scopes, const Context & context)
     : current_node(0),
@@ -139,8 +152,7 @@ void ConditionalTree::goToProjection(const std::string & field_name)
     if (!scopes.getSampleBlock().has(projection_column_name)) {
         const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get("one_or_zero", context);
         scopes.addAction(ExpressionAction::applyFunction(function_builder, {getColumnName(field_name)}, projection_column_name,
-                                                         getProjectionExpression()));
-        scopes.addAction(ExpressionAction::measureInputRowsCount(projection_column_name, new_projection_name));
+                                                         getProjectionSourceColumn()));
         nodes.emplace_back(Node());
         nodes.back().projection_expression_string = new_projection_name;
         nodes.back().parent_node = current_node;
@@ -149,6 +161,15 @@ void ConditionalTree::goToProjection(const std::string & field_name)
     } else {
         current_node = projection_expression_index[projection_column_name];
     }
+}
+
+std::string ConditionalTree::buildRestoreProjectionAndGetName(const size_t levels_up) {
+    size_t target_node = current_node;
+    for (size_t i = 0; i < levels_up; ++i) {
+        target_node = nodes[target_node].getParentNode();
+    }
+    buildProjectionComposition(current_node, target_node);
+    return getProjectionColumnName(target_node, current_node);
 }
 
 void ConditionalTree::restoreColumn(
@@ -162,7 +183,6 @@ void ConditionalTree::restoreColumn(
     for (size_t i = 0; i < levels_up; ++i) {
         target_node = nodes[target_node].getParentNode();
     }
-    buildProjectionComposition(current_node, target_node);
     const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get("__inner_restore_projection__",
                                                                                   context);
     scopes.addAction(ExpressionAction::applyFunction(
@@ -172,7 +192,7 @@ void ConditionalTree::restoreColumn(
             getColumnNameByIndex(default_values_name, current_node),
             getColumnNameByIndex(new_values_name, current_node)
         },
-        getColumnNameByIndex(result_name, target_node), getProjectionExpression()));
+        getColumnNameByIndex(result_name, target_node), getProjectionSourceColumn()));
 }
 
 void ConditionalTree::goUp(const size_t levels_up)
@@ -197,7 +217,7 @@ bool ConditionalTree::isAlreadyComputed(const std::string & column_name)
                         getColumnNameByIndex(column_name, node),
                         getProjectionColumnName(node, current_node)
                     },
-                    getColumnName(column_name), nodes[node].projection_expression_string));
+                    getColumnName(column_name), getProjectionSourceColumn(node)));
             }
             return true;
         }
@@ -211,6 +231,10 @@ bool ConditionalTree::isAlreadyComputed(const std::string & column_name)
 
 std::string ConditionalTree::getProjectionExpression() {
     return nodes[current_node].projection_expression_string;
+}
+
+std::string ConditionalTree::getProjectionSourceColumn() const {
+    return getProjectionSourceColumn(current_node);
 }
 
 void DefaultProjectionAction::preArgumentAction()
@@ -250,14 +274,14 @@ std::string AndOperatorProjectionAction::getFinalColumnName()
     return "__inner_final_column__" + expression_name;
 }
 
-void AndOperatorProjectionAction::createZerosColumn()
+void AndOperatorProjectionAction::createZerosColumn(const std::string & restore_projection_name)
 {
     auto zeros_column_name = projection_manipulator->getColumnName(getZerosColumnName());
     if (!scopes.getSampleBlock().has(zeros_column_name))
     {
         scopes.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
             ColumnUInt8::create(0, 1), std::make_shared<DataTypeUInt8>(), zeros_column_name),
-                                                     projection_manipulator->getProjectionExpression(), true));
+                                                     restore_projection_name, true));
     }
 }
 
@@ -291,8 +315,9 @@ void AndOperatorProjectionAction::preCalculation()
                     projection_manipulator->getColumnName(previous_argument_name)
                 },
                 projection_manipulator->getColumnName(final_column),
-                projection_manipulator->getProjectionExpression()));
-        createZerosColumn();
+                projection_manipulator->getProjectionSourceColumn()));
+        std::string restore_projection_name = conditional_tree->buildRestoreProjectionAndGetName(projection_levels_count);
+        createZerosColumn(restore_projection_name);
         conditional_tree->restoreColumn(getZerosColumnName(), final_column,
                                         projection_levels_count, expression_name);
         conditional_tree->goUp(projection_levels_count);

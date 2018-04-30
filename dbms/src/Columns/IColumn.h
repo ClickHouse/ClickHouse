@@ -95,9 +95,9 @@ public:
         throw Exception("Method getUInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual UInt8 getUInt8(size_t /*n*/) const
+    virtual UInt8 getBoolRepresentation(size_t /*n*/) const
     {
-        throw Exception("Method getUInt8 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method getBoolRepresentation is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual Int64 getInt(size_t /*n*/) const

@@ -2055,7 +2055,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ColumnWithTypeAndName fake_column;
                     fake_column.name = projection_manipulator->getColumnName(node->getColumnName());
                     fake_column.type = std::make_shared<DataTypeUInt8>();
-                    actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionExpression(), false));
+                    actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionSourceColumn(), false));
                     getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
                                    projection_manipulator);
                 }
@@ -2069,7 +2069,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         {
             actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
                 ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(),
-                    projection_manipulator->getColumnName(node->getColumnName())), projection_manipulator->getProjectionExpression(), false));
+                    projection_manipulator->getColumnName(node->getColumnName())), projection_manipulator->getProjectionSourceColumn(), false));
             return;
         }
 
@@ -2125,7 +2125,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 {
                     column.column = ColumnSet::create(1, set);
 
-                    actions_stack.addAction(ExpressionAction::addColumn(column, projection_manipulator->getProjectionExpression(), false));
+                    actions_stack.addAction(ExpressionAction::addColumn(column, projection_manipulator->getProjectionSourceColumn(), false));
                 }
 
                 argument_types.push_back(column.type);
@@ -2212,7 +2212,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     auto function_capture = std::make_shared<FunctionCapture>(
                             lambda_actions, captured, lambda_arguments, result_type, result_name);
                     actions_stack.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name,
-                                            projection_manipulator->getProjectionExpression()));
+                                            projection_manipulator->getProjectionSourceColumn()));
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                     argument_names[i] = lambda_name;
@@ -2242,7 +2242,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ExpressionAction::applyFunction(function_builder,
                                                     argument_names,
                                                     projection_manipulator->getColumnName(node->getColumnName()),
-                                                    projection_manipulator->getProjectionExpression()));
+                                                    projection_manipulator->getProjectionSourceColumn()));
             }
         }
     }
