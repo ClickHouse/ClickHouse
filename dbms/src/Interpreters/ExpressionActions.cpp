@@ -44,6 +44,11 @@ Names ExpressionAction::getNeededColumns() const
     if (!source_name.empty())
         res.push_back(source_name);
 
+    if (!row_projection_column.empty())
+    {
+        res.push_back(row_projection_column);
+    }
+
     return res;
 }
 
@@ -51,7 +56,7 @@ Names ExpressionAction::getNeededColumns() const
 ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_,
-    const std::string & input_row_projection_expression)
+    const std::string & row_projection_column)
 {
     if (result_name_ == "")
     {
@@ -70,12 +75,12 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & func
     a.result_name = result_name_;
     a.function_builder = function_;
     a.argument_names = argument_names_;
-    a.input_row_projection_expression = input_row_projection_expression;
+    a.row_projection_column = row_projection_column;
     return a;
 }
 
 ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_,
-                                             const std::string & input_row_projection_expression,
+                                             const std::string & row_projection_column,
                                              bool is_row_projection_complementary)
 {
     ExpressionAction a;
@@ -83,7 +88,7 @@ ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added
     a.result_name = added_column_.name;
     a.result_type = added_column_.type;
     a.added_column = added_column_.column;
-    a.input_row_projection_expression = input_row_projection_expression;
+    a.row_projection_column = row_projection_column;
     a.is_row_projection_complementary = is_row_projection_complementary;
     return a;
 }
@@ -120,16 +125,6 @@ ExpressionAction ExpressionAction::project(const Names & projected_columns_)
     a.projection.resize(projected_columns_.size());
     for (size_t i = 0; i < projected_columns_.size(); ++i)
         a.projection[i] = NameWithAlias(projected_columns_[i], "");
-    return a;
-}
-
-ExpressionAction ExpressionAction::measureInputRowsCount(const std::string & source_name,
-                                                         const std::string & output_row_projection_expression)
-{
-    ExpressionAction a;
-    a.type = MEASURE_INPUT_ROWS_COUNT;
-    a.source_name = source_name;
-    a.output_row_projection_expression = output_row_projection_expression;
     return a;
 }
 
@@ -221,12 +216,6 @@ void ExpressionAction::prepare(Block & sample_block)
             break;
         }
 
-        case MEASURE_INPUT_ROWS_COUNT:
-        {
-            // Do nothing
-            break;
-        }
-
         case ARRAY_JOIN:
         {
             for (const auto & name : array_joined_columns)
@@ -297,15 +286,39 @@ void ExpressionAction::prepare(Block & sample_block)
     }
 }
 
+size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const {
+    auto it = input_rows_counts.find(row_projection_column);
+    size_t projection_space_dimention;
+    if (it == input_rows_counts.end())
+    {
+        const auto & projection_column = block.getByName(row_projection_column).column;
+        projection_space_dimention = 0;
+        for (size_t i = 0; i < projection_column->size(); ++i) {
+            if (projection_column->getBoolRepresentation(i) > 0) {
+                ++projection_space_dimention;
+            }
+        }
+
+        input_rows_counts[row_projection_column] = projection_space_dimention;
+    }
+    else
+    {
+        projection_space_dimention = it->second;
+    }
+    size_t parent_space_dimention;
+    if (row_projection_column.empty()) {
+        parent_space_dimention = input_rows_counts[""];
+    } else {
+        parent_space_dimention = block.getByName(row_projection_column).column->size();
+    }
+    return is_row_projection_complementary ? parent_space_dimention - projection_space_dimention : projection_space_dimention;
+}
 
 void ExpressionAction::execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
 {
 //    std::cerr << "executing: " << toString() << std::endl;
 
-    size_t input_rows_count = input_rows_counts[input_row_projection_expression];
-    if (is_row_projection_complementary) {
-        input_rows_count = input_rows_counts[""] - input_rows_count;
-    }
+    size_t input_rows_count = getInputRowsCount(block, input_rows_counts);
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)
         if (!block.has(source_name))
@@ -332,22 +345,6 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             function->execute(block, arguments, num_columns_without_result, input_rows_count);
-
-            break;
-        }
-
-        case MEASURE_INPUT_ROWS_COUNT:
-        {
-
-            const auto & projection_column = block.getByName(source_name).column;
-            size_t projection_size = 0;
-            for (size_t i = 0; i < projection_column->size(); ++i) {
-                if (projection_column->getUInt8(i) > 0) {
-                    ++projection_size;
-                }
-            }
-
-            input_rows_counts[output_row_projection_expression] = projection_size;
 
             break;
         }
@@ -887,6 +884,9 @@ void ExpressionActions::finalize(const Names & output_columns)
         if (!action.source_name.empty())
             ++columns_refcount[action.source_name];
 
+        if (!action.row_projection_column.empty())
+            ++columns_refcount[action.row_projection_column];
+
         for (const auto & name : action.argument_names)
             ++columns_refcount[name];
 
@@ -914,6 +914,9 @@ void ExpressionActions::finalize(const Names & output_columns)
 
         if (!action.source_name.empty())
             process(action.source_name);
+
+        if (!action.row_projection_column.empty())
+            process(action.row_projection_column);
 
         for (const auto & name : action.argument_names)
             process(name);

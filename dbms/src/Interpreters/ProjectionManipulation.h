@@ -25,6 +25,8 @@ public:
 
     virtual std::string getProjectionExpression() = 0;
 
+    virtual std::string getProjectionSourceColumn() const = 0;
+
     virtual ~ProjectionManipulatorBase();
 };
 
@@ -46,6 +48,8 @@ public:
     std::string getColumnName(const std::string & col_name) const final;
 
     std::string getProjectionExpression() final;
+
+    std::string getProjectionSourceColumn() const final;
 };
 
 /*
@@ -103,9 +107,9 @@ private:
     std::string getColumnNameByIndex(const std::string & col_name, size_t node) const;
 
     std::string getProjectionColumnName(const std::string & first_projection_expr,
-                                        const std::string & second_projection_expr);
+                                        const std::string & second_projection_expr) const;
 
-    std::string getProjectionColumnName(size_t first_index, size_t second_index);
+    std::string getProjectionColumnName(size_t first_index, size_t second_index) const;
 
     void buildProjectionCompositionRecursive(const std::vector<size_t> & path,
                                              size_t child_index,
@@ -113,6 +117,7 @@ private:
 
     void buildProjectionComposition(size_t child_node, size_t parent_node);
 
+    std::string getProjectionSourceColumn(size_t node) const;
 public:
     ConditionalTree(ScopeStack & scopes, const Context & context);
 
@@ -120,10 +125,12 @@ public:
 
     void goToProjection(const std::string & field_name);
 
+    std::string buildRestoreProjectionAndGetName(size_t levels_up);
+
     void restoreColumn(
         const std::string & default_values_name,
         const std::string & new_values_name,
-        const size_t levels_up,
+        size_t levels_up,
         const std::string & result_name
     );
 
@@ -132,6 +139,8 @@ public:
     bool isAlreadyComputed(const std::string & column_name) final;
 
     std::string getProjectionExpression() final;
+
+    std::string getProjectionSourceColumn() const final;
 };
 
 using ConditionalTreePtr = std::shared_ptr<ConditionalTree>;
@@ -195,7 +204,7 @@ private:
 
     std::string getFinalColumnName();
 
-    void createZerosColumn();
+    void createZerosColumn(const std::string & restore_projection_name);
 public:
     AndOperatorProjectionAction(ScopeStack & scopes,
                                 ProjectionManipulatorPtr projection_manipulator,
