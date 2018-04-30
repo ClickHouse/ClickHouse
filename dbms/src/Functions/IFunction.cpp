@@ -301,14 +301,13 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
             {
                 if (!arguments[i]->isNullable())
                     continue;
-                values[i] = [&, previous = std::move(values[i])]()
-                {
-                    auto * value = previous();
-                    auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-                    b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
-                    b.SetInsertPoint(ok);
-                    return b.CreateExtractValue(value, {0});
-                };
+                /// Would be nice to evaluate all this lazily, but that'd change semantics: if only unevaluated
+                /// arguments happen to contain NULLs, the return value would not be NULL, though it should be.
+                auto * value = values[i]();
+                auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+                b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
+                b.SetInsertPoint(ok);
+                values[i] = [value = b.CreateExtractValue(value, {0})]() { return value; };
             }
             auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
             auto * result_block = b.GetInsertBlock();
