@@ -44,13 +44,19 @@ Names ExpressionAction::getNeededColumns() const
     if (!source_name.empty())
         res.push_back(source_name);
 
+    if (!row_projection_column.empty())
+    {
+        res.push_back(row_projection_column);
+    }
+
     return res;
 }
 
 
 ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
-    std::string result_name_)
+    std::string result_name_,
+    const std::string & row_projection_column)
 {
     if (result_name_ == "")
     {
@@ -69,16 +75,21 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & func
     a.result_name = result_name_;
     a.function_builder = function_;
     a.argument_names = argument_names_;
+    a.row_projection_column = row_projection_column;
     return a;
 }
 
-ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_)
+ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_,
+                                             const std::string & row_projection_column,
+                                             bool is_row_projection_complementary)
 {
     ExpressionAction a;
     a.type = ADD_COLUMN;
     a.result_name = added_column_.name;
     a.result_type = added_column_.type;
     a.added_column = added_column_.column;
+    a.row_projection_column = row_projection_column;
+    a.is_row_projection_complementary = is_row_projection_complementary;
     return a;
 }
 
@@ -179,7 +190,7 @@ void ExpressionAction::prepare(Block & sample_block)
                 new_column.type = result_type;
                 sample_block.insert(std::move(new_column));
 
-                function->execute(sample_block, arguments, result_position);
+                function->execute(sample_block, arguments, result_position, sample_block.rows());
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -275,10 +286,44 @@ void ExpressionAction::prepare(Block & sample_block)
     }
 }
 
+size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const {
+    auto it = input_rows_counts.find(row_projection_column);
+    size_t projection_space_dimention;
+    if (it == input_rows_counts.end())
+    {
+        const auto & projection_column = block.getByName(row_projection_column).column;
+        projection_space_dimention = 0;
+        for (size_t i = 0; i < projection_column->size(); ++i)
+        {
+            if (projection_column->getBoolRepresentation(i) > 0)
+            {
+                ++projection_space_dimention;
+            }
+        }
 
-void ExpressionAction::execute(Block & block) const
+        input_rows_counts[row_projection_column] = projection_space_dimention;
+    }
+    else
+    {
+        projection_space_dimention = it->second;
+    }
+    size_t parent_space_dimention;
+    if (row_projection_column.empty())
+    {
+        parent_space_dimention = input_rows_counts[""];
+    }
+    else
+    {
+        parent_space_dimention = block.getByName(row_projection_column).column->size();
+    }
+    return is_row_projection_complementary ? parent_space_dimention - projection_space_dimention : projection_space_dimention;
+}
+
+void ExpressionAction::execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
 {
 //    std::cerr << "executing: " << toString() << std::endl;
+
+    size_t input_rows_count = getInputRowsCount(block, input_rows_counts);
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)
         if (!block.has(source_name))
@@ -304,7 +349,7 @@ void ExpressionAction::execute(Block & block) const
             block.insert({ nullptr, result_type, result_name});
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
-            function->execute(block, arguments, num_columns_without_result);
+            function->execute(block, arguments, num_columns_without_result, input_rows_count);
 
             break;
         }
@@ -332,7 +377,7 @@ void ExpressionAction::execute(Block & block) const
 
                     Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-                    function_builder->build({src_col})->execute(tmp_block, {0}, 1);
+                    function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size());
                     non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
                 }
 
@@ -371,6 +416,8 @@ void ExpressionAction::execute(Block & block) const
                 }
             }
 
+            // Temporary support case with no projections
+            input_rows_counts[""] = block.rows();
             break;
         }
 
@@ -404,7 +451,7 @@ void ExpressionAction::execute(Block & block) const
             break;
 
         case ADD_COLUMN:
-            block.insert({ added_column->cloneResized(block.rows()), result_type, result_name });
+            block.insert({ added_column->cloneResized(input_rows_count), result_type, result_name });
             break;
 
         case COPY_COLUMN:
@@ -419,8 +466,10 @@ void ExpressionAction::execute(Block & block) const
 
 void ExpressionAction::executeOnTotals(Block & block) const
 {
+    std::unordered_map<std::string, size_t> input_rows_counts;
+    input_rows_counts[""] = block.rows();
     if (type != JOIN)
-        execute(block);
+        execute(block, input_rows_counts);
     else
         join->joinTotals(block);
 }
@@ -629,9 +678,11 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
 
 void ExpressionActions::execute(Block & block) const
 {
+    std::unordered_map<std::string, size_t> input_rows_counts;
+    input_rows_counts[""] = block.rows();
     for (const auto & action : actions)
     {
-        action.execute(block);
+        action.execute(block, input_rows_counts);
         checkLimits(block);
     }
 }
@@ -838,6 +889,9 @@ void ExpressionActions::finalize(const Names & output_columns)
         if (!action.source_name.empty())
             ++columns_refcount[action.source_name];
 
+        if (!action.row_projection_column.empty())
+            ++columns_refcount[action.row_projection_column];
+
         for (const auto & name : action.argument_names)
             ++columns_refcount[name];
 
@@ -865,6 +919,9 @@ void ExpressionActions::finalize(const Names & output_columns)
 
         if (!action.source_name.empty())
             process(action.source_name);
+
+        if (!action.row_projection_column.empty())
+            process(action.row_projection_column);
 
         for (const auto & name : action.argument_names)
             process(name);
