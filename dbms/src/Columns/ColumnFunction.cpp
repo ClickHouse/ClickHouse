@@ -194,7 +194,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     for (size_t i = 0; i < captured_columns.size(); ++i)
         arguments[i] = i;
 
-    function->execute(block, arguments, captured_columns.size());
+    function->execute(block, arguments, captured_columns.size(), size_);
 
     return block.getByPosition(captured_columns.size());
 }

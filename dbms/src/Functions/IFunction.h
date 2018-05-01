@@ -31,7 +31,7 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
 };
 
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
@@ -39,10 +39,10 @@ using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
 class PreparedFunctionImpl : public IPreparedFunction
 {
 public:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result) final;
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final;
 
 protected:
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
+    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
@@ -64,8 +64,10 @@ protected:
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
 private:
-    bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result);
-    bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result);
+    bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
+                                           size_t input_rows_count);
+    bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
+                                                       size_t input_rows_count);
 };
 
 /// Function with known arguments and return type.
@@ -85,9 +87,9 @@ public:
     virtual PreparedFunctionPtr prepare(const Block & sample_block) const = 0;
 
     /// TODO: make const
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
-        return prepare(block)->execute(block, arguments, result);
+        return prepare(block)->execute(block, arguments, result, input_rows_count);
     }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
@@ -249,7 +251,7 @@ class IFunction : public std::enable_shared_from_this<IFunction>,
 public:
     String getName() const override = 0;
     /// TODO: make const
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override = 0;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override = 0;
 
     /// Override this functions to change default implementation behavior. See details in IMyFunction.
     bool useDefaultImplementationForNulls() const override { return true; }
@@ -294,9 +296,9 @@ public:
     String getName() const override { return function->getName(); }
 
 protected:
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) final
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
     {
-        return function->executeImpl(block, arguments, result);
+        return function->executeImpl(block, arguments, result, input_rows_count);
     }
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
