@@ -19,7 +19,7 @@ DefaultProjectionManipulator::DefaultProjectionManipulator(ScopeStack & scopes)
     : scopes(scopes)
 {}
 
-bool DefaultProjectionManipulator::isAlreadyComputed(const std::string & column_name)
+bool DefaultProjectionManipulator::tryToGetFromUpperProjection(const std::string & column_name)
 {
     return scopes.getSampleBlock().has(column_name);
 }
@@ -29,7 +29,8 @@ std::string DefaultProjectionManipulator::getColumnName(const std::string & colu
     return column_name;
 }
 
-std::string DefaultProjectionManipulator::getProjectionExpression() {
+std::string DefaultProjectionManipulator::getProjectionExpression()
+{
     return "";
 }
 
@@ -113,9 +114,11 @@ void ConditionalTree::buildProjectionComposition(const size_t child_node, const 
 {
     std::vector<size_t> path;
     size_t node = child_node;
-    while (true) {
+    while (true)
+    {
         path.push_back(node);
-        if (node == parent_node) {
+        if (node == parent_node)
+        {
             break;
         }
         node = nodes[node].getParentNode();
@@ -149,7 +152,8 @@ void ConditionalTree::goToProjection(const std::string & field_name)
     std::string current_projection_name = nodes[current_node].projection_expression_string;
     std::string new_projection_name = current_projection_name.empty() ? field_name : current_projection_name + ";" + field_name;
     std::string projection_column_name = getProjectionColumnName(current_projection_name, new_projection_name);
-    if (!scopes.getSampleBlock().has(projection_column_name)) {
+    if (!scopes.getSampleBlock().has(projection_column_name))
+    {
         const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get("one_or_zero", context);
         scopes.addAction(ExpressionAction::applyFunction(function_builder, {getColumnName(field_name)}, projection_column_name,
                                                          getProjectionSourceColumn()));
@@ -163,9 +167,11 @@ void ConditionalTree::goToProjection(const std::string & field_name)
     }
 }
 
-std::string ConditionalTree::buildRestoreProjectionAndGetName(const size_t levels_up) {
+std::string ConditionalTree::buildRestoreProjectionAndGetName(const size_t levels_up)
+{
     size_t target_node = current_node;
-    for (size_t i = 0; i < levels_up; ++i) {
+    for (size_t i = 0; i < levels_up; ++i)
+    {
         target_node = nodes[target_node].getParentNode();
     }
     buildProjectionComposition(current_node, target_node);
@@ -180,7 +186,8 @@ void ConditionalTree::restoreColumn(
 )
 {
     size_t target_node = current_node;
-    for (size_t i = 0; i < levels_up; ++i) {
+    for (size_t i = 0; i < levels_up; ++i)
+    {
         target_node = nodes[target_node].getParentNode();
     }
     const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get("__inner_restore_projection__",
@@ -197,17 +204,21 @@ void ConditionalTree::restoreColumn(
 
 void ConditionalTree::goUp(const size_t levels_up)
 {
-    for (size_t i = 0; i < levels_up; ++i) {
+    for (size_t i = 0; i < levels_up; ++i)
+    {
         current_node = nodes[current_node].getParentNode();
     }
 }
 
-bool ConditionalTree::isAlreadyComputed(const std::string & column_name)
+bool ConditionalTree::tryToGetFromUpperProjection(const std::string & column_name)
 {
     size_t node = current_node;
-    while (true) {
-        if (scopes.getSampleBlock().has(getColumnNameByIndex(column_name, node))) {
-            if (node != current_node) {
+    while (true)
+    {
+        if (scopes.getSampleBlock().has(getColumnNameByIndex(column_name, node)))
+        {
+            if (node != current_node)
+            {
                 buildProjectionComposition(current_node, node);
                 const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get("__inner_project__",
                                                                                               context);
@@ -221,7 +232,8 @@ bool ConditionalTree::isAlreadyComputed(const std::string & column_name)
             }
             return true;
         }
-        if (nodes[node].is_root) {
+        if (nodes[node].is_root)
+        {
             break;
         }
         node = nodes[node].getParentNode();
@@ -229,7 +241,8 @@ bool ConditionalTree::isAlreadyComputed(const std::string & column_name)
     return false;
 }
 
-std::string ConditionalTree::getProjectionExpression() {
+std::string ConditionalTree::getProjectionExpression()
+{
     return nodes[current_node].projection_expression_string;
 }
 
@@ -290,9 +303,12 @@ void AndOperatorProjectionAction::preArgumentAction()
     if (!previous_argument_name.empty())
     {
         // Before processing arguments starting from second to last
-        if (auto * conditional_tree = typeid_cast<ConditionalTree *>(projection_manipulator.get())) {
+        if (auto * conditional_tree = typeid_cast<ConditionalTree *>(projection_manipulator.get()))
+        {
             conditional_tree->goToProjection(previous_argument_name);
-        } else {
+        }
+        else
+        {
             throw Exception("Illegal projection manipulator used in AndOperatorProjectionAction", ErrorCodes::ILLEGAL_PROJECTION_MANIPULATOR);
         }
         ++projection_levels_count;
@@ -306,7 +322,8 @@ void AndOperatorProjectionAction::postArgumentAction(const std::string & argumen
 
 void AndOperatorProjectionAction::preCalculation()
 {
-    if (auto * conditional_tree = typeid_cast<ConditionalTree *>(projection_manipulator.get())) {
+    if (auto * conditional_tree = typeid_cast<ConditionalTree *>(projection_manipulator.get()))
+    {
         auto final_column = getFinalColumnName();
         const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get("one_or_zero", context);
         scopes.addAction(ExpressionAction::applyFunction(
@@ -321,7 +338,9 @@ void AndOperatorProjectionAction::preCalculation()
         conditional_tree->restoreColumn(getZerosColumnName(), final_column,
                                         projection_levels_count, expression_name);
         conditional_tree->goUp(projection_levels_count);
-    } else {
+    }
+    else
+    {
         throw Exception("Illegal projection manipulator used in AndOperatorProjectionAction", ErrorCodes::ILLEGAL_PROJECTION_MANIPULATOR);
     }
 }

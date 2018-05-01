@@ -1989,13 +1989,13 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 {
     /// If the result of the calculation already exists in the block.
     if ((typeid_cast<ASTFunction *>(ast.get()) || typeid_cast<ASTLiteral *>(ast.get()))
-        && projection_manipulator->isAlreadyComputed(ast->getColumnName()))
+        && projection_manipulator->tryToGetFromUpperProjection(ast->getColumnName()))
         return;
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
     {
         std::string name = node->getColumnName();
-        if (!only_consts && !projection_manipulator->isAlreadyComputed(ast->getColumnName()))
+        if (!only_consts && !projection_manipulator->tryToGetFromUpperProjection(ast->getColumnName()))
         {
             /// The requested column is not in the block.
             /// If such a column exists in the table, then the user probably forgot to surround it with an aggregate function or add it to GROUP BY.
@@ -2256,7 +2256,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         column.name = node->getColumnName();
 
         actions_stack.addAction(ExpressionAction::addColumn(column, "", false));
-        projection_manipulator->isAlreadyComputed(column.name);
+        projection_manipulator->tryToGetFromUpperProjection(column.name);
     }
     else
     {
