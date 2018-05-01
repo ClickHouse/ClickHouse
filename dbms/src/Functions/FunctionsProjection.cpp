@@ -86,7 +86,7 @@ void FunctionProject::executeImpl(Block & block, const ColumnNumbers & arguments
         }
         else
         {
-            block.getByPosition(result).column = std::move(data_column->cloneEmpty());
+            block.getByPosition(result).column = data_column->cloneEmpty();
         }
     }
     else
