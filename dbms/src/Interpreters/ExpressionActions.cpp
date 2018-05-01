@@ -293,8 +293,10 @@ size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std
     {
         const auto & projection_column = block.getByName(row_projection_column).column;
         projection_space_dimention = 0;
-        for (size_t i = 0; i < projection_column->size(); ++i) {
-            if (projection_column->getBoolRepresentation(i) > 0) {
+        for (size_t i = 0; i < projection_column->size(); ++i)
+        {
+            if (projection_column->getBoolRepresentation(i) > 0)
+            {
                 ++projection_space_dimention;
             }
         }
@@ -306,9 +308,12 @@ size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std
         projection_space_dimention = it->second;
     }
     size_t parent_space_dimention;
-    if (row_projection_column.empty()) {
+    if (row_projection_column.empty())
+    {
         parent_space_dimention = input_rows_counts[""];
-    } else {
+    }
+    else
+    {
         parent_space_dimention = block.getByName(row_projection_column).column->size();
     }
     return is_row_projection_complementary ? parent_space_dimention - projection_space_dimention : projection_space_dimention;

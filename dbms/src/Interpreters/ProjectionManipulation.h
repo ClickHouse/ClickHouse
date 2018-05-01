@@ -19,7 +19,7 @@ extern const int ILLEGAL_PROJECTION_MANIPULATOR;
  */
 struct ProjectionManipulatorBase {
 public:
-    virtual bool isAlreadyComputed(const std::string & column_name) = 0;
+    virtual bool tryToGetFromUpperProjection(const std::string & column_name) = 0;
 
     virtual std::string getColumnName(const std::string & col_name) const = 0;
 
@@ -43,7 +43,7 @@ private:
 public:
     explicit DefaultProjectionManipulator(ScopeStack & scopes);
 
-    bool isAlreadyComputed(const std::string & column_name) final;
+    bool tryToGetFromUpperProjection(const std::string & column_name) final;
 
     std::string getColumnName(const std::string & col_name) const final;
 
@@ -78,7 +78,7 @@ public:
  *   4) goUp -- goes several levels up in the conditional tree, raises the exception if we hit the root of the tree and
  *   there are still remained some levels up to go.
  *
- *   5) isAlreadyComputed -- goes up to the root projection level and checks whether the expression is
+ *   5) tryToGetFromUpperProjection -- goes up to the root projection level and checks whether the expression is
  *   already calculated somewhere in the higher projection level. If it is, we may just project it to the current
  *   layer to have it computed in the current layer. In this case, the function stores all actions needed to compute
  *   the projection: computes composition of projections and uses it to project the column. In the other case, if
@@ -136,7 +136,7 @@ public:
 
     void goUp(size_t levels_up);
 
-    bool isAlreadyComputed(const std::string & column_name) final;
+    bool tryToGetFromUpperProjection(const std::string & column_name) final;
 
     std::string getProjectionExpression() final;
 

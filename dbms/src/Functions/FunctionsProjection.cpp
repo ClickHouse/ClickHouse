@@ -33,9 +33,12 @@ void FunctionOneOrZero::executeImpl(Block & block, const ColumnNumbers & argumen
     vec_res.resize(data_column->size());
     for (size_t i = 0; i < data_column->size(); ++i)
     {
-        if (data_column->getBoolRepresentation(i)) {
+        if (data_column->getBoolRepresentation(i))
+        {
             vec_res[i] = 1;
-        } else {
+        }
+        else
+        {
             vec_res[i] = 0;
         }
     }
@@ -77,9 +80,12 @@ void FunctionProject::executeImpl(Block & block, const ColumnNumbers & arguments
     }
     else if (const auto projection_column_uint8_const = checkAndGetColumnConst<ColumnUInt8>(projection_column.get()))
     {
-        if (projection_column_uint8_const->getBoolRepresentation(0)) {
+        if (projection_column_uint8_const->getBoolRepresentation(0))
+        {
             block.getByPosition(result).column = std::move(data_column->cloneResized(data_column->size()));
-        } else {
+        }
+        else
+        {
             block.getByPosition(result).column = std::move(data_column->cloneEmpty());
         }
     }
@@ -125,14 +131,19 @@ void FunctionBuildProjectionComposition::executeImpl(Block & block, const Column
     auto & vec_res = col_res->getData();
     vec_res.resize(first_projection_column->size());
     size_t current_reserve_index = 0;
-    for (size_t i = 0; i < first_projection_column->size(); ++i) {
-        if (first_projection_column->getBoolRepresentation(i) == 0) {
+    for (size_t i = 0; i < first_projection_column->size(); ++i)
+    {
+        if (first_projection_column->getBoolRepresentation(i) == 0)
+        {
             vec_res[i] = 0;
-        } else {
+        }
+        else
+        {
             vec_res[i] = second_projection_column->getBoolRepresentation(current_reserve_index++);
         }
     }
-    if (current_reserve_index != second_projection_column->size()) {
+    if (current_reserve_index != second_projection_column->size())
+    {
         throw Exception("Second argument size is not appropriate: " + std::to_string(second_projection_column->size())
                         + " instead of  " + std::to_string(current_reserve_index),
                         ErrorCodes::BAD_ARGUMENTS);
@@ -161,7 +172,8 @@ size_t FunctionRestoreProjection::getNumberOfArguments() const
 
 DataTypePtr FunctionRestoreProjection::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments.size() < 2) {
+    if (arguments.size() < 2)
+    {
         throw Exception("Wrong argument count: " + std::to_string(arguments.size()), ErrorCodes::BAD_ARGUMENTS);
     }
     return arguments[1];
@@ -169,13 +181,15 @@ DataTypePtr FunctionRestoreProjection::getReturnTypeImpl(const DataTypes & argum
 
 void FunctionRestoreProjection::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
-    if (arguments.size() < 2) {
+    if (arguments.size() < 2)
+    {
         throw Exception("Wrong argument count: " + std::to_string(arguments.size()), ErrorCodes::BAD_ARGUMENTS);
     }
     const auto & projection_column = block.getByPosition(arguments[0]).column;
     auto col_res = block.getByPosition(arguments[1]).column->cloneEmpty();
     std::vector<size_t> override_indices(arguments.size() - 1, 0);
-    for (size_t i = 0; i < projection_column->size(); ++i) {
+    for (size_t i = 0; i < projection_column->size(); ++i)
+    {
         size_t argument_index = projection_column->getBoolRepresentation(i);
         col_res->insertFrom(*block.getByPosition(arguments[argument_index + 1]).column, override_indices[argument_index]++);
     }
