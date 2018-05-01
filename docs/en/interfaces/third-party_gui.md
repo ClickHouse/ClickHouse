@@ -14,3 +14,6 @@ Main features:
 
 [Tabix documentation](https://tabix.io/doc/).
 
+## HouseOps
+
+[HouseOps](https://github.com/HouseOps/HouseOps) is a unique Desktop ClickHouse Ops UI / IDE for OSX, Linux and Windows.

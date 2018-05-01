@@ -16,53 +16,61 @@ void registerFunctionsComparison(FunctionFactory & factory)
 }
 
 template <>
-void FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
-    Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+void FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                                const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                                size_t input_rows_count)
 {
-    return executeTupleEqualityImpl<FunctionComparison<EqualsOp, NameEquals>, FunctionAnd>(block, result, x, y, tuple_size);
+    return executeTupleEqualityImpl<FunctionComparison<EqualsOp, NameEquals>, FunctionAnd>(block, result, x, y,
+                                                                                           tuple_size, input_rows_count);
 }
 
 template <>
-void FunctionComparison<NotEqualsOp, NameNotEquals>::executeTupleImpl(
-    Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+void FunctionComparison<NotEqualsOp, NameNotEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                                      const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                                      size_t input_rows_count)
 {
-    return executeTupleEqualityImpl<FunctionComparison<NotEqualsOp, NameNotEquals>, FunctionOr>(block, result, x, y, tuple_size);
+    return executeTupleEqualityImpl<FunctionComparison<NotEqualsOp, NameNotEquals>, FunctionOr>(block, result, x, y,
+                                                                                                tuple_size, input_rows_count);
 }
 
 template <>
-void FunctionComparison<LessOp, NameLess>::executeTupleImpl(
-    Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+void FunctionComparison<LessOp, NameLess>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                            const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                            size_t input_rows_count)
 {
     return executeTupleLessGreaterImpl<
-        FunctionComparison<LessOp, NameLess>,
-        FunctionComparison<LessOp, NameLess>>(block, result, x, y, tuple_size);
+            FunctionComparison<LessOp, NameLess>,
+            FunctionComparison<LessOp, NameLess>>(block, result, x, y, tuple_size, input_rows_count);
 }
 
 template <>
-void FunctionComparison<GreaterOp, NameGreater>::executeTupleImpl(
-    Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+void FunctionComparison<GreaterOp, NameGreater>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                                  const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                                  size_t input_rows_count)
 {
     return executeTupleLessGreaterImpl<
-        FunctionComparison<GreaterOp, NameGreater>,
-        FunctionComparison<GreaterOp, NameGreater>>(block, result, x, y, tuple_size);
+            FunctionComparison<GreaterOp, NameGreater>,
+            FunctionComparison<GreaterOp, NameGreater>>(block, result, x, y, tuple_size, input_rows_count);
 }
 
 template <>
-void FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl(
-    Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+void FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                                            const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                                            size_t input_rows_count)
 {
     return executeTupleLessGreaterImpl<
-        FunctionComparison<LessOp, NameLess>,
-        FunctionComparison<LessOrEqualsOp, NameLessOrEquals>>(block, result, x, y, tuple_size);
+            FunctionComparison<LessOp, NameLess>,
+            FunctionComparison<LessOrEqualsOp, NameLessOrEquals>>(block, result, x, y, tuple_size, input_rows_count);
 }
 
 template <>
-void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImpl(
-    Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                                                                  const ColumnsWithTypeAndName & y, size_t tuple_size,
+                                                                                  size_t input_rows_count)
 {
     return executeTupleLessGreaterImpl<
-        FunctionComparison<GreaterOp, NameGreater>,
-        FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>>(block, result, x, y, tuple_size);
+            FunctionComparison<GreaterOp, NameGreater>,
+            FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>>(block, result, x, y, tuple_size, input_rows_count);
 }
 
 }

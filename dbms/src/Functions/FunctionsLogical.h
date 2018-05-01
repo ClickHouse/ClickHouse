@@ -324,7 +324,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         size_t num_arguments = arguments.size();
         ColumnRawPtrs in(num_arguments);
@@ -483,7 +483,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (!( executeType<UInt8>(block, arguments, result)
             || executeType<UInt16>(block, arguments, result)

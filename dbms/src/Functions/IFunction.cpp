@@ -10,6 +10,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
+#include <cstdlib>
+#include <memory>
 
 #if USE_EMBEDDED_COMPILER
 #include <llvm/IR/IRBuilder.h>
@@ -32,7 +34,7 @@ namespace
 /** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
   */
-ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
+ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     ColumnPtr result_null_map_column;
 
@@ -55,7 +57,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
 
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
-            return block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+            return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
 
         if (elem.column->isColumnConst())
             continue;
@@ -140,7 +142,8 @@ bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 }
 }
 
-bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result)
+bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
+                                                                     size_t input_rows_count)
 {
     ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
 
@@ -182,14 +185,15 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
     for (size_t i = 0; i < arguments_size; ++i)
         temporary_argument_numbers[i] = i;
 
-    execute(temporary_block, temporary_argument_numbers, arguments_size);
+    execute(temporary_block, temporary_argument_numbers, arguments_size, temporary_block.rows());
 
-    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, block.rows());
+    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, input_rows_count);
     return true;
 }
 
 
-bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result)
+bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
+                                                         size_t input_rows_count)
 {
     if (args.empty() || !useDefaultImplementationForNulls())
         return false;
@@ -198,30 +202,31 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
 
     if (null_presence.has_null_constant)
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
         return true;
     }
 
     if (null_presence.has_nullable)
     {
         Block temporary_block = createBlockWithNestedColumns(block, args, result);
-        execute(temporary_block, args, result);
-        block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args, result);
+        execute(temporary_block, args, result, temporary_block.rows());
+        block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args,
+                                                            result, input_rows_count);
         return true;
     }
 
     return false;
 }
 
-void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result)
+void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
-    if (defaultImplementationForConstantArguments(block, args, result))
+    if (defaultImplementationForConstantArguments(block, args, result, input_rows_count))
         return;
 
-    if (defaultImplementationForNulls(block, args, result))
+    if (defaultImplementationForNulls(block, args, result, input_rows_count))
         return;
 
-    executeImpl(block, args, result);
+    executeImpl(block, args, result, input_rows_count);
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const

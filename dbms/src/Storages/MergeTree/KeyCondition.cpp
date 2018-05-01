@@ -362,7 +362,7 @@ static void applyFunction(
         { nullptr, res_type, "y" }
     };
 
-    func->execute(block, {0}, 1);
+    func->execute(block, {0}, 1, 1);
 
     block.safeGetByPosition(1).column->get(0, res_value);
 }

@@ -863,7 +863,7 @@ public:
         return type_res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
@@ -882,7 +882,7 @@ public:
                     {new_block.getByPosition(new_arguments[0]), new_block.getByPosition(new_arguments[1])};
             auto function = function_builder->build(new_arguments_with_type_and_name);
 
-            function->execute(new_block, new_arguments, result);
+            function->execute(new_block, new_arguments, result, input_rows_count);
             block.getByPosition(result).column = new_block.getByPosition(result).column;
 
             return;
@@ -1039,7 +1039,7 @@ public:
         return result;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
         {
@@ -1407,7 +1407,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block , const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto value_col = block.getByPosition(arguments.front()).column.get();
 
