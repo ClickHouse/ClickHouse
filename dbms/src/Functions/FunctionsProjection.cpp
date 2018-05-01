@@ -76,13 +76,13 @@ void FunctionProject::executeImpl(Block & block, const ColumnNumbers & arguments
     const auto & projection_column = block.getByPosition(arguments[1]).column;
     if (const auto projection_column_uint8 = checkAndGetColumn<ColumnUInt8>(projection_column.get()))
     {
-        block.getByPosition(result).column = std::move(data_column->filter(projection_column_uint8->getData(), -1));
+        block.getByPosition(result).column = data_column->filter(projection_column_uint8->getData(), -1);
     }
     else if (const auto projection_column_uint8_const = checkAndGetColumnConst<ColumnUInt8>(projection_column.get()))
     {
         if (projection_column_uint8_const->getBoolRepresentation(0))
         {
-            block.getByPosition(result).column = std::move(data_column->cloneResized(data_column->size()));
+            block.getByPosition(result).column = data_column->cloneResized(data_column->size());
         }
         else
         {
