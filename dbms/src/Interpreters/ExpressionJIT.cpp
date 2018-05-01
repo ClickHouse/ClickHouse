@@ -79,7 +79,7 @@ static void applyFunction(IFunctionBase & function, Field & value)
 {
     const auto & type = function.getArgumentTypes().at(0);
     Block block = {{ type->createColumnConst(1, value), type, "x" }, { nullptr, function.getReturnType(), "y" }};
-    function.execute(block, {0}, 1);
+    function.execute(block, {0}, 1, 1);
     block.safeGetByPosition(1).column->get(0, value);
 }
 
@@ -142,9 +142,8 @@ public:
 
     String getName() const override { return name; }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
-        size_t block_size = block.rows();
         auto col_res = block.getByPosition(result).type->createColumn()->cloneResized(block_size);
         if (block_size)
         {
