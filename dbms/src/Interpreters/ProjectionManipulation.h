@@ -7,7 +7,7 @@ namespace DB {
 
 class ExpressionAnalyzer;
 
-class ScopeStack;
+struct ScopeStack;
 
 namespace ErrorCodes {
 extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
