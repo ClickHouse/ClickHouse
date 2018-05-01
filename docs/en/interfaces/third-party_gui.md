@@ -14,11 +14,6 @@ Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) pr
 [Tabix documentation](https://tabix.io/doc/).
 
 
-____
-
-
-
-<img src="https://svgshare.com/i/6W0.svg" alt="" data-canonical-src="https://svgshare.com/i/6W0.svg" width="100" />
 
 ## HouseOps
 
