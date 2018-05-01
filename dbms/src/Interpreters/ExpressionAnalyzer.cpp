@@ -1937,7 +1937,8 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
     }
 }
 
-bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast) {
+bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast)
+{
     if (typeid_cast<ASTIdentifier *>(ast.get()))
     {
         return false;
@@ -1962,7 +1963,8 @@ bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast) {
         }
         for (auto & child : node->arguments->children)
         {
-            if (isThereArrayJoin(child)) {
+            if (isThereArrayJoin(child))
+            {
                 return true;
             }
         }
@@ -1976,7 +1978,8 @@ bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast) {
     {
         for (auto & child : ast->children)
         {
-            if (isThereArrayJoin(child)) {
+            if (isThereArrayJoin(child))
+            {
                 return true;
             }
         }
