@@ -14,7 +14,6 @@ Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) pr
 [Tabix documentation](https://tabix.io/doc/).
 
 
-
 ## HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) is a unique Desktop ClickHouse Ops UI / IDE for OSX, Linux and Windows.
@@ -27,4 +26,4 @@ Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) pr
 - Cluster/Infra monitoring (soon);
 - Cluster manangement (soon);
 - Kafka and Replicated tables monitoring (soon);
-- And a lot of others features (soon) for you take a beautiful implementation of ClickHouse S2.
+- And a lot of others features (soon) for you take a beautiful implementation of ClickHouse.
