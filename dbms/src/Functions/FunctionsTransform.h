@@ -143,7 +143,7 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
         const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get());
@@ -157,7 +157,7 @@ public:
 
         if (in->isColumnConst())
         {
-            executeConst(block, arguments, result);
+            executeConst(block, arguments, result, input_rows_count);
             return;
         }
 
@@ -189,7 +189,7 @@ public:
     }
 
 private:
-    void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result)
+    void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 
@@ -197,7 +197,7 @@ private:
         ColumnNumbers tmp_arguments;
 
         tmp_block.insert(block.getByPosition(arguments[0]));
-        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(block.rows())->convertToFullColumnIfConst();
+        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -209,7 +209,7 @@ private:
         tmp_block.insert(block.getByPosition(result));
         size_t tmp_result = arguments.size();
 
-        execute(tmp_block, tmp_arguments, tmp_result);
+        execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
 
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
     }
