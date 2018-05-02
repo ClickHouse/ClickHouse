@@ -9,7 +9,7 @@ if (ENABLE_EMBEDDED_COMPILER)
 
     if (LLVM_FOUND)
         # Remove dynamically-linked zlib and libedit from LLVM's dependencies:
-        set_target_properties(LLVMSupport PROPERTIES INTERFACE_LINK_LIBRARIES "-lpthread;LLVMDemangle;stdc++")
+        set_target_properties(LLVMSupport PROPERTIES INTERFACE_LINK_LIBRARIES "-lpthread;LLVMDemangle")
         set_target_properties(LLVMLineEditor PROPERTIES INTERFACE_LINK_LIBRARIES "LLVMSupport")
 
         message(STATUS "LLVM version: ${LLVM_PACKAGE_VERSION}")
