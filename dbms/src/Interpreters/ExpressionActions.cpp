@@ -759,7 +759,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 #if USE_EMBEDDED_COMPILER
     /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
     /// because inlining may change dependency sets.
-    compileFunctions(actions, output_columns, sample_block);
+    if (settings.compile_expressions)
+        compileFunctions(actions, output_columns, sample_block);
 #endif
 
     /// Which columns are needed to perform actions from the current to the last.
