@@ -263,20 +263,6 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
-    std::set<Int64> new_ephemeral_block_numbers;
-    {
-        Strings ephemeral_block_nodes = zookeeper->getChildren(zookeeper_path + "/block_numbers2");
-
-        for (const String & entry : ephemeral_block_nodes)
-        {
-            if (!startsWith(entry, "block_number-"))
-                continue;
-
-            Int64 number = parse<Int64>(entry.substr(strlen("block_number-")));
-            new_ephemeral_block_numbers.insert(number);
-        }
-    }
-
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
@@ -309,14 +295,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
         std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
         log_entries.end());
 
-    if (log_entries.empty())
-    {
-        std::lock_guard lock(mutex);
-
-        ephemeral_block_numbers.swap(new_ephemeral_block_numbers);
-        prev_virtual_parts = virtual_parts;
-    }
-    else
+    if (!log_entries.empty())
     {
         std::sort(log_entries.begin(), log_entries.end());
 
@@ -393,10 +372,6 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
             {
                 std::lock_guard lock(mutex);
 
-                ephemeral_block_numbers.swap(new_ephemeral_block_numbers);
-
-                ActiveDataPartSet tmp = virtual_parts;
-
                 for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
                 {
                     String path_created = dynamic_cast<const zkutil::CreateResponse &>(*responses[i]).path_created;
@@ -406,7 +381,6 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                     insertUnlocked(copied_entries[i], unused, lock);
                 }
 
-                prev_virtual_parts = tmp;
                 last_queue_update = time(nullptr);
             }
             catch (...)
@@ -439,7 +413,7 @@ bool ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
 
         if (entries_in_zk.empty())
         {
-            mutations_by_block_number.clear();
+            mutations_by_partition.clear();
             mutations.clear();
         }
         else
@@ -449,7 +423,13 @@ bool ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
                 if (it->znode_name < entries_in_zk.front())
                 {
                     LOG_DEBUG(log, "Removing obsolete mutation " + it->znode_name + " from local state.");
-                    mutations_by_block_number.erase(it->block_number);
+                    for (const auto & kv : it->block_numbers)
+                    {
+                        auto & in_partition = mutations_by_partition[kv.first];
+                        in_partition.erase(kv.second);
+                        if (in_partition.empty())
+                            mutations_by_partition.erase(kv.first);
+                    }
                     it = mutations.erase(it);
                 }
                 else
@@ -492,7 +472,10 @@ bool ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
             std::lock_guard lock(mutex);
 
             for (const ReplicatedMergeTreeMutationEntry & mutation : new_mutations)
-                mutations_by_block_number.emplace(mutation.block_number, &mutation);
+            {
+                for (const auto & kv : mutation.block_numbers)
+                    mutations_by_partition[kv.first].emplace(kv.second, &mutation);
+            }
             mutations.splice(mutations.end(), new_mutations);
         }
     }
@@ -775,9 +758,13 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
 Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const MergeTreePartInfo & part_info, std::lock_guard<std::mutex> &) const
 {
+    auto in_partition = mutations_by_partition.find(part_info.partition_id);
+    if (in_partition == mutations_by_partition.end())
+        return -1;
+
     Int64 data_version = part_info.version ? part_info.version : part_info.min_block;
-    auto it = mutations_by_block_number.upper_bound(data_version);
-    if (it == mutations_by_block_number.begin())
+    auto it = in_partition->second.upper_bound(data_version);
+    if (it == in_partition->second.begin())
         return -1; /// 0 can be a valid mutation block number.
     --it;
     return it->first;
@@ -906,43 +893,11 @@ bool ReplicatedMergeTreeQueue::canMergeParts(const MergeTreeDataPart & left, con
 
     std::lock_guard lock(mutex);
 
-    if (prev_virtual_parts.getContainingPart(left.info) != left.info
-        || virtual_parts.getContainingPart(left.info) != left.info)
+    if (virtual_parts.getContainingPart(left.info) != left.info)
         return set_reason(left.name);
 
-    if (prev_virtual_parts.getContainingPart(right.info) != right.info
-        || virtual_parts.getContainingPart(right.info) != right.info)
+    if (virtual_parts.getContainingPart(right.info) != right.info)
         return set_reason(right.name);
-
-    Int64 left_max_block = left.info.max_block;
-    Int64 right_min_block = right.info.min_block;
-
-    if (left_max_block > right_min_block)
-        std::swap(left_max_block, right_min_block);
-
-    if (left_max_block + 1 < right_min_block)
-    {
-        auto left_eph_it = ephemeral_block_numbers.upper_bound(left_max_block);
-        if (left_eph_it != ephemeral_block_numbers.end() && *left_eph_it < right_min_block)
-        {
-            if (out_reason)
-                *out_reason = "Block number " + toString(*left_eph_it) + " is still being inserted between parts "
-                    + left.name + " and " + right.name;
-
-            return false;
-        }
-
-        MergeTreePartInfo gap_part_info(
-            left.info.partition_id, left_max_block + 1, right_min_block - 1, 999999);
-
-        Strings covered = virtual_parts.getPartsCoveredBy(gap_part_info);
-        if (!covered.empty())
-        {
-            if (out_reason)
-                *out_reason = "There are " + toString(covered.size()) + " parts that are still not ready between " + left.name + " and " + right.name;
-            return false;
-        }
-    }
 
     Int64 left_mutation = getCurrentMutationVersion(left.info, lock);
     Int64 right_mutation = getCurrentMutationVersion(right.info, lock);
@@ -962,17 +917,19 @@ bool ReplicatedMergeTreeQueue::canMutatePart(const MergeTreePartInfo & part_info
 {
     std::lock_guard lock(mutex);
 
-    if (mutations.empty())
+    auto in_partition = mutations_by_partition.find(part_info.partition_id);
+    if (in_partition == mutations_by_partition.end())
         return false;
 
     if (virtual_parts.getContainingPart(part_info) != part_info)
         return false;
 
     Int64 current_version = getCurrentMutationVersion(part_info, lock);
-    if (current_version >= mutations.back().block_number)
+    Int64 desired_version = in_partition->second.rbegin()->first;
+    if (current_version >= desired_version)
         return false;
 
-    desired_mutation_version = mutations.back().block_number;
+    desired_mutation_version = desired_version;
     return true;
 }
 
@@ -981,12 +938,19 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 {
     std::lock_guard lock(mutex);
 
-    Int64 data_version = part_info.version ? part_info.version : part_info.min_block;
-    auto begin = mutations_by_block_number.upper_bound(data_version);
+    auto in_partition = mutations_by_partition.find(part_info.partition_id);
+    if (in_partition == mutations_by_partition.end())
+        throw Exception("There are no mutations for partition ID " + part_info.partition_id
+            + " (trying to mutate part to " + toString(desired_mutation_version) + ")",
+            ErrorCodes::LOGICAL_ERROR);
 
-    auto end = mutations_by_block_number.find(desired_mutation_version);
-    if (end == mutations_by_block_number.end())
-        throw Exception("Mutation with version " + toString(desired_mutation_version) + " not found",
+    Int64 data_version = part_info.version ? part_info.version : part_info.min_block;
+    auto begin = in_partition->second.upper_bound(data_version);
+
+    auto end = in_partition->second.find(desired_mutation_version);
+    if (end == in_partition->second.end())
+        throw Exception("Mutation with version " + toString(desired_mutation_version)
+            + " not found in partition ID " + part_info.partition_id,
             ErrorCodes::LOGICAL_ERROR);
     ++end;
 

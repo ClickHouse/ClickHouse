@@ -11,7 +11,14 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 {
     out << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << "\n"
-        << "block number: " << block_number << "\n";
+        << "block numbers count: " << block_numbers.size() << "\n";
+
+    for (const auto & kv : block_numbers)
+    {
+        const String & partition_id = kv.first;
+        Int64 number = kv.second;
+        out << partition_id << "\t" << number << "\n";
+    }
 
     commands.writeText(out);
 }
@@ -24,7 +31,15 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 
     in >> "source replica: " >> source_replica >> "\n";
 
-    in >> "block number: " >> block_number >> "\n";
+    size_t count;
+    in >> "block numbers count: " >> count >> "\n";
+    for (size_t i = 0; i < count; ++i)
+    {
+        String partition_id;
+        Int64 number;
+        in >> partition_id >> "\t" >> number >> "\n";
+        block_numbers[partition_id] = number;
+    }
 
     commands.readText(in);
 }

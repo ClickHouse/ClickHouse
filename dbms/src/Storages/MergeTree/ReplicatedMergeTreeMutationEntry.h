@@ -25,7 +25,7 @@ struct ReplicatedMergeTreeMutationEntry
     time_t create_time = 0;
     String source_replica;
 
-    Int64 block_number = 0;
+    std::unordered_map<String, Int64> block_numbers;
     MutationCommands commands;
 };
 

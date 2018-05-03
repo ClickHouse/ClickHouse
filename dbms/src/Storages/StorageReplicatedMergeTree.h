@@ -431,8 +431,8 @@ private:
     void updateQuorum(const String & part_name);
 
     /// Creates new block number and additionally perform precheck_ops while creates 'abandoned node'
-    std::pair<Int64, zkutil::EphemeralNodeHolder::Ptr> allocateBlockNumber(
-        zkutil::ZooKeeper & zookeeper, zkutil::Requests * precheck_ops = nullptr);
+    AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+                                                   zkutil::Requests * precheck_ops = nullptr);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .

@@ -491,8 +491,6 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
         zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers2", "",
-        zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/nonincrement_block_numbers", "",
         zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/leader_election", "",
@@ -1881,6 +1879,24 @@ namespace
             }
         }
 
+        /// You can merge the parts, if all the numbers between them are abandoned - do not correspond to any blocks.
+        /// TODO: don't forbid merging across mutations.
+        const String & partition_id = left->info.partition_id;
+        for (Int64 number = left->info.max_block + 1; number <= right->info.min_block - 1; ++number)
+        {
+            String path1 = zookeeper_path +              "/block_numbers/" + partition_id + "/block-" + padIndex(number);
+            String path2 = zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(number);
+
+            if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
+                AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+            {
+                if (out_reason)
+                    *out_reason = "Block " + toString(number) + " in gap between merging parts " + left->name + " and "
+                                  + right->name + " is not abandoned";
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -2961,8 +2977,9 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(
 
     {
         auto zookeeper = getZooKeeper();
-        auto number_and_node = allocateBlockNumber(*zookeeper);
-        right = number_and_node.first;
+        AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(partition_id, zookeeper);
+        right = block_number_lock.getNumber();
+        block_number_lock.unlock();
     }
 
     /// Empty partition.
@@ -3221,20 +3238,20 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 }
 
 
-std::pair<Int64, zkutil::EphemeralNodeHolder::Ptr> StorageReplicatedMergeTree::allocateBlockNumber(
-    zkutil::ZooKeeper & zookeeper, zkutil::Requests * precheck_ops)
+AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(
+    const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, zkutil::Requests * precheck_ops)
 {
-    zkutil::Requests own_requests;
-    zkutil::Requests * requests = precheck_ops ? precheck_ops : &own_requests;
+    String partition_path = zookeeper_path + "/block_numbers/" + partition_id;
+    if (!existsNodeCached(partition_path))
+    {
+        int code = zookeeper->tryCreate(partition_path, "", zkutil::CreateMode::Persistent);
+        if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+            throw zkutil::KeeperException(code, partition_path);
+    }
 
-    String path_prefix = zookeeper_path + "/block_numbers2/block_number-";
-    requests->emplace_back(zkutil::makeCreateRequest(path_prefix, String(), zkutil::CreateMode::EphemeralSequential));
-    zkutil::Responses results = zookeeper.multi(*requests);
-
-    const String & path = dynamic_cast<const zkutil::CreateResponse &>(*results.back()).path_created;
-    auto node_holder = zkutil::EphemeralNodeHolder::existing(path, zookeeper);
-    Int64 number = parse<UInt64>(path.data() + path_prefix.size(), path.size() - path_prefix.size());
-    return std::pair(number, std::move(node_holder));
+    return AbandonableLockInZooKeeper(
+        partition_path + "/block-",
+        zookeeper_path + "/temp", *zookeeper, precheck_ops);
 }
 
 
@@ -3772,10 +3789,20 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         String prev_mutation_number = zookeeper->get(mutations_path, &mutations_stat);
         String mutation_number = padIndex(parse<Int64>(prev_mutation_number) + 1);
 
-        auto number_and_node = allocateBlockNumber(*zookeeper);
+        /// Get abandonable locks in all partitions
+        /// NOTE: sequential consistency is not preserved between partitions (during mutation
+        /// it is possible to insert block B1 into some partition and then B2 into some other partition and
+        /// only B2 will be mutated).
+        /// TODO: asynchronous lock creation.
+        Strings partitions = zookeeper->getChildren(zookeeper_path + "/block_numbers");
+        std::vector<AbandonableLockInZooKeeper> number_locks;
+        for (const String & partition : partitions)
+        {
+            number_locks.push_back(allocateBlockNumber(partition, zookeeper));
+            entry.block_numbers[partition] = number_locks.back().getNumber();
+        }
 
         entry.create_time = time(nullptr);
-        entry.block_number = number_and_node.first;
 
         zkutil::Requests requests;
         requests.emplace_back(zkutil::makeSetRequest(mutations_path, mutation_number, mutations_stat.version));
@@ -3784,6 +3811,10 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
 
         zkutil::Responses responses;
         int32_t rc = zookeeper->tryMulti(requests, responses);
+
+        for (AbandonableLockInZooKeeper & lock : number_locks)
+            lock.unlock();
+
         if (rc == ZooKeeperImpl::ZooKeeper::ZOK)
             break;
         else if (rc == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
