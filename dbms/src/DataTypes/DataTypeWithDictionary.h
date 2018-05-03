@@ -75,7 +75,10 @@ public:
 
         path.push_back(Substream::DictionaryElements);
         if (auto stream = getter(path))
-            dictionary_type->serializeBinaryBulk(*column_with_dictionary.getUnique()->getNestedColumn(), *stream, offset, limit);
+        {
+            if (offset == 0)
+                dictionary_type->serializeBinaryBulk(*column_with_dictionary.getUnique()->getNestedColumn(), *stream, 0, 0);
+        }
 
         path.back() = Substream::DictionaryIndexes;
         if (auto stream = getter(path))
@@ -94,7 +97,16 @@ public:
 
         path.push_back(Substream::DictionaryElements);
         if (ReadBuffer * stream = getter(path))
-            dictionary_type->deserializeBinaryBulk(*column_with_dictionary.getUnique()->getNestedColumn(), *stream, limit, 0);
+        {
+            if (column.empty())
+            {
+                auto dict_column = column_with_dictionary.getUnique()->getNestedColumn()->cloneEmpty();
+                dictionary_type->deserializeBinaryBulk(*dict_column, *stream, 0, 0);
+
+                /// Note: it's assumed that rows inserted into columnUnique get incremental indexes.
+                column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
+            }
+        }
 
         path.back() = Substream::DictionaryIndexes;
         if (auto stream = getter(path))
