@@ -241,7 +241,7 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
                 indexes = column_with_dict->getIndexesPtr();
             }
         }
-        else if (!checkColumnConst(column.get()))
+        else if (!checkColumn<ColumnConst>(column.get()))
             convert_all_to_full = true;
     }
 
@@ -278,7 +278,7 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
 
             temp_block.insert({new_column, type_with_dict->getDictionaryType(), column.name});
         }
-        else if (auto * column_const = checkAndGetColumnConst(column.column.get()))
+        else if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
             temp_block.insert({column_const->cloneResized(column_with_dict_size), column.type, column.name});
         else if (convert_all_to_full)
             temp_block.insert(column);
