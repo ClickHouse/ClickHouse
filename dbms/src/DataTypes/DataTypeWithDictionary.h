@@ -137,20 +137,6 @@ public:
     bool withDictionary() const override { return true; }
 
 private:
-    const ColumnWithDictionary & getColumnWithDictionary(const IColumn & column) const
-    {
-        return typeid_cast<const ColumnWithDictionary &>(column);;
-    }
-
-    ColumnWithDictionary & getColumnWithDictionary(IColumn & column) const
-    {
-        return typeid_cast<ColumnWithDictionary &>(column);;
-    }
-
-    IColumn & getNestedUniqueColumn(ColumnWithDictionary & column_with_dictionary) const
-    {
-        return column_with_dictionary.getUnique()->getNestedColumn()->assumeMutableRef();
-    }
 
     template <typename ... Args>
     using SerealizeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, WriteBuffer &, Args & ...) const;
