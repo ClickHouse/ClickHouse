@@ -206,6 +206,8 @@ void ColumnUnique<ColumnType, IndexType>::buildIndex()
     auto column = getRawColumnPtr();
     index = std::make_unique<IndexMapType>();
 
+    (*index)[StringRefWrapper<ColumnType>(column, getDefaultValueIndex())] = getDefaultValueIndex();
+
     for (auto row : ext::range(numSpecialValues(), column->size()))
     {
         (*index)[StringRefWrapper<ColumnType>(column, row)] = row;
@@ -252,6 +254,9 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueInsert(const Field & x)
 template <typename ColumnType, typename IndexType>
 size_t ColumnUnique<ColumnType, IndexType>::uniqueInsertFrom(const IColumn & src, size_t n)
 {
+    if (is_nullable && src.isNullAt(n))
+        return getNullValueIndex();
+
     auto ref = src.getDataAt(n);
     return uniqueInsertData(ref.data, ref.size);
 }
