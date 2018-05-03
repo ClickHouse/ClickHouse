@@ -488,6 +488,9 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
         fused[i].push_back(actions[i]);
         if (dependents[i].find({}) != dependents[i].end())
         {
+            /// the result of compiling one function in isolation is pretty much the same as its `execute` method.
+            if (fused[i].size() == 1)
+                continue;
             auto fn = std::make_shared<LLVMFunction>(std::move(fused[i]), context, sample_block);
             actions[i].function = fn;
             actions[i].argument_names = fn->getArgumentNames();
