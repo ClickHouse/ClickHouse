@@ -22,17 +22,17 @@ namespace ErrorCodes
 
 namespace
 {
-    const ColumnWithDictionary & getColumnWithDictionary(const IColumn & column) const
+    const ColumnWithDictionary & getColumnWithDictionary(const IColumn & column)
     {
         return typeid_cast<const ColumnWithDictionary &>(column);
     }
 
-    ColumnWithDictionary & getColumnWithDictionary(IColumn & column) const
+    ColumnWithDictionary & getColumnWithDictionary(IColumn & column)
     {
         return typeid_cast<ColumnWithDictionary &>(column);
     }
 
-    IColumn & getNestedUniqueColumn(ColumnWithDictionary & column_with_dictionary) const
+    IColumn & getNestedUniqueColumn(ColumnWithDictionary & column_with_dictionary)
     {
         return column_with_dictionary.getUnique()->getNestedColumn()->assumeMutableRef();
     }

@@ -10,6 +10,7 @@
 #include <ext/collection_cast.h>
 #include <DataTypes/DataTypeWithDictionary.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Columns/ColumnWithDictionary.h>
 
 
 namespace DB
