@@ -31,11 +31,6 @@ namespace
     {
         return typeid_cast<ColumnWithDictionary &>(column);
     }
-
-    IColumn & getNestedUniqueColumn(ColumnWithDictionary & column_with_dictionary)
-    {
-        return column_with_dictionary.getUnique()->getNestedColumn()->assumeMutableRef();
-    }
 }
 
 DataTypeWithDictionary::DataTypeWithDictionary(DataTypePtr dictionary_type_, DataTypePtr indexes_type_)
@@ -137,7 +132,7 @@ void DataTypeWithDictionary::serializeImpl(
 {
     auto & column_with_dictionary = getColumnWithDictionary(column);
     size_t unique_row_number = column_with_dictionary.getIndexes()->getUInt(row_num);
-    (dictionary_type.get()->*func)(*column_with_dictionary.getUnique(), unique_row_number, ostr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*column_with_dictionary.getUnique()->getNestedColumn(), unique_row_number, ostr, std::forward<Args>(args)...);
 }
 
 template <typename ... Args>
@@ -146,18 +141,13 @@ void DataTypeWithDictionary::deserializeImpl(
         DataTypeWithDictionary::DeserealizeFunctionPtr<Args ...> func, Args ... args) const
 {
     auto & column_with_dictionary = getColumnWithDictionary(column);
-    auto nested_unique = getNestedUniqueColumn(column_with_dictionary).assumeMutable();
+    auto temp_column = column_with_dictionary.getUnique()->cloneEmpty();
 
-    auto size = column_with_dictionary.size();
-    auto unique_size = nested_unique->size();
-
-    (dictionary_type.get()->*func)(*nested_unique, istr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*temp_column, istr, std::forward<Args>(args)...);
 
     /// Note: Insertion into ColumnWithDictionary from it's nested column may cause insertion from column to itself.
     /// Generally it's wrong because column may reallocate memory before insertion.
-    column_with_dictionary.insertFrom(*nested_unique, unique_size);
-    if (column_with_dictionary.getIndexes()->getUInt(size) != unique_size)
-        nested_unique->popBack(1);
+    column_with_dictionary.insertFrom(*temp_column, 0);
 }
 
 template <typename ColumnType, typename IndexType>
