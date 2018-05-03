@@ -104,7 +104,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             UInt64 nested_size;
             readIntBinary(nested_size, *stream);
             auto dict_column = column_with_dictionary.getUnique()->getNestedColumn()->cloneEmpty();
-            dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, *stream, nested_size, 0, position_independent_encoding, path);
+            dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, getter, nested_size, 0, position_independent_encoding, path);
 
             /// Note: it's assumed that rows inserted into columnUnique get incremental indexes.
             column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
