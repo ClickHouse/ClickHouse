@@ -221,7 +221,7 @@ void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, co
     executeImpl(block, args, result);
 }
 
-static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & args, size_t result)
+static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & args, size_t result, ColumnPtr & indexes)
 {
     bool has_with_dictionary = false;
     bool convert_all_to_full = false;
@@ -229,7 +229,8 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
 
     for (auto & arg : args)
     {
-        if (auto * column_with_dict = typeid_cast<const ColumnWithDictionary *>(block.getByPosition(arg).column.get()))
+        const auto & column = block.getByPosition(arg).column;
+        if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.get()))
         {
             if (has_with_dictionary)
                 convert_all_to_full = true;
@@ -237,9 +238,15 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
             {
                 has_with_dictionary = true;
                 column_with_dict_size = column_with_dict->getUnique()->size();
+                indexes = column_with_dict->getIndexesPtr();
             }
         }
+        else if (!checkColumnConst(column.get()))
+            convert_all_to_full = true;
     }
+
+    if (!has_with_dictionary || convert_all_to_full)
+        indexes = nullptr;
 
     if (!has_with_dictionary)
         return {};
@@ -248,7 +255,7 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
     temp_block.insert(block.getByPosition(result));
     {
         auto & column = temp_block.getByPosition(0);
-        auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(column.type.get());
+        auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
         if (!type_with_dict)
             throw Exception("Return type of function which has argument WithDictionary must be WithDictionary, got"
                             + column.type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -259,9 +266,9 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
     for (auto & arg : args)
     {
         auto & column = block.getByPosition(arg);
-        if (auto * column_with_dict = typeid_cast<const ColumnWithDictionary *>(column.column.get()))
+        if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
         {
-            auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(column.type.get());
+            auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
             if (!type_with_dict)
                 throw Exception("Column with dictionary must have type WithDictionary, but has"
                                 + column.type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -271,7 +278,7 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
 
             temp_block.insert({new_column, type_with_dict->getDictionaryType(), column.name});
         }
-        else if (auto * column_const = typeid_cast<const ColumnConst *>(column.column.get()))
+        else if (auto * column_const = checkAndGetColumnConst(column.column.get()))
             temp_block.insert({column_const->cloneResized(column_with_dict_size), column.type, column.name});
         else if (convert_all_to_full)
             temp_block.insert(column);
@@ -287,7 +294,8 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 {
     if (useDefaultImplementationForColumnsWithDictionary())
     {
-        Block temp_block = removeColumnsWithDictionary(block, args, result);
+        ColumnPtr indexes;
+        Block temp_block = removeColumnsWithDictionary(block, args, result, indexes);
         if (temp_block)
         {
             ColumnNumbers temp_numbers(args.size());
@@ -295,9 +303,22 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
                 temp_numbers[i] = i + 1;
 
             executeWithoutColumnsWithDictionary(temp_block, temp_numbers, 0);
+            auto & temp_res_col = temp_block.getByPosition(0).column;
             auto & res_col = block.getByPosition(result);
-            res_col.column = res_col.type->createColumn();
-            res_col.column->assumeMutableRef().insertRangeFrom(*temp_block.getByPosition(0).column, 0, temp_block.rows());
+            if (indexes)
+                res_col.column = ColumnWithDictionary::create(ColumnUnique::create((*std::move(temp_res_col)).mutate(),
+                                                                                   (*std::move(indexes)).mutate()));
+            else
+            {
+                res_col.column = res_col.type->createColumn();
+
+                auto * col_with_dict = checkAndGetColumn<ColumnWithDictionary>(res_col.column.get());
+                if (!col_with_dict)
+                    throw Exception("Expected ColumnWithDictionary, got" + res_col.column->getName(),
+                                    ErrorCodes::LOGICAL_ERROR);
+
+                col_with_dict->assumeMutableRef().insertRangeFrom(*temp_res_col, 0, temp_res_col->size());
+            }
             return;
         }
     }
