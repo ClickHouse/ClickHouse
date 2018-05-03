@@ -312,7 +312,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
                 throw Exception("Expected ColumnWithDictionary, got" + res_col.column->getName(),
                                 ErrorCodes::LOGICAL_ERROR);
 
-            ColumnWithDictionary & mut_col_with_dict = col_with_dict->assumeMutableRef();
+            auto & mut_col_with_dict = static_cast<ColumnWithDictionary &>(*col_with_dict);
 
             if (indexes)
             {

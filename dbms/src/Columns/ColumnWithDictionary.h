@@ -212,7 +212,7 @@ public:
     const IColumn * getIndexes() const { return indexes.get(); }
     const ColumnPtr & getIndexesPtr() const { return indexes; }
 
-    void setIndexes(MutableColumnPtr && indexes_) { indexes = indexes_; }
+    void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 
     bool withDictionary() const override { return true; }
 
