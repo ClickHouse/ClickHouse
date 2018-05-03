@@ -158,7 +158,7 @@ ColumnUnique<ColumnType, IndexType>::ColumnUnique(const DataTypePtr & type) : is
         auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
         column_holder = column_nullable.getNestedColumnPtr();
         nullable_column_map = &column_nullable.getNullMapData();
-        (*nullable_column_map)[1] = 0;
+        (*nullable_column_map)[getDefaultValueIndex()] = 0;
     }
     else
         column_holder = type->createColumn()->cloneResized(numSpecialValues());
@@ -205,8 +205,6 @@ void ColumnUnique<ColumnType, IndexType>::buildIndex()
 
     auto column = getRawColumnPtr();
     index = std::make_unique<IndexMapType>();
-
-    (*index)[StringRefWrapper<ColumnType>(column, getDefaultValueIndex())] = getDefaultValueIndex();
 
     for (auto row : ext::range(numSpecialValues(), column->size()))
     {
