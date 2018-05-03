@@ -305,19 +305,23 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             executeWithoutColumnsWithDictionary(temp_block, temp_numbers, 0);
             auto & temp_res_col = temp_block.getByPosition(0).column;
             auto & res_col = block.getByPosition(result);
+            res_col.column = res_col.type->createColumn();
+
+            auto * col_with_dict = checkAndGetColumn<ColumnWithDictionary>(res_col.column.get());
+            if (!col_with_dict)
+                throw Exception("Expected ColumnWithDictionary, got" + res_col.column->getName(),
+                                ErrorCodes::LOGICAL_ERROR);
+
+            ColumnWithDictionary & mut_col_with_dict = col_with_dict->assumeMutableRef();
+
             if (indexes)
-                res_col.column = ColumnWithDictionary::create(ColumnUnique::create((*std::move(temp_res_col)).mutate(),
-                                                                                   (*std::move(indexes)).mutate()));
+            {
+                auto new_ind = mut_col_with_dict.getUnique()->uniqueInsertRangeFrom(*temp_res_col, 0, temp_res_col->size());
+                mut_col_with_dict.setIndexes(new_ind->index(indexes, 0)->assumeMutable());
+            }
             else
             {
-                res_col.column = res_col.type->createColumn();
-
-                auto * col_with_dict = checkAndGetColumn<ColumnWithDictionary>(res_col.column.get());
-                if (!col_with_dict)
-                    throw Exception("Expected ColumnWithDictionary, got" + res_col.column->getName(),
-                                    ErrorCodes::LOGICAL_ERROR);
-
-                col_with_dict->assumeMutableRef().insertRangeFrom(*temp_res_col, 0, temp_res_col->size());
+                mut_col_with_dict.insertRangeFrom(*temp_res_col, 0, temp_res_col->size());
             }
             return;
         }
