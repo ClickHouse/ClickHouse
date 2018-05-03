@@ -75,7 +75,7 @@ public:
 
         path.push_back(Substream::DictionaryElements);
         if (auto stream = getter(path))
-            dictionary_type->serializeBinaryBulk(*column_with_dictionary.getUnique(), *stream, offset, limit);
+            dictionary_type->serializeBinaryBulk(*column_with_dictionary.getUnique()->getNestedColumn(), *stream, offset, limit);
 
         path.back() = Substream::DictionaryIndexes;
         if (auto stream = getter(path))
@@ -94,7 +94,7 @@ public:
 
         path.push_back(Substream::DictionaryElements);
         if (ReadBuffer * stream = getter(path))
-            dictionary_type->deserializeBinaryBulk(*column_with_dictionary.getUnique(), *stream, limit, 0);
+            dictionary_type->deserializeBinaryBulk(*column_with_dictionary.getUnique()->getNestedColumn(), *stream, limit, 0);
 
         path.back() = Substream::DictionaryIndexes;
         if (auto stream = getter(path))
