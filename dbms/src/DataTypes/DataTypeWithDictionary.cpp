@@ -64,7 +64,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         OutputStreamGetter getter,
         size_t offset,
         size_t limit,
-        bool /*position_independent_encoding*/,
+        bool position_independent_encoding,
         SubstreamPath path) const
 {
     const ColumnWithDictionary & column_with_dictionary = typeid_cast<const ColumnWithDictionary &>(column);
@@ -77,7 +77,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
             auto nested = column_with_dictionary.getUnique()->getNestedColumn();
             UInt64 nested_size = nested->size();
             writeIntBinary(nested_size, *stream);
-            dictionary_type->serializeBinaryBulk(*nested, *stream, 0, 0);
+            dictionary_type->serializeBinaryBulkWithMultipleStreams(*nested, getter, 0, 0, position_independent_encoding, path);
         }
     }
 
@@ -91,7 +91,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         InputStreamGetter getter,
         size_t limit,
         double /*avg_value_size_hint*/,
-        bool /*position_independent_encoding*/,
+        bool position_independent_encoding,
         SubstreamPath path) const
 {
     ColumnWithDictionary & column_with_dictionary = typeid_cast<ColumnWithDictionary &>(column);
@@ -104,7 +104,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             UInt64 nested_size;
             readIntBinary(nested_size, *stream);
             auto dict_column = column_with_dictionary.getUnique()->getNestedColumn()->cloneEmpty();
-            dictionary_type->deserializeBinaryBulk(*dict_column, *stream, nested_size, 0);
+            dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, *stream, nested_size, 0, position_independent_encoding, path);
 
             /// Note: it's assumed that rows inserted into columnUnique get incremental indexes.
             column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
