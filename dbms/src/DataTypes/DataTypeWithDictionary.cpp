@@ -20,6 +20,24 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+    const ColumnWithDictionary & getColumnWithDictionary(const IColumn & column) const
+    {
+        return typeid_cast<const ColumnWithDictionary &>(column);
+    }
+
+    ColumnWithDictionary & getColumnWithDictionary(IColumn & column) const
+    {
+        return typeid_cast<ColumnWithDictionary &>(column);
+    }
+
+    IColumn & getNestedUniqueColumn(ColumnWithDictionary & column_with_dictionary) const
+    {
+        return column_with_dictionary.getUnique()->getNestedColumn()->assumeMutableRef();
+    }
+}
+
 DataTypeWithDictionary::DataTypeWithDictionary(DataTypePtr dictionary_type_, DataTypePtr indexes_type_)
         : dictionary_type(std::move(dictionary_type_)), indexes_type(std::move(indexes_type_))
 {
