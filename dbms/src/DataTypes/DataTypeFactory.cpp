@@ -118,6 +118,7 @@ void registerDataTypeUUID(DataTypeFactory & factory);
 void registerDataTypeAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
+void registerDataTypeWithDictionary(DataTypeFactory & factory);
 
 
 DataTypeFactory::DataTypeFactory()
@@ -136,6 +137,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
+    registerDataTypeWithDictionary(*this);
 }
 
 }
