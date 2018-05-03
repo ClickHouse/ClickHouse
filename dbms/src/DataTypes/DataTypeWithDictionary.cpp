@@ -208,7 +208,7 @@ MutableColumnPtr DataTypeWithDictionary::createColumn() const
     if (type->isNumber())
     {
         MutableColumnPtr column;
-        TypeListNumbers::forEach(CreateColumnVector(column, this, dictionary_type.get()));
+        TypeListNumbers::forEach(CreateColumnVector(column, this, type.get()));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
