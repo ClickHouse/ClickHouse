@@ -79,6 +79,8 @@ private:
       * This set is protected by its mutex.
       */
     ActiveDataPartSet virtual_parts;
+    std::unordered_map<String, std::set<Int64>> current_inserts;
+    ActiveDataPartSet next_virtual_parts;
 
     std::list<ReplicatedMergeTreeMutationEntry> mutations;
     std::unordered_map<String, std::map<Int64, const ReplicatedMergeTreeMutationEntry *>> mutations_by_partition;
@@ -128,6 +130,9 @@ private:
     /// Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
     Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> &) const;
 
+    /// Get the map: partition ID -> block numbers of inserts that are currently committing.
+    std::unordered_map<String, std::set<Int64>> loadCurrentInserts(zkutil::ZooKeeperPtr & zookeeper) const;
+
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {
@@ -151,6 +156,7 @@ public:
     ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
         : format_version(format_version_)
         , virtual_parts(format_version)
+        , next_virtual_parts(format_version)
     {
     }
 

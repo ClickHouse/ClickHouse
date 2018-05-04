@@ -1879,24 +1879,6 @@ namespace
             }
         }
 
-        /// You can merge the parts, if all the numbers between them are abandoned - do not correspond to any blocks.
-        /// TODO: don't forbid merging across mutations.
-        const String & partition_id = left->info.partition_id;
-        for (Int64 number = left->info.max_block + 1; number <= right->info.min_block - 1; ++number)
-        {
-            String path1 = zookeeper_path +              "/block_numbers/" + partition_id + "/block-" + padIndex(number);
-            String path2 = zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(number);
-
-            if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
-                AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
-            {
-                if (out_reason)
-                    *out_reason = "Block " + toString(number) + " in gap between merging parts " + left->name + " and "
-                                  + right->name + " is not abandoned";
-                return false;
-            }
-        }
-
         return true;
     }
 
