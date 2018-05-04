@@ -72,11 +72,35 @@ public:
     }
 
     void insert(const Field & x) override { getIndexes()->insert(Field(UInt64(getUnique()->uniqueInsert(x)))); }
-    void insertFrom(const IColumn & src, size_t n) override { getIndexes()->insert(getUnique()->uniqueInsertFrom(src, n)); }
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
+
+    void insertFromFullColumn(const IColumn & src, size_t n)
+    {
+        getIndexes()->insert(getUnique()->uniqueInsertFrom(src, n));
+    }
+    void insertFrom(const IColumn & src, size_t n) override
+    {
+        if (!typeid_cast<const ColumnWithDictionary *>(&src))
+            throw Exception("Expected ColumnWithDictionary, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        auto & src_with_dict = static_cast<const ColumnWithDictionary &>(src);
+        size_t idx = src_with_dict.getIndexes()->getUInt(n);
+        insertFromFullColumn(*src_with_dict.getUnique()->getNestedColumn(), idx);
+    }
+
+    void insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length)
     {
         auto inserted_indexes = getUnique()->uniqueInsertRangeFrom(src, start, length);
         getIndexes()->insertRangeFrom(*inserted_indexes, 0, length);
+    }
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
+    {
+        if (!typeid_cast<const ColumnWithDictionary *>(&src))
+            throw Exception("Expected ColumnWithDictionary, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+
+        auto & src_with_dict = static_cast<const ColumnWithDictionary &>(src);
+        auto & src_nested = src_with_dict.getUnique()->getNestedColumn();
+        auto inserted_idx = getUnique()->uniqueInsertRangeFrom(*src_nested, 0, src_nested->size());
+        auto idx = inserted_idx->index(src_with_dict.getIndexes()->cut(start, length), 0);
+        getIndexes()->insertRangeFrom(*idx, 0, length);
     }
 
     void insertData(const char * pos, size_t length) override

@@ -145,9 +145,7 @@ void DataTypeWithDictionary::deserializeImpl(
 
     (dictionary_type.get()->*func)(*temp_column, istr, std::forward<Args>(args)...);
 
-    /// Note: Insertion into ColumnWithDictionary from it's nested column may cause insertion from column to itself.
-    /// Generally it's wrong because column may reallocate memory before insertion.
-    column_with_dictionary.insertFrom(*temp_column, 0);
+    column_with_dictionary.insertFromFullColumn(*temp_column, 0);
 }
 
 template <typename ColumnType, typename IndexType>

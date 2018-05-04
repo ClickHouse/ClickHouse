@@ -306,24 +306,15 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             executeWithoutColumnsWithDictionary(temp_block, temp_numbers, 0);
             auto & temp_res_col = temp_block.getByPosition(0).column;
             auto & res_col = block.getByPosition(result);
-            res_col.column = res_col.type->createColumn();
+            auto col_wit_dict_ptr = res_col.type->createColumn();
 
-            auto * col_with_dict = checkAndGetColumn<ColumnWithDictionary>(res_col.column.get());
+            auto * col_with_dict = typeid_cast<ColumnWithDictionary *>(col_wit_dict_ptr.get());
             if (!col_with_dict)
                 throw Exception("Expected ColumnWithDictionary, got" + res_col.column->getName(),
                                 ErrorCodes::LOGICAL_ERROR);
 
-            auto & mut_col_with_dict = const_cast<ColumnWithDictionary &>(*col_with_dict);
-
-            if (indexes)
-            {
-                auto new_ind = mut_col_with_dict.getUnique()->uniqueInsertRangeFrom(*temp_res_col, 0, temp_res_col->size());
-                mut_col_with_dict.setIndexes(new_ind->index(indexes, 0)->assumeMutable());
-            }
-            else
-            {
-                mut_col_with_dict.insertRangeFrom(*temp_res_col, 0, temp_res_col->size());
-            }
+            col_with_dict->insertRangeFromFullColumn(*temp_res_col, 0, temp_res_col->size());
+            res_col.column = indexes ? col_with_dict->index(indexes, 0) : std::move(col_wit_dict_ptr);
             return;
         }
     }
