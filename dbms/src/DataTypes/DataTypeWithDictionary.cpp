@@ -80,7 +80,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         const auto & indexes = column_with_dictionary.getIndexesPtr();
         const auto & keys = column_with_dictionary.getUnique()->getNestedColumn();
         sub_index = (*indexes->cut(offset, limit - offset)).mutate();
-        ColumnPtr unique_indexes = makeSubIndex(sub_index);
+        ColumnPtr unique_indexes = makeSubIndex(*sub_index);
         auto used_keys = keys->index(unique_indexes, 0);
 
         UInt64 used_keys_size = used_keys->size();
