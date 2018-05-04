@@ -27,7 +27,7 @@ public:
 protected:
     Block readImpl() override
     {
-        Block res;
+        Block res = children.back()->read();
 
         for (auto & column : res)
         {
