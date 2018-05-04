@@ -17,7 +17,7 @@ class ConvertColumnWithDictionaryToFullBlockInputStream : public IProfilingBlock
 public:
     ConvertColumnWithDictionaryToFullBlockInputStream(BlockInputStreamPtr input)
     {
-        children.push_bcak(input);
+        children.push_back(input);
     }
 
     String getName() const override { return "ConvertColumnWithDictionaryToFull"; }
