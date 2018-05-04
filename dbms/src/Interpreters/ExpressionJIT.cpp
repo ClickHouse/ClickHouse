@@ -92,6 +92,7 @@ struct LLVMContext
     llvm::orc::IRCompileLayer<decltype(objectLayer), llvm::orc::SimpleCompiler> compileLayer;
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
+    std::unordered_map<std::string, const void *> symbols;
 
     LLVMContext()
         : module(std::make_shared<llvm::Module>("jit", context))
@@ -121,6 +122,14 @@ struct LLVMContext
         for (auto & function : *module)
             fpm.run(function);
         llvm::cantFail(compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()));
+        for (const auto & function : *module)
+        {
+            std::string mangledName;
+            llvm::raw_string_ostream mangledNameStream(mangledName);
+            llvm::Mangler::getNameWithPrefix(mangledNameStream, function.getName(), layout);
+            if (auto symbol = compileLayer.findSymbol(mangledNameStream.str(), false).getAddress())
+                symbols[function.getName()] = reinterpret_cast<const void *>(*symbol);
+        }
     }
 };
 
@@ -132,13 +141,8 @@ class LLVMPreparedFunction : public PreparedFunctionImpl
 
 public:
     LLVMPreparedFunction(std::string name_, std::shared_ptr<LLVMContext> context)
-        : name(std::move(name_)), context(context)
-    {
-        std::string mangledName;
-        llvm::raw_string_ostream mangledNameStream(mangledName);
-        llvm::Mangler::getNameWithPrefix(mangledNameStream, name, context->layout);
-        function = reinterpret_cast<const void *>(context->compileLayer.findSymbol(mangledNameStream.str(), false).getAddress().get());
-    }
+        : name(std::move(name_)), context(context), function(context->symbols.at(name))
+    {}
 
     String getName() const override { return name; }
 
