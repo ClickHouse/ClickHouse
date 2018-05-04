@@ -15,21 +15,22 @@ namespace DB
 class ConvertColumnWithDictionaryToFullBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    ConvertColumnWithDictionaryToFullBlockInputStream(const BlockInputStreamPtr & input)
+    explicit ConvertColumnWithDictionaryToFullBlockInputStream(const BlockInputStreamPtr & input)
     {
         children.push_back(input);
     }
 
     String getName() const override { return "ConvertColumnWithDictionaryToFull"; }
 
-    Block getHeader() const override { return children.at(0)->getHeader(); }
+    Block getHeader() const override { return convert(children.at(0)->getHeader()); }
 
 protected:
-    Block readImpl() override
-    {
-        Block res = children.back()->read();
+    Block readImpl() override { return convert(children.back()->read()); }
 
-        for (auto & column : res)
+private:
+    Block convert(Block && block) const
+    {
+        for (auto & column : block)
         {
             auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(column.type.get());
             auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(column.column.get());
@@ -49,7 +50,7 @@ protected:
             }
         }
 
-        return res;
+        return std::move(block);
     }
 };
 
