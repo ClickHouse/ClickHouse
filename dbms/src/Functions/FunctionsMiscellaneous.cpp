@@ -1859,7 +1859,7 @@ public:
         const auto & arg = block.getByPosition(arg_num);
         auto & res = block.getByPosition(result);
         auto column = res.type->createColumn();
-        column->insertRangeFrom(*arg.column, 0, arg.column->size());
+        typeid_cast<DataTypeWithDictionary &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
         res.column = std::move(column);
     }
 };
