@@ -109,3 +109,9 @@ endif ()
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()
+
+if (USE_EMBEDDED_COMPILER)
+    target_include_directories (clickhouse_functions BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+    # LLVM has a bunch of unused parameters in its header files.
+    target_compile_options (clickhouse_functions PRIVATE "-Wno-unused-parameter")
+endif ()
