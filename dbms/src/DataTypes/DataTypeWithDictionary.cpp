@@ -69,8 +69,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         SubstreamPath path) const
 {
     const ColumnWithDictionary & column_with_dictionary = typeid_cast<const ColumnWithDictionary &>(column);
-    const auto & indexes = column_with_dictionary.getIndexesPtr();
-    const auto & keys = column_with_dictionary.getUnique()->getNestedColumn();
+    MutableColumnPtr sub_index;
 
     if (limit == 0)
         limit = indexes->size();
@@ -78,10 +77,10 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     path.push_back(Substream::DictionaryKeys);
     if (auto stream = getter(path))
     {
-
-        bool full_column = offset == 0 && limit >= indexes->size();
-
-        ColumnPtr unique_indexes = getUniqueIndex(full_column ? indexes : indexes->cut(offset, limit - offset));
+        const auto & indexes = column_with_dictionary.getIndexesPtr();
+        const auto & keys = column_with_dictionary.getUnique()->getNestedColumn();
+        sub_index = (*indexes->cut(offset, limit - offset)).mutate();
+        ColumnPtr unique_indexes = makeSubIndex(sub_index);
         auto used_keys = keys->index(unique_indexes, 0);
 
         UInt64 used_keys_size = used_keys->size();
@@ -92,7 +91,10 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     path.back() = Substream::DictionaryIndexes;
     if (auto stream = getter(path))
     {
-        indexes_type->serializeBinaryBulk(*indexes, *stream, offset, limit);
+        if (!sub_index)
+            throw Exception("Dictionary keys wasn't serialized", ErrorCodes::LOGICAL_ERROR);
+
+        indexes_type->serializeBinaryBulk(*sub_index, *stream, offset, limit);
     }
 }
 
@@ -112,7 +114,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *stream);
-        auto dict_column = column_with_dictionary.getUnique()->getNestedColumn()->cloneEmpty();
+        auto dict_column = dictionary_type->cloneEmpty();
         dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, getter, num_keys, 0, position_independent_encoding, path);
         indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, num_keys);
     }
