@@ -1702,6 +1702,11 @@ void Context::setFormatSchemaPath(const String & path)
     shared->format_schema_path = path;
 }
 
+Context::getSampleBlockCacheType & Context::getSampleBlockCache() const
+{
+    return getQueryContext().get_sample_block_cache;
+}
+
 
 SessionCleaner::~SessionCleaner()
 {
