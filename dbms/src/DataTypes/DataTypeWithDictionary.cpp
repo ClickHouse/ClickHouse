@@ -72,13 +72,16 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     const auto & indexes = column_with_dictionary.getIndexesPtr();
     const auto & keys = column_with_dictionary.getUnique()->getNestedColumn();
 
+    if (limit == 0)
+        limit = indexes->size();
+
     path.push_back(Substream::DictionaryKeys);
     if (auto stream = getter(path))
     {
 
         bool full_column = offset == 0 && limit >= indexes->size();
 
-        ColumnPtr unique_indexes = getUniqueIndex(full_column ? indexes : indexes->cut(offset, limit));
+        ColumnPtr unique_indexes = getUniqueIndex(full_column ? indexes : indexes->cut(offset, limit - offset));
         auto used_keys = keys->index(unique_indexes, 0);
 
         UInt64 used_keys_size = used_keys->size();
