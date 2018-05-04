@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnVector.h>
+#include <Common/HashTable/HashSet.h>
 
 
 namespace DB
@@ -326,6 +327,38 @@ namespace detail
     template const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
     template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
     template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
+
+    template <typename T>
+    MutableColumnPtr getUniqueIndexImpl(const PaddedPODArray<T> & index)
+    {
+        HashSet<T> hash_table;
+        for (auto val : index.getData())
+            hash_table.insert(val);
+
+        auto res_col = ColumnVector<T>::create();
+        auto & data = res_col->getData();
+
+        data.reserve(hash_table.size());
+        for (auto val : hash_table)
+            data.push_back(val);
+
+        return std::move(res_col);
+    }
+}
+
+MutableColumnPtr getUniqueIndex(const ColumnPtr & column)
+{
+    if (auto * data_uint8 = detail::getIndexesData<UInt8>(column))
+        return detail::getUniqueIndexImpl(*data_uint8);
+    else if (auto * data_uint16 = detail::getIndexesData<UInt16>(column))
+        return detail::getUniqueIndexImpl(*data_uint16);
+    else if (auto * data_uint32 = detail::getIndexesData<UInt32>(column))
+        return detail::getUniqueIndexImpl(*data_uint32);
+    else if (auto * data_uint64 = detail::getIndexesData<UInt64>(column))
+        return detail::getUniqueIndexImpl(*data_uint64);
+    else
+        throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got" + column->getName(),
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 }

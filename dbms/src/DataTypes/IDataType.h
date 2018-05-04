@@ -80,7 +80,7 @@ public:
 
             TupleElement,
 
-            DictionaryElements,
+            DictionaryKeys,
             DictionaryIndexes,
         };
         Type type;
