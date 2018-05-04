@@ -215,8 +215,6 @@ private:
 
     void addImpl(ExpressionAction action, Names & new_names);
 
-    /// Try to improve something without changing the lists of input and output columns.
-    void optimize();
     /// Move all arrayJoin as close as possible to the end.
     void optimizeArrayJoin();
 };
