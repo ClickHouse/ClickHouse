@@ -158,8 +158,10 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
     const Context & context)
 {
     auto & cache = context.getSampleBlockCache();
+    /// Using query string because query_ptr changes for every internal SELECT
     auto key = queryToString(query_ptr);
-    if (cache.find(key) != cache.end()) {
+    if (cache.find(key) != cache.end())
+    {
         return cache[key];
     }
 
