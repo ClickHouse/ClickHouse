@@ -1,6 +1,7 @@
 #include <Columns/ColumnWithDictionary.h>
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -53,7 +54,7 @@ DataTypeWithDictionary::DataTypeWithDictionary(DataTypePtr dictionary_type_, Dat
 
 void DataTypeWithDictionary::enumerateStreams(StreamCallback callback, SubstreamPath path) const
 {
-    path.push_back(Substream::DictionaryElements);
+    path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
     path.back() = Substream::DictionaryIndexes;
     indexes_type->enumerateStreams(callback, path);
@@ -68,22 +69,28 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         SubstreamPath path) const
 {
     const ColumnWithDictionary & column_with_dictionary = typeid_cast<const ColumnWithDictionary &>(column);
+    const auto & indexes = column_with_dictionary.getIndexesPtr();
+    const auto & keys = column_with_dictionary.getUnique()->getNestedColumn();
 
-    path.push_back(Substream::DictionaryElements);
+    path.push_back(Substream::DictionaryKeys);
     if (auto stream = getter(path))
     {
-        if (offset == 0)
-        {
-            auto nested = column_with_dictionary.getUnique()->getNestedColumn();
-            UInt64 nested_size = nested->size();
-            writeIntBinary(nested_size, *stream);
-            dictionary_type->serializeBinaryBulkWithMultipleStreams(*nested, getter, 0, 0, position_independent_encoding, path);
-        }
-    }
 
+        bool full_column = offset == 0 && limit >= indexes->size();
+
+        auto unique_indexes = getUniqueIndex(full_column ? indexes : indexes->cut(offset, limit));
+        auto used_keys = keys->index(*unique_indexes, 0);
+
+        UInt64 used_keys_size = used_keys->size();
+        writeIntBinary(used_keys_size, *stream);
+        dictionary_type->serializeBinaryBulkWithMultipleStreams(*keys, getter, 0, 0,
+                                                                position_independent_encoding, path);
+    }
     path.back() = Substream::DictionaryIndexes;
     if (auto stream = getter(path))
-        indexes_type->serializeBinaryBulk(*column_with_dictionary.getIndexes(), *stream, offset, limit);
+    {
+        indexes_type->serializeBinaryBulk(*indexes, *stream, offset, limit);
+    }
 }
 
 void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
@@ -95,25 +102,28 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         SubstreamPath path) const
 {
     ColumnWithDictionary & column_with_dictionary = typeid_cast<ColumnWithDictionary &>(column);
+    ColumnPtr indexes;
 
-    path.push_back(Substream::DictionaryElements);
+    path.push_back(Substream::DictionaryKeys);
     if (ReadBuffer * stream = getter(path))
     {
-        if (column.empty())
-        {
-            UInt64 nested_size;
-            readIntBinary(nested_size, *stream);
-            auto dict_column = column_with_dictionary.getUnique()->getNestedColumn()->cloneEmpty();
-            dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, getter, nested_size, 0, position_independent_encoding, path);
-
-            /// Note: it's assumed that rows inserted into columnUnique get incremental indexes.
-            column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
-        }
+        UInt64 num_keys;
+        readIntBinary(num_keys, *stream);
+        auto dict_column = column_with_dictionary.getUnique()->getNestedColumn()->cloneEmpty();
+        dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, getter, num_keys, 0, position_independent_encoding, path);
+        indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
     }
 
     path.back() = Substream::DictionaryIndexes;
     if (auto stream = getter(path))
-        indexes_type->deserializeBinaryBulk(*column_with_dictionary.getIndexes(), *stream, limit, 0);
+    {
+        if (!indexes)
+            throw Exception("Dictionary keys wasn't deserialized", ErrorCodes::LOGICAL_ERROR);
+
+        auto index_col = indexes_type->createColumn();
+        indexes_type->deserializeBinaryBulk(*index_col, *stream, limit, 0);
+        column_with_dictionary.getIndexes()->insertRangeFrom(*index_col->index(indexes), 0, limit);
+    }
 }
 
 void DataTypeWithDictionary::serializeBinary(const Field & field, WriteBuffer & ostr) const

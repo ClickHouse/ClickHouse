@@ -73,4 +73,8 @@ ColumnPtr selectIndexImpl(const Column & column, const ColumnPtr & indexes, size
     template ColumnPtr Column::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
 
+
+/// Get unique values from index column (ColumnUInt*).
+MutableColumnPtr getUniqueIndex(const ColumnPtr & column);
+
 }
