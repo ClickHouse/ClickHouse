@@ -75,6 +75,6 @@ ColumnPtr selectIndexImpl(const Column & column, const ColumnPtr & indexes, size
 
 
 /// Get unique values from index column (ColumnUInt*).
-MutableColumnPtr getUniqueIndex(const ColumnPtr & column);
+MutableColumnPtr makeSubIndex(const ColumnPtr & column);
 
 }

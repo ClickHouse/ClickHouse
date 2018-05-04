@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnVector.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -323,30 +324,44 @@ namespace detail
         return nullptr;
     }
 
+    template <typename T>
+    PaddedPODArray<T> * getIndexesData(IColumn & indexes)
+    {
+        auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+
     template const PaddedPODArray<UInt8> * getIndexesData<UInt8>(const DB::ColumnPtr & indexes);
     template const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
     template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
     template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
 
     template <typename T>
-    MutableColumnPtr getUniqueIndexImpl(const PaddedPODArray<T> & index)
+    MutableColumnPtr getUniqueIndexImpl(PaddedPODArray<T> & index)
     {
-        HashSet<T> hash_table;
+        HashMap<T, T> hash_map;
         for (auto val : index)
-            hash_table.insert(val);
+            hash_map.insert({val, hash_map.size()});
 
         auto res_col = ColumnVector<T>::create();
         auto & data = res_col->getData();
 
-        data.reserve(hash_table.size());
-        for (auto val : hash_table)
-            data.push_back(val);
+        data.resize(hash_map.size());
+        for (auto val : hash_map)
+            data[val.second] = val.first;
+
+        for (auto & ind : index)
+            ind = hash_map[ind];
 
         return std::move(res_col);
     }
 }
 
-MutableColumnPtr getUniqueIndex(const ColumnPtr & column)
+/// Returns unique values of column. Write new index to column.
+MutableColumnPtr makeSubIndex(IColumn & column)
 {
     if (auto * data_uint8 = detail::getIndexesData<UInt8>(column))
         return detail::getUniqueIndexImpl(*data_uint8);
@@ -357,7 +372,7 @@ MutableColumnPtr getUniqueIndex(const ColumnPtr & column)
     else if (auto * data_uint64 = detail::getIndexesData<UInt64>(column))
         return detail::getUniqueIndexImpl(*data_uint64);
     else
-        throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got" + column->getName(),
+        throw Exception("Indexes column for makeSubindex must be ColumnUInt, got" + column->getName(),
                         ErrorCodes::LOGICAL_ERROR);
 }
 
