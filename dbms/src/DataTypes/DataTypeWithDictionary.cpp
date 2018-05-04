@@ -72,7 +72,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     MutableColumnPtr sub_index;
 
     if (limit == 0)
-        limit = indexes->size();
+        limit = column.size();
 
     path.push_back(Substream::DictionaryKeys);
     if (auto stream = getter(path))
@@ -114,7 +114,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *stream);
-        auto dict_column = dictionary_type->cloneEmpty();
+        auto dict_column = dictionary_type->createColumn();
         dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, getter, num_keys, 0, position_independent_encoding, path);
         indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, num_keys);
     }
