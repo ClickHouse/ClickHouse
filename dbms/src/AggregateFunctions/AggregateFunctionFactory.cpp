@@ -63,6 +63,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     const Array & parameters,
     int recursion_level) const
 {
+    auto type_without_dictionary = convertTypesWithDictionaryToNested(argument_types);
+
     /// If one of types is Nullable, we apply aggregate function combinator "Null".
 
     if (std::any_of(argument_types.begin(), argument_types.end(),
@@ -72,7 +74,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         if (!combinator)
             throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.", ErrorCodes::LOGICAL_ERROR);
 
-        DataTypes nested_types = combinator->transformArguments(convertTypesWithDictionaryToNested(argument_types));
+        DataTypes nested_types = combinator->transformArguments(type_without_dictionary);
 
         AggregateFunctionPtr nested_function;
 
@@ -85,7 +87,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 
-    auto res = getImpl(name, argument_types, parameters, recursion_level);
+    auto res = getImpl(name, type_without_dictionary, parameters, recursion_level);
     if (!res)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
     return res;
