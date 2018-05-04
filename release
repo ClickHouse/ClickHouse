@@ -3,6 +3,8 @@
 # Advanced usage:
 # Test gcc-8:
 # env DIST=bionic EXTRAPACKAGES="gcc-8 g++-8" DEB_CC=gcc-8 DEB_CXX=g++-8 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Clang6 build:
+# env DIST=bionic EXTRAPACKAGES="clang-6.0 libstdc++-8-dev lld-6.0 liblld-6.0-dev libclang-6.0-dev liblld-6.0" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DLLVM_VERSION_POSTFIX=-6.0 -DNO_WERROR=1 " ./release
 
 set -e
 
@@ -64,8 +66,8 @@ then
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
-    export DEB_CC=clang-5.0
-    export DEB_CXX=clang++-5.0
+    export DEB_CC=${DEB_CC=clang-5.0}
+    export DEB_CXX=${DEB_CXX=clang++-5.0}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 lld-5.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
