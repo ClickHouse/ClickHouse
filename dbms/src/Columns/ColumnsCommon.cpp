@@ -327,7 +327,7 @@ namespace detail
     template <typename T>
     PaddedPODArray<T> * getIndexesData(IColumn & indexes)
     {
-        auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
+        auto * column = typeid_cast<ColumnVector<T> *>(&indexes);
         if (column)
             return &column->getData();
 
@@ -372,7 +372,7 @@ MutableColumnPtr makeSubIndex(IColumn & column)
     else if (auto * data_uint64 = detail::getIndexesData<UInt64>(column))
         return detail::getUniqueIndexImpl(*data_uint64);
     else
-        throw Exception("Indexes column for makeSubindex must be ColumnUInt, got" + column->getName(),
+        throw Exception("Indexes column for makeSubindex must be ColumnUInt, got" + column.getName(),
                         ErrorCodes::LOGICAL_ERROR);
 }
 
