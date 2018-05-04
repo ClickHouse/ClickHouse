@@ -1,3 +1,4 @@
+-- This test (SELECT) without cache can take tens minutes
 DROP TABLE IF EXISTS test.dict_string;
 DROP TABLE IF EXISTS test.dict_ui64;
 DROP TABLE IF EXISTS test.video_views;
