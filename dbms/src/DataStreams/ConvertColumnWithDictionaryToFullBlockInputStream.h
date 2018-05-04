@@ -15,7 +15,7 @@ namespace DB
 class ConvertColumnWithDictionaryToFullBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    ConvertColumnWithDictionaryToFullBlockInputStream(BlockInputStreamPtr input)
+    ConvertColumnWithDictionaryToFullBlockInputStream(const BlockInputStreamPtr & input)
     {
         children.push_back(input);
     }
