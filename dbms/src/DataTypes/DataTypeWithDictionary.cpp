@@ -122,7 +122,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
         auto index_col = indexes_type->createColumn();
         indexes_type->deserializeBinaryBulk(*index_col, *stream, limit, 0);
-        column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(index_col, 0), 0, limit);
+        column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(std::move(index_col), 0), 0, limit);
     }
 }
 
