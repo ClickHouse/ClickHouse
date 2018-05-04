@@ -83,7 +83,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
 
         UInt64 used_keys_size = used_keys->size();
         writeIntBinary(used_keys_size, *stream);
-        dictionary_type->serializeBinaryBulkWithMultipleStreams(*keys, getter, 0, 0,
+        dictionary_type->serializeBinaryBulkWithMultipleStreams(*used_keys, getter, 0, 0,
                                                                 position_independent_encoding, path);
     }
     path.back() = Substream::DictionaryIndexes;
@@ -111,7 +111,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         readIntBinary(num_keys, *stream);
         auto dict_column = column_with_dictionary.getUnique()->getNestedColumn()->cloneEmpty();
         dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, getter, num_keys, 0, position_independent_encoding, path);
-        indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
+        indexes = column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, num_keys);
     }
 
     path.back() = Substream::DictionaryIndexes;
