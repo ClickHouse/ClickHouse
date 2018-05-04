@@ -330,7 +330,7 @@ public:
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, Int64, Float64, String, Array, Tuple
-        > storage;
+        > storage = {};
 
     Types::Which which;
 
