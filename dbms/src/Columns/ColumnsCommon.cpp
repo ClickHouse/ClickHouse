@@ -332,7 +332,7 @@ namespace detail
     MutableColumnPtr getUniqueIndexImpl(const PaddedPODArray<T> & index)
     {
         HashSet<T> hash_table;
-        for (auto val : index.getData())
+        for (auto val : index)
             hash_table.insert(val);
 
         auto res_col = ColumnVector<T>::create();
