@@ -8,8 +8,6 @@
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <Functions/GatherUtils/Algorithms.h>
-#include <AggregateFunctions/AggregateFunctionSequenceMatch.h>
 
 
 namespace DB

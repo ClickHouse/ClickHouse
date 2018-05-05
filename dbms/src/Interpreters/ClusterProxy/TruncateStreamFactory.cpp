@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Cluster.h>
+#include <ext/range.h>
 
 namespace DB
 {
@@ -9,8 +10,9 @@ namespace DB
 namespace ClusterProxy
 {
 
-TruncateStreamFactory::TruncateStreamFactory(ClusterPtr & cluster_, String & storage_path_) : cluster(cluster_), storage_path(storage_path_)
-{}
+TruncateStreamFactory::TruncateStreamFactory(ClusterPtr & cluster_) : cluster(cluster_)
+{
+}
 
 void TruncateStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
@@ -18,9 +20,6 @@ void TruncateStreamFactory::createForShard(
     const ThrottlerPtr & throttler, Context & context,
     BlockInputStreams & res)
 {
-    /// TODO remove temporary
-//    removeTemporaryDir(shard_info);
-
     if (shard_info.isLocal())
     {
         InterpreterDropQuery drop_query{query_ast, context};
@@ -48,35 +47,13 @@ void TruncateStreamFactory::createForShard(
 
                     if (shard_info.hasInternalReplication())
                         break;
+
+                    continue;
                 }
 
                 throw Exception("Connection pool for replica " + replicas[replica_index].readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
             }
         }
-    }
-}
-
-void TruncateStreamFactory::removeTemporaryDir(const Cluster::ShardInfo & shard_info) const
-{
-    if (!shard_info.hasInternalReplication())
-    {
-        Cluster::Addresses addresses = cluster->getShardsAddresses().at(shard_info.shard_num);
-        for (auto & address : addresses)
-        {
-            auto temporary_file = Poco::File(storage_path + "/" + address.toStringFull());
-
-            if (temporary_file.exists())
-                temporary_file.remove(true);
-        }
-        return;
-    }
-
-    if (!shard_info.dir_name_for_internal_replication.empty())
-    {
-        auto temporary_file = Poco::File(storage_path + "/" + shard_info.dir_name_for_internal_replication);
-
-        if (temporary_file.exists())
-            temporary_file.remove(true);
     }
 }
 
