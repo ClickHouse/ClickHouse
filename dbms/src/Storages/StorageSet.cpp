@@ -120,8 +120,12 @@ size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 void StorageSet::truncate(const ASTPtr & /*query*/)
 {
+    Block header = getSampleBlock();
+    header = header.sortColumns();
+    
     increment = 0;
     set = std::make_shared<Set>(SizeLimits());
+    set->setHeader(header);
 
     static const auto file_suffix = ".bin";
 

@@ -1580,7 +1580,6 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part_to_detach, cons
         part->renameAddPrefix(move_to_detached, prefix);
     data_parts_indexes.erase(it_part);
 
-    std::cout << "MergeTreeData::renameAndDetachPart \n";
     if (restore_covered && part->info.level == 0)
     {
         LOG_WARNING(log, "Will not recover parts covered by zero-level part " << part->name);

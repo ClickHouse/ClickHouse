@@ -12,7 +12,7 @@ class TruncateStreamFactory final : public IStreamFactory
 {
 public:
 
-    TruncateStreamFactory(ClusterPtr & cluster, String & storage_path);
+    TruncateStreamFactory(ClusterPtr & cluster);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -20,11 +20,8 @@ public:
         const ThrottlerPtr & throttler, Context & context,
         BlockInputStreams & res) override;
 
-    void removeTemporaryDir(const Cluster::ShardInfo &shard_info) const;
-
 private:
-    ClusterPtr cluster;
-    String & storage_path;
+    ClusterPtr & cluster;
 
     Cluster::Addresses getShardReplicasAddresses(const Cluster::ShardInfo &info);
 };

@@ -317,8 +317,7 @@ void StorageDistributed::truncate(const ASTPtr & query)
         }
     }
 
-    String storage_path = getDataPath();
-    ClusterProxy::TruncateStreamFactory truncate_stream_factory(cluster, storage_path);
+    ClusterProxy::TruncateStreamFactory truncate_stream_factory(cluster);
 
     ClusterProxy::executeQuery(truncate_stream_factory, cluster, ast_drop_query, context, context.getSettingsRef());
 }

@@ -3,11 +3,14 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <AggregateFunctions/AggregateFunctionSequenceMatch.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 
 /** DROP query
   */
