@@ -220,6 +220,11 @@ if (USE_RDKAFKA)
     endif ()
 endif ()
 
+# TODO: make it optional
+# if (USE_PARQUET)
+    target_link_libraries(dbms ${ARROW_SHARED_LIB} ${PARQUET_SHARED_LIB})
+# endif ()
+
 target_link_libraries (dbms
     Threads::Threads
 )
