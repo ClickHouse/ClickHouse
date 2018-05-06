@@ -3,8 +3,7 @@
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
 
 # also possible: DIST=bionic DIST=testing
-DIST=${DIST="unstable"}
-export DIST
+export DIST=${DIST=unstable}
 
 cd $ROOT_DIR
 . $ROOT_DIR/debian/.pbuilderrc

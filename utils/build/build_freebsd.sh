@@ -36,11 +36,11 @@ cd ClickHouse/build
 cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0
 # build with boost 1.64 from ports temporary broken
 
-make -C dbms/src/Server -j $(nproc || sysctl -n hw.ncpu || echo 2)
+make clickhouse-bundle -j $(nproc || sysctl -n hw.ncpu || echo 2)
 cd ../..
 
 #  Run server:
-# ClickHouse/build/dbms/src/Server/clickhouse --server --config-file=ClickHouse/dbms/src/Server/config.xml &
+# ClickHouse/build/dbms/src/Server/clickhouse-server --config-file=ClickHouse/dbms/src/Server/config.xml &
 
 #  Run client:
-# ClickHouse/build/dbms/src/Server/clickhouse --client
+# ClickHouse/build/dbms/src/Server/clickhouse-client

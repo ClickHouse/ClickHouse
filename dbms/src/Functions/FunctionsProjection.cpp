@@ -33,7 +33,7 @@ void FunctionOneOrZero::executeImpl(Block & block, const ColumnNumbers & argumen
     vec_res.resize(data_column->size());
     for (size_t i = 0; i < data_column->size(); ++i)
     {
-        if (data_column->getBoolRepresentation(i))
+        if (data_column->getBool(i))
         {
             vec_res[i] = 1;
         }
@@ -80,7 +80,7 @@ void FunctionProject::executeImpl(Block & block, const ColumnNumbers & arguments
     }
     else if (const auto projection_column_uint8_const = checkAndGetColumnConst<ColumnUInt8>(projection_column.get()))
     {
-        if (projection_column_uint8_const->getBoolRepresentation(0))
+        if (projection_column_uint8_const->getBool(0))
         {
             block.getByPosition(result).column = data_column->cloneResized(data_column->size());
         }
@@ -133,13 +133,14 @@ void FunctionBuildProjectionComposition::executeImpl(Block & block, const Column
     size_t current_reserve_index = 0;
     for (size_t i = 0; i < first_projection_column->size(); ++i)
     {
-        if (first_projection_column->getBoolRepresentation(i) == 0)
+        if (!first_projection_column->getBool(i))
         {
             vec_res[i] = 0;
         }
         else
         {
-            vec_res[i] = second_projection_column->getBoolRepresentation(current_reserve_index++);
+            vec_res[i] = second_projection_column->getBool(current_reserve_index);
+            ++current_reserve_index;
         }
     }
     if (current_reserve_index != second_projection_column->size())
@@ -190,7 +191,7 @@ void FunctionRestoreProjection::executeImpl(Block & block, const ColumnNumbers &
     std::vector<size_t> override_indices(arguments.size() - 1, 0);
     for (size_t i = 0; i < projection_column->size(); ++i)
     {
-        size_t argument_index = projection_column->getBoolRepresentation(i);
+        size_t argument_index = projection_column->getBool(i);
         col_res->insertFrom(*block.getByPosition(arguments[argument_index + 1]).column, override_indices[argument_index]++);
     }
     block.getByPosition(result).column = std::move(col_res);

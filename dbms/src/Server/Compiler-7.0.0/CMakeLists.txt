@@ -24,11 +24,12 @@ target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
 target_link_libraries(clickhouse-compiler-lib PRIVATE
 
 clangBasic clangCodeGen clangDriver
-clangFrontend 
+clangFrontend
 clangFrontendTool
 clangRewriteFrontend clangARCMigrate clangStaticAnalyzerFrontend
 clangParse clangSerialization clangSema clangEdit clangStaticAnalyzerCheckers
 clangASTMatchers clangStaticAnalyzerCore clangAnalysis clangAST clangRewrite clangLex clangBasic
+clangCrossTU clangIndex
 
 lldCOFF
 lldDriver
@@ -43,9 +44,9 @@ lldCore
 
 ${REQUIRED_LLVM_LIBRARIES}
 
-#Polly
-#PollyISL
-#PollyPPCG
+Polly
+PollyISL
+PollyPPCG
 
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
