@@ -88,16 +88,12 @@ public:
     }
 
     /** If column is numeric, return value of n-th element, casted to UInt64.
+      * For NULL values of Nullable column it is allowed to return arbitary value.
       * Otherwise throw an exception.
       */
     virtual UInt64 getUInt(size_t /*n*/) const
     {
         throw Exception("Method getUInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual UInt8 getBoolRepresentation(size_t /*n*/) const
-    {
-        throw Exception("Method getBoolRepresentation is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual Int64 getInt(size_t /*n*/) const
@@ -106,6 +102,15 @@ public:
     }
 
     virtual bool isNullAt(size_t /*n*/) const { return false; }
+
+    /** If column is numeric, return value of n-th element, casted to bool.
+      * For NULL values of Nullable column returns false.
+      * Otherwise throw an exception.
+      */
+    virtual bool getBool(size_t /*n*/) const
+    {
+        throw Exception("Method getBool is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
