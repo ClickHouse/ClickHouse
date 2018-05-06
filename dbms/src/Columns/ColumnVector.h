@@ -233,7 +233,7 @@ public:
 
     bool getBool(size_t n) const override
     {
-        return data[n];
+        return bool(data[n]);
     }
 
     Int64 getInt(size_t n) const override
