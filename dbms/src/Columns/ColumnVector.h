@@ -268,7 +268,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-
+    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
