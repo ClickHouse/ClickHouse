@@ -319,7 +319,7 @@ static int ExecuteCC1Tool(ArrayRef<const char *> argv, StringRef Tool) {
   return 1;
 }
 
-int main(int argc_, const char **argv_) {
+int mainEntryClickHouseClang(int argc_, char **argv_) {
   llvm::InitLLVM X(argc_, argv_);
   SmallVector<const char *, 256> argv(argv_, argv_ + argc_);
 

@@ -111,7 +111,7 @@ static bool canExitEarly() { return StringRef(getenv("LLD_IN_TEST")) != "1"; }
 
 /// Universal linker main(). This linker emulates the gnu, darwin, or
 /// windows linker based on the argv[0] or -flavor option.
-int main(int Argc, const char **Argv) {
+int mainEntryClickHouseLLD(int Argc, char **Argv) {
   InitLLVM X(Argc, Argv);
 
   std::vector<const char *> Args(Argv, Argv + Argc);
