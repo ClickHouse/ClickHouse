@@ -11,6 +11,9 @@
 #include <DataTypes/Native.h>
 #include <Functions/IFunction.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter -Wnon-virtual-dtor"
+
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -30,6 +33,8 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
+
+#pragma GCC diagnostic pop
 
 
 namespace DB

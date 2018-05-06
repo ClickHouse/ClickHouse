@@ -21,7 +21,10 @@
 #include <boost/math/common_factor.hpp>
 
 #if USE_EMBEDDED_COMPILER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
 #endif
 
 
