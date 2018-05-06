@@ -17,6 +17,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
+#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -94,7 +95,12 @@ static void applyFunction(IFunctionBase & function, Field & value)
 struct LLVMContext
 {
     llvm::LLVMContext context;
+#if LLVM_VERSION_MAJOR >= 7
+    llvm::orc::ExecutionSession execution_session;
+    std::unique_ptr<llvm::Module> module;
+#else
     std::shared_ptr<llvm::Module> module;
+#endif
     std::unique_ptr<llvm::TargetMachine> machine;
     llvm::orc::RTDyldObjectLinkingLayer objectLayer;
     llvm::orc::IRCompileLayer<decltype(objectLayer), llvm::orc::SimpleCompiler> compileLayer;
@@ -103,9 +109,24 @@ struct LLVMContext
     std::unordered_map<std::string, void *> symbols;
 
     LLVMContext()
+#if LLVM_VERSION_MAJOR >= 7
+        : module(std::make_unique<llvm::Module>("jit", context))
+#else
         : module(std::make_shared<llvm::Module>("jit", context))
+#endif
         , machine(llvm::EngineBuilder().selectTarget())
+#if LLVM_VERSION_MAJOR >= 7
+        , objectLayer(execution_session, [](llvm::orc::VModuleKey)
+        {
+            return llvm::orc::RTDyldObjectLinkingLayer::Resources
+            {
+                std::make_shared<llvm::SectionMemoryManager>(),
+                std::make_shared<llvm::orc::NullResolver>()
+            };
+        })
+#else
         , objectLayer([]() { return std::make_shared<llvm::SectionMemoryManager>(); })
+#endif
         , compileLayer(objectLayer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
         , builder(context)
@@ -129,15 +150,28 @@ struct LLVMContext
         builder.populateFunctionPassManager(fpm);
         for (auto & function : *module)
             fpm.run(function);
-        llvm::cantFail(compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()));
+
+        /// name, mangled name
+        std::vector<std::pair<std::string, std::string>> function_names;
+        function_names.reserve(module->size());
         for (const auto & function : *module)
         {
-            std::string mangledName;
-            llvm::raw_string_ostream mangledNameStream(mangledName);
-            llvm::Mangler::getNameWithPrefix(mangledNameStream, function.getName(), layout);
-            if (auto symbol = compileLayer.findSymbol(mangledNameStream.str(), false).getAddress())
-                symbols[function.getName()] = reinterpret_cast<void *>(*symbol);
+            std::string mangled_name;
+            llvm::raw_string_ostream mangled_name_stream(mangled_name);
+            llvm::Mangler::getNameWithPrefix(mangled_name_stream, function.getName(), layout);
+            function_names.emplace_back(function.getName(), mangled_name);
         }
+
+#if LLVM_VERSION_MAJOR >= 7
+        llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
+        llvm::cantFail(compileLayer.addModule(module_key, std::move(module)));
+#else
+        llvm::cantFail(compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()));
+#endif
+
+        for (const auto & names : function_names)
+            if (auto symbol = compileLayer.findSymbol(names.second, false).getAddress())
+                symbols[names.first] = reinterpret_cast<void *>(*symbol);
     }
 };
 
