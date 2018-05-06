@@ -12,7 +12,8 @@
 #include <Functions/IFunction.h>
 
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter -Wnon-virtual-dtor"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
