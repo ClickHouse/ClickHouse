@@ -64,7 +64,7 @@ static std::string getCanonicalPath(std::string && path)
         throw Exception("path configuration parameter is empty");
     if (path.back() != '/')
         path += '/';
-    return path;
+    return std::move(path);
 }
 
 void Server::uninitialize()
