@@ -286,7 +286,8 @@ void ExpressionAction::prepare(Block & sample_block)
     }
 }
 
-size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const {
+size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
+{
     auto it = input_rows_counts.find(row_projection_column);
     size_t projection_space_dimension;
     if (it == input_rows_counts.end())
@@ -312,6 +313,7 @@ size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std
     {
         parent_space_dimension = block.getByName(row_projection_column).column->size();
     }
+
     return is_row_projection_complementary ? parent_space_dimension - projection_space_dimension : projection_space_dimension;
 }
 
