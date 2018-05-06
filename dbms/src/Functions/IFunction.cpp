@@ -12,6 +12,7 @@
 #include <ext/collection_cast.h>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 
 #if USE_EMBEDDED_COMPILER
 #pragma GCC diagnostic push
