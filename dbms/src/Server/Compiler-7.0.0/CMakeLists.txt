@@ -8,7 +8,7 @@ add_library(clickhouse-compiler-lib
 
 target_compile_options(clickhouse-compiler-lib PRIVATE -fno-rtti -fno-exceptions -g0)
 
-llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
+llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
 
 # We link statically with zlib, and LLVM (sometimes) tries to bring its own dependency.
 list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
