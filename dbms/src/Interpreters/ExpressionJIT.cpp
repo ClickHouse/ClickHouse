@@ -2,6 +2,8 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <optional>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -98,7 +100,7 @@ struct LLVMContext
     llvm::orc::IRCompileLayer<decltype(objectLayer), llvm::orc::SimpleCompiler> compileLayer;
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
-    std::unordered_map<std::string, const void *> symbols;
+    std::unordered_map<std::string, void *> symbols;
 
     LLVMContext()
         : module(std::make_shared<llvm::Module>("jit", context))
@@ -134,7 +136,7 @@ struct LLVMContext
             llvm::raw_string_ostream mangledNameStream(mangledName);
             llvm::Mangler::getNameWithPrefix(mangledNameStream, function.getName(), layout);
             if (auto symbol = compileLayer.findSymbol(mangledNameStream.str(), false).getAddress())
-                symbols[function.getName()] = reinterpret_cast<const void *>(*symbol);
+                symbols[function.getName()] = reinterpret_cast<void *>(*symbol);
         }
     }
 };
@@ -143,7 +145,7 @@ class LLVMPreparedFunction : public PreparedFunctionImpl
 {
     std::string name;
     std::shared_ptr<LLVMContext> context;
-    const void * function;
+    void * function;
 
 public:
     LLVMPreparedFunction(std::string name_, std::shared_ptr<LLVMContext> context)
@@ -162,11 +164,11 @@ public:
         if (block_size)
         {
             std::vector<ColumnData> columns(arguments.size() + 1);
-            for (size_t i = 0; i < arguments.size(); i++)
+            for (size_t i = 0; i < arguments.size(); ++i)
             {
                 auto * column = block.getByPosition(arguments[i]).column.get();
                 if (!column)
-                    throw Exception("column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
             columns[arguments.size()] = getColumnData(col_res.get());
@@ -191,7 +193,7 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
     b.SetInsertPoint(entry);
     std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
-    for (size_t i = 0; i <= arg_types.size(); i++)
+    for (size_t i = 0; i <= arg_types.size(); ++i)
     {
         auto & type = i == arg_types.size() ? f.getReturnType() : arg_types[i];
         auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
@@ -217,7 +219,7 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
         }
     }
     ValuePlaceholders arguments(arg_types.size());
-    for (size_t i = 0; i < arguments.size(); i++)
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
         arguments[i] = [&b, &col = columns[i], &type = arg_types[i]]() -> llvm::Value *
         {
@@ -300,7 +302,7 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
             input.push_back([&]() { return arg(builder, inputs); });
         auto * result = f.compile(builder, input);
         if (result->getType() != toNativeType(builder, f.getReturnType()))
-            throw Exception("function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
         return result;
     };
 }
@@ -327,7 +329,7 @@ public:
             const auto & names = action.argument_names;
             const auto & types = action.function->getArgumentTypes();
             std::vector<CompilableExpression> args;
-            for (size_t i = 0; i < names.size(); i++)
+            for (size_t i = 0; i < names.size(); ++i)
             {
                 auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
                 if (inserted.second)
@@ -404,7 +406,7 @@ public:
         Field right_ = right;
         Monotonicity result(true, true, true);
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
-        for (size_t i = 0; i < originals.size(); i++)
+        for (size_t i = 0; i < originals.size(); ++i)
         {
             Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
             if (!m.is_monotonic)
@@ -491,7 +493,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     }
 
     std::vector<ExpressionActions::Actions> fused(actions.size());
-    for (size_t i = 0; i < actions.size(); i++)
+    for (size_t i = 0; i < actions.size(); ++i)
     {
         if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(context->builder, *actions[i].function))
             continue;
