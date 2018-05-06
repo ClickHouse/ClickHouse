@@ -29,6 +29,7 @@
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/ParquetBlockInputStream.h>
 #include <DataTypes/FormatSettingsJSON.h>
 #if USE_CAPNP
 #include <DataStreams/CapnProtoRowInputStream.h>
@@ -87,6 +88,10 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
         bool with_names = name == "CSVWithNames";
 
         return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, csv_delimiter, with_names));
+    }
+    else if (name == "Parquet")
+    {
+        return std::make_shared<ParquetBlockInputStream>(buf, sample);
     }
     else if (name == "TSKV")
     {
