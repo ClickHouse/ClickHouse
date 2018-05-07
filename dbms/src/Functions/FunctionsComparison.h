@@ -779,10 +779,8 @@ private:
 
         const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
         if (!column_string || !legal_types)
-            throw Exception{
-                "Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
-                    + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
+                + " of arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
 
         StringRef string_value = column_string->getDataAt(0);
 

@@ -29,10 +29,8 @@ ODBCBlockInputStream::ODBCBlockInputStream(
     log(&Logger::get("ODBCBlockInputStream"))
 {
     if (sample_block.columns() != result.columnCount())
-        throw Exception{
-            "RecordSet contains " + toString(result.columnCount()) + " columns while " +
-                toString(sample_block.columns()) + " expected",
-            ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
+        throw Exception{"RecordSet contains " + toString(result.columnCount()) + " columns while " +
+            toString(sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
     description.init(sample_block);
 }
