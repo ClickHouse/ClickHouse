@@ -173,7 +173,11 @@ else
     export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
 fi
 
-[[ "$DIST" != "bionic" && "$DIST" != "unstable" && "$DIST" != "experimental" ]] && EXTRAPACKAGES+=" ninja-build "
+if [[ "$DIST" == "bionic" || "$DIST" == "unstable" || "$DIST" == "experimental" ]]; then
+    CMAKE_FLAGS+=" -DDISABLE_NINJA=1 "
+else
+    EXTRAPACKAGES+=" ninja-build "
+fi
 
 # will test symbols
 #EXTRAPACKAGES+=" gdb "
