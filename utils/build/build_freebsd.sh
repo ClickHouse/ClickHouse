@@ -19,7 +19,7 @@
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/build/build_freebsd.sh | sh
 
 #  install compiler and libs
-sudo pkg install devel/git devel/cmake shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libzookeeper devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
+sudo pkg install devel/git devel/cmake shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
 
 #  install testing only stuff if you want:
 sudo pkg install lang/python devel/py-lxml devel/py-termcolor ftp/curl perl5
