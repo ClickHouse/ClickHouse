@@ -982,9 +982,9 @@ public:
             if constexpr (!std::is_same_v<ResultDataType, InvalidType> && OpSpec::compilable)
             {
                 auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                auto * type = toNativeType(b, ResultDataType{});
-                auto * lval = castNativeNumber(b, values[0](), type, std::is_signed_v<typename LeftDataType::FieldType>);
-                auto * rval = castNativeNumber(b, values[1](), type, std::is_signed_v<typename RightDataType::FieldType>);
+                auto type = std::make_shared<ResultDataType>();
+                auto * lval = nativeCast(b, types[0], values[0](), type);
+                auto * rval = nativeCast(b, types[1], values[1](), type);
                 result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
                 return true;
             }
@@ -1088,7 +1088,7 @@ public:
             if constexpr (Op<T1>::compilable)
             {
                 auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                auto * v = castNativeNumber(b, values[0](), toNativeType(b, DataTypeNumber<T1>{}), std::is_signed_v<T0>);
+                auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
                 result = Op<T0>::compile(b, v, std::is_signed_v<T1>);
                 return true;
             }
