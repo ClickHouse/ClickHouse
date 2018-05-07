@@ -18,6 +18,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
+#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/Config/llvm-config.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -36,6 +37,9 @@
 #include <llvm/ExecutionEngine/Orc/NullResolver.h>
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/Support/Host.h>
+#include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
@@ -120,6 +124,30 @@ static void applyFunction(IFunctionBase & function, Field & value)
     block.safeGetByPosition(1).column->get(0, value);
 }
 
+static llvm::TargetMachine * getNativeMachine()
+{
+    std::string error;
+    auto cpu = llvm::sys::getHostCPUName();
+    auto triple = llvm::sys::getProcessTriple();
+    auto target = llvm::TargetRegistry::lookupTarget(triple, error);
+    if (!target)
+        throw Exception("Could not initialize native target: " + error, ErrorCodes::CANNOT_COMPILE_CODE);
+    llvm::SubtargetFeatures features;
+    llvm::StringMap<bool> feature_map;
+    if (llvm::sys::getHostCPUFeatures(feature_map))
+        for (auto& f : feature_map)
+            features.AddFeature(f.first(), f.second);
+    llvm::TargetOptions options;
+    return target->createTargetMachine(
+        triple, cpu, features.getString(), options, llvm::None,
+#if LLVM_VERSION_MAJOR >= 6
+        llvm::None, llvm::CodeGenOpt::Default, /*jit=*/true
+#else
+        llvm::CodeModel::Default, llvm::CodeGenOpt::Default
+#endif
+    );
+}
+
 struct LLVMContext
 {
     llvm::LLVMContext context;
@@ -142,7 +170,7 @@ struct LLVMContext
 #else
         : module(std::make_shared<llvm::Module>("jit", context))
 #endif
-        , machine(llvm::EngineBuilder().selectTarget())
+        , machine(getNativeMachine())
 #if LLVM_VERSION_MAJOR >= 7
         , objectLayer(execution_session, [](llvm::orc::VModuleKey)
         {
@@ -168,6 +196,7 @@ struct LLVMContext
         if (!module->size())
             return;
         llvm::PassManagerBuilder builder;
+        llvm::legacy::PassManager mpm;
         llvm::legacy::FunctionPassManager fpm(module.get());
         builder.OptLevel = 3;
         builder.SLPVectorize = true;
@@ -175,9 +204,16 @@ struct LLVMContext
         builder.RerollLoops = true;
         builder.VerifyInput = true;
         builder.VerifyOutput = true;
+        machine->adjustPassManager(builder);
+        fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+        mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
         builder.populateFunctionPassManager(fpm);
+        builder.populateModulePassManager(mpm);
+        fpm.doInitialization();
         for (auto & function : *module)
             fpm.run(function);
+        fpm.doFinalization();
+        mpm.run(*module);
 
         /// name, mangled name
         std::vector<std::pair<std::string, std::string>> function_names;
@@ -196,7 +232,7 @@ struct LLVMContext
         if (compileLayer.addModule(module_key, std::move(module)))
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #else
-        if (compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()))
+        if (!compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()))
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #endif
 
@@ -320,8 +356,8 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
     {
-        /// currently, stride is either 0 or size of native type
-        auto * is_const = b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
+        /// stride is either 0 or size of native type; output column is never constant; neither is at least one input
+        auto * is_const = &col == &columns.back() || columns.size() <= 2 ? b.getFalse() : b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
         col.data->addIncoming(b.CreateSelect(is_const, col.data, b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1)), cur_block);
         if (col.null)
             col.null->addIncoming(b.CreateSelect(is_const, col.null, b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1)), cur_block);

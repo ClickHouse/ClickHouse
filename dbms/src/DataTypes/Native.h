@@ -62,19 +62,54 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const Dat
     return toNativeType(builder, *type);
 }
 
-static inline llvm::Value * castNativeNumber(llvm::IRBuilder<> & builder, llvm::Value * value, llvm::Type * type, bool is_signed)
+static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value)
 {
-    if (value->getType() == type)
-        return value;
-    if (value->getType()->isIntegerTy())
+    if (from->isNullable())
     {
-        if (type->isIntegerTy())
-            return builder.CreateIntCast(value, type, is_signed);
-        return is_signed ? builder.CreateSIToFP(value, type) : builder.CreateUIToFP(value, type);
+        auto * inner = nativeBoolCast(b, removeNullable(from), b.CreateExtractValue(value, {0}));
+        return b.CreateAnd(b.CreateNot(b.CreateExtractValue(value, {1})), inner);
     }
-    if (type->isFloatingPointTy())
-        return builder.CreateFPCast(value, type);
-    return is_signed ? builder.CreateFPToSI(value, type) : builder.CreateFPToUI(value, type);
+    auto * zero = llvm::Constant::getNullValue(value->getType());
+    if (value->getType()->isIntegerTy())
+        return b.CreateICmpNE(value, zero);
+    if (value->getType()->isFloatingPointTy())
+        return b.CreateFCmpONE(value, zero); /// QNaN is false
+    throw Exception("Cannot cast non-number " + from->getName() + " to bool", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, const DataTypePtr & to)
+{
+    auto * n_from = value->getType();
+    auto * n_to = toNativeType(b, to);
+    if (n_from == n_to)
+        return value;
+    if (from->isNullable() && to->isNullable())
+    {
+        auto * inner = nativeCast(b, removeNullable(from), b.CreateExtractValue(value, {0}), to);
+        return b.CreateInsertValue(inner, b.CreateExtractValue(value, {1}), {1});
+    }
+    if (from->isNullable())
+        return nativeCast(b, removeNullable(from), b.CreateExtractValue(value, {0}), to);
+    if (to->isNullable())
+    {
+        auto * inner = nativeCast(b, from, value, removeNullable(to));
+        return b.CreateInsertValue(llvm::Constant::getNullValue(n_to), inner, {0});
+    }
+
+    bool is_signed = typeIsEither<
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
+        DataTypeFloat32, DataTypeFloat64,
+        DataTypeDate, DataTypeDateTime, DataTypeInterval
+    >(*from);
+    if (n_from->isIntegerTy() && n_to->isFloatingPointTy())
+        return is_signed ? b.CreateSIToFP(value, n_to) : b.CreateUIToFP(value, n_to);
+    if (n_from->isFloatingPointTy() && n_to->isIntegerTy())
+        return is_signed ? b.CreateFPToSI(value, n_to) : b.CreateFPToUI(value, n_to);
+    if (n_from->isIntegerTy() && n_to->isIntegerTy())
+        return b.CreateIntCast(value, n_to, is_signed);
+    if (n_from->isFloatingPointTy() && n_to->isFloatingPointTy())
+        return b.CreateFPCast(value, n_to);
+    throw Exception("Cannot cast " + from->getName() + " to " + to->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }
