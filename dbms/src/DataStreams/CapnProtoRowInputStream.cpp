@@ -122,7 +122,7 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
 {
 
     // Parse the schema and fetch the root object
-    auto schema = parser->impl.parseDiskFile(schema_file, getSchemaPath(schema_dir, schema_file), {});
+    auto schema = parser->impl.parseFromDirectory(schema_dir, schema_file, {});
     root = schema.getNested(root_object).asStruct();
 
     /**
