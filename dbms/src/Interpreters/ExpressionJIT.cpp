@@ -42,6 +42,8 @@
 #pragma GCC diagnostic pop
 
 
+#if !LLVM_HAS_RTTI
+
 /** HACK
   * Allow to link with LLVM that was compiled without RTTI.
   * This is the default option when you build LLVM from sources.
@@ -57,6 +59,8 @@ __attribute__((__weak__)) int _ZTIN4llvm13ErrorInfoBaseE = 0;
 __attribute__((__weak__)) int _ZTIN4llvm12MemoryBufferE = 0;
 
 }
+
+#endif
 
 
 namespace ProfileEvents
