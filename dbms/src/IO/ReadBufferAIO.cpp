@@ -85,8 +85,8 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 bool ReadBufferAIO::nextImpl()
 {
- /// If the end of the file has already been reached by calling this function,
- /// then the current call is wrong.
+    /// If the end of the file has already been reached by calling this function,
+    /// then the current call is wrong.
     if (is_eof)
         return false;
 

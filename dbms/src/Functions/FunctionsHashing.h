@@ -702,24 +702,18 @@ public:
     {
         const auto arg_count = arguments.size();
         if (arg_count != 1 && arg_count != 2)
-            throw Exception{
-                "Number of arguments for function " + getName() + " doesn't match: passed " +
-                    toString(arg_count) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " +
+                toString(arg_count) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto first_arg = arguments.front().get();
         if (!checkDataType<DataTypeString>(first_arg))
-            throw Exception{
-                "Illegal type " + first_arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (arg_count == 2)
         {
             const auto second_arg = arguments.back().get();
             if (!second_arg->isInteger())
-                throw Exception{
-                    "Illegal type " + second_arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception{"Illegal type " + second_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt64>();
@@ -762,19 +756,15 @@ private:
             block.getByPosition(result).column = std::move(col_to);
         }
         else
-            throw Exception{
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() +
-                " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block.getByPosition(arguments.back()).column.get();
         if (!level_col->isColumnConst())
-            throw Exception{
-                "Second argument of function " + getName() + " must be an integral constant",
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Second argument of function " + getName() + " must be an integral constant", ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
 
@@ -796,10 +786,8 @@ private:
             block.getByPosition(result).column = std::move(col_to);
         }
         else
-            throw Exception{
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() +
-                " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 };
 

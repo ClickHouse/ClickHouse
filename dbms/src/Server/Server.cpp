@@ -259,7 +259,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /* already_loaded = */ false);
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
-    global_context->setConfigReloadCallback([&]() {
+    global_context->setConfigReloadCallback([&]()
+    {
         main_config_reloader->reload();
         users_config_reloader->reload();
     });
