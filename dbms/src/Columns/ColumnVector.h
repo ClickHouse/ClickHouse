@@ -231,9 +231,9 @@ public:
         return UInt64(data[n]);
     }
 
-    UInt8 getBoolRepresentation(size_t n) const override
+    bool getBool(size_t n) const override
     {
-        return UInt8(!!data[n]);
+        return bool(data[n]);
     }
 
     Int64 getInt(size_t n) const override

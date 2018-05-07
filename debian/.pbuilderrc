@@ -97,7 +97,7 @@ ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
 if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
     # Debian configuration
     OSNAME=debian
-    MIRRORSITE=${MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
     COMPONENTS="main contrib non-free"
     if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
         OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
@@ -112,11 +112,16 @@ if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
             DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-archive-keyring.gpg' )
             # DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-keyring.gpg' )
     esac
-
 elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     # Ubuntu configuration
     OSNAME=ubuntu
-    MIRRORSITE=${MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
+
+    if [[ "$ARCH" == "amd64" || "$ARCH" == "i386" ]]; then
+        MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/ubuntu/"}
+    else
+        MIRRORSITE=${SET_MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
+    fi
+
     COMPONENTS="main restricted universe multiverse"
 
     OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-updates main restricted universe multiverse"
@@ -135,7 +140,7 @@ else
     exit 1
 fi
 
-echo "using $NAME $OSNAME $DIST $ARCH $LOGNAME"
+echo "using $NAME $OSNAME $DIST $ARCH $LOGNAME $MIRRORSITE"
 
 case "$DIST" in
     "trusty")
@@ -154,27 +159,21 @@ case "$DIST" in
         ;;
 esac
 
-case "$DIST" in
+if [ "$ARCH" != arm64 ]; then
+   case "$DIST" in
     "bionic" | "experimental" | "unstable" | "testing")
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;
     "artful" )
-        if [ "$ARCH" != arm64 ]; then
-            EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
-        fi
+        EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         ;;
-esac
+   esac
+else
+    export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
+fi
 
-# todo: fix. (dh_auto_build? remove extra option -O)
-[[ $DIST != 'bionic' ]] && EXTRAPACKAGES+=" ninja-build "
-
-# bundled zookeepeer have broken asm
-case "$ARCH" in
-    "arm64")
-        EXTRAPACKAGES+=" libzookeeper-mt-dev "
-        ;;
-esac
+[[ "$DIST" != "bionic" && "$DIST" != "unstable" && "$DIST" != "experimental" ]] && EXTRAPACKAGES+=" ninja-build "
 
 # will test symbols
 #EXTRAPACKAGES+=" gdb "
