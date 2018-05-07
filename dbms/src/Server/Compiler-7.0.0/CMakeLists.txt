@@ -44,9 +44,9 @@ lldCore
 
 ${REQUIRED_LLVM_LIBRARIES}
 
-Polly
-PollyISL
-PollyPPCG
+#Polly
+#PollyISL
+#PollyPPCG
 
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
