@@ -58,6 +58,8 @@ endif
 # Useful for bulding on low memory systems
 ifndef DISABLE_PARALLEL
     DH_FLAGS += --parallel
+else
+    THREADS_COUNT = 1
 endif
 
 %:
