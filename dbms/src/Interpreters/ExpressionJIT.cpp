@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
@@ -57,6 +58,11 @@ __attribute__((__weak__)) int _ZTIN4llvm12MemoryBufferE = 0;
 
 }
 
+
+namespace ProfileEvents
+{
+    extern const Event CompileFunction;
+}
 
 namespace DB
 {
@@ -176,6 +182,7 @@ struct LLVMContext
             std::string mangled_name;
             llvm::raw_string_ostream mangled_name_stream(mangled_name);
             llvm::Mangler::getNameWithPrefix(mangled_name_stream, function.getName(), layout);
+            mangled_name_stream.flush();
             function_names.emplace_back(function.getName(), mangled_name);
         }
 
@@ -187,8 +194,13 @@ struct LLVMContext
 #endif
 
         for (const auto & names : function_names)
-            if (auto symbol = compileLayer.findSymbol(names.second, false).getAddress())
-                symbols[names.first] = reinterpret_cast<void *>(*symbol);
+        {
+            if (auto symbol = compileLayer.findSymbol(names.second, false))
+            {
+                if (auto address_or_error = symbol.getAddress())
+                    symbols[names.first] = reinterpret_cast<void *>(*address_or_error);
+            }
+        }
     }
 };
 
@@ -231,6 +243,8 @@ public:
 
 static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
 {
+    ProfileEvents::increment(ProfileEvents::CompileFunction);
+
     auto & arg_types = f.getArgumentTypes();
     auto & b = context->builder;
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
@@ -548,6 +562,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     {
         if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(context->builder, *actions[i].function))
             continue;
+
         fused[i].push_back(actions[i]);
         if (dependents[i].find({}) != dependents[i].end())
         {
@@ -559,10 +574,12 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             actions[i].argument_names = fn->getArgumentNames();
             continue;
         }
+
         /// TODO: determine whether it's profitable to inline the function if there's more than one dependent.
         for (const auto & dep : dependents[i])
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
+
     context->finalize();
 }
 
