@@ -373,7 +373,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 
     std::vector<std::string> merge_dirs;
     merge_dirs.push_back(merge_dir_path.toString());
-    if (merge_dir_path.getBaseName() != "conf")    {
+    if (merge_dir_path.getBaseName() != "conf")
+    {
         merge_dir_path.setBaseName("conf");
         merge_dirs.push_back(merge_dir_path.toString());
     }

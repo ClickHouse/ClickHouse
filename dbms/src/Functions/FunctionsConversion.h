@@ -942,9 +942,7 @@ public:
         {
             const auto src_n = column_fixed_string->getN();
             if (src_n > n)
-                throw Exception{
-                    "String too long for type FixedString(" + toString(n) + ")",
-                    ErrorCodes::TOO_LARGE_STRING_SIZE};
+                throw Exception{"String too long for type FixedString(" + toString(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE};
 
             auto column_fixed = ColumnFixedString::create(n);
 
