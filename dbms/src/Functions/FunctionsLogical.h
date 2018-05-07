@@ -192,20 +192,6 @@ struct AssociativeOperationImpl<Op, 1>
 };
 
 
-#if USE_EMBEDDED_COMPILER
-static llvm::Value * isNativeTrueValue(llvm::IRBuilder<> & b, const DataTypePtr & type, llvm::Value * x)
-{
-    if (type->isNullable())
-    {
-        auto * subexpr = isNativeTrueValue(b, removeNullable(type), b.CreateExtractValue(x, {0}));
-        return b.CreateAnd(b.CreateNot(b.CreateExtractValue(x, {1})), subexpr);
-    }
-    auto * zero = llvm::Constant::getNullValue(x->getType());
-    return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, zero) : b.CreateFCmpONE(x, zero); /// QNaN -> false
-}
-#endif
-
-
 template <typename Impl, typename Name>
 class FunctionAnyArityLogical : public IFunction
 {
@@ -407,9 +393,9 @@ public:
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (!Impl::isSaturable())
         {
-            auto * result = isNativeTrueValue(b, types[0], values[0]());
+            auto * result = nativeBoolCast(b, types[0], values[0]());
             for (size_t i = 1; i < types.size(); i++)
-                result = Impl::apply(b, result, isNativeTrueValue(b, types[i], values[i]()));
+                result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]()));
             return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
         constexpr bool breakOnTrue = Impl::isSaturatedValue(true);
@@ -421,7 +407,7 @@ public:
         {
             b.SetInsertPoint(next);
             auto * value = values[i]();
-            auto * truth = isNativeTrueValue(b, types[i], value);
+            auto * truth = nativeBoolCast(b, types[i], value);
             if (!types[i]->equals(DataTypeUInt8{}))
                 value = b.CreateSelect(truth, b.getInt8(1), b.getInt8(0));
             phi->addIncoming(value, b.GetInsertBlock());
@@ -509,7 +495,7 @@ public:
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        return b.CreateSelect(Impl<UInt8>::apply(b, isNativeTrueValue(b, types[0], values[0]())), b.getInt8(1), b.getInt8(0));
+        return b.CreateSelect(Impl<UInt8>::apply(b, nativeBoolCast(b, types[0], values[0]())), b.getInt8(1), b.getInt8(0));
     }
 #endif
 };
