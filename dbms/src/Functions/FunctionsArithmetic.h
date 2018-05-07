@@ -661,7 +661,14 @@ struct IntExp2Impl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// library function
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        if (!arg->getType()->isIntegerTy())
+            throw Exception("IntExp2Impl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateShl(llvm::ConstantInt::get(arg->getType(), 1), arg);
+    }
 #endif
 };
 
