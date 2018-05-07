@@ -70,6 +70,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_COMPILE_CODE;
 }
 
 namespace
@@ -188,9 +189,11 @@ struct LLVMContext
 
 #if LLVM_VERSION_MAJOR >= 7
         llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
-        llvm::cantFail(compileLayer.addModule(module_key, std::move(module)));
+        if (compileLayer.addModule(module_key, std::move(module)))
+            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #else
-        llvm::cantFail(compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()));
+        if (compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()))
+            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #endif
 
         for (const auto & names : function_names)
@@ -199,7 +202,11 @@ struct LLVMContext
             {
                 if (auto address_or_error = symbol.getAddress())
                     symbols[names.first] = reinterpret_cast<void *>(*address_or_error);
+                else
+                    throw Exception("Cannot get an address of compiled symbol from a module", ErrorCodes::CANNOT_COMPILE_CODE);
             }
+            else
+                throw Exception("Cannot find compiled symbol in a module", ErrorCodes::CANNOT_COMPILE_CODE);
         }
     }
 };
