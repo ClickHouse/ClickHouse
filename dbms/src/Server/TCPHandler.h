@@ -117,8 +117,8 @@ private:
     QueryState state;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
-    
-    /// It is the name of the server that will be sent to the client. 
+
+    /// It is the name of the server that will be sent to the client.
     String server_display_name;
 
     void runImpl();

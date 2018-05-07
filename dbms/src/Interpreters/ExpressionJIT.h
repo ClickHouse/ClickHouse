@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Common/config.h>
-#include <Interpreters/ExpressionActions.h>
 
 #if USE_EMBEDDED_COMPILER
+
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {

@@ -638,20 +638,19 @@ public:
         if (arguments.size() == 1)
         {
             if (!arguments[0].type->isDateOrDateTime())
-                throw Exception{
-                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else if (arguments.size() == 2)
         {
             if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
                 || !checkDataType<DataTypeString>(arguments[1].type.get()))
-                throw Exception{
+                throw Exception(
                     "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument (optional) must be "
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -953,21 +952,20 @@ public:
         if (arguments.size() == 2)
         {
             if (!arguments[0].type->isDateOrDateTime())
-                throw Exception{
-                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+                throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
         else
         {
             if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
                 || !checkDataType<DataTypeString>(arguments[2].type.get()))
-                throw Exception{
+                throw Exception(
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument must be number. "
                     "The 3rd argument (optional) must be "
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if (checkDataType<DataTypeDate>(arguments[0].type.get()))
@@ -1299,8 +1297,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!checkDataType<DataTypeDateTime>(arguments[0].type.get()))
-            throw Exception{
-                "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+            throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                 ". Should be DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);

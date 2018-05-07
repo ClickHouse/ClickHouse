@@ -43,10 +43,12 @@ endif
 
 CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
 
-NINJA=$(shell which ninja)
+ifndef DISABLE_NINJA
+    NINJA=$(shell which ninja)
 ifneq ($(NINJA),)
-    CMAKE_FLAGS += -GNinja
-    export MAKE=$(NINJA)
+        CMAKE_FLAGS += -GNinja
+        export MAKE=$(NINJA)
+endif
 endif
 
 ifndef DH_VERBOSE

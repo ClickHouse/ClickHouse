@@ -2,15 +2,23 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <optional>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
 #include <Functions/IFunction.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+
+#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -31,6 +39,30 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
+#pragma GCC diagnostic pop
+
+
+/** HACK
+  * Allow to link with LLVM that was compiled without RTTI.
+  * This is the default option when you build LLVM from sources.
+  * We define fake symbols for RTTI to help linker.
+  * This assumes that enabling/disabling RTTI doesn't change memory layout of objects
+  *  in any significant way and it doesn't affect the code that isn't actually using RTTI.
+  * Proper solution: recompile LLVM with enabled RTTI.
+  */
+extern "C"
+{
+
+__attribute__((__weak__)) int _ZTIN4llvm13ErrorInfoBaseE = 0;
+__attribute__((__weak__)) int _ZTIN4llvm12MemoryBufferE = 0;
+
+}
+
+
+namespace ProfileEvents
+{
+    extern const Event CompileFunction;
+}
 
 namespace DB
 {
@@ -38,6 +70,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_COMPILE_CODE;
 }
 
 namespace
@@ -86,17 +119,38 @@ static void applyFunction(IFunctionBase & function, Field & value)
 struct LLVMContext
 {
     llvm::LLVMContext context;
+#if LLVM_VERSION_MAJOR >= 7
+    llvm::orc::ExecutionSession execution_session;
+    std::unique_ptr<llvm::Module> module;
+#else
     std::shared_ptr<llvm::Module> module;
+#endif
     std::unique_ptr<llvm::TargetMachine> machine;
     llvm::orc::RTDyldObjectLinkingLayer objectLayer;
     llvm::orc::IRCompileLayer<decltype(objectLayer), llvm::orc::SimpleCompiler> compileLayer;
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
+    std::unordered_map<std::string, void *> symbols;
 
     LLVMContext()
+#if LLVM_VERSION_MAJOR >= 7
+        : module(std::make_unique<llvm::Module>("jit", context))
+#else
         : module(std::make_shared<llvm::Module>("jit", context))
+#endif
         , machine(llvm::EngineBuilder().selectTarget())
+#if LLVM_VERSION_MAJOR >= 7
+        , objectLayer(execution_session, [](llvm::orc::VModuleKey)
+        {
+            return llvm::orc::RTDyldObjectLinkingLayer::Resources
+            {
+                std::make_shared<llvm::SectionMemoryManager>(),
+                std::make_shared<llvm::orc::NullResolver>()
+            };
+        })
+#else
         , objectLayer([]() { return std::make_shared<llvm::SectionMemoryManager>(); })
+#endif
         , compileLayer(objectLayer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
         , builder(context)
@@ -120,7 +174,40 @@ struct LLVMContext
         builder.populateFunctionPassManager(fpm);
         for (auto & function : *module)
             fpm.run(function);
-        llvm::cantFail(compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()));
+
+        /// name, mangled name
+        std::vector<std::pair<std::string, std::string>> function_names;
+        function_names.reserve(module->size());
+        for (const auto & function : *module)
+        {
+            std::string mangled_name;
+            llvm::raw_string_ostream mangled_name_stream(mangled_name);
+            llvm::Mangler::getNameWithPrefix(mangled_name_stream, function.getName(), layout);
+            mangled_name_stream.flush();
+            function_names.emplace_back(function.getName(), mangled_name);
+        }
+
+#if LLVM_VERSION_MAJOR >= 7
+        llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
+        if (compileLayer.addModule(module_key, std::move(module)))
+            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
+#else
+        if (compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()))
+            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
+#endif
+
+        for (const auto & names : function_names)
+        {
+            if (auto symbol = compileLayer.findSymbol(names.second, false))
+            {
+                if (auto address_or_error = symbol.getAddress())
+                    symbols[names.first] = reinterpret_cast<void *>(*address_or_error);
+                else
+                    throw Exception("Cannot get an address of compiled symbol from a module", ErrorCodes::CANNOT_COMPILE_CODE);
+            }
+            else
+                throw Exception("Cannot find compiled symbol in a module", ErrorCodes::CANNOT_COMPILE_CODE);
+        }
     }
 };
 
@@ -128,17 +215,12 @@ class LLVMPreparedFunction : public PreparedFunctionImpl
 {
     std::string name;
     std::shared_ptr<LLVMContext> context;
-    const void * function;
+    void * function;
 
 public:
     LLVMPreparedFunction(std::string name_, std::shared_ptr<LLVMContext> context)
-        : name(std::move(name_)), context(context)
-    {
-        std::string mangledName;
-        llvm::raw_string_ostream mangledNameStream(mangledName);
-        llvm::Mangler::getNameWithPrefix(mangledNameStream, name, context->layout);
-        function = reinterpret_cast<const void *>(context->compileLayer.findSymbol(mangledNameStream.str(), false).getAddress().get());
-    }
+        : name(std::move(name_)), context(context), function(context->symbols.at(name))
+    {}
 
     String getName() const override { return name; }
 
@@ -152,11 +234,11 @@ public:
         if (block_size)
         {
             std::vector<ColumnData> columns(arguments.size() + 1);
-            for (size_t i = 0; i < arguments.size(); i++)
+            for (size_t i = 0; i < arguments.size(); ++i)
             {
                 auto * column = block.getByPosition(arguments[i]).column.get();
                 if (!column)
-                    throw Exception("column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Column " + block.getByPosition(arguments[i]).name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
             columns[arguments.size()] = getColumnData(col_res.get());
@@ -168,6 +250,8 @@ public:
 
 static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
 {
+    ProfileEvents::increment(ProfileEvents::CompileFunction);
+
     auto & arg_types = f.getArgumentTypes();
     auto & b = context->builder;
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
@@ -181,7 +265,7 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
     b.SetInsertPoint(entry);
     std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
-    for (size_t i = 0; i <= arg_types.size(); i++)
+    for (size_t i = 0; i <= arg_types.size(); ++i)
     {
         auto & type = i == arg_types.size() ? f.getReturnType() : arg_types[i];
         auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
@@ -207,7 +291,7 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
         }
     }
     ValuePlaceholders arguments(arg_types.size());
-    for (size_t i = 0; i < arguments.size(); i++)
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
         arguments[i] = [&b, &col = columns[i], &type = arg_types[i]]() -> llvm::Value *
         {
@@ -290,7 +374,7 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
             input.push_back([&]() { return arg(builder, inputs); });
         auto * result = f.compile(builder, input);
         if (result->getType() != toNativeType(builder, f.getReturnType()))
-            throw Exception("function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
         return result;
     };
 }
@@ -317,7 +401,7 @@ public:
             const auto & names = action.argument_names;
             const auto & types = action.function->getArgumentTypes();
             std::vector<CompilableExpression> args;
-            for (size_t i = 0; i < names.size(); i++)
+            for (size_t i = 0; i < names.size(); ++i)
             {
                 auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
                 if (inserted.second)
@@ -394,7 +478,7 @@ public:
         Field right_ = right;
         Monotonicity result(true, true, true);
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
-        for (size_t i = 0; i < originals.size(); i++)
+        for (size_t i = 0; i < originals.size(); ++i)
         {
             Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
             if (!m.is_monotonic)
@@ -481,10 +565,11 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     }
 
     std::vector<ExpressionActions::Actions> fused(actions.size());
-    for (size_t i = 0; i < actions.size(); i++)
+    for (size_t i = 0; i < actions.size(); ++i)
     {
         if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(context->builder, *actions[i].function))
             continue;
+
         fused[i].push_back(actions[i]);
         if (dependents[i].find({}) != dependents[i].end())
         {
@@ -496,10 +581,12 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             actions[i].argument_names = fn->getArgumentNames();
             continue;
         }
+
         /// TODO: determine whether it's profitable to inline the function if there's more than one dependent.
         for (const auto & dep : dependents[i])
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
+
     context->finalize();
 }
 
