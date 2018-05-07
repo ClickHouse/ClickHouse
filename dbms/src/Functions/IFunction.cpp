@@ -12,9 +12,13 @@
 #include <ext/collection_cast.h>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 
 #if USE_EMBEDDED_COMPILER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
 #endif
 
 
@@ -26,6 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
+
 
 namespace
 {

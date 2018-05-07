@@ -42,7 +42,9 @@ LLVMSupport
 #PollyISL
 #PollyPPCG
 
-libtinfo.a
-
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
+
+if (NOT APPLE)
+    target_link_libraries(clickhouse-compiler-lib PRIVATE libtinfo.a)
+endif()

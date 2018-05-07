@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# For code formatting we have clang-format.
+#
+# But it's not sane to apply clang-format for whole code base,
+#  because it sometimes makes worse for properly formatted files.
+#
+# It's only reasonable to blindly apply clang-format only in cases
+#  when the code is likely to be out of style.
+#
+# For this purpose we have a script that will use very primitive heuristics
+#  (simple regexps) to check if the code is likely to have basic style violations.
+#  and then to run formatter only for the specified files.
+
+ROOT_PATH=$(git rev-parse --show-toplevel)
+
+find $ROOT_PATH/dbms -name '*.h' -or -name '*.cpp' |
+    grep -vP 'Compiler|build' |
+    xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|\t|^ {1,3}[^\* ]\S|\t'
+# a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | a tab character
