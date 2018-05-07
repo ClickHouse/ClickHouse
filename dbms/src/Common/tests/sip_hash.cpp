@@ -9,15 +9,15 @@
 /// Adapted version https://www.131002.net/siphash/siphash24.c
 
 /*
-   SipHash-2-4 output with
-   k = 00 01 02 ...
-   and
-   in = (empty string)
-   in = 00 (1 byte)
-   in = 00 01 (2 bytes)
-   in = 00 01 02 (3 bytes)
-   ...
-   in = 00 01 02 ... 3e (63 bytes)
+    SipHash-2-4 output with
+    k = 00 01 02 ...
+    and
+    in = (empty string)
+    in = 00 (1 byte)
+    in = 00 01 (2 bytes)
+    in = 00 01 02 (3 bytes)
+    ...
+    in = 00 01 02 ... 3e (63 bytes)
 */
 uint8_t vectors[64][8] =
 {
