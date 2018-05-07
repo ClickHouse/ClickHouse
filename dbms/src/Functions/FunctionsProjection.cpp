@@ -1,10 +1,10 @@
-#include <Functions/FunctionsProjection.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <memory>
 #include <vector>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionsProjection.h>
 
-namespace DB {
-
+namespace DB
+{
 FunctionPtr FunctionOneOrZero::create(const Context &)
 {
     return std::make_shared<FunctionOneOrZero>();
@@ -64,8 +64,8 @@ DataTypePtr FunctionProject::getReturnTypeImpl(const DataTypes & arguments) cons
 {
     if (!checkAndGetDataType<DataTypeUInt8>(arguments[1].get()))
     {
-        throw Exception("Illegal type " + arguments[1]->getName() + " of 2nd argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(
+            "Illegal type " + arguments[1]->getName() + " of 2nd argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
     return arguments[0];
 }
@@ -116,14 +116,16 @@ DataTypePtr FunctionBuildProjectionComposition::getReturnTypeImpl(const DataType
     {
         if (!checkAndGetDataType<DataTypeUInt8>(arguments[i].get()))
         {
-            throw Exception("Illegal type " + arguments[i]->getName() + " of " + std::to_string(i + 1) + " argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Illegal type " + arguments[i]->getName() + " of " + std::to_string(i + 1) + " argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
     return std::make_shared<DataTypeUInt8>();
 }
 
-void FunctionBuildProjectionComposition::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+void FunctionBuildProjectionComposition::executeImpl(
+    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const auto & first_projection_column = block.getByPosition(arguments[0]).column;
     const auto & second_projection_column = block.getByPosition(arguments[1]).column;
@@ -145,9 +147,9 @@ void FunctionBuildProjectionComposition::executeImpl(Block & block, const Column
     }
     if (current_reserve_index != second_projection_column->size())
     {
-        throw Exception("Second argument size is not appropriate: " + std::to_string(second_projection_column->size())
-                        + " instead of  " + std::to_string(current_reserve_index),
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Second argument size is not appropriate: " + std::to_string(second_projection_column->size()) + " instead of  "
+                + std::to_string(current_reserve_index),
+            ErrorCodes::BAD_ARGUMENTS);
     }
     block.getByPosition(result).column = std::move(col_res);
 }
@@ -162,7 +164,8 @@ String FunctionRestoreProjection::getName() const
     return name;
 }
 
-bool FunctionRestoreProjection::isVariadic() const {
+bool FunctionRestoreProjection::isVariadic() const
+{
     return true;
 }
 
