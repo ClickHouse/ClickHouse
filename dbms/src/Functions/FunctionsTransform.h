@@ -220,10 +220,8 @@ private:
                 auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
                 if (!out)
                 {
-                    throw Exception{
-                        "Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
-                        + ", must be " + in->getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
+                        + ", must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
                 }
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
