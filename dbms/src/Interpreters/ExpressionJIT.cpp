@@ -320,8 +320,8 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
     {
-        /// currently, stride is either 0 or size of native type
-        auto * is_const = b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
+        /// stride is either 0 or size of native type; output column is never constant; neither is at least one input
+        auto * is_const = &col == &columns.back() || columns.size() <= 2 ? b.getFalse() : b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
         col.data->addIncoming(b.CreateSelect(is_const, col.data, b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1)), cur_block);
         if (col.null)
             col.null->addIncoming(b.CreateSelect(is_const, col.null, b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1)), cur_block);
