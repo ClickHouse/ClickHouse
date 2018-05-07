@@ -173,10 +173,6 @@ else
     export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
 fi
 
-
-# bundled zookeepeer have broken asm
-[[ "$ARCH" == "arm64" ]] && EXTRAPACKAGES+=" libzookeeper-mt-dev "
-
 [[ "$DIST" != "bionic" ]] && EXTRAPACKAGES+=" ninja-build "
 
 # will test symbols
