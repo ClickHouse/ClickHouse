@@ -233,7 +233,7 @@ Date column must exist in the table and have type Date (not DateTime).
 It is used for internal data partitioning and works like some kind of index.
 
 If your source data doesn't have a column of type Date, but has a DateTime column, you may add values for Date column while loading,
- or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
+    or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
 If your source data doesn't have any date or time, you may just pass any constant for a date column while loading.
 
 Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.

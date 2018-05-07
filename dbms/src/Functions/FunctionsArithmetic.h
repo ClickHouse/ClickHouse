@@ -1114,17 +1114,13 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception{
-                "Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 2.",
-                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be at least 2.", ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
         const auto first_arg = arguments.front().get();
 
         if (!first_arg->isInteger())
-            throw Exception{
-                "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception{"Illegal type " + first_arg->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 
         for (const auto i : ext::range(1, arguments.size()))
@@ -1132,9 +1128,7 @@ public:
             const auto pos_arg = arguments[i].get();
 
             if (!pos_arg->isUnsignedInteger())
-                throw Exception{
-                    "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception{"Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt8>();
@@ -1152,9 +1146,7 @@ public:
             && !execute<Int16>(block, arguments, result, value_col)
             && !execute<Int32>(block, arguments, result, value_col)
             && !execute<Int64>(block, arguments, result, value_col))
-            throw Exception{
-                "Illegal column " + value_col->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + value_col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
 private:
@@ -1255,9 +1247,7 @@ private:
                 && !addToMaskImpl<UInt16>(mask, pos_col)
                 && !addToMaskImpl<UInt32>(mask, pos_col)
                 && !addToMaskImpl<UInt64>(mask, pos_col))
-                throw Exception{
-                    "Illegal column " + pos_col->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception{"Illegal column " + pos_col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
         return mask;

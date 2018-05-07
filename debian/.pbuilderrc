@@ -174,9 +174,6 @@ else
 fi
 
 
-# bundled zookeepeer have broken asm
-[[ "$ARCH" == "arm64" ]] && EXTRAPACKAGES+=" libzookeeper-mt-dev "
-
 # will test symbols
 #EXTRAPACKAGES+=" gdb "
 
