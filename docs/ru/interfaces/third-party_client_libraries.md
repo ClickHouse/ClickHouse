@@ -36,5 +36,7 @@
 - Elixir
   - [clickhousex](https://github.com/appodeal/clickhousex/)
   - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
-
+- Java
+  - [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
+  
 Библиотеки не тестировались нами. Порядок перечисления произвольный.
