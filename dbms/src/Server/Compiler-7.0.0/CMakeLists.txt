@@ -10,11 +10,6 @@ target_compile_options(clickhouse-compiler-lib PRIVATE -fno-rtti -fno-exceptions
 
 llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
 
-# We link statically with zlib, and LLVM (sometimes) tries to bring its own dependency.
-list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
-# Wrong library in freebsd:
-list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-l/usr/lib/libexecinfo.so")
-
 message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
 target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
