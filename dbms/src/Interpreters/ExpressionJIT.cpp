@@ -196,7 +196,7 @@ struct LLVMContext
         if (compileLayer.addModule(module_key, std::move(module)))
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #else
-        if (compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()))
+        if (!compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()))
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #endif
 
