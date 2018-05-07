@@ -3,21 +3,23 @@
 #include <string>
 #include <Interpreters/ExpressionAnalyzer.h>
 
-namespace DB {
-
+namespace DB
+{
 class ExpressionAnalyzer;
 
 struct ScopeStack;
 
-namespace ErrorCodes {
-extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
-extern const int ILLEGAL_PROJECTION_MANIPULATOR;
+namespace ErrorCodes
+{
+    extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
+    extern const int ILLEGAL_PROJECTION_MANIPULATOR;
 }
 
 /*
  * This is a base class for the ConditionalTree. Look at the description of ConditionalTree.
  */
-struct ProjectionManipulatorBase {
+struct ProjectionManipulatorBase
+{
 public:
     virtual bool tryToGetFromUpperProjection(const std::string & column_name) = 0;
 
@@ -37,9 +39,11 @@ using ProjectionManipulatorPtr = std::shared_ptr<ProjectionManipulatorBase>;
  * For the better understanding of what ProjectionManipulator does,
  * look at the description of ConditionalTree.
  */
-struct DefaultProjectionManipulator : public ProjectionManipulatorBase {
+struct DefaultProjectionManipulator : public ProjectionManipulatorBase
+{
 private:
     ScopeStack & scopes;
+
 public:
     explicit DefaultProjectionManipulator(ScopeStack & scopes);
 
@@ -86,9 +90,11 @@ public:
  *   understand whether we need to scan the expression deeply, or can it be easily computed just with the projection
  *   from one of the higher projection layers.
  */
-struct ConditionalTree : public ProjectionManipulatorBase {
+struct ConditionalTree : public ProjectionManipulatorBase
+{
 private:
-    struct Node {
+    struct Node
+    {
         Node();
 
         size_t getParentNode() const;
@@ -103,21 +109,20 @@ private:
     ScopeStack & scopes;
     const Context & context;
     std::unordered_map<std::string, size_t> projection_expression_index;
+
 private:
     std::string getColumnNameByIndex(const std::string & col_name, size_t node) const;
 
-    std::string getProjectionColumnName(const std::string & first_projection_expr,
-                                        const std::string & second_projection_expr) const;
+    std::string getProjectionColumnName(const std::string & first_projection_expr, const std::string & second_projection_expr) const;
 
     std::string getProjectionColumnName(size_t first_index, size_t second_index) const;
 
-    void buildProjectionCompositionRecursive(const std::vector<size_t> & path,
-                                             size_t child_index,
-                                             size_t parent_index);
+    void buildProjectionCompositionRecursive(const std::vector<size_t> & path, size_t child_index, size_t parent_index);
 
     void buildProjectionComposition(size_t child_node, size_t parent_node);
 
     std::string getProjectionSourceColumn(size_t node) const;
+
 public:
     ConditionalTree(ScopeStack & scopes, const Context & context);
 
@@ -128,11 +133,7 @@ public:
     std::string buildRestoreProjectionAndGetName(size_t levels_up);
 
     void restoreColumn(
-        const std::string & default_values_name,
-        const std::string & new_values_name,
-        size_t levels_up,
-        const std::string & result_name
-    );
+        const std::string & default_values_name, const std::string & new_values_name, size_t levels_up, const std::string & result_name);
 
     void goUp(size_t levels_up);
 
@@ -150,7 +151,8 @@ using ConditionalTreePtr = std::shared_ptr<ConditionalTree>;
  * This class has two inherited classes: DefaultProjectionAction, which does nothing, and AndOperatorProjectionAction,
  * which represents how function "and" uses projection manipulator.
  */
-class ProjectionActionBase {
+class ProjectionActionBase
+{
 public:
     /*
      * What to do before scanning the function argument (each of it)
@@ -177,7 +179,8 @@ public:
 
 using ProjectionActionPtr = std::shared_ptr<ProjectionActionBase>;
 
-class DefaultProjectionAction : public ProjectionActionBase {
+class DefaultProjectionAction : public ProjectionActionBase
+{
 public:
     void preArgumentAction() final;
 
@@ -191,7 +194,8 @@ public:
 /*
  * This is a specification of ProjectionAction specifically for the 'and' operation
  */
-class AndOperatorProjectionAction : public ProjectionActionBase {
+class AndOperatorProjectionAction : public ProjectionActionBase
+{
 private:
     ScopeStack & scopes;
     ProjectionManipulatorPtr projection_manipulator;
@@ -205,11 +209,10 @@ private:
     std::string getFinalColumnName();
 
     void createZerosColumn(const std::string & restore_projection_name);
+
 public:
-    AndOperatorProjectionAction(ScopeStack & scopes,
-                                ProjectionManipulatorPtr projection_manipulator,
-                                const std::string & expression_name,
-                                const Context& context);
+    AndOperatorProjectionAction(
+        ScopeStack & scopes, ProjectionManipulatorPtr projection_manipulator, const std::string & expression_name, const Context & context);
 
     /*
      * Before scanning each argument, we should go to the next projection layer. For example, if the expression is
@@ -241,9 +244,9 @@ public:
  * it returns the pointer to AndOperatorProjectionAction.
  */
 ProjectionActionPtr getProjectionAction(const std::string & node_name,
-                                        ScopeStack & scopes,
-                                        ProjectionManipulatorPtr projection_manipulator,
-                                        const std::string & expression_name,
-                                        const Context & context);
+    ScopeStack & scopes,
+    ProjectionManipulatorPtr projection_manipulator,
+    const std::string & expression_name,
+    const Context & context);
 
 }
