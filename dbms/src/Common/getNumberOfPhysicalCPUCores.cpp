@@ -1,6 +1,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <thread>
 #include <fstream>
+#include <math.h>
 
 #if defined(__x86_64__)
 
@@ -27,7 +28,7 @@ unsigned getNumberOfPhysicalCPUCores()
         // If a valid value is present
         if(allocated_cpus_share_int > -1)
         {
-	    unsigned int allocated_cpus = allocated_cpus_share_int / 1000;
+            unsigned int allocated_cpus = round (allocated_cpus_share_int / 1000);
             return allocated_cpus;
         }
     }
