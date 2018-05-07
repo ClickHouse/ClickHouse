@@ -388,11 +388,6 @@ bool StorageMergeTree::merge(
         if (!selected)
             return false;
 
-        /// TODO: move to FuturePart initialization.
-        Int64 mutation_version = getCurrentMutationVersion(future_part.parts.front(), lock);
-        if (future_part.part_info.min_block < mutation_version)
-            future_part.part_info.version = mutation_version;
-
         merging_tagger.emplace(future_part.parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(future_part.parts), *this);
     }
 
