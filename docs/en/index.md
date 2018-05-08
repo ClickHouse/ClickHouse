@@ -39,7 +39,7 @@ We'll say that the following is true for the OLAP (online analytical processing)
 - Data is updated in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
 - Data is added to the DB but is not modified.
 - For reads, quite a large number of rows are extracted from the DB, but only a small subset of columns.
-- Tables are "wide", meaning they contain a large number of columns.
+- Tables are "wide," meaning they contain a large number of columns.
 - Queries are relatively rare (usually hundreds of queries per server or less per second).
 - For simple queries, latencies around 50 ms are allowed.
 - Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
@@ -120,3 +120,4 @@ There are two ways to do this:
 This is not done in "normal" databases, because it doesn't make sense when running simple queries. However, there are exceptions. For example, MemSQL uses code generation to reduce latency when processing SQL queries. (For comparison, analytical DBMSs require optimization of throughput, not latency.)
 
 Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
+

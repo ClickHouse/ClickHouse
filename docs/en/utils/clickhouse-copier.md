@@ -87,34 +87,32 @@ Parameters:
          They are overlaid by <settings_pull/> and <settings_push/> respectively. -->
     <settings>
         <connect_timeout>3</connect_timeout>
-        <!-- Sync insert is set forcibly, but leave it here just in case. -->
+        <!-- Sync insert is set forcibly, leave it here just in case. -->
         <insert_distributed_sync>1</insert_distributed_sync>
     </settings>
 
-    <!-- Copying task descriptions.
-         You can specify several table tasks in the same task description (in the same ZooKeeper node), and they will be performed
-         sequentially.
+    <!-- Copying description of tasks.
+         You can specify several table tasks in the same task description (in the same ZooKeeper node), and they will be performed         sequentially.
     -->
     <tables>
         <!-- A table task that copies one table. -->
         <table_hits>
-            <!-- Source cluster name (from the <remote_servers/> section) and tables in it that should be copied. -->
+            <!-- Source cluster name (from the <remote_servers/> section) and tables in it that should be copied -->
             <cluster_pull>source_cluster</cluster_pull>
             <database_pull>test</database_pull>
             <table_pull>hits</table_pull>
 
-            <!-- Destination cluster name and tables where the data should be inserted. -->
+            <!-- Destination cluster name and tables in which the data should be inserted -->
             <cluster_push>destination_cluster</cluster_push>
             <database_push>test</database_push>
             <table_push>hits2</table_push>
 
-            <!-- Engine for destination tables.
-                 If the destination tables have not been created yet, workers create them using column definitions from source tables and the engine
-                 definition from here.
+            <!-- Engine of destination tables.
+                 If the destination tables have not been created yet, workers create them using column definitions from source tables and the engine                 definition from here.
 
                  NOTE: If the first worker starts to insert data and detects that the destination partition is not empty, then the partition will
-                 be dropped and refilled. Take this into account if you already have some data in destination tables. You can directly
-                 specify partitions that should be copied in <enabled_partitions/>. They should be in quoted format like the partition column in the
+                 be dropped and refilled. Take this into account if you already have some data in destination tables. You can directly 
+                 specify partitions that should be copied in <enabled_partitions/>. They should be in quoted format like the partition column in the                 
                  system.parts table.
             -->
             <engine>
@@ -123,21 +121,22 @@ Parameters:
             ORDER BY (CounterID, EventDate)
             </engine>
 
-            <!-- The sharding key used to insert data to the destination cluster. -->
+            <!-- Sharding key used to insert data to destination cluster -->
             <sharding_key>jumpConsistentHash(intHash64(UserID), 2)</sharding_key>
 
-            <!-- Optional expression that filters data while pulling it from source servers. -->
+            <!-- Optional expression that filter data while pull them from source servers -->
             <where_condition>CounterID != 0</where_condition>
 
-            <!-- This section specifies partitions that should be copied. Other partitions will be ignored.
+            <!-- This section specifies partitions that should be copied, other partition will be ignored.
                  Partition names should have the same format as
-                the partition column in the system.parts table (i.e. quoted text).
-                 Since the partition key might be different for the source and destination cluster,
-                 these partition names specify the destination partitions.
+                 partition column of system.parts table (i.e. a quoted text).
+                 Since partition key of source and destination cluster could be different,
+                 these partition names specify destination partitions.
 
-                 Note: Although this section is optional (if it omitted, all partitions will be copied), it is strongly recommended to specify the partitions explicitly.
-                 If you already have some partitions ready on the destination cluster, they
-                 will be removed at the start of the copying, because they will be interpreted
+                 Note: Although this section is optional (if it omitted, all partitions will be copied), 
+                 it is strongly recommended to specify the partitions explicitly.
+                 If you already have some partitions ready on the destination cluster, they                 
+                 will be removed at the start of the copying, because they will be interpreted                 
                  as unfinished data from the previous copying.
             -->
             <enabled_partitions>
