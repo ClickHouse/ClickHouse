@@ -745,13 +745,9 @@ int32_t ZooKeeper::tryMultiNoThrow(const Requests & requests, Responses & respon
     {
         return multiImpl(requests, responses);
     }
-    catch (ZooKeeperImpl::Exception & e)
+    catch (const ZooKeeperImpl::Exception & e)
     {
         return e.code;
-    }
-    catch (...)
-    {
-        throw;
     }
 }
 

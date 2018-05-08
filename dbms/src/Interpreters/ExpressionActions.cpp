@@ -286,37 +286,35 @@ void ExpressionAction::prepare(Block & sample_block)
     }
 }
 
-size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const {
+size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
+{
     auto it = input_rows_counts.find(row_projection_column);
-    size_t projection_space_dimention;
+    size_t projection_space_dimension;
     if (it == input_rows_counts.end())
     {
         const auto & projection_column = block.getByName(row_projection_column).column;
-        projection_space_dimention = 0;
+        projection_space_dimension = 0;
         for (size_t i = 0; i < projection_column->size(); ++i)
-        {
-            if (projection_column->getBoolRepresentation(i) > 0)
-            {
-                ++projection_space_dimention;
-            }
-        }
+            if (projection_column->getBool(i))
+                ++projection_space_dimension;
 
-        input_rows_counts[row_projection_column] = projection_space_dimention;
+        input_rows_counts[row_projection_column] = projection_space_dimension;
     }
     else
     {
-        projection_space_dimention = it->second;
+        projection_space_dimension = it->second;
     }
-    size_t parent_space_dimention;
+    size_t parent_space_dimension;
     if (row_projection_column.empty())
     {
-        parent_space_dimention = input_rows_counts[""];
+        parent_space_dimension = input_rows_counts[""];
     }
     else
     {
-        parent_space_dimention = block.getByName(row_projection_column).column->size();
+        parent_space_dimension = block.getByName(row_projection_column).column->size();
     }
-    return is_row_projection_complementary ? parent_space_dimention - projection_space_dimention : projection_space_dimention;
+
+    return is_row_projection_complementary ? parent_space_dimension - projection_space_dimension : projection_space_dimension;
 }
 
 void ExpressionAction::execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const

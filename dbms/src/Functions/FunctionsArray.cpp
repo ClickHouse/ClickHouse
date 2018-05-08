@@ -1962,8 +1962,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
     const DataTypePtr & arg = arguments.front();
 
     if (!arg->isUnsignedInteger())
-        throw Exception{
-            "Illegal type " + arg->getName() + " of argument of function " + getName(),
+        throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
     return std::make_shared<DataTypeArray>(arg);
@@ -1982,17 +1981,15 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
             {
                 const auto sum = lhs + rhs;
                 if (sum < lhs)
-                    throw Exception{
-                        "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
                         ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
                 return sum;
             });
 
         if (total_values > max_elements)
-            throw Exception{
-                "A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
+            throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+                " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -2027,9 +2024,7 @@ void FunctionRange::executeImpl(Block & block, const ColumnNumbers & arguments, 
         !executeInternal<UInt32>(block, col, result) &&
         !executeInternal<UInt64>(block, col, result))
     {
-        throw Exception{
-            "Illegal column " + col->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN};
+        throw Exception{"Illegal column " + col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 }
 

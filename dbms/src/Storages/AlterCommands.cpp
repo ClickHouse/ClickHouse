@@ -26,11 +26,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     if (type == ADD_COLUMN)
     {
         if (columns_description.getAll().contains(column_name))
-        {
-            throw Exception{
-                "Cannot add column " + column_name + ": column with this name already exists",
-                ErrorCodes::ILLEGAL_COLUMN};
-        }
+            throw Exception{"Cannot add column " + column_name + ": column with this name already exists", ErrorCodes::ILLEGAL_COLUMN};
 
         const auto add_column = [this] (NamesAndTypesList & columns)
         {
@@ -196,17 +192,13 @@ void AlterCommands::validate(IStorage * table, const Context & context)
             if (command.type == AlterCommand::ADD_COLUMN)
             {
                 if (std::end(all_columns) != column_it)
-                    throw Exception{
-                        "Cannot add column " + column_name + ": column with this name already exists",
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Cannot add column " + column_name + ": column with this name already exists", ErrorCodes::ILLEGAL_COLUMN};
             }
             else if (command.type == AlterCommand::MODIFY_COLUMN)
             {
 
                 if (std::end(all_columns) == column_it)
-                    throw Exception{
-                        "Wrong column name. Cannot find column " + column_name + " to modify",
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Wrong column name. Cannot find column " + column_name + " to modify", ErrorCodes::ILLEGAL_COLUMN};
 
                 all_columns.erase(column_it);
                 defaults.erase(column_name);

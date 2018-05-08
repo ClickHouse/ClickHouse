@@ -1166,10 +1166,8 @@ private:
             || executeConst(block, arguments, result)
             || executeString(block, arguments, result)
             || executeGeneric(block, arguments, result)))
-            throw Exception{
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 };
 
