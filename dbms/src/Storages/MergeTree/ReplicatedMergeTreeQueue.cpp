@@ -862,14 +862,17 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
 Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const MergeTreePartInfo & part_info, std::lock_guard<std::mutex> &) const
 {
+    if (part_info.version)
+        return part_info.version;
+
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
-        return -1;
+        return 0;
 
-    Int64 data_version = part_info.version ? part_info.version : part_info.min_block;
-    auto it = in_partition->second.upper_bound(data_version);
+    auto it = in_partition->second.upper_bound(part_info.min_block);
     if (it == in_partition->second.begin())
-        return -1; /// 0 can be a valid mutation block number.
+        return 0;
+
     --it;
     return it->first;
 }
