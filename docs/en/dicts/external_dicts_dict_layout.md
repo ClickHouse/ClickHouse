@@ -6,7 +6,7 @@ There are a [variety of ways](#dicts-external_dicts_dict_layout-manner) to store
 
 We recommend [flat](#dicts-external_dicts_dict_layout-flat), [hashed](#dicts-external_dicts_dict_layout-hashed)and[complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section " [cache](#dicts-external_dicts_dict_layout-cache)".
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section "[cache](#dicts-external_dicts_dict_layout-cache)".
 
 There are several ways to improve dictionary performance:
 
