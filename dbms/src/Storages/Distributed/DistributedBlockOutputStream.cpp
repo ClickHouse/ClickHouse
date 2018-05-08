@@ -28,7 +28,6 @@
 #include <ext/scope_guard.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/DateTimeFormatter.h>
 
 #include <future>
 #include <condition_variable>
@@ -354,7 +353,6 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
     inserted_blocks += 1;
     inserted_rows += block.rows();
-    last_block_finish_time = time(nullptr);
 }
 
 
@@ -370,14 +368,6 @@ void DistributedBlockOutputStream::writeSuffix()
 
     if (insert_sync && pool)
     {
-        auto format_ts = [] (time_t ts) {
-            WriteBufferFromOwnString wb;
-            writeDateTimeText(ts, wb);
-            return wb.str();
-        };
-
-        LOG_DEBUG(log, "Writing suffix, the last block was at " << format_ts(last_block_finish_time));
-
         finished_jobs_count = 0;
         for (auto & shard_jobs : per_shard_jobs)
             for (JobReplica & job : shard_jobs.replicas_jobs)

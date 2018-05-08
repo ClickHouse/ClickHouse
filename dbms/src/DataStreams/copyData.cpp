@@ -1,9 +1,6 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
-#include <Common/Stopwatch.h>
-#include <common/logger_useful.h>
-#include <iomanip>
 
 
 namespace DB
@@ -25,29 +22,8 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCall
     from.readPrefix();
     to.writePrefix();
 
-    size_t num_blocks = 0;
-    double total_blocks_time = 0;
-    size_t slowest_block_number = 0;
-    double slowest_block_time = 0;
-
-    while (true)
+    while (Block block = from.read())
     {
-        Stopwatch watch;
-        Block block = from.read();
-        double elapsed = watch.elapsedSeconds();
-
-        if (num_blocks == 0 || elapsed > slowest_block_time)
-        {
-            slowest_block_number = num_blocks;
-            slowest_block_time = elapsed;
-        }
-
-        total_blocks_time += elapsed;
-        ++num_blocks;
-
-        if (!block)
-            break;
-
         if (is_cancelled())
             break;
 
@@ -71,28 +47,8 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCall
     if (is_cancelled())
         return;
 
-    auto log = &Poco::Logger::get("copyData");
-    bool print_dbg = num_blocks > 2;
-
-    if (print_dbg)
-    {
-        LOG_DEBUG(log, "Read " << num_blocks << " blocks. It took " << std::fixed << total_blocks_time << " seconds, average "
-                               << std::fixed << total_blocks_time / num_blocks * 1000 << " ms, the slowest block #" << slowest_block_number
-                               << " was read for " << std::fixed << slowest_block_time * 1000 << " ms ");
-    }
-
-    {
-        Stopwatch watch;
-        to.writeSuffix();
-        if (num_blocks > 1)
-            LOG_DEBUG(log, "It took " << std::fixed << watch.elapsedSeconds() << " for writeSuffix()");
-    }
-    {
-        Stopwatch watch;
-        from.readSuffix();
-        if (num_blocks > 1)
-            LOG_DEBUG(log, "It took " << std::fixed << watch.elapsedSeconds() << " seconds for readSuffix()");
-    }
+    from.readSuffix();
+    to.writeSuffix();
 }
 
 
