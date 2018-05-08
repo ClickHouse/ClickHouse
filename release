@@ -33,7 +33,7 @@ while [[ $1 == --* ]]
 do
     if [[ $1 == '--test' ]]; then
         TEST='yes'
-        VERSION_POSTFIX+=-test
+        VERSION_POSTFIX+=+test
         shift
     elif [[ $1 == '--check-build-dependencies' ]]; then
         DEBUILD_NODEPS_OPTIONS=""
@@ -66,7 +66,7 @@ done
 if [ -n "$SANITIZER" ]
 then
     CMAKE_BUILD_TYPE=$SANITIZER
-    VERSION_POSTFIX+=-${SANITIZER,,}
+    VERSION_POSTFIX+=+${SANITIZER,,}
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
@@ -75,15 +75,11 @@ then
     EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 lld-5.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
-    VERSION_POSTFIX+=-$BUILD_TYPE
+    VERSION_POSTFIX+=+$BUILD_TYPE
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
     LIBTCMALLOC_OPTS="-DDEBUG_TCMALLOC=1"
-    VERSION_POSTFIX+=-$BUILD_TYPE
-fi
-
-if [ -z "$THREAD_COUNT" ] ; then
-    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4`
+    VERSION_POSTFIX+=+$BUILD_TYPE
 fi
 
 CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
@@ -97,11 +93,11 @@ gen_changelog "$REVISION" "" "$AUTHOR" ""
 
 if [ -z "$USE_PBUILDER" ] ; then
     # Build (only binary packages).
-    debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
+    debuild -e PATH -e SSH_AUTH_SOCK \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
-    export DIST=${DIST:=artful}
+    export DIST=${DIST:=bionic}
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
 

@@ -316,4 +316,3 @@ SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCit
 
 SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
 ```
-

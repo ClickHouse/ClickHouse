@@ -4,6 +4,7 @@ Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake3 | cmake,
+               ninja-build,
                gcc-7 [amd64 i386], g++-7 [amd64 i386],
                clang-6.0 [arm64 armhf] | clang-5.0 [arm64 armhf],
                libc6-dev,

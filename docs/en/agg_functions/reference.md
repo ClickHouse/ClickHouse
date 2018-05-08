@@ -19,7 +19,7 @@ In some cases, you can rely on the order of execution. This applies to cases whe
 
 When a `SELECT` query has the `GROUP BY` clause or at least one aggregate function, ClickHouse (in contrast to MySQL) requires that all expressions in the `SELECT`, `HAVING`, and `ORDER BY` clauses be calculated from keys or from aggregate functions. In other words, each column selected from the table must be used either in keys or inside aggregate functions. To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
 
-## anyHeavy
+## anyHeavy(x)
 
 Selects a frequently occurring value using the [heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf) algorithm. If there is a value that occurs more than in half the cases in each of the query's execution threads, this value is returned. Normally, the result is nondeterministic.
 
@@ -28,7 +28,6 @@ anyHeavy(column)
 ```
 
 **Arguments**
-
 - `column` – The column name.
 
 **Example**
@@ -39,6 +38,7 @@ Take the [OnTime](../getting_started/example_datasets/ontime.md#example_datasets
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
+
 ```
 ┌───res─┐
 │ 19690 │
@@ -169,7 +169,7 @@ In some cases, you can still rely on the order of execution. This applies to cas
 
 <a name="agg_functions_groupArrayInsertAt"></a>
 
-## groupArrayInsertAt
+## groupArrayInsertAt(x)
 
 Inserts a value into the array in the specified position.
 
@@ -256,7 +256,7 @@ The performance of the function is lower than for ` quantile`, ` quantileTiming`
 
 The result depends on the order of running the query, and is nondeterministic.
 
-## median
+## median(x)
 
 All the quantile functions have corresponding median functions: `median`, `medianDeterministic`, `medianTiming`, `medianTimingWeighted`, `medianExact`, `medianExactWeighted`, `medianTDigest`. They are synonyms and their behavior is identical.
 
@@ -286,11 +286,11 @@ The result is equal to the square root of `varSamp(x)`.
 
 The result is equal to the square root of `varPop(x)`.
 
-## topK
+## topK(N)(column)
 
 Returns an array of the most frequent values in the specified column. The resulting array is sorted in descending order of frequency of values (not by the values themselves).
 
-Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+Implements the [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
 ```
 topK(N)(column)
@@ -301,7 +301,6 @@ This function doesn't provide a guaranteed result. In certain situations, errors
 We recommend using the `N < 10 ` value; performance is reduced with large `N` values. Maximum value of ` N = 65536`.
 
 **Arguments**
-
 - 'N' is the number of values.
 - ' x ' – The column.
 
