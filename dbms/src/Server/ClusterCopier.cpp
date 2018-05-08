@@ -1084,7 +1084,9 @@ protected:
                     if (num_bad_version_errors > 3)
                     {
                         LOG_DEBUG(log, "A concurrent worker has just been added, will check free worker slots again");
-                        std::this_thread::sleep_for(default_sleep_time);
+                        std::chrono::milliseconds random_sleep_time(std::uniform_int_distribution<int>(1, 1000)(task_cluster->random_engine));
+                        std::this_thread::sleep_for(random_sleep_time);
+                        num_bad_version_errors = 0;
                     }
                 }
                 else
@@ -1115,7 +1117,7 @@ protected:
 
         try
         {
-            std::vector<zkutil::ZooKeeper::GetFuture> get_futures;
+            std::vector<zkutil::ZooKeeper::FutureGet> get_futures;
             for (const String & path : status_paths)
                 get_futures.emplace_back(zookeeper->asyncGet(path));
 
@@ -1124,10 +1126,10 @@ protected:
             {
                 auto res = future.get();
 
-                TaskStateWithOwner status = TaskStateWithOwner::fromString(res.value);
+                TaskStateWithOwner status = TaskStateWithOwner::fromString(res.data);
                 if (status.state != TaskState::Finished)
                 {
-                    LOG_INFO(log, "The task " << res.value << " is being rewritten by " << status.owner << ". Partition will be rechecked");
+                    LOG_INFO(log, "The task " << res.data << " is being rewritten by " << status.owner << ". Partition will be rechecked");
                     return false;
                 }
 
@@ -1362,12 +1364,12 @@ protected:
                 expected_shards.emplace_back(shard);
 
                 /// Do not sleep if there is a sequence of already processed shards to increase startup
-                bool sleep_before_execution = !previous_shard_is_instantly_finished && shard->priority.is_remote;
+                bool is_unprioritized_task = !previous_shard_is_instantly_finished && shard->priority.is_remote;
                 PartitionTaskStatus task_status = PartitionTaskStatus::Error;
                 bool was_error = false;
                 for (size_t try_num = 0; try_num < max_shard_partition_tries; ++try_num)
                 {
-                    task_status = tryProcessPartitionTask(partition, sleep_before_execution);
+                    task_status = tryProcessPartitionTask(partition, is_unprioritized_task);
 
                     /// Exit if success
                     if (task_status == PartitionTaskStatus::Finished)
@@ -1453,13 +1455,13 @@ protected:
         Error,
     };
 
-    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition, bool sleep_before_execution)
+    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition, bool is_unprioritized_task)
     {
         PartitionTaskStatus res;
 
         try
         {
-            res = processPartitionTaskImpl(task_partition, sleep_before_execution);
+            res = processPartitionTaskImpl(task_partition, is_unprioritized_task);
         }
         catch (...)
         {
@@ -1480,7 +1482,7 @@ protected:
         return res;
     }
 
-    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition, bool sleep_before_execution)
+    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition, bool is_unprioritized_task)
     {
         TaskShard & task_shard = task_partition.task_shard;
         TaskTable & task_table = task_shard.task_table;
@@ -1519,7 +1521,7 @@ protected:
         };
 
         /// Load balancing
-        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, sleep_before_execution);
+        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, is_unprioritized_task);
 
         LOG_DEBUG(log, "Processing " << current_task_status_path);
 
@@ -1534,7 +1536,7 @@ protected:
             }
             catch (...)
             {
-                tryLogCurrentException(log, "An error occurred while clean partition");
+                tryLogCurrentException(log, "An error occurred when clean partition");
             }
 
             return PartitionTaskStatus::Error;
@@ -1653,8 +1655,7 @@ protected:
             bool inject_fault = false;
             if (copy_fault_probability > 0)
             {
-                std::uniform_real_distribution<> get_urand(0, 1);
-                double value = get_urand(task_table.task_cluster.random_engine);
+                double value = std::uniform_real_distribution<>(0, 1)(task_table.task_cluster.random_engine);
                 inject_fault = value < copy_fault_probability;
             }
 
@@ -2179,8 +2180,7 @@ void ClusterCopierApp::mainImpl()
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
 
-    std::unique_ptr<ClusterCopier> copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
-
+    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->init();
