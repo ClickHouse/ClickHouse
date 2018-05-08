@@ -43,6 +43,7 @@ cmake-build-*
 # Python cache
 *.pyc
 __pycache__
+*.pytest_cache
 
 # ignore generated files
 *-metrika-yandex

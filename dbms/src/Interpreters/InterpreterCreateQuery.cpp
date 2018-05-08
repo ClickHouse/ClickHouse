@@ -522,7 +522,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
         else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
              return {};
-             
+
         res = StorageFactory::instance().get(create,
             data_path,
             table_name,

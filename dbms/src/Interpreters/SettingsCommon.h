@@ -730,7 +730,8 @@ public:
         return String(1, value);
     }
 
-    void set(char x) {
+    void set(char x)
+    {
         value = x;
         changed = true;
     }

@@ -774,10 +774,7 @@ void MergeTreeData::clearOldPartsFromFilesystem()
 void MergeTreeData::setPath(const String & new_full_path)
 {
     if (Poco::File{new_full_path}.exists())
-        throw Exception{
-            "Target path already exists: " + new_full_path,
-            /// @todo existing target can also be a file, not directory
-            ErrorCodes::DIRECTORY_ALREADY_EXISTS};
+        throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
 
     Poco::File(full_path).renameTo(new_full_path);
 
@@ -1008,7 +1005,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 /// This is temporary name for expression. TODO Invent the name more safely.
                 const String new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
+                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }, "", false));
 
                 const auto & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(
