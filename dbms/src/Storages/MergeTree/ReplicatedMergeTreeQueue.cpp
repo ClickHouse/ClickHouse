@@ -3,6 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -455,6 +456,18 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
     auto new_current_inserts = loadCurrentInserts(zookeeper);
 
+    String new_last_quorum_part;
+    zookeeper->tryGet(zookeeper_path + "/quorum/last_part", new_last_quorum_part);
+
+    String new_inprogress_quorum_part;
+    String quorum_status_str;
+    if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_status_str))
+    {
+        ReplicatedMergeTreeQuorumEntry quorum_status;
+        quorum_status.fromString(quorum_status_str);
+        new_inprogress_quorum_part = quorum_status.part_name;
+    }
+
     Strings new_log_entries = zookeeper->getChildren(zookeeper_path + "/log");
     new_log_entries.erase(
         std::remove_if(new_log_entries.begin(), new_log_entries.end(),
@@ -476,7 +489,12 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
         std::lock_guard lock(mutex);
 
         virtual_parts = next_virtual_parts;
+
         current_inserts = new_current_inserts;
+
+        last_quorum_part = new_last_quorum_part;
+        inprogress_quorum_part = new_inprogress_quorum_part;
+
         for (const String & new_part : new_virtual_parts)
             next_virtual_parts.add(new_part);
     }
@@ -965,45 +983,66 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-bool ReplicatedMergeTreeQueue::canMergeParts(const MergeTreeDataPart & left, const MergeTreeDataPart & right, String * out_reason) const
+bool ReplicatedMergeTreeQueue::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String * out_reason) const
 {
-    if (left.name == right.name)
-        return false;
-
-    if (left.info.partition_id != right.info.partition_id)
+    /// The following two cases are likely caused by a bug in the merge selector,
+    /// but we still can return sensible result in this case.
+    if (left->name == right->name)
     {
-        /// If we end here, most likely it is a bug in the merge selector,
-        /// but we still can return sensible results in this case.
         if (out_reason)
-            *out_reason = "Parts " + left.name + " and " + right.name + " belong to different partitions";
+            *out_reason = "Cannot merge the part " + left->name + " to itself";
+        return false;
+    }
+
+    if (left->info.partition_id != right->info.partition_id)
+    {
+        if (out_reason)
+            *out_reason = "Parts " + left->name + " and " + right->name + " belong to different partitions";
         return false;
     }
 
     std::lock_guard lock(mutex);
 
-    auto set_reason = [&out_reason] (const String & part_name)
+    for (const MergeTreeData::DataPartPtr & part : {left, right})
     {
-        if (out_reason)
-            *out_reason = "Part " + part_name + " cannot be merged yet, a merge has already assigned for it or it is temporarily disabled";
-        return false;
-    };
+        auto containing_part = virtual_parts.getContainingPart(part->info);
+        if (!containing_part)
+        {
+            if (out_reason)
+                *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+            return false;
+        }
 
-    if (virtual_parts.getContainingPart(left.info) != left.info)
-        return set_reason(left.name);
+        if (containing_part != part->info)
+        {
+            if (out_reason)
+                *out_reason = "A merge has already been assigned for " + part->name;
+            return false;
+        }
 
-    if (virtual_parts.getContainingPart(right.info) != right.info)
-        return set_reason(right.name);
+        if (part->name == last_quorum_part)
+        {
+            if (out_reason)
+                *out_reason = "Part " + part->name + " is the most recent part with a satisfied quorum";
+            return false;
+        }
 
-    Int64 left_max_block = left.info.max_block;
-    Int64 right_min_block = right.info.min_block;
+        if (part->name == inprogress_quorum_part)
+        {
+            if (out_reason)
+                *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+            return false;
+        }
+    }
 
+    Int64 left_max_block = left->info.max_block;
+    Int64 right_min_block = right->info.min_block;
     if (left_max_block > right_min_block)
         std::swap(left_max_block, right_min_block);
 
     if (left_max_block + 1 < right_min_block)
     {
-        auto current_inserts_in_partition = current_inserts.find(left.info.partition_id);
-
+        auto current_inserts_in_partition = current_inserts.find(left->info.partition_id);
         if (current_inserts_in_partition != current_inserts.end())
         {
             const std::set<Int64> & ephemeral_block_numbers = current_inserts_in_partition->second;
@@ -1013,30 +1052,32 @@ bool ReplicatedMergeTreeQueue::canMergeParts(const MergeTreeDataPart & left, con
             {
                 if (out_reason)
                     *out_reason = "Block number " + toString(*left_eph_it) + " is still being inserted between parts "
-                        + left.name + " and " + right.name;
+                        + left->name + " and " + right->name;
 
                 return false;
             }
         }
 
         MergeTreePartInfo gap_part_info(
-            left.info.partition_id, left_max_block + 1, right_min_block - 1, 999999);
+            left->info.partition_id, left_max_block + 1, right_min_block - 1, 999999999);
 
         Strings covered = next_virtual_parts.getPartsCoveredBy(gap_part_info);
         if (!covered.empty())
         {
             if (out_reason)
-                *out_reason = "There are " + toString(covered.size()) + " parts that are still not ready between " + left.name + " and " + right.name;
+                *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
+                    + " to " + covered.back() + ") that are still not ready between "
+                    + left->name + " and " + right->name;
             return false;
         }
     }
 
-    Int64 left_mutation = getCurrentMutationVersion(left.info, lock);
-    Int64 right_mutation = getCurrentMutationVersion(right.info, lock);
+    Int64 left_mutation = getCurrentMutationVersion(left->info, lock);
+    Int64 right_mutation = getCurrentMutationVersion(right->info, lock);
     if (left_mutation != right_mutation)
     {
         if (out_reason)
-            *out_reason = "Current mutation versions of parts " + left.name + " and " + right.name + " differ: "
+            *out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
                 + toString(left_mutation) + " and " + toString(right_mutation) + " respectively";
 
         return false;

@@ -80,6 +80,8 @@ private:
       */
     ActiveDataPartSet virtual_parts;
     std::unordered_map<String, std::set<Int64>> current_inserts;
+    String last_quorum_part;
+    String inprogress_quorum_part;
     ActiveDataPartSet next_virtual_parts;
 
     std::list<ReplicatedMergeTreeMutationEntry> mutations;
@@ -215,7 +217,7 @@ public:
     /// Can we merge two parts according to the queue? True if the parts are of the same mutation version,
     /// there is no merge or mutation already selected for these parts
     /// and there are no virtual parts or unfinished inserts between them.
-    bool canMergeParts(const MergeTreeDataPart & left, const MergeTreeDataPart & right, String * out_reason = nullptr) const;
+    bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String * out_reason = nullptr) const;
 
     bool canMutatePart(const MergeTreePartInfo & part_info, Int64 & desired_mutation_version) const;
 
