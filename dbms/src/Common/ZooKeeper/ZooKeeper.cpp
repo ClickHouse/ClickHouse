@@ -739,6 +739,18 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
     return future;
 }
 
+int32_t ZooKeeper::tryMultiNoThrow(const Requests & requests, Responses & responses)
+{
+    try
+    {
+        return multiImpl(requests, responses);
+    }
+    catch (const ZooKeeperImpl::Exception & e)
+    {
+        return e.code;
+    }
+}
+
 
 size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses) const
 {
@@ -759,7 +771,7 @@ size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & re
 
 KeeperMultiException::KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses)
     : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex(code, responses)), code),
-    requests(requests), responses(responses)
+    requests(requests), responses(responses), failed_op_index(getFailedOpIndex(code, responses))
 {
 }
 
