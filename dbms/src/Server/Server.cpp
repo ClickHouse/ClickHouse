@@ -64,7 +64,7 @@ static std::string getCanonicalPath(std::string && path)
         throw Exception("path configuration parameter is empty");
     if (path.back() != '/')
         path += '/';
-    return path;
+    return std::move(path);
 }
 
 void Server::uninitialize()
@@ -259,7 +259,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /* already_loaded = */ false);
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
-    global_context->setConfigReloadCallback([&]() {
+    global_context->setConfigReloadCallback([&]()
+    {
         main_config_reloader->reload();
         users_config_reloader->reload();
     });

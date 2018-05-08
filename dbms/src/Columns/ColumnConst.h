@@ -91,6 +91,11 @@ public:
         return data->getInt(0);
     }
 
+    bool getBool(size_t) const override
+    {
+        return data->getBool(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);

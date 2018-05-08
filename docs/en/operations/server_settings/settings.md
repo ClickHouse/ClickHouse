@@ -67,7 +67,7 @@ ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes th
 
 The default database.
 
-To get a list of databases, use the [ SHOW DATABASES]( query./../query_language/queries.md#query_language_queries_show_databases).
+To get a list of databases, use the [SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases).
 
 **Example**
 
@@ -691,4 +691,3 @@ For more information, see the section "[Replication](../../table_engines/replica
 ```xml
 <zookeeper incl="zookeeper-servers" optional="true" />
 ```
-

@@ -12,7 +12,7 @@ With appropriate changes, build should work on any other OS X distribution.
 ## Install required compilers, tools, libraries
 
 ```bash
-brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib readline boost --cc=gcc-7
+brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext zlib readline boost --cc=gcc-7
 ```
 
 ## Checkout ClickHouse sources

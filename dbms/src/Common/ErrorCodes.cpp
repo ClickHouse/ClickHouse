@@ -378,6 +378,9 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
     extern const int UNKNOWN_EXCEPTION = 1002;
+
+    extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
+    extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
 }
 
 }
