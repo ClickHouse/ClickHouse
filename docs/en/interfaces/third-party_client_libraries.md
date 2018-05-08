@@ -36,6 +36,8 @@ There are libraries for working with ClickHouse for:
 - Elixir
   - [clickhousex](https://github.com/appodeal/clickhousex/)
   - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
+- Java
+  - [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
 
 We have not tested these libraries. They are listed in random order.
 

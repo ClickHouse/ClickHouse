@@ -774,10 +774,7 @@ void MergeTreeData::clearOldPartsFromFilesystem()
 void MergeTreeData::setPath(const String & new_full_path)
 {
     if (Poco::File{new_full_path}.exists())
-        throw Exception{
-            "Target path already exists: " + new_full_path,
-            /// @todo existing target can also be a file, not directory
-            ErrorCodes::DIRECTORY_ALREADY_EXISTS};
+        throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
 
     Poco::File(full_path).renameTo(new_full_path);
 

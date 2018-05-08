@@ -1,24 +1,21 @@
----
-BasedOnStyle:  WebKit
-Language:        Cpp
+BasedOnStyle: WebKit
+Language: Cpp
 AlignAfterOpenBracket: false
 BreakBeforeBraces: Custom
-BraceWrapping: {
-    AfterClass: 'true'
-    AfterControlStatement: 'true'
-    AfterEnum : 'true'
-    AfterFunction : 'true'
-    AfterNamespace : 'true'
-    AfterStruct : 'true'
-    AfterUnion : 'true'
-    BeforeCatch : 'true'
-    BeforeElse : 'true'
-    IndentBraces : 'false'
-}
-
+BraceWrapping:
+    AfterClass: true
+    AfterControlStatement: true
+    AfterEnum: true
+    AfterFunction: true
+    AfterNamespace: true
+    AfterStruct: true
+    AfterUnion: true
+    BeforeCatch: true
+    BeforeElse: true
+    IndentBraces: false
 BreakConstructorInitializersBeforeComma: false
 Cpp11BracedListStyle: true
-ColumnLimit:     140
+ColumnLimit: 140
 ConstructorInitializerAllOnOneLineOrOnePerLine: true
 ExperimentalAutoDetectBinPacking: true
 UseTab: Never
@@ -28,36 +25,35 @@ Standard: Cpp11
 PointerAlignment: Middle
 MaxEmptyLinesToKeep: 2
 KeepEmptyLinesAtTheStartOfBlocks: false
-#AllowShortFunctionsOnASingleLine: Inline
 AllowShortFunctionsOnASingleLine: Empty
 AlwaysBreakTemplateDeclarations: true
 IndentCaseLabels: true
-#SpaceAfterTemplateKeyword: true
+SpaceAfterTemplateKeyword: true
 SortIncludes: true
 IncludeCategories:
-  - Regex:           '^<[a-z_]+>'
-    Priority:        1
-  - Regex:           '^<[a-z_]+.h>'
-    Priority:        2
-  - Regex:           '^["<](common|ext|mysqlxx|daemon|zkutil)/'
-    Priority:        90
-  - Regex:           '^["<](DB)/'
-    Priority:        100
-  - Regex:           '^["<](Poco)/'
-    Priority:        50
-  - Regex:           '^"'
-    Priority:        110
-  - Regex:           '/'
-    Priority:        30
-  - Regex:           '.*'
-    Priority:        40
+  - Regex: '^<[a-z_]+>'
+    Priority: 1
+  - Regex: '^<[a-z_]+.h>'
+    Priority: 2
+  - Regex: '^["<](common|ext|mysqlxx|daemon|zkutil)/'
+    Priority: 90
+  - Regex: '^["<](DB)/'
+    Priority: 100
+  - Regex: '^["<](Poco)/'
+    Priority: 50
+  - Regex: '^"'
+    Priority: 110
+  - Regex: '/'
+    Priority: 30
+  - Regex: '.*'
+    Priority: 40
 ReflowComments: false
 AlignEscapedNewlinesLeft: true
 
 # Not changed:
 AccessModifierOffset: -4
 AlignConsecutiveAssignments: false
-AlignOperands:   false
+AlignOperands: false
 AlignTrailingComments: false
 AllowAllParametersOfDeclarationOnNextLine: true
 AllowShortBlocksOnASingleLine: false
@@ -70,16 +66,15 @@ BinPackArguments: false
 BinPackParameters: false
 BreakBeforeBinaryOperators: All
 BreakBeforeTernaryOperators: true
-CommentPragmas:  '^ IWYU pragma:'
+CommentPragmas: '^ IWYU pragma:'
 ConstructorInitializerIndentWidth: 4
 ContinuationIndentWidth: 4
 DerivePointerAlignment: false
-DisableFormat:   false
-ForEachMacros:   [ foreach, Q_FOREACH, BOOST_FOREACH ]
-IndentWidth:     4
+DisableFormat: false
+IndentWidth: 4
 IndentWrappedFunctionNames: false
 MacroBlockBegin: ''
-MacroBlockEnd:   ''
+MacroBlockEnd: ''
 NamespaceIndentation: Inner
 ObjCBlockIndentWidth: 4
 ObjCSpaceAfterProperty: true
@@ -99,5 +94,3 @@ SpacesInContainerLiterals: true
 SpacesInCStyleCastParentheses: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-...
-

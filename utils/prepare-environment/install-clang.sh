@@ -35,7 +35,14 @@ svn co "http://llvm.org/svn/llvm-project/libcxxabi/${BRANCH}" libcxxabi
 cd ../..
 mkdir build
 cd build/
+
+# NOTE You must build LLVM with the same ABI as ClickHouse.
+# For example, if you compile ClickHouse with libc++, you must add
+#  -D LLVM_ENABLE_LIBCXX=1
+# to the line below.
+
 cmake -D CMAKE_BUILD_TYPE:STRING=Release ../llvm
+
 make -j $THREADS
 sudo make install
 hash clang
