@@ -21,7 +21,9 @@ void ReplicatedMergeTreeQueue::initVirtualParts(const MergeTreeData::DataParts &
     std::lock_guard<std::mutex> lock(mutex);
 
     for (const auto & part : parts)
-        virtual_parts.add(part->name);
+        next_virtual_parts.add(part->name);
+
+    virtual_parts = next_virtual_parts;
 }
 
 
@@ -426,6 +428,8 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
             {
                 std::lock_guard lock(mutex);
 
+                min_log_entry = "log-" + padIndex(last_entry_index + 1);
+
                 for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
                 {
                     String path_created = dynamic_cast<const zkutil::CreateResponse &>(*responses[i]).path_created;
@@ -452,13 +456,10 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
     auto new_current_inserts = loadCurrentInserts(zookeeper);
 
     Strings new_log_entries = zookeeper->getChildren(zookeeper_path + "/log");
-    if (!log_entries.empty())
-    {
-        new_log_entries.erase(
-            std::remove_if(new_log_entries.begin(), new_log_entries.end(),
-                [&](const String & entry) { return entry <= log_entries.back(); }),
-            new_log_entries.end());
-    }
+    new_log_entries.erase(
+        std::remove_if(new_log_entries.begin(), new_log_entries.end(),
+            [&](const String & entry) { return entry < min_log_entry; }),
+        new_log_entries.end());
 
     std::vector<std::future<zkutil::GetResponse>> new_log_entry_futures;
     for (const String & entry : new_log_entries)
