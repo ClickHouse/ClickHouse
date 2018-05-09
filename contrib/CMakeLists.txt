@@ -150,3 +150,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
         target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
 endif ()
+
+if (USE_INTERNAL_LLVM_LIBRARY)
+    add_subdirectory (llvm/llvm)
+endif ()
