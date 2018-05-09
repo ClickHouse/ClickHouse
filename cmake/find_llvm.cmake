@@ -28,7 +28,13 @@ if (ENABLE_EMBEDDED_COMPILER)
         set (LLVM_FOUND 1)
         set (USE_EMBEDDED_COMPILER 1)
         set (LLVM_VERSION "7.0.0bundled")
-        set (LLVM_INCLUDE_DIRS ${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include)
+        set (LLVM_INCLUDE_DIRS
+            ${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include
+            ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include
+            ${ClickHouse_SOURCE_DIR}/contrib/llvm/clang/include
+            ${ClickHouse_BINARY_DIR}/contrib/llvm/clang/include
+            ${ClickHouse_SOURCE_DIR}/contrib/llvm/lld/include
+            ${ClickHouse_BINARY_DIR}/contrib/llvm/lld/include)
         set (LLVM_LIBRARY_DIRS ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm)
     endif()
 
