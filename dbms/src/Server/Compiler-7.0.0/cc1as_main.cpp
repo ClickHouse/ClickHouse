@@ -60,16 +60,6 @@ using namespace llvm;
 using namespace llvm::opt;
 
 
-/// Clang 7 with debug variant of libc++ cannot compile itself without this patch.
-namespace llvm
-{
-    inline bool operator<(const StringRef & s, const SubtargetFeatureKV & feature)
-    {
-        return s < StringRef(feature.Key);
-    }
-}
-
-
 namespace {
 
 /// \brief Helper class for representing a single invocation of the assembler.
