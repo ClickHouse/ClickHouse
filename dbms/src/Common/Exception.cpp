@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <cxxabi.h>
 
