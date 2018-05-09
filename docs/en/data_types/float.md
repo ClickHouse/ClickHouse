@@ -5,7 +5,7 @@
 Types are equivalent to types of C:
 
 - `Float32` - `float`
-- `Float64`  - ` double`
+- `Float64`  - `double`
 
 We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
 
@@ -16,7 +16,6 @@ We recommend that you store data in integer form whenever possible. For example,
 ```sql
 SELECT 1 - 0.9
 ```
-
 ```
 ┌───────minus(1, 0.9)─┐
 │ 0.09999999999999998 │
