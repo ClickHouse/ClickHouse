@@ -1,4 +1,4 @@
-option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" 1)
+option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" ${NOT_APPLE})
 
 if (ENABLE_EMBEDDED_COMPILER)
     # Based on source code of YT.

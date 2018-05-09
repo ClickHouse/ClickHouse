@@ -49,7 +49,7 @@ Block PartLogElement::createBlock()
         /// Is there an error during the execution or commit
         {ColumnUInt16::create(),  std::make_shared<DataTypeUInt16>(),   "error"},
         {ColumnString::create(),  std::make_shared<DataTypeString>(),   "exception"},
-  };
+    };
 }
 
 void PartLogElement::appendToBlock(Block & block) const
