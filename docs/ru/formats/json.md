@@ -27,19 +27,19 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
                         "c": "8267016"
                 },
                 {
-                        "SearchPhrase": "интерьер ванной комнаты",
+                        "SearchPhrase": "bathroom interior design",
                         "c": "2166"
                 },
                 {
-                        "SearchPhrase": "яндекс",
+                        "SearchPhrase": "yandex",
                         "c": "1655"
                 },
                 {
-                        "SearchPhrase": "весна 2014 мода",
+                        "SearchPhrase": "spring 2014 fashion",
                         "c": "1549"
                 },
                 {
-                        "SearchPhrase": "фриформ фото",
+                        "SearchPhrase": "freeform photos",
                         "c": "1480"
                 }
         ],
