@@ -147,12 +147,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     }
 
     size_t recommended_rows = estimateNumRows(*task, task->range_reader);
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-    size_t rows_to_read = std::max(static_cast<decltype(max_block_size_rows)>(1),
-                                   std::min(max_block_size_rows, recommended_rows));
-#pragma GCC diagnostic pop
+    size_t rows_to_read = std::max(1, std::min(max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
 
