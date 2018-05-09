@@ -1,4 +1,4 @@
-#include "DNSCache.h"
+#include "DNSResolver.h"
 #include <Common/SimpleCache.h>
 #include <Common/Exception.h>
 #include <Core/Types.h>
@@ -6,6 +6,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
 #include <arpa/inet.h>
+#include <atomic>
 
 
 namespace DB
@@ -74,34 +75,47 @@ static Poco::Net::IPAddress resolveIPAddressImpl(const std::string & host)
 }
 
 
-struct DNSCache::Impl
+struct DNSResolver::Impl
 {
     SimpleCache<decltype(resolveIPAddressImpl), &resolveIPAddressImpl> cache_host;
+
+    /// If disabled, will not make cache lookups, will resolve addresses manually on each call
+    std::atomic<bool> disable_cache{false};
 };
 
 
-DNSCache::DNSCache() : impl(std::make_unique<DNSCache::Impl>()) {}
+DNSResolver::DNSResolver() : impl(std::make_unique<DNSResolver::Impl>()) {}
 
-Poco::Net::IPAddress DNSCache::resolveHost(const std::string & host)
+Poco::Net::IPAddress DNSResolver::resolveHost(const std::string & host)
 {
-    return impl->cache_host(host);
+    return !impl->disable_cache ? impl->cache_host(host) : resolveIPAddressImpl(host);
 }
 
-Poco::Net::SocketAddress DNSCache::resolveHostAndPort(const std::string & host_and_port)
+Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
 {
     String host;
     UInt16 port;
     splitHostAndPort(host_and_port, host, port);
 
-    return Poco::Net::SocketAddress(impl->cache_host(host), port);
+    return !impl->disable_cache ? Poco::Net::SocketAddress(impl->cache_host(host), port) : Poco::Net::SocketAddress(host_and_port);
 }
 
-void DNSCache::drop()
+Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, UInt16 port)
+{
+    return !impl->disable_cache ?  Poco::Net::SocketAddress(impl->cache_host(host), port) : Poco::Net::SocketAddress(host, port);
+}
+
+void DNSResolver::dropCache()
 {
     impl->cache_host.drop();
 }
 
-DNSCache::~DNSCache() = default;
+void DNSResolver::setDisableCacheFlag(bool is_disabled)
+{
+    impl->disable_cache = is_disabled;
+}
+
+DNSResolver::~DNSResolver() = default;
 
 
 }

@@ -1088,7 +1088,7 @@ class sparsegroup {
     // This is equivalent to memmove(), but faster on my Intel P4,
     // at least with gcc4.1 -O2 / glibc 2.3.6.
     for (size_type i = settings.num_buckets; i > offset; --i)
-      memcpy(group + i, group + i-1, sizeof(*group));
+      memcpy(static_cast<void*>(group + i), group + i-1, sizeof(*group));
   }
 
   // Create space at group[offset], without special assumptions about value_type
@@ -1154,7 +1154,7 @@ class sparsegroup {
     // at lesat with gcc4.1 -O2 / glibc 2.3.6.
     assert(settings.num_buckets > 0);
     for (size_type i = offset; i < settings.num_buckets-1; ++i)
-      memcpy(group + i, group + i+1, sizeof(*group));  // hopefully inlined!
+      memcpy(static_cast<void*>(group + i), group + i+1, sizeof(*group));  // hopefully inlined!
     group = settings.realloc_or_die(group, settings.num_buckets-1);
   }
 
