@@ -4,7 +4,7 @@
 #include <Common/config.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Version.h>
@@ -43,7 +43,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
                new Poco::Net::HTTPClientSession)
 }
 {
-    session->setHost(DNSCache::instance().resolveHost(uri.getHost()).toString());
+    session->setHost(DNSResolver::instance().resolveHost(uri.getHost()).toString());
     session->setPort(uri.getPort());
 
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000

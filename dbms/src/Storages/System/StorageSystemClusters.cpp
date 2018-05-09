@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -51,7 +52,7 @@ BlockInputStreams StorageSystemClusters::read(
         res_columns[i++]->insert(static_cast<UInt64>(shard_info.weight));
         res_columns[i++]->insert(static_cast<UInt64>(address.replica_num));
         res_columns[i++]->insert(address.host_name);
-        res_columns[i++]->insert(address.resolved_address.host().toString());
+        res_columns[i++]->insert(DNSResolver::instance().resolveHost(address.host_name).toString());
         res_columns[i++]->insert(static_cast<UInt64>(address.port));
         res_columns[i++]->insert(static_cast<UInt64>(shard_info.isLocal()));
         res_columns[i++]->insert(address.user);

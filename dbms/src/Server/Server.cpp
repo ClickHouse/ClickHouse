@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <sys/resource.h>
+#include <errno.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -10,6 +11,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -39,6 +41,9 @@
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
+#include <Interpreters/DNSCacheUpdater.h>
+
+
 #endif
 
 namespace CurrentMetrics
@@ -319,6 +324,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+    }
+
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+    }
+    else
+    {
+        /// Initialize a watcher updating DNS cache in case of network errors
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
     }
 
     {

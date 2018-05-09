@@ -1,5 +1,5 @@
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -63,6 +63,10 @@ BlockIO InterpreterSystemQuery::execute()
 
     using Type = ASTSystemQuery::Type;
 
+    /// Use global context with fresh system profile settings
+    Context system_context = context.getGlobalContext();
+    system_context.setSetting("profile", context.getSystemProfileName());
+
     switch (query.type)
     {
         case Type::SHUTDOWN:
@@ -74,31 +78,34 @@ BlockIO InterpreterSystemQuery::execute()
                 throwFromErrno("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::DROP_DNS_CACHE:
-            DNSCache::instance().drop();
+            DNSResolver::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
-            context.reloadClusterConfig();
+            system_context.reloadClusterConfig();
             break;
         case Type::DROP_MARK_CACHE:
-            context.dropMarkCache();
+            system_context.dropMarkCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
-            context.dropUncompressedCache();
+            system_context.dropUncompressedCache();
             break;
         case Type::RELOAD_DICTIONARY:
-            context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
+            system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
             break;
         case Type::RELOAD_DICTIONARIES:
         {
             auto status = getOverallExecutionStatusOfCommands(
-                    [&] { context.getExternalDictionaries().reload(); },
-                    [&] { context.getEmbeddedDictionaries().reload(); }
+                    [&] { system_context.getExternalDictionaries().reload(); },
+                    [&] { system_context.getEmbeddedDictionaries().reload(); }
             );
             if (status.code != 0)
                 throw Exception(status.message, status.code);
             break;
         }
+        case Type::RELOAD_EMBEDDED_DICTIONARIES:
+            system_context.getEmbeddedDictionaries().reload();
+            break;
         case Type::RELOAD_CONFIG:
-            context.reloadConfig();
+            system_context.reloadConfig();
             break;
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
