@@ -197,8 +197,11 @@ static std::unique_ptr<Poco::MongoDB::Cursor> createCursor(
 
 BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 {
+    auto cursor = createCursor(db, collection, sample_block);
+    cursor->query().selector().addNewDocument("$query");
+
     return std::make_shared<MongoDBBlockInputStream>(
-        connection, createCursor(db, collection, sample_block), sample_block, max_block_size);
+            connection, std::move(cursor), sample_block, max_block_size);
 }
 
 
@@ -206,8 +209,6 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 {
     if (!dict_struct.id)
         throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
-
-    auto cursor = createCursor(db, collection, sample_block);
 
     /** NOTE: While building array, Poco::MongoDB requires passing of different unused element names, along with values.
       * In general, Poco::MongoDB is quite inefficient and bulky.
@@ -217,13 +218,57 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
     for (const UInt64 id : ids)
         ids_array->add(DB::toString(id), Int32(id));
 
-    cursor->query().selector().addNewDocument(dict_struct.id->name)
-        .add("$in", ids_array);
+    auto cursor = createCursor(db, collection, sample_block);
+    auto & doc = cursor->query().selector().addNewDocument("$query");
+    doc.addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
     return std::make_shared<MongoDBBlockInputStream>(
         connection, std::move(cursor), sample_block, max_block_size);
 }
 
+
+Poco::MongoDB::Document & MongoDBDictionarySource::addRowToRequestSelector(
+    Poco::MongoDB::Document & selector, size_t row_idx, const String & row_key, const Columns & key_columns)
+{
+    auto & key = selector.addNewDocument(row_key);
+    for (const auto attr : ext::enumerate(*dict_struct.key))
+    {
+        switch (attr.second.underlying_type)
+        {
+            case AttributeUnderlyingType::UInt8:
+            case AttributeUnderlyingType::UInt16:
+            case AttributeUnderlyingType::UInt32:
+            case AttributeUnderlyingType::UInt64:
+            case AttributeUnderlyingType::UInt128:
+            case AttributeUnderlyingType::Int8:
+            case AttributeUnderlyingType::Int16:
+            case AttributeUnderlyingType::Int32:
+            case AttributeUnderlyingType::Int64:
+                key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
+                break;
+
+            case AttributeUnderlyingType::Float32:
+            case AttributeUnderlyingType::Float64:
+                key.add(attr.second.name, applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
+                break;
+
+            case AttributeUnderlyingType::String:
+                String _str(get<String>((*key_columns[attr.first])[row_idx]));
+                /// Convert string to ObjectID
+                if (attr.second.is_object_id)
+                {
+                    Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
+                    key.add(attr.second.name, _id);
+                }
+                else
+                {
+                    key.add(attr.second.name, _str);
+                }
+                break;
+        }
+    }
+    return key;
+}
 
 BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
     const Columns & key_columns, const std::vector<size_t> & requested_rows)
@@ -233,52 +278,22 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
 
     auto cursor = createCursor(db, collection, sample_block);
 
-    Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
-
-    for (const auto row_idx : requested_rows)
+    if (requested_rows.size() == 1)
     {
-        auto & key = keys_array->addNewDocument(DB::toString(row_idx));
-
-        for (const auto attr : ext::enumerate(*dict_struct.key))
-        {
-            switch (attr.second.underlying_type)
-            {
-                case AttributeUnderlyingType::UInt8:
-                case AttributeUnderlyingType::UInt16:
-                case AttributeUnderlyingType::UInt32:
-                case AttributeUnderlyingType::UInt64:
-                case AttributeUnderlyingType::UInt128:
-                case AttributeUnderlyingType::Int8:
-                case AttributeUnderlyingType::Int16:
-                case AttributeUnderlyingType::Int32:
-                case AttributeUnderlyingType::Int64:
-                    key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
-                    break;
-
-                case AttributeUnderlyingType::Float32:
-                case AttributeUnderlyingType::Float64:
-                    key.add(attr.second.name, applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
-                    break;
-
-                case AttributeUnderlyingType::String:
-                    String _str(get<String>((*key_columns[attr.first])[row_idx]));
-                    /// Convert string to ObjectID
-                    if (attr.second.is_object_id)
-                    {
-                        Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
-                        key.add(attr.second.name, _id);
-                    }
-                    else
-                    {
-                        key.add(attr.second.name, _str);
-                    }
-                    break;
-            }
-        }
+        addRowToRequestSelector(cursor->query().selector(), 0, "$query", key_columns);
     }
-
     /// If more than one key we should use $or
-    cursor->query().selector().add("$or", keys_array);
+    else
+    {
+        Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
+        for (const auto row_idx : requested_rows)
+        {
+            addRowToRequestSelector(*keys_array, row_idx, DB::toString(row_idx), key_columns);
+        }
+
+        auto & doc = cursor->query().selector().addNewDocument("$query");
+        doc.add("$or", keys_array);
+    }
 
     return std::make_shared<MongoDBBlockInputStream>(
         connection, std::move(cursor), sample_block, max_block_size);

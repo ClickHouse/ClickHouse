@@ -14,6 +14,7 @@ namespace Poco
     namespace MongoDB
     {
         class Connection;
+        class Document;
     }
 }
 
@@ -76,6 +77,9 @@ private:
     Block sample_block;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
+
+    Poco::MongoDB::Document & addRowToRequestSelector(
+        Poco::MongoDB::Document & selector, size_t row_idx, const String & row_key, const Columns & key_columns);
 };
 
 }

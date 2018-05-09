@@ -215,6 +215,7 @@ bool DictionaryStructure::isKeySizeFixed() const
     return true;
 }
 
+
 size_t DictionaryStructure::getKeySize() const
 {
     return std::accumulate(std::begin(*key), std::end(*key), size_t{},
@@ -233,6 +234,7 @@ static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
             throw Exception{"Unknown key '" + key + "' inside attribute section", ErrorCodes::BAD_ARGUMENTS};
     }
 }
+
 
 std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
