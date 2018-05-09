@@ -8,7 +8,7 @@ if (ENABLE_EMBEDDED_COMPILER)
         set (USE_INTERNAL_LLVM_LIBRARY 0)
     endif ()
 
-    if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    if (NOT USE_INTERNAL_LLVM_LIBRARY)
         set (LLVM_PATHS "/usr/local/lib/llvm")
 
         if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
