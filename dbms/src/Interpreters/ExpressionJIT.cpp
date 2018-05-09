@@ -46,27 +46,6 @@
 #pragma GCC diagnostic pop
 
 
-#if !LLVM_HAS_RTTI
-
-/** HACK
-  * Allow to link with LLVM that was compiled without RTTI.
-  * This is the default option when you build LLVM from sources.
-  * We define fake symbols for RTTI to help linker.
-  * This assumes that enabling/disabling RTTI doesn't change memory layout of objects
-  *  in any significant way and it doesn't affect the code that isn't actually using RTTI.
-  * Proper solution: recompile LLVM with enabled RTTI.
-  */
-extern "C"
-{
-
-__attribute__((__weak__)) int _ZTIN4llvm13ErrorInfoBaseE = 0;
-__attribute__((__weak__)) int _ZTIN4llvm12MemoryBufferE = 0;
-
-}
-
-#endif
-
-
 namespace ProfileEvents
 {
     extern const Event CompileFunction;
