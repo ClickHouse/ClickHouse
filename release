@@ -97,7 +97,7 @@ if [ -z "$USE_PBUILDER" ] ; then
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
-    export DIST=${DIST:=artful}
+    export DIST=${DIST:=bionic}
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
 
