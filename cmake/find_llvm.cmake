@@ -34,8 +34,10 @@ if (ENABLE_EMBEDDED_COMPILER)
             ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include
             ${ClickHouse_SOURCE_DIR}/contrib/llvm/clang/include
             ${ClickHouse_BINARY_DIR}/contrib/llvm/clang/include
+            ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/tools/clang/include
             ${ClickHouse_SOURCE_DIR}/contrib/llvm/lld/include
-            ${ClickHouse_BINARY_DIR}/contrib/llvm/lld/include)
+            ${ClickHouse_BINARY_DIR}/contrib/llvm/lld/include
+            ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/tools/lld/include)
         set (LLVM_LIBRARY_DIRS ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm)
     endif()
 
