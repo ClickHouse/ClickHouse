@@ -2,7 +2,7 @@
 
 `file(path, format, structure)` - загружает на сервер временную таблицу, созданную из файла типа format, вида structure.
 
-path - путь из настройки пользовательской папки - [user_files_path](../operations/server_settings/settings.md).
+path - относительный путь до файла от [user_files_path](../operations/server_settings/settings.md).
 
 format - файлы, указанные в file, будут разобраны форматом, указанным в [format](../formats).
 
