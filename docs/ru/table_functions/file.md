@@ -1,12 +1,18 @@
 # file
 
-`file(path, format, structure)` - возвращает таблицу, созданную из файла типа format, вида structure.
+`file(path, format, structure)` - возвращает виртуальную таблицу, созданную из файла типа format, вида structure.
 
---structure - структура таблицы, в форме UserID UInt64, URL String. Определяет имена и типы столбцов.
+structure - структура таблицы, в форме UserID UInt64, URL String. Определяет имена и типы столбцов.
 Файлы, указанные в file, будут разобраны форматом, указанным в format, с использованием типов данных, указанных в types или structure. Таблица будет загружена на сервер, и доступна там в качестве временной таблицы с именем name.
+
+path - путь из настройки пользовательской папки, которая устанавливается в [config.xml](../../../dbms/src/Server/config.xml).
+
+format - [тип файла](../formats).
+
+structure - строковая константа вида 'названиеСтолбца1 типСтолбца1, названиеСтолбца2 типСтолбца2, ..., названиеСтолбцаN типСтолбцаN'.
 
 Пример:
 ```sql
--- получение таблицы из трёх колонок типа UInt32
-SELECT * FROM file('test.csv', 'CSV', 'colomn1 UInt32, colomn2 UInt32, colomn3 UInt32') LIMIT 10
+-- получение строк таблицы из файла, состоящей из трёх колонок типа UInt32
+SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 10
 ```
