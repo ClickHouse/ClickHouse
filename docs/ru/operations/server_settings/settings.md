@@ -646,6 +646,14 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 <a name="server_settings-uncompressed_cache_size"></a>
 
+## user_files_path
+
+Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../../table_functions/file.md).
+
+```xml
+<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
 ## uncompressed_cache_size
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree).
