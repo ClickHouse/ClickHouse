@@ -144,8 +144,8 @@ public:
             auto * cond = values[i]();
             if (!null_is_false && types[i]->isNullable())
             {
-                returns.emplace_back(head, null);
                 auto * nonnull = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
+                returns.emplace_back(b.GetInsertBlock(), null);
                 b.CreateCondBr(b.CreateExtractValue(cond, {1}), join, nonnull);
                 b.SetInsertPoint(nonnull);
                 b.CreateCondBr(nativeBoolCast(b, removeNullable(types[i]), b.CreateExtractValue(cond, {0})), then, next);
@@ -155,12 +155,13 @@ public:
                 b.CreateCondBr(nativeBoolCast(b, types[i], cond), then, next);
             }
             b.SetInsertPoint(then);
-            returns.emplace_back(then, nativeCast(b, types[i + 1], values[i + 1](), type));
+            auto * value = nativeCast(b, types[i + 1], values[i + 1](), type);
+            returns.emplace_back(b.GetInsertBlock(), value);
             b.CreateBr(join);
             b.SetInsertPoint(next);
-            head = next;
         }
-        returns.emplace_back(head, nativeCast(b, types.back(), values.back()(), type));
+        auto * value = nativeCast(b, types.back(), values.back()(), type);
+        returns.emplace_back(b.GetInsertBlock(), value);
         b.CreateBr(join);
         b.SetInsertPoint(join);
         auto * phi = b.CreatePHI(toNativeType(b, type), returns.size());
