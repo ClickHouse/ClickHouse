@@ -34,3 +34,6 @@
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost.git
+[submodule "contrib/llvm"]
+	path = contrib/llvm
+	url = https://github.com/ClickHouse-Extras/llvm

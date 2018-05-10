@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <Interpreters/DNSCacheUpdater.h>
 
 #include <pcg_random.hpp>
 #include <random>
@@ -25,7 +26,7 @@ constexpr double BackgroundProcessingPool::sleep_seconds;
 constexpr double BackgroundProcessingPool::sleep_seconds_random_part;
 
 
-void BackgroundProcessingPool::TaskInfo::wake()
+void BackgroundProcessingPoolTaskInfo::wake()
 {
     if (removed)
         return;
@@ -36,7 +37,7 @@ void BackgroundProcessingPool::TaskInfo::wake()
         std::unique_lock<std::mutex> lock(pool.tasks_mutex);
 
         auto next_time_to_execute = iterator->first;
-        TaskHandle this_task_handle = iterator->second;
+        auto this_task_handle = iterator->second;
 
         /// If this task was done nothing at previous time and it has to sleep, then cancel sleep time.
         if (next_time_to_execute > current_time)
@@ -180,6 +181,7 @@ void BackgroundProcessingPool::threadFunction()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
         }
 
         if (shutdown)
