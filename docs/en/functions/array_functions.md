@@ -225,7 +225,6 @@ arrayPopFront(array)
 ```sql
 SELECT arrayPopFront([1, 2, 3]) AS res
 ```
-
 ```
 ┌─res───┐
 │ [2,3] │
@@ -250,6 +249,7 @@ arrayPushBack(array, single_value)
 ```sql
 SELECT arrayPushBack(['a'], 'b') AS res
 ```
+
 ```
 ┌─res───────┐
 │ ['a','b'] │
@@ -274,7 +274,6 @@ arrayPushFront(array, single_value)
 ```sql
 SELECT arrayPushBack(['b'], 'a') AS res
 ```
-
 ```
 ┌─res───────┐
 │ ['a','b'] │

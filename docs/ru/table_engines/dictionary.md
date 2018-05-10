@@ -42,16 +42,16 @@
 ```sql
 select name, type, key, attribute.names, attribute.types, bytes_allocated, element_count,source from system.dictionaries where name = 'products';                     
 
-SELECT 
-    name, 
-    type, 
-    key, 
-    attribute.names, 
-    attribute.types, 
-    bytes_allocated, 
-    element_count, 
+SELECT
+    name,
+    type,
+    key,
+    attribute.names,
+    attribute.types,
+    bytes_allocated,
+    element_count,
     source
-FROM system.dictionaries 
+FROM system.dictionaries
 WHERE name = 'products'
 ```
 ```
@@ -78,15 +78,15 @@ create table products (product_id UInt64, title String) Engine = Dictionary(prod
 
 CREATE TABLE products
 (
-    product_id UInt64, 
-    title String, 
+    product_id UInt64,
+    title String,
 )
 ENGINE = Dictionary(products)
 ```
 ```
 Ok.
 
-0 rows in set. Elapsed: 0.004 sec. 
+0 rows in set. Elapsed: 0.004 sec.
 ```
 
 Проверим что у нас в таблице?
@@ -95,13 +95,14 @@ Ok.
 select * from products limit 1;
 
 SELECT *
-FROM products 
+FROM products
 LIMIT 1
 ```
+
 ```
 ┌────product_id─┬─title───────────┐
-│        152689 │ Некоторый товар │
+│        152689 │ Some item       │
 └───────────────┴─────────────────┘
 
-1 rows in set. Elapsed: 0.006 sec. 
+1 rows in set. Elapsed: 0.006 sec.
 ```

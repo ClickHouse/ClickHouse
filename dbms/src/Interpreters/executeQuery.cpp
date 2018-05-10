@@ -23,6 +23,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeQuery.h>
+#include "DNSCacheUpdater.h"
 
 
 namespace ProfileEvents
@@ -376,6 +377,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (!internal)
             onExceptionBeforeStart(query, context, current_time);
+
+        DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
 
         throw;
     }

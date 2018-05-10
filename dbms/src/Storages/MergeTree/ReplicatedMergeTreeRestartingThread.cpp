@@ -245,7 +245,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     auto zookeeper = storage.getZooKeeper();
 
     Strings failed_parts;
-    if (!zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts))
+    if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != ZooKeeperImpl::ZooKeeper::ZOK)
         return;
 
     for (auto part_name : failed_parts)
@@ -263,7 +263,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
             if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
                 LOG_WARNING(log, "Part " << part_name << " with failed quorum is not in ZooKeeper. This shouldn't happen often.");
 
-            storage.data.renameAndDetachPart(part, "noquorum");
+            storage.data.renameAndDetachPart(part, "noquorum_");
         }
     }
 }
