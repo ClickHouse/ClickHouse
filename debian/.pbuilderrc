@@ -173,10 +173,11 @@ else
     export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
 fi
 
-[[ "$DIST" != "bionic" && "$DIST" != "unstable" && "$DIST" != "experimental" ]] && EXTRAPACKAGES+=" ninja-build "
-
-# will test symbols
+# Will test symbols
 #EXTRAPACKAGES+=" gdb "
+
+# For killall in pbuilder-hooks:
+EXTRAPACKAGES+=" psmisc "
 
 [[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX "
 

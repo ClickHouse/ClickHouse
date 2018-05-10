@@ -58,6 +58,7 @@ def test_DROP_DNS_CACHE(started_cluster):
     instance = cluster.instances['ch1']
 
     instance.exec_in_container(['bash', '-c', 'echo 127.255.255.255 lost_host > /etc/hosts'], privileged=True, user='root')
+    instance.query("SYSTEM DROP DNS CACHE")
 
     with pytest.raises(QueryRuntimeException):
         instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")

@@ -71,6 +71,7 @@
             </shard>
         </test_shard_localhost_secure>
     </remote_servers>
+    <include_from/>
     <zookeeper incl="zookeeper-servers" optional="true" />
     <macros incl="macros" optional="true" />
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
