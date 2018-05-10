@@ -127,6 +127,39 @@ static llvm::TargetMachine * getNativeMachine()
     );
 }
 
+#if LLVM_VERSION_MAJOR >= 7
+auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
+{
+    auto flags = [&](llvm::orc::SymbolFlagsMap & flags, const llvm::orc::SymbolNameSet & symbols)
+    {
+        llvm::orc::SymbolNameSet missing;
+        for (const auto & symbol : symbols)
+        {
+            auto resolved = jsr.lookupFlags({*symbol});
+            if (resolved && resolved->size())
+                flags.emplace(symbol, resolved->begin()->second);
+            else
+                missing.emplace(symbol);
+        }
+        return missing;
+    };
+    auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols)
+    {
+        llvm::orc::SymbolNameSet missing;
+        for (const auto & symbol : symbols)
+        {
+            auto resolved = jsr.lookup({*symbol});
+            if (resolved && resolved->size())
+                query->resolve(symbol, resolved->begin()->second);
+            else
+                missing.emplace(symbol);
+        }
+        return missing;
+    };
+    return llvm::orc::createSymbolResolver(flags, symbols);
+}
+#endif
+
 struct LLVMContext
 {
     llvm::LLVMContext context;
@@ -155,7 +188,7 @@ struct LLVMContext
 #if LLVM_VERSION_MAJOR >= 7
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
-            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, memory_manager};
+            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, wrapJITSymbolResolver(*memory_manager)};
         })
 #else
         , object_layer([this]() { return memory_manager; })
