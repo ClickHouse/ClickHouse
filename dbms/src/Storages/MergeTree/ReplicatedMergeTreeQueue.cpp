@@ -53,7 +53,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         std::sort(children.begin(), children.end());
 
-        zkutil::MultiAsyncResponse<zkutil::GetResponse> futures;
+        zkutil::AsyncResponses<zkutil::GetResponse> futures;
         futures.reserve(children.size());
 
         for (const String & child : children)
@@ -315,7 +315,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, B
 
             LOG_DEBUG(log, "Pulling " << (end - begin) << " entries to queue: " << *begin << " - " << *last);
 
-            zkutil::MultiAsyncResponse<zkutil::GetResponse> futures;
+            zkutil::AsyncResponses<zkutil::GetResponse> futures;
             futures.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)

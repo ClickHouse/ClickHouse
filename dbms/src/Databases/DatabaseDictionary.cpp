@@ -213,4 +213,9 @@ void DatabaseDictionary::shutdown()
 {
 }
 
+String DatabaseDictionary::getDatabaseName() const
+{
+    return name;
+}
+
 }

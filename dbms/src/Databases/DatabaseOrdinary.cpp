@@ -570,6 +570,11 @@ String DatabaseOrdinary::getMetadataPath() const
     return metadata_path;
 }
 
+String DatabaseOrdinary::getDatabaseName() const
+{
+    return name;
+}
+
 String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const
 {
     return detail::getTableMetadataPath(metadata_path, table_name);
