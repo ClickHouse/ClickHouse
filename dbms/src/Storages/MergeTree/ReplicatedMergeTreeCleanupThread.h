@@ -48,7 +48,6 @@ private:
     void getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
 
     /// TODO Removing old quorum/failed_parts
-    /// TODO Removing old nonincrement_block_numbers
 };
 
 

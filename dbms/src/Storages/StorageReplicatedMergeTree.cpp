@@ -486,7 +486,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
         zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/nonincrement_block_numbers", "",
-        zkutil::CreateMode::Persistent));
+        zkutil::CreateMode::Persistent)); /// /nonincrement_block_numbers dir is unused, but is created nonetheless for backwards compatibility.
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/leader_election", "",
         zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp", "",
@@ -1331,7 +1331,6 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
                   * - if replicas do not become active;
                   * - if there is a `quorum` node with this part;
                   * - delete `quorum` node;
-                  * - set `nonincrement_block_numbers` to resolve merges through the number of the lost part;
                   * - add a part to the list `quorum/failed_parts`;
                   * - if the part is not already removed from the list for deduplication `blocks/block_num`, then delete it;
                   *
@@ -1381,13 +1380,6 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
                             throw Exception("Logical error: log entry with quorum for part covering more than one block number",
                                 ErrorCodes::LOGICAL_ERROR);
 
-                        zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id, "");
-
-                        ops.emplace_back(zkutil::makeCreateRequest(
-                            zookeeper_path + "/nonincrement_block_numbers/" + part_info.partition_id + "/block-" + padIndex(part_info.min_block),
-                            "",
-                            zkutil::CreateMode::Persistent));
-
                         ops.emplace_back(zkutil::makeCreateRequest(
                             zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name,
                             "",
@@ -1403,7 +1395,8 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
                         if (code == ZooKeeperImpl::ZooKeeper::ZOK)
                         {
                             LOG_DEBUG(log, "Marked quorum for part " << entry.new_part_name << " as failed.");
-                            return true;    /// NOTE Deletion from `virtual_parts` is not done, but it is only necessary for merges.
+                            queue.removeFromVirtualParts(part_info);
+                            return true;
                         }
                         else if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION || code == ZooKeeperImpl::ZooKeeper::ZNONODE || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
                         {
@@ -1695,178 +1688,6 @@ bool StorageReplicatedMergeTree::queueTask()
 }
 
 
-namespace
-{
-    bool canMergePartsAccordingToZooKeeperInfo(
-        const MergeTreeData::DataPartPtr & left,
-        const MergeTreeData::DataPartPtr & right,
-        zkutil::ZooKeeperPtr && zookeeper, const String & zookeeper_path, const MergeTreeData & data, String * out_reason = nullptr)
-    {
-        const String & partition_id = left->info.partition_id;
-
-        /// You can not merge parts, among which is a part for which the quorum is unsatisfied.
-        /// Note: theoretically, this could be resolved. But this will make logic more complex.
-        String quorum_node_value;
-        if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_node_value))
-        {
-            ReplicatedMergeTreeQuorumEntry quorum_entry;
-            quorum_entry.fromString(quorum_node_value);
-
-            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
-
-            if (part_info.min_block != part_info.max_block)
-                throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
-
-            if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
-            {
-                if (out_reason)
-                    *out_reason = "Quorum status condition is unsatisfied";
-                return false;
-            }
-        }
-
-        /// Won't merge last_part even if quorum is satisfied, because we gonna check if replica has this part
-        /// on SELECT execution.
-        String quorum_last_part;
-        if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", quorum_last_part) && quorum_last_part.empty() == false)
-        {
-            auto part_info = MergeTreePartInfo::fromPartName(quorum_last_part, data.format_version);
-
-            if (part_info.min_block != part_info.max_block)
-                throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
-
-            if (left->info.max_block <= part_info.min_block && right->info.min_block >= part_info.max_block)
-            {
-                if (out_reason)
-                    *out_reason = "Quorum 'last part' condition is unsatisfied";
-                return false;
-            }
-        }
-
-        /// You can merge the parts, if all the numbers between them are abandoned - do not correspond to any blocks.
-        for (Int64 number = left->info.max_block + 1; number <= right->info.min_block - 1; ++number)
-        {
-            String path1 = zookeeper_path +              "/block_numbers/" + partition_id + "/block-" + padIndex(number);
-            String path2 = zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(number);
-
-            if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
-                AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
-            {
-                if (out_reason)
-                    *out_reason = "Block " + toString(number) + " in gap between merging parts " + left->name + " and "
-                                  + right->name + " is not abandoned";
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-
-    /// If any of the parts is already going to be merged into a larger one, do not agree to merge it.
-    bool partsWillNotBeMergedOrDisabled(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
-                                        ReplicatedMergeTreeQueue & queue, String * out_reason = nullptr)
-    {
-        auto set_reason = [&out_reason] (const String & part_name)
-        {
-            if (out_reason)
-                *out_reason = "Part " + part_name + " cannot be merged yet, a merge has already assigned for it or it is temporarily disabled";
-            return false;
-        };
-
-        if (queue.partWillBeMergedOrMergesDisabled(left->name))
-            return set_reason(left->name);
-
-        if (left.get() != right.get() && queue.partWillBeMergedOrMergesDisabled(right->name))
-            return set_reason(right->name);
-
-        return true;
-    }
-
-
-    /** It can take a long time to determine whether it is possible to merge two adjacent parts.
-    * Two adjacent parts can be merged if all block numbers between their numbers are not used (abandoned).
-    * This means that another part can not be inserted between these parts.
-    *
-    * But if the numbers of adjacent blocks differ much (usually if there are many "abandoned" blocks between them),
-    *  then too many read requests are made to ZooKeeper to find out if it's possible to merge them.
-    *
-    * Let's use a statement that if a couple of parts were possible to merge, and their merge is not yet planned,
-    *  then now they can be merged, and we will remember this state,
-    *  not to send multiple identical requests to ZooKeeper.
-    */
-
-    /** Cache for function, that returns bool.
-    * If function returned true, cache it forever.
-    * If function returned false, cache it for exponentially growing time.
-    * Not thread safe.
-    */
-    template <typename Key>
-    struct CachedMergingPredicate
-    {
-        using clock = std::chrono::steady_clock;
-
-        struct Expiration
-        {
-            static constexpr clock::duration min_delay = std::chrono::seconds(1);
-            static constexpr clock::duration max_delay = std::chrono::seconds(600);
-            static constexpr double exponent_base = 2;
-
-            clock::time_point expire_time;
-            clock::duration delay = clock::duration::zero();
-
-            void next(clock::time_point now)
-            {
-                if (delay == clock::duration::zero())
-                    delay = min_delay;
-                else
-                {
-                    delay *= exponent_base;
-                    if (delay > max_delay)
-                        delay = max_delay;
-                }
-
-                expire_time = now + delay;
-            }
-
-            bool expired(clock::time_point now) const
-            {
-                return now > expire_time;
-            }
-        };
-
-        std::set<Key> true_keys;
-        std::map<Key, Expiration> false_keys;
-
-        template <typename Function, typename ArgsToKey, typename... Args>
-        bool get(clock::time_point now, Function && function, ArgsToKey && args_to_key, Args &&... args)
-        {
-            Key key{args_to_key(std::forward<Args>(args)...)};
-
-            if (true_keys.count(key))
-                return true;
-
-            auto it = false_keys.find(key);
-            if (false_keys.end() != it && !it->second.expired(now))
-                return false;
-
-            bool value = function(std::forward<Args>(args)...);
-
-            if (value)
-                true_keys.insert(key);
-            else
-                false_keys[key].next(now);
-
-            return value;
-        }
-    };
-
-    template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::min_delay;
-    template <typename Key> constexpr CachedMergingPredicate<Key>::clock::duration CachedMergingPredicate<Key>::Expiration::max_delay;
-    template <typename Key> constexpr double CachedMergingPredicate<Key>::Expiration::exponent_base;
-}
-
-
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
     setThreadName("ReplMTMergeSel");
@@ -1874,41 +1695,22 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
     bool deduplicate = false; /// TODO: read deduplicate option from table config
 
-    auto uncached_merging_predicate = [this](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-    {
-        return canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data);
-    };
-
-    auto merging_predicate_args_to_key = [](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-    {
-        return std::make_pair(left->name, right->name);
-    };
-
-    CachedMergingPredicate<std::pair<std::string, std::string>> cached_merging_predicate;
-
-    /// Will be updated below.
-    std::chrono::steady_clock::time_point now;
-
-    auto can_merge = [&] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
-    {
-        return partsWillNotBeMergedOrDisabled(left, right, queue)
-               && cached_merging_predicate.get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
-    };
-
     while (is_leader)
     {
         bool success = false;
 
         try
         {
+            /// We must select parts for merge under merge_selecting_mutex because other threads
+            /// (OPTIMIZE queries) can assign new merges.
             std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-            /// You need to load new entries into the queue before you select parts to merge.
-            ///  (so we know which parts are already going to be merged).
-            /// We must select parts for merge under the mutex because other threads (OPTIMIZE queries) could push new merges.
+            auto zookeeper = getZooKeeper();
+
+            /// You need to load new entries into the queue to count merges.
             if (merge_selecting_logs_pulling_is_required)
             {
-                pullLogsToQueue();
+                queue.pullLogsToQueue(zookeeper, nullptr);
                 merge_selecting_logs_pulling_is_required = false;
             }
 
@@ -1925,17 +1727,17 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             }
             else
             {
-                MergeTreeDataMerger::FuturePart future_merged_part;
-
                 size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
 
-                now = std::chrono::steady_clock::now();
-
-                if (max_parts_size_for_merge > 0
-                    && merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge))
+                if (max_parts_size_for_merge > 0)
                 {
-                    merge_selecting_logs_pulling_is_required = true;
-                    success = createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate);
+                    ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
+                    MergeTreeDataMerger::FuturePart future_merged_part;
+                    if (merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge))
+                    {
+                        merge_selecting_logs_pulling_is_required = true;
+                        success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
+                    }
                 }
             }
         }
@@ -1956,10 +1758,12 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 
 bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
-    const MergeTreeData::DataPartsVector & parts, const String & merged_name, bool deduplicate, ReplicatedMergeTreeLogEntryData * out_log_entry)
+    zkutil::ZooKeeperPtr & zookeeper,
+    const MergeTreeData::DataPartsVector & parts,
+    const String & merged_name,
+    bool deduplicate,
+    ReplicatedMergeTreeLogEntryData * out_log_entry)
 {
-    auto zookeeper = getZooKeeper();
-
     bool all_in_zk = true;
     for (const auto & part : parts)
     {
@@ -2001,7 +1805,6 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
         for (Int64 number = parts[i]->info.max_block + 1; number <= parts[i + 1]->info.min_block - 1; ++number)
         {
             zookeeper->tryRemove(zookeeper_path + "/block_numbers/" + partition_id + "/block-" + padIndex(number));
-            zookeeper->tryRemove(zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(number));
         }
     }
 
@@ -2533,24 +2336,20 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         return true;
     }
 
-    auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String * out_reason)
-    {
-        return partsWillNotBeMergedOrDisabled(left, right, queue, out_reason)
-               && canMergePartsAccordingToZooKeeperInfo(left, right, getZooKeeper(), zookeeper_path, data, out_reason);
-    };
-
     ReplicatedMergeTreeLogEntryData merge_entry;
     {
+        /// We must select parts for merge under merge_selecting_mutex because other threads
+        /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-
-        /// We must select parts for merge under the mutex because other threads (OPTIMIZE queries) could push new merges.
-        pullLogsToQueue();
 
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
         MergeTreeDataMerger::FuturePart future_merged_part;
         String disable_reason;
         bool selected = false;
+
+        auto zookeeper = getZooKeeper();
+        ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
         if (!partition)
         {
@@ -2579,7 +2378,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         /// It is important to pull new logs (even if creation of the entry fails due to network error)
         merge_selecting_logs_pulling_is_required = true;
 
-        if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
+        if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return handle_noop("Can't create merge queue node in ZooKeeper");
     }
 
@@ -3052,8 +2851,8 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 }
 
 
-AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                                           zkutil::Requests * precheck_ops)
+AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(
+    const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, zkutil::Requests * precheck_ops)
 {
     String partition_path = zookeeper_path + "/block_numbers/" + partition_id;
     if (!existsNodeCached(partition_path))
