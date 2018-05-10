@@ -31,7 +31,12 @@ struct MergeTreePartInfo
 
     bool operator==(const MergeTreePartInfo & rhs) const
     {
-        return !(*this < rhs || rhs < *this);
+        return !(*this != rhs);
+    }
+
+    bool operator!=(const MergeTreePartInfo & rhs) const
+    {
+        return *this < rhs || rhs < *this;
     }
 
     /// Contains another part (obtained after merging another part with some other)
