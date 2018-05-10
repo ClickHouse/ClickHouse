@@ -34,10 +34,10 @@
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/Orc/CompileUtils.h>
 #include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
-#include <llvm/ExecutionEngine/Orc/NullResolver.h>
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/MC/SubtargetFeature.h>
+#include <llvm/Support/DynamicLibrary.h>
 #include <llvm/Support/Host.h>
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
@@ -137,8 +137,9 @@ struct LLVMContext
     std::shared_ptr<llvm::Module> module;
 #endif
     std::unique_ptr<llvm::TargetMachine> machine;
-    llvm::orc::RTDyldObjectLinkingLayer objectLayer;
-    llvm::orc::IRCompileLayer<decltype(objectLayer), llvm::orc::SimpleCompiler> compileLayer;
+    std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
+    llvm::orc::RTDyldObjectLinkingLayer object_layer;
+    llvm::orc::IRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
     std::unordered_map<std::string, void *> symbols;
@@ -150,19 +151,16 @@ struct LLVMContext
         : module(std::make_shared<llvm::Module>("jit", context))
 #endif
         , machine(getNativeMachine())
+        , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
 #if LLVM_VERSION_MAJOR >= 7
-        , objectLayer(execution_session, [](llvm::orc::VModuleKey)
+        , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
-            return llvm::orc::RTDyldObjectLinkingLayer::Resources
-            {
-                std::make_shared<llvm::SectionMemoryManager>(),
-                std::make_shared<llvm::orc::NullResolver>()
-            };
+            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, memory_manager};
         })
 #else
-        , objectLayer([]() { return std::make_shared<llvm::SectionMemoryManager>(); })
+        , object_layer([this]() { return memory_manager; })
 #endif
-        , compileLayer(objectLayer, llvm::orc::SimpleCompiler(*machine))
+        , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
         , builder(context)
     {
@@ -194,38 +192,28 @@ struct LLVMContext
         fpm.doFinalization();
         mpm.run(*module);
 
-        /// name, mangled name
-        std::vector<std::pair<std::string, std::string>> function_names;
-        function_names.reserve(module->size());
+#if LLVM_VERSION_MAJOR >= 7
+        llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
+        if (compile_layer.addModule(module_key, std::move(module)))
+            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
+#else
+        if (!compile_layer.addModule(module, memory_manager))
+            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
+#endif
+
         for (const auto & function : *module)
         {
             std::string mangled_name;
             llvm::raw_string_ostream mangled_name_stream(mangled_name);
             llvm::Mangler::getNameWithPrefix(mangled_name_stream, function.getName(), layout);
             mangled_name_stream.flush();
-            function_names.emplace_back(function.getName(), mangled_name);
-        }
-
-#if LLVM_VERSION_MAJOR >= 7
-        llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
-        if (compileLayer.addModule(module_key, std::move(module)))
-            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#else
-        if (!compileLayer.addModule(module, std::make_shared<llvm::orc::NullResolver>()))
-            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#endif
-
-        for (const auto & names : function_names)
-        {
-            if (auto symbol = compileLayer.findSymbol(names.second, false))
-            {
-                if (auto address_or_error = symbol.getAddress())
-                    symbols[names.first] = reinterpret_cast<void *>(*address_or_error);
-                else
-                    throw Exception("Cannot get an address of compiled symbol from a module", ErrorCodes::CANNOT_COMPILE_CODE);
-            }
-            else
-                throw Exception("Cannot find compiled symbol in a module", ErrorCodes::CANNOT_COMPILE_CODE);
+            auto symbol = compile_layer.findSymbol(mangled_name, false);
+            if (!symbol)
+                continue; /// external function (e.g. an intrinsic that calls into libc)
+            auto address = symbol.getAddress();
+            if (!address)
+                throw Exception(("Function " + function.getName() + " failed to link").str(), ErrorCodes::CANNOT_COMPILE_CODE);
+            symbols[function.getName()] = reinterpret_cast<void *>(*address);
         }
     }
 };
@@ -537,6 +525,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
         {
             llvm::InitializeNativeTarget();
             llvm::InitializeNativeTargetAsmPrinter();
+            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
         }
     };
 

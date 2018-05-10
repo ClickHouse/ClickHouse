@@ -30,6 +30,15 @@ static inline bool typeIsEither(const IDataType & type)
     return (typeid_cast<const Ts *>(&type) || ...);
 }
 
+static inline bool typeIsSigned(const IDataType & type)
+{
+    return typeIsEither<
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
+        DataTypeFloat32, DataTypeFloat64,
+        DataTypeDate, DataTypeDateTime, DataTypeInterval
+    >(type);
+}
+
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
 {
     if (auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
@@ -77,11 +86,26 @@ static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataType
     throw Exception("Cannot cast non-number " + from->getName() + " to bool", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, const DataTypePtr & to)
+static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, llvm::Type * to)
 {
     auto * n_from = value->getType();
+    if (n_from == to)
+        return value;
+    if (n_from->isIntegerTy() && to->isFloatingPointTy())
+        return typeIsSigned(*from) ? b.CreateSIToFP(value, to) : b.CreateUIToFP(value, to);
+    if (n_from->isFloatingPointTy() && to->isIntegerTy())
+        return typeIsSigned(*from) ? b.CreateFPToSI(value, to) : b.CreateFPToUI(value, to);
+    if (n_from->isIntegerTy() && to->isIntegerTy())
+        return b.CreateIntCast(value, to, typeIsSigned(*from));
+    if (n_from->isFloatingPointTy() && to->isFloatingPointTy())
+        return b.CreateFPCast(value, to);
+    throw Exception("Cannot cast " + from->getName() + " to requested type", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, const DataTypePtr & to)
+{
     auto * n_to = toNativeType(b, to);
-    if (n_from == n_to)
+    if (value->getType() == n_to)
         return value;
     if (from->isNullable() && to->isNullable())
     {
@@ -95,21 +119,7 @@ static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr 
         auto * inner = nativeCast(b, from, value, removeNullable(to));
         return b.CreateInsertValue(llvm::Constant::getNullValue(n_to), inner, {0});
     }
-
-    bool is_signed = typeIsEither<
-        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
-        DataTypeFloat32, DataTypeFloat64,
-        DataTypeDate, DataTypeDateTime, DataTypeInterval
-    >(*from);
-    if (n_from->isIntegerTy() && n_to->isFloatingPointTy())
-        return is_signed ? b.CreateSIToFP(value, n_to) : b.CreateUIToFP(value, n_to);
-    if (n_from->isFloatingPointTy() && n_to->isIntegerTy())
-        return is_signed ? b.CreateFPToSI(value, n_to) : b.CreateFPToUI(value, n_to);
-    if (n_from->isIntegerTy() && n_to->isIntegerTy())
-        return b.CreateIntCast(value, n_to, is_signed);
-    if (n_from->isFloatingPointTy() && n_to->isFloatingPointTy())
-        return b.CreateFPCast(value, n_to);
-    throw Exception("Cannot cast " + from->getName() + " to " + to->getName(), ErrorCodes::NOT_IMPLEMENTED);
+    return nativeCast(b, from, value, n_to);
 }
 
 }
