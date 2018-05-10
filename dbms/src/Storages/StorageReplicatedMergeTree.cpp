@@ -3736,7 +3736,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     String partition_prefix = partition_id + "_";
-    zkutil::MultiAsyncResponse<zkutil::GetResponse> get_futures;
+    zkutil::AsyncResponses<zkutil::GetResponse> get_futures;
     for (const String & block_id : blocks)
     {
         if (startsWith(block_id, partition_prefix))
@@ -3746,7 +3746,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         }
     }
 
-    zkutil::MultiAsyncResponse<zkutil::RemoveResponse> to_delete_futures;
+    zkutil::AsyncResponses<zkutil::RemoveResponse> to_delete_futures;
     for (auto & pair : get_futures)
     {
         const String & path = pair.first;

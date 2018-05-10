@@ -19,6 +19,8 @@ class DatabaseMemory : public DatabaseWithOwnTablesBase
 public:
     DatabaseMemory(String name_);
 
+    String getDatabaseName() const override;
+
     String getEngineName() const override { return "Memory"; }
 
     void loadTables(

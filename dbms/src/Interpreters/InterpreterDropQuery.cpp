@@ -168,17 +168,12 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
 
             database->shutdown();
             /// Delete the database.
-            database->drop();
+            database->drop(context);
 
             /// Remove data directory if it is not virtual database. TODO: should IDatabase::drop() do that?
             String database_data_path = database->getDataPath();
             if (!database_data_path.empty())
                 Poco::File(database_data_path).remove(false);
-
-            /// Old ClickHouse versions did not store database.sql files
-            Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
-            if (database_metadata_file.exists())
-                database_metadata_file.remove(false);
         }
     }
 

@@ -7,6 +7,8 @@
 #include <memory>
 #include <functional>
 #include <Poco/File.h>
+#include <Common/escapeForFileName.h>
+#include <Interpreters/Context.h>
 
 
 class ThreadPool;
@@ -133,6 +135,7 @@ public:
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
 
+    virtual String getDatabaseName() const { return {}; }
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
@@ -144,11 +147,17 @@ public:
     virtual void shutdown() = 0;
 
     /// Delete metadata, the deletion of which differs from the recursive deletion of the directory, if any.
-    virtual void drop()
+    virtual void drop(Context & context)
     {
-        String metadata_path = getMetadataPath();
-        if (!metadata_path.empty())
-            Poco::File(metadata_path).remove(false);
+        String database_name = getDatabaseName();
+        String database_name_escaped = escapeForFileName(database_name);
+
+        Poco::File(context.getPath() + "metadata/" + database_name_escaped + "/").remove(false);
+
+        /// Old ClickHouse versions did not store database.sql files
+        Poco::File database_metadata_file(context.getPath() + "metadata/" + database_name_escaped + ".sql");
+        if (database_metadata_file.exists())
+            database_metadata_file.remove(false);
     };
 
     virtual ~IDatabase() {}
