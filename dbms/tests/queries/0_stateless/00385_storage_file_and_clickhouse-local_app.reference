@@ -6,4 +6,12 @@
 0 0 0
 0 0 0
 
+max_rows_in_distinct	33
+max_rows_in_distinct	33
+0
+
+SELECT nothing_to_do();
+SELECT 42;
+42
+
 1
