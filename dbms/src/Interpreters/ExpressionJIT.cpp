@@ -127,6 +127,39 @@ static llvm::TargetMachine * getNativeMachine()
     );
 }
 
+#if LLVM_VERSION_MAJOR >= 7
+auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
+{
+    auto flags = [&](llvm::orc::SymbolFlagsMap & flags, const llvm::orc::SymbolNameSet & symbols)
+    {
+        llvm::orc::SymbolNameSet missing;
+        for (const auto & symbol : symbols)
+        {
+            auto resolved = jsr.lookupFlags({*symbol});
+            if (resolved && resolved->size())
+                flags.emplace(symbol, resolved->begin()->second);
+            else
+                missing.emplace(symbol);
+        }
+        return missing;
+    };
+    auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols)
+    {
+        llvm::orc::SymbolNameSet missing;
+        for (const auto & symbol : symbols)
+        {
+            auto resolved = jsr.lookup({*symbol});
+            if (resolved && resolved->size())
+                query->resolve(symbol, resolved->begin()->second);
+            else
+                missing.emplace(symbol);
+        }
+        return missing;
+    };
+    return llvm::orc::createSymbolResolver(flags, symbols);
+}
+#endif
+
 struct LLVMContext
 {
     llvm::LLVMContext context;
@@ -155,7 +188,7 @@ struct LLVMContext
 #if LLVM_VERSION_MAJOR >= 7
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
-            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, memory_manager};
+            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, wrapJITSymbolResolver(*memory_manager)};
         })
 #else
         , object_layer([this]() { return memory_manager; })
@@ -192,6 +225,11 @@ struct LLVMContext
         fpm.doFinalization();
         mpm.run(*module);
 
+        std::vector<std::string> functions;
+        functions.reserve(module->size());
+        for (const auto & function : *module)
+            functions.emplace_back(function.getName());
+
 #if LLVM_VERSION_MAJOR >= 7
         llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
         if (compile_layer.addModule(module_key, std::move(module)))
@@ -201,19 +239,19 @@ struct LLVMContext
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #endif
 
-        for (const auto & function : *module)
+        for (const auto & name : functions)
         {
             std::string mangled_name;
             llvm::raw_string_ostream mangled_name_stream(mangled_name);
-            llvm::Mangler::getNameWithPrefix(mangled_name_stream, function.getName(), layout);
+            llvm::Mangler::getNameWithPrefix(mangled_name_stream, name, layout);
             mangled_name_stream.flush();
             auto symbol = compile_layer.findSymbol(mangled_name, false);
             if (!symbol)
                 continue; /// external function (e.g. an intrinsic that calls into libc)
             auto address = symbol.getAddress();
             if (!address)
-                throw Exception(("Function " + function.getName() + " failed to link").str(), ErrorCodes::CANNOT_COMPILE_CODE);
-            symbols[function.getName()] = reinterpret_cast<void *>(*address);
+                throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
+            symbols[name] = reinterpret_cast<void *>(*address);
         }
     }
 };
