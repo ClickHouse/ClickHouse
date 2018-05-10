@@ -26,3 +26,6 @@ target_link_libraries (merge_selector dbms)
 
 add_executable (merge_selector2 merge_selector2.cpp)
 target_link_libraries (merge_selector2 dbms)
+
+add_executable (get_current_inserts_in_replicated get_current_inserts_in_replicated.cpp)
+target_link_libraries (get_current_inserts_in_replicated dbms)

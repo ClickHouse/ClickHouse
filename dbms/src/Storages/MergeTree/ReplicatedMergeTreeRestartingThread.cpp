@@ -264,6 +264,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
                 LOG_WARNING(log, "Part " << part_name << " with failed quorum is not in ZooKeeper. This shouldn't happen often.");
 
             storage.data.renameAndDetachPart(part, "noquorum_");
+            storage.queue.removeFromVirtualParts(part->info);
         }
     }
 }
