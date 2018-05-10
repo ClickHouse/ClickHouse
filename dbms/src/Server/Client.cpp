@@ -1362,10 +1362,12 @@ public:
             }
         }
 
+        ioctl(0, TIOCGWINSZ, &terminal_size);
+
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        boost::program_options::options_description main_description("Main options");
+        boost::program_options::options_description main_description("Main options", terminal_size.ws_col);
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
@@ -1451,7 +1453,7 @@ public:
             }
         }
 
-        /// Extract settings and limits from the options.
+        /// Extract settings from the options.
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (options.count(#NAME)) \
             context.setSetting(#NAME, options[#NAME].as<std::string>());
