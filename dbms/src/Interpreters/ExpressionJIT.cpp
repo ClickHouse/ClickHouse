@@ -225,6 +225,11 @@ struct LLVMContext
         fpm.doFinalization();
         mpm.run(*module);
 
+        std::vector<std::string> functions;
+        functions.reserve(module->size());
+        for (const auto & function : *module)
+            functions.emplace_back(function.getName());
+
 #if LLVM_VERSION_MAJOR >= 7
         llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
         if (compile_layer.addModule(module_key, std::move(module)))
@@ -234,19 +239,19 @@ struct LLVMContext
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
 #endif
 
-        for (const auto & function : *module)
+        for (const auto & name : functions)
         {
             std::string mangled_name;
             llvm::raw_string_ostream mangled_name_stream(mangled_name);
-            llvm::Mangler::getNameWithPrefix(mangled_name_stream, function.getName(), layout);
+            llvm::Mangler::getNameWithPrefix(mangled_name_stream, name, layout);
             mangled_name_stream.flush();
             auto symbol = compile_layer.findSymbol(mangled_name, false);
             if (!symbol)
                 continue; /// external function (e.g. an intrinsic that calls into libc)
             auto address = symbol.getAddress();
             if (!address)
-                throw Exception(("Function " + function.getName() + " failed to link").str(), ErrorCodes::CANNOT_COMPILE_CODE);
-            symbols[function.getName()] = reinterpret_cast<void *>(*address);
+                throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
+            symbols[name] = reinterpret_cast<void *>(*address);
         }
     }
 };
