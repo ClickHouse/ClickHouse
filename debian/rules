@@ -15,10 +15,10 @@ DESTDIR = $(CURDIR)/debian/tmp
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 #TODO: why it not working? (maybe works in debhelper 10+)
-#ifndef THREADS_COUNT
-#    THREADS_COUNT:=$(shell nproc || grep -c ^processor /proc/cpuinfo)
-#endif
-#DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
+ifndef THREADS_COUNT
+    THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
+endif
+DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
 
 ifndef ENABLE_TESTS
     CMAKE_FLAGS += -DENABLE_TESTS=0
@@ -58,6 +58,8 @@ endif
 # Useful for bulding on low memory systems
 ifndef DISABLE_PARALLEL
     DH_FLAGS += --parallel
+else
+    THREADS_COUNT = 1
 endif
 
 %:
@@ -65,6 +67,10 @@ endif
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
+
+override_dh_auto_build:
+	# Fix fir ninja. Do not add -O.
+	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
 
 override_dh_auto_test:
 	#TODO, use ENABLE_TESTS=1

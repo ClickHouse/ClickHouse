@@ -39,7 +39,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1406,9 +1406,28 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 
 void Context::reloadClusterConfig()
 {
-    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
-    auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-    shared->clusters = std::make_unique<Clusters>(config, settings);
+    while (true)
+    {
+        ConfigurationPtr cluster_config;
+        {
+            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            cluster_config = shared->clusters_config;
+        }
+
+        auto & config = cluster_config ? *cluster_config : getConfigRef();
+        auto new_clusters = std::make_unique<Clusters>(config, settings);
+
+        {
+            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            if (shared->clusters_config.get() == cluster_config.get())
+            {
+                shared->clusters = std::move(new_clusters);
+                return;
+            }
+
+            /// Clusters config has been suddenly changed, recompute clusters
+        }
+    }
 }
 
 

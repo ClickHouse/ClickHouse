@@ -14,7 +14,7 @@ namespace ext
     std::decay_t<To> bit_cast(const From & from)
     {
         To res {};
-        memcpy(&res, &from, std::min(sizeof(res), sizeof(from)));
+        memcpy(static_cast<void*>(&res), &from, std::min(sizeof(res), sizeof(from)));
         return res;
     };
 

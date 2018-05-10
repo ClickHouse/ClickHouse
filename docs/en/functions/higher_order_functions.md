@@ -86,3 +86,30 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 │ [1, 2, 3, 4] │
 └──────────────┘
 ```
+
+### arraySort(\[func,\] arr1, ...)
+
+Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+
+The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to impove sorting efficiency.
+
+Example:
+
+```sql
+SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
+```
+
+```text
+┌─res────────────────┐
+│ ['world', 'hello'] │
+└────────────────────┘
+```
+
+### arrayReverseSort(\[func,\] arr1, ...)
+
+Returns an array as result of sorting the elements of `arr1` in descending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+
+
+
+
+ 
