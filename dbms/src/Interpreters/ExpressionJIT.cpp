@@ -531,6 +531,17 @@ static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase& fun
 
 void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block)
 {
+    struct LLVMTargetInitializer
+    {
+        LLVMTargetInitializer()
+        {
+            llvm::InitializeNativeTarget();
+            llvm::InitializeNativeTargetAsmPrinter();
+        }
+    };
+
+    static LLVMTargetInitializer initializer;
+
     auto context = std::make_shared<LLVMContext>();
     /// an empty optional is a poisoned value prohibiting the column's producer from being removed
     /// (which it could be, if it was inlined into every dependent function).
@@ -609,19 +620,6 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     context->finalize();
 }
 
-}
-
-
-namespace
-{
-    struct LLVMTargetInitializer
-    {
-        LLVMTargetInitializer()
-        {
-            llvm::InitializeNativeTarget();
-            llvm::InitializeNativeTargetAsmPrinter();
-        }
-    } llvmInitializer;
 }
 
 #endif
