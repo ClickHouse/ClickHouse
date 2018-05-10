@@ -650,6 +650,8 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../../table_functions/file.md).
 
+**Пример**
+
 ```xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
