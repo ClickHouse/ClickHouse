@@ -41,6 +41,6 @@ ${REQUIRED_LLVM_LIBRARIES}
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
 
-if (NOT APPLE)
-    target_link_libraries(clickhouse-compiler-lib PRIVATE libtinfo.a)
+if (TERMCAP_LIBRARY)
+    target_link_libraries(clickhouse-compiler-lib PUBLIC ${TERMCAP_LIBRARY})
 endif()
