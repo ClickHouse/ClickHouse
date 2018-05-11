@@ -4,7 +4,7 @@
 
 `file(path, format, structure)` - возвращает таблицу со столбцами, указанными в structure, созданную из файла path типа format.
 
-path - относительный путь до файла от [user_files_path](../operations/server_settings/settings.md#table_functions-file).
+path - относительный путь до файла от [user_files_path](../operations/server_settings/settings.md#user_files_path).
 
 format - [формат](../formats) файла.
 
