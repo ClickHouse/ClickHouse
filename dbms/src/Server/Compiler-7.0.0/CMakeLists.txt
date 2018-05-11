@@ -42,5 +42,5 @@ PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
 
 if (TINFO_LIBRARY)
-    target_link_libraries(clickhouse-compiler-lib PRIVATE ${TINFO_LIBRARY})
+    target_link_libraries(clickhouse-compiler-lib PUBLIC ${TINFO_LIBRARY})
 endif()
