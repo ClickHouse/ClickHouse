@@ -2,7 +2,6 @@ option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' op
 option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library. Default: system library for quicker developer builds." 0)
 
 if (ENABLE_EMBEDDED_COMPILER)
-
     if (USE_INTERNAL_LLVM_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
         message (WARNING "submodule contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
         set (USE_INTERNAL_LLVM_LIBRARY 0)

@@ -1,6 +1,5 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 
-#include <Common/SimpleCache.h>
 #include <Common/config.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromIStream.h>

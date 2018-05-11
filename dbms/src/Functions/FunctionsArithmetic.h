@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
@@ -18,6 +19,13 @@
 #include <ext/range.h>
 #include <common/intExp.h>
 #include <boost/integer/common_factor.hpp>
+
+#if USE_EMBEDDED_COMPILER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
+#endif
 
 
 namespace DB
@@ -106,6 +114,15 @@ struct PlusImpl
         /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
         return static_cast<Result>(a) + b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return left->getType()->isIntegerTy() ? b.CreateAdd(left, right) : b.CreateFAdd(left, right);
+    }
+#endif
 };
 
 
@@ -119,6 +136,15 @@ struct MultiplyImpl
     {
         return static_cast<Result>(a) * b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return left->getType()->isIntegerTy() ? b.CreateMul(left, right) : b.CreateFMul(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -131,6 +157,15 @@ struct MinusImpl
     {
         return static_cast<Result>(a) - b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return left->getType()->isIntegerTy() ? b.CreateSub(left, right) : b.CreateFSub(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -143,6 +178,17 @@ struct DivideFloatingImpl
     {
         return static_cast<Result>(a) / b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (left->getType()->isIntegerTy())
+            throw Exception("DivideFloatingImpl expected a floating-point type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateFDiv(left, right);
+    }
+#endif
 };
 
 
@@ -189,6 +235,10 @@ struct DivideIntegralImpl
         throwIfDivisionLeadsToFPE(a, b);
         return a / b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+#endif
 };
 
 template <typename A, typename B>
@@ -201,6 +251,10 @@ struct DivideIntegralOrZeroImpl
     {
         return unlikely(divisionLeadsToFPE(a, b)) ? 0 : a / b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// TODO implement the checks
+#endif
 };
 
 template <typename A, typename B>
@@ -212,9 +266,12 @@ struct ModuloImpl
     static inline Result apply(A a, B b)
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-        return typename NumberTraits::ToInteger<A>::Type(a)
-            % typename NumberTraits::ToInteger<B>::Type(b);
+        return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+#endif
 };
 
 template <typename A, typename B>
@@ -225,9 +282,19 @@ struct BitAndImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            & static_cast<Result>(b);
+        return static_cast<Result>(a) & static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitAndImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateAnd(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -238,9 +305,19 @@ struct BitOrImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            | static_cast<Result>(b);
+        return static_cast<Result>(a) | static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitOrImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateOr(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -251,9 +328,19 @@ struct BitXorImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            ^ static_cast<Result>(b);
+        return static_cast<Result>(a) ^ static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitXorImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateXor(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -264,9 +351,19 @@ struct BitShiftLeftImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            << static_cast<Result>(b);
+        return static_cast<Result>(a) << static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitShiftLeftImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateShl(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -277,9 +374,19 @@ struct BitShiftRightImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            >> static_cast<Result>(b);
+        return static_cast<Result>(a) >> static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitShiftRightImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -293,6 +400,19 @@ struct BitRotateLeftImpl
         return (static_cast<Result>(a) << static_cast<Result>(b))
             | (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitRotateLeftImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        auto * size = llvm::ConstantInt::get(left->getType(), left->getType()->getPrimitiveSizeInBits());
+        /// XXX how is this supposed to behave in signed mode?
+        return b.CreateOr(b.CreateShl(left, right), b.CreateLShr(left, b.CreateSub(size, right)));
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -306,14 +426,19 @@ struct BitRotateRightImpl
         return (static_cast<Result>(a) >> static_cast<Result>(b))
             | (static_cast<Result>(a) << ((sizeof(Result) * 8) - static_cast<Result>(b)));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitRotateRightImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        auto * size = llvm::ConstantInt::get(left->getType(), left->getType()->getPrimitiveSizeInBits());
+        return b.CreateOr(b.CreateLShr(left, right), b.CreateShl(left, b.CreateSub(size, right)));
+    }
+#endif
 };
-
-
-template <typename T>
-std::enable_if_t<std::is_integral_v<T>, T> toInteger(T x) { return x; }
-
-template <typename T>
-std::enable_if_t<std::is_floating_point_v<T>, Int64> toInteger(T x) { return Int64(x); }
 
 template <typename A, typename B>
 struct BitTestImpl
@@ -321,9 +446,15 @@ struct BitTestImpl
     using ResultType = UInt8;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b) { return (toInteger(a) >> toInteger(b)) & 1; };
-};
+    static inline Result apply(A a, B b)
+    {
+        return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
+    };
 
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// TODO
+#endif
+};
 
 template <typename A, typename B>
 struct LeastBaseImpl
@@ -336,6 +467,18 @@ struct LeastBaseImpl
         /** gcc 4.9.2 successfully vectorizes a loop from this function. */
         return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (!left->getType()->isIntegerTy())
+            /// XXX minnum is basically fmin(), it may or may not match whatever apply() does
+            return b.CreateMinNum(left, right);
+        return b.CreateSelect(is_signed ? b.CreateICmpSLT(left, right) : b.CreateICmpULT(left, right), left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -349,6 +492,10 @@ struct LeastSpecialImpl
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::lessOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// ???
+#endif
 };
 
 template <typename A, typename B>
@@ -365,6 +512,19 @@ struct GreatestBaseImpl
     {
         return static_cast<Result>(a) > static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (!left->getType()->isIntegerTy())
+            /// XXX maxnum is basically fmax(), it may or may not match whatever apply() does
+            /// XXX CreateMaxNum is broken on LLVM 5.0 and 6.0 (generates minnum instead; fixed in 7)
+            return b.CreateBinaryIntrinsic(llvm::Intrinsic::maxnum, left, right);
+        return b.CreateSelect(is_signed ? b.CreateICmpSGT(left, right) : b.CreateICmpUGT(left, right), left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -378,6 +538,10 @@ struct GreatestSpecialImpl
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::greaterOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// ???
+#endif
 };
 
 template <typename A, typename B>
@@ -393,6 +557,15 @@ struct NegateImpl
     {
         return -static_cast<ResultType>(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        return arg->getType()->isIntegerTy() ? b.CreateNeg(arg) : b.CreateFNeg(arg);
+    }
+#endif
 };
 
 template <typename A>
@@ -404,6 +577,17 @@ struct BitNotImpl
     {
         return ~static_cast<ResultType>(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        if (!arg->getType()->isIntegerTy())
+            throw Exception("BitNotImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateNot(arg);
+    }
+#endif
 };
 
 template <typename A>
@@ -420,6 +604,10 @@ struct AbsImpl
         else if constexpr (std::is_floating_point_v<A>)
             return static_cast<ResultType>(std::abs(a));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// special type handling, some other time
+#endif
 };
 
 template <typename A, typename B>
@@ -436,6 +624,10 @@ struct GCDImpl
             typename NumberTraits::ToInteger<Result>::Type(a),
             typename NumberTraits::ToInteger<Result>::Type(b));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
+#endif
 };
 
 template <typename A, typename B>
@@ -452,6 +644,10 @@ struct LCMImpl
             typename NumberTraits::ToInteger<Result>::Type(a),
             typename NumberTraits::ToInteger<Result>::Type(b));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
+#endif
 };
 
 template <typename A>
@@ -463,6 +659,17 @@ struct IntExp2Impl
     {
         return intExp2(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        if (!arg->getType()->isIntegerTy())
+            throw Exception("IntExp2Impl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateShl(llvm::ConstantInt::get(arg->getType(), 1), arg);
+    }
+#endif
 };
 
 template <typename A>
@@ -474,6 +681,10 @@ struct IntExp10Impl
     {
         return intExp10(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// library function
+#endif
 };
 
 /// Used to indicate undefined operation
@@ -745,6 +956,43 @@ public:
         if (!valid)
             throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::LOGICAL_ERROR);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments) const override
+    {
+        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+            using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+            return !std::is_same_v<ResultDataType, InvalidType> && OpSpec::compilable;
+        });
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    {
+        llvm::Value * result = nullptr;
+        castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+            using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+            if constexpr (!std::is_same_v<ResultDataType, InvalidType> && OpSpec::compilable)
+            {
+                auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                auto type = std::make_shared<ResultDataType>();
+                auto * lval = nativeCast(b, types[0], values[0](), type);
+                auto * rval = nativeCast(b, types[1], values[1](), type);
+                result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                return true;
+            }
+            return false;
+        });
+        return result;
+    }
+#endif
 };
 
 
@@ -820,6 +1068,35 @@ public:
         if (!valid)
             throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments) const override
+    {
+        return castType(arguments[0].get(), [&](const auto & type)
+        {
+            return Op<typename std::decay_t<decltype(type)>::FieldType>::compilable;
+        });
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    {
+        llvm::Value * result = nullptr;
+        castType(types[0].get(), [&](const auto & type)
+        {
+            using T0 = typename std::decay_t<decltype(type)>::FieldType;
+            using T1 = typename Op<T0>::ResultType;
+            if constexpr (Op<T0>::compilable)
+            {
+                auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
+                result = Op<T0>::compile(b, v, std::is_signed_v<T1>);
+                return true;
+            }
+            return false;
+        });
+        return result;
+    }
+#endif
 
     bool hasInformationAboutMonotonicity() const override
     {
