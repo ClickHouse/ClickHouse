@@ -86,9 +86,9 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-if (USE_EMBEDDED_COMPILER)
+if (USE_EMBEDDED_COMPILER AND TINFO_LIBRARY)
     # It is needed for llvm::sys::Process::FileDescriptorHasColors.
-    set (CLICKHOUSE_FUNCTIONS_ADDITIONAL_LIBRARIES libtinfo.a)
+    set (CLICKHOUSE_FUNCTIONS_ADDITIONAL_LIBRARIES ${TINFO_LIBRARY})
 endif ()
 
 target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} ${CLICKHOUSE_FUNCTIONS_ADDITIONAL_LIBRARIES})

@@ -45,6 +45,6 @@ LLVMSupport
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
 
-if (NOT APPLE)
-    target_link_libraries(clickhouse-compiler-lib PRIVATE libtinfo.a)
+if (TINFO_LIBRARY)
+    target_link_libraries(clickhouse-compiler-lib PRIVATE ${TINFO_LIBRARY})
 endif()
