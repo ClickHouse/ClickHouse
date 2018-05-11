@@ -100,7 +100,7 @@ float exp2f(float x)
 		}
 		if (u.i >= 0x80000000) {  /* x < -126 */
 			if (u.i >= 0xc3160000 || (u.i & 0x0000ffff))
-				{ volatile float tmp; tmp = (-0x1p-149f/x); }
+				{ volatile float tmp; tmp = (-0x1p-149f/x); (void)tmp; }
 			if (u.i >= 0xc3160000)  /* x <= -150 */
 				return 0;
 		}
