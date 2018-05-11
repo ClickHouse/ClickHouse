@@ -32,9 +32,12 @@ HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_stru
     if (update_field.empty())
         return;
 
-    /// TODO This code is totally wrong and ignorant.
-    /// What if URL contains fragment (#). What if update_field contains characters that must be %-encoded.
-    std::string::size_type option = url.find("?");
+    std::string tmp_update_field;
+    Poco::URI::encode(update_field, "&", tmp_update_field);
+    update_field = tmp_update_field;
+
+    std::string::size_type option = url.substr(0, url.find("#", 0)).find("?");
+
     if (option == std::string::npos)
         update_field = '?' + update_field;
     else
@@ -66,12 +69,12 @@ std::string HTTPDictionarySource::getUpdateFieldAndDate()
         timeinfo = localtime (&hr_time);
         strftime(buffer, 80, "=%Y-%m-%d%%20%H:%M:%S", timeinfo);
         std::string str_time(buffer);
-        return url + update_field + str_time;
+        return url.substr(0, url.find("#", 0)) + update_field + str_time;
     }
     else
     {
         update_time = std::chrono::system_clock::now();
-        return url + update_field + "=0000-00-00%2000:00:00"; ///for initial load
+        return url.substr(0, url.find("#", 0)) + update_field + "=0000-00-00%2000:00:00"; ///for initial load
     }
 }
 
