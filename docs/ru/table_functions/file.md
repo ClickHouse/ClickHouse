@@ -2,7 +2,7 @@
 
 # file
 
-`file(path, format, structure)` - создаёт таблицу из файла типа format, вида structure.
+`file(path, format, structure)` - возвращает таблицу со столбцами, указанными в structure, созданную из файла path типа format.
 
 path - относительный путь до файла от [user_files_path](../operations/server_settings/settings.md#table_functions-file).
 
