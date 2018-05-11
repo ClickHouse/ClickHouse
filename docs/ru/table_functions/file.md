@@ -13,6 +13,6 @@ structure - структура таблицы в форме UserID UInt64, URL S
 **Пример**
 
 ```sql
--- получение первых 10 строк таблицы из файла, состоящей из трёх колонок типа UInt32
+-- получение первых 10 строк таблицы, состоящей из трёх колонок типа UInt32 из CSV файла
 SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 10
 ```
