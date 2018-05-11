@@ -662,8 +662,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 <a name="server_settings-users_config"></a>
 
-<a name="table_functions-file"></a>
-
 ## user_files_path
 
 Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../../table_functions/file.md#table_functions-file).
