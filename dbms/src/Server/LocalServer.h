@@ -36,6 +36,7 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
+    void applyCmdOptions(Context & context);
     void applyCmdSettings(Context & context);
     void attachSystemTables();
     void processQueries();
