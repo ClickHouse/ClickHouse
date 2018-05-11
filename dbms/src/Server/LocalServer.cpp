@@ -171,7 +171,7 @@ try
     std::string default_database = config().getString("default_database", "_local");
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
-    applyCmdSettings(*context);
+    applyCmdOptions(*context);
 
     if (!context->getPath().empty())
     {
@@ -478,6 +478,12 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("verbose", true);
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
+}
+
+void LocalServer::applyCmdOptions(Context & context)
+{
+    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings(context);
 }
 
 }
