@@ -7,9 +7,11 @@
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DataStreams/ValuesRowOutputStream.h>
+#include <DataStreams/FormatFactory.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
@@ -26,17 +28,18 @@ namespace ErrorCodes
 }
 
 
-StorageMySQL::StorageMySQL(
-    const std::string & name,
+StorageMySQL::StorageMySQL(const std::string & name,
     mysqlxx::Pool && pool,
     const std::string & remote_database_name,
     const std::string & remote_table_name,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    const Context & context)
     : IStorage{columns_}
     , name(name)
     , remote_database_name(remote_database_name)
     , remote_table_name(remote_table_name)
     , pool(std::move(pool))
+    , context(context)
 {
 }
 
@@ -73,7 +76,7 @@ public:
             const std::string & remote_table_name ,
             const mysqlxx::PoolWithFailover::Entry & entry,
             const size_t & mysql_max_rows_to_insert)
-        : sample_block{storage.getSampleBlock()}
+        : storage{storage}
         , remote_database_name{remote_database_name}
         , remote_table_name{remote_table_name}
         , entry{entry}
@@ -81,7 +84,7 @@ public:
     {
     }
 
-   Block getHeader() const override { return sample_block; }
+   Block getHeader() const override { return storage.getSampleBlock(); }
 
    void write(const Block & block) override
    {
@@ -105,9 +108,9 @@ public:
    void writeBlockData(const Block & block)
    {
        WriteBufferFromOwnString sqlbuf;
-       sqlbuf << "INSERT INTO  " << remote_database_name << "." << remote_table_name << " ( " << block.dumpNames() << " ) VALUES ";
+       sqlbuf << "INSERT INTO `" << remote_database_name << "`.`" << remote_table_name << "` ( " << block.dumpNames() << " ) VALUES ";
 
-       auto writer = std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(sqlbuf), sample_block);
+       auto writer = FormatFactory().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
        writer->write(block);
        sqlbuf << ";";
 
@@ -117,6 +120,9 @@ public:
 
    Blocks splitBlocks(const Block & block, const size_t & max_rows) const
    {
+       // Avoid Excessive copy when block is small enough
+       if(block.rows() <= max_rows) return Blocks{std::move(block)};
+
        const size_t splited_block_size = ceil(block.rows() * 1.0 / max_rows);
        Blocks splitted_blocks(splited_block_size);
 
@@ -143,7 +149,7 @@ public:
 
 
 private:
-   Block sample_block;
+   const StorageMySQL & storage;
    std::string remote_database_name;
    std::string remote_table_name;
    mysqlxx::PoolWithFailover::Entry entry;
@@ -186,7 +192,8 @@ void registerStorageMySQL(StorageFactory & factory)
             std::move(pool),
             remote_database,
             remote_table,
-            args.columns);
+            args.columns,
+            args.context);
     });
 }
 

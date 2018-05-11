@@ -24,7 +24,8 @@ public:
         mysqlxx::Pool && pool,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const ColumnsDescription & columns);
+        const ColumnsDescription & columns,
+        const Context & context);
 
     std::string getName() const override { return "MySQL"; }
     std::string getTableName() const override { return name; }
@@ -40,6 +41,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
 private:
+    friend class StorageMySQLBlockOutputStream;
     std::string name;
 
     std::string remote_database_name;
@@ -47,6 +49,7 @@ private:
 
 
     mysqlxx::Pool pool;
+    const Context & context;
 };
 
 }
