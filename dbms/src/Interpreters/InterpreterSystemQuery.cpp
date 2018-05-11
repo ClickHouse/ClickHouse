@@ -3,6 +3,7 @@
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
 #include <Common/DNSResolver.h>
+#include <common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -95,7 +97,7 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery")) {}
+        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery")) {}
 
 
 BlockIO InterpreterSystemQuery::execute()
@@ -107,6 +109,10 @@ BlockIO InterpreterSystemQuery::execute()
     /// Use global context with fresh system profile settings
     Context system_context = context.getGlobalContext();
     system_context.setSetting("profile", context.getSystemProfileName());
+
+    /// Make canonical query for simpler processing
+    if (!query.target_table.empty() && query.target_database.empty())
+         query.target_database = context.getCurrentDatabase();
 
     switch (query.type)
     {
@@ -176,7 +182,12 @@ BlockIO InterpreterSystemQuery::execute()
             syncReplica(query);
             break;
         case Type::RESTART_REPLICAS:
-            restartReplicas();
+            restartReplicas(system_context);
+            break;
+        case Type::RESTART_REPLICA:
+            if (!tryRestartReplica(query.target_database, query.target_table, system_context))
+                throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
+                                ErrorCodes::BAD_ARGUMENTS);
             break;
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
@@ -189,8 +200,58 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-void InterpreterSystemQuery::restartReplicas()
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & context)
 {
+    auto database = context.getDatabase(database_name);
+    auto table_ddl_guard = context.getDDLGuard(database_name, table_name, "Table " + database_name + "." + table_name + " is restarting right now");
+    ASTPtr create_ast;
+
+    /// Detach actions
+    {
+        auto table = context.tryGetTable(database_name, table_name);
+
+        if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+            return nullptr;
+
+        table->shutdown();
+
+        /// If table was already dropped by anyone, an exception will be thrown
+        auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+        create_ast = context.getCreateTableQuery(database_name, table_name);
+
+        database->detachTable(table_name);
+    }
+
+    /// Attach actions
+    {
+        /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
+        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
+        create.attach = true;
+
+        std::string data_path = database->getDataPath();
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, context);
+
+        StoragePtr table = StorageFactory::instance().get(create,
+            data_path,
+            table_name,
+            database_name,
+            context,
+            context.getGlobalContext(),
+            columns,
+            create.attach,
+            false);
+
+        database->createTable(context, table_name, table, create_ast);
+
+        table->startup();
+        return table;
+    }
+}
+
+void InterpreterSystemQuery::restartReplicas(Context & context)
+{
+    std::vector<std::pair<String, String>> replica_names;
+
     for (auto & elem : context.getDatabases())
     {
         DatabasePtr & database = elem.second;
@@ -198,42 +259,18 @@ void InterpreterSystemQuery::restartReplicas()
 
         for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
         {
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                continue;
-
-            String table_name = iterator->name();
-
-            try
-            {
-                /// Detaching actions
-                {
-                    auto ast_detach = std::make_shared<ASTDropQuery>();
-                    ast_detach->detach = true;
-                    ast_detach->database = database_name;
-                    ast_detach->table = table_name;
-
-                    InterpreterDropQuery interpreter(ast_detach, context);
-                    interpreter.execute();
-                }
-
-                /// Attaching actions
-                {
-                    auto ast_attach = std::make_shared<ASTCreateQuery>();
-                    ast_attach->attach = true;
-                    ast_attach->database = database_name;
-                    ast_attach->table = table_name;
-
-                    InterpreterCreateQuery interpreter(ast_attach, context);
-                    interpreter.execute();
-                }
-            }
-            catch (Exception & e)
-            {
-                /// Continue attaching detaching in case of "ordinary" errors
-                tryLogCurrentException(log);
-            }
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+                replica_names.emplace_back(database_name, iterator->name());
         }
     }
+
+    if (replica_names.empty())
+        return;
+
+    ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), replica_names.size()));
+    for (auto & table : replica_names)
+        pool.schedule([&] () { tryRestartReplica(table.first, table.second, context); });
+    pool.wait();
 }
 
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)

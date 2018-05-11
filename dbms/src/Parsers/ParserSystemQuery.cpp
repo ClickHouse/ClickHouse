@@ -49,6 +49,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
 
+        case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
             if (!parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table))
                 return false;

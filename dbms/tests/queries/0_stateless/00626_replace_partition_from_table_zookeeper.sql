@@ -120,6 +120,8 @@ SYSTEM SYNC REPLICA test.dst_r2;
 SELECT count(), sum(d), uniqExact(_part) FROM test.dst_r2;
 
 SELECT 'After restart';
+USE test;
+SYSTEM RESTART REPLICA dst_r1;
 SYSTEM RESTART REPLICAS;
 SELECT count(), sum(d) FROM test.dst_r1;
 SELECT count(), sum(d) FROM test.dst_r2;

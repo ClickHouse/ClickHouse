@@ -62,9 +62,6 @@ std::string StackTrace::toString() const
         throw;
     }
 
-/// Dirty workaround for Asan false positive
-#if !defined(BUILD_TYPE_Asan)
     free(symbols);
-#endif
     return res.str();
 }

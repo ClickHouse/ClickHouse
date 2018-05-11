@@ -8,7 +8,9 @@ namespace DB
 class Context;
 class IAST;
 class ASTSystemQuery;
+class IStorage;
 using ASTPtr = std::shared_ptr<IAST>;
+using StoragePtr = std::shared_ptr<IStorage>;
 
 
 class InterpreterSystemQuery : public IInterpreter
@@ -23,7 +25,11 @@ private:
     Context & context;
     Poco::Logger * log = nullptr;
 
-    void restartReplicas();
+    /// Tries to get a replicated table and restart it
+    /// Returns pointer to a newly created table if the restart was successful
+    StoragePtr tryRestartReplica(const String & database_name, const String & table_name, Context & context);
+
+    void restartReplicas(Context & context);
     void syncReplica(ASTSystemQuery & query);
 };
 

@@ -33,6 +33,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "START LISTEN QUERIES";
         case Type::RESTART_REPLICAS:
             return "RESTART REPLICAS";
+        case Type::RESTART_REPLICA:
+            return "RESTART REPLICA";
         case Type::SYNC_REPLICA:
             return "SYNC REPLICA";
         case Type::RELOAD_DICTIONARY:
@@ -84,7 +86,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
-    if (type == Type::STOP_MERGES
+    if (   type == Type::STOP_MERGES
         || type == Type::START_MERGES
         || type == Type::STOP_FETCHES
         || type == Type::START_FETCHES
@@ -96,7 +98,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         if (!target_table.empty())
             print_database_table();
     }
-    else if (type == Type::SYNC_REPLICA)
+    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA)
     {
         print_database_table();
     }

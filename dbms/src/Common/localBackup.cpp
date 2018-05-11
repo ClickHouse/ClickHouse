@@ -1,3 +1,4 @@
+#include "localBackup.h"
 #include <sys/stat.h>
 #include <string>
 #include <iostream>
@@ -18,9 +19,10 @@ namespace ErrorCodes
 }
 
 
-static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, int level, int max_level)
+static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level,
+                            std::optional<size_t> max_level)
 {
-    if (max_level >= 0 && level > max_level)
+    if (max_level && level > max_level.value())
         return;
 
     if (level >= 1000)
@@ -74,7 +76,7 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
     }
 }
 
-void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, int max_level)
+void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, std::optional<size_t> max_level)
 {
     if (Poco::File(destination_path).exists()
         && Poco::DirectoryIterator(destination_path) != Poco::DirectoryIterator())
