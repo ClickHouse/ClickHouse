@@ -86,7 +86,12 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+if (USE_EMBEDDED_COMPILER)
+    # It is needed for llvm::sys::Process::FileDescriptorHasColors.
+    set (CLICKHOUSE_FUNCTIONS_ADDITIONAL_LIBRARIES libtinfo.a)
+endif ()
+
+target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} ${CLICKHOUSE_FUNCTIONS_ADDITIONAL_LIBRARIES})
 
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
@@ -108,4 +113,8 @@ endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)
+endif ()
+
+if (USE_EMBEDDED_COMPILER)
+    target_include_directories (clickhouse_functions BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
