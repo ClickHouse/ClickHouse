@@ -45,6 +45,6 @@ ${REQUIRED_LLVM_LIBRARIES}
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
 
-if (TINFO_LIBRARY)
-    target_link_libraries(clickhouse-compiler-lib PUBLIC ${TINFO_LIBRARY})
+if (TERMCAP_LIBRARY)
+    target_link_libraries(clickhouse-compiler-lib PUBLIC ${TERMCAP_LIBRARY})
 endif()
