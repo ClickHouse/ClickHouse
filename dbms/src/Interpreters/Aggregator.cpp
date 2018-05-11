@@ -24,6 +24,7 @@
 #include <Common/typeid_cast.h>
 #include <common/demangle.h>
 #include <Interpreters/config_compile.h>
+#include <Columns/ColumnConst.h>
 
 
 namespace ProfileEvents
@@ -101,18 +102,16 @@ Block Aggregator::getHeader(bool final) const
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
-            size_t arguments_size = params.aggregates[i].arguments.size();
-            DataTypes argument_types(arguments_size);
-            for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = params.src_header.safeGetByPosition(params.aggregates[i].arguments[j]).type;
+            DataTypePtr type = final ? params.aggregates[i].function->getReturnType() : aggregates_data_types.at(i);
 
-            DataTypePtr type;
-            if (final)
-                type = params.aggregates[i].function->getReturnType();
+            ColumnPtr column;
+            /// Use already computed result if it is const column
+            if (aggregates_const_result_columns.at(i))
+                column = final ? aggregates_const_result_columns_final.at(i) : aggregates_const_result_columns.at(i);
             else
-                type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
+                column = type->createColumn();
 
-            res.insert({ type, params.aggregates[i].column_name });
+            res.insert({ column, type, params.aggregates[i].column_name });
         }
     }
     else if (params.intermediate_header)
@@ -131,7 +130,7 @@ Block Aggregator::getHeader(bool final) const
         }
     }
 
-    return materializeBlock(res);
+    return res;
 }
 
 
@@ -158,6 +157,76 @@ Aggregator::Aggregator(const Params & params_)
 
         if (!params.aggregates[i].function->hasTrivialDestructor())
             all_aggregates_has_trivial_destructor = false;
+    }
+
+    /// Compute resulting types
+    aggregates_data_types.resize(params.aggregates_size);
+
+    if (params.src_header)
+    {
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            size_t arguments_size = params.aggregates[i].arguments.size();
+            DataTypes arg_types(arguments_size);
+            for (size_t j = 0; j < arguments_size; ++j)
+                arg_types[j] = params.src_header.safeGetByPosition(params.aggregates[i].arguments[j]).type;
+
+            aggregates_data_types[i] = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, arg_types,
+                                                                                   params.aggregates[i].parameters);
+        }
+    }
+    else if (params.intermediate_header)
+    {
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            aggregates_data_types[i] = params.intermediate_header.getByPosition(params.keys_size + i).type;
+    }
+
+    /// Compute result for aggregates with const args
+    aggregates_const_result_columns.resize(params.aggregates_size);
+    aggregates_const_result_columns_final.resize(params.aggregates_size);
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        if (!params.src_header)
+            break;
+
+        auto & function = params.aggregates[i].function;
+
+        if (!function->suitableForConstantFolding())
+            continue;
+
+        ColumnRawPtrs argument_columns_const;
+        bool args_are_const = true;
+
+        for (size_t j = 0; j < params.aggregates[i].arguments.size(); ++j)
+        {
+            auto & col = params.src_header.safeGetByPosition(params.aggregates[i].arguments[j]).column;
+
+            args_are_const = col->isColumnConst();
+            if (!args_are_const)
+                break;
+
+            argument_columns_const.emplace_back(typeid_cast<const ColumnConst &>(*col).getDataColumnPtr().get());
+        }
+
+        if (!args_are_const)
+            continue;
+
+        const DataTypePtr & type_state = aggregates_data_types[i];
+        const DataTypePtr & type_final = params.aggregates[i].function->getReturnType();
+
+        MutableColumnPtr column_state = type_state->createColumn();
+        auto & column_state_impl = typeid_cast<ColumnAggregateFunction &>(*column_state);
+        column_state_impl.insertDefault();
+
+        AggregateDataPtr place = column_state_impl.getData().back();
+        function->add(place, argument_columns_const.data(), 0, &column_state_impl.createOrGetArena());
+
+        MutableColumnPtr column_final = type_final->createColumn();
+        function->insertResultInto(place, *column_final);
+
+        aggregates_const_result_columns[i] = ColumnConst::create(std::move(column_state), 0);
+        aggregates_const_result_columns_final[i] = ColumnConst::create(std::move(column_final), 0);
     }
 
     method = chooseAggregationMethod();
@@ -1171,11 +1240,14 @@ Block Aggregator::prepareBlockAndFill(
             res.getByPosition(i + params.keys_size).column = std::move(aggregate_columns[i]);
     }
 
-    /// Change the size of the columns-constants in the block.
+    /// Override const columns by already computed const columns
+    ///  and change the size of the columns-constants in the block.
     size_t columns = header.columns();
     for (size_t i = 0; i < columns; ++i)
-        if (res.getByPosition(i).column->isColumnConst())
-            res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
+    {
+        if (header.getByPosition(i).column->isColumnConst())
+            res.getByPosition(i).column = header.getByPosition(i).column->cloneResized(rows);
+    }
 
     return res;
 }

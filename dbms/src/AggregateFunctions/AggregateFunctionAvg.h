@@ -64,6 +64,8 @@ public:
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+
+    bool suitableForConstantFolding() const override { return true; }
 };
 
 

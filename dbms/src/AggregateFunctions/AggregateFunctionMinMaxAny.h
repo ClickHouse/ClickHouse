@@ -570,6 +570,7 @@ struct AggregateFunctionMinData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfLess(to, arena); }
 
     static const char * name() { return "min"; }
+    static constexpr bool suitable_for_constant_folding = true;
 };
 
 template <typename Data>
@@ -581,6 +582,7 @@ struct AggregateFunctionMaxData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfGreater(to, arena); }
 
     static const char * name() { return "max"; }
+    static constexpr bool suitable_for_constant_folding = true;
 };
 
 template <typename Data>
@@ -592,6 +594,7 @@ struct AggregateFunctionAnyData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
 
     static const char * name() { return "any"; }
+    static constexpr bool suitable_for_constant_folding = true;
 };
 
 template <typename Data>
@@ -603,6 +606,7 @@ struct AggregateFunctionAnyLastData : Data
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeEveryTime(to, arena); }
 
     static const char * name() { return "anyLast"; }
+    static constexpr bool suitable_for_constant_folding = true;
 };
 
 
@@ -670,6 +674,8 @@ struct AggregateFunctionAnyHeavyData : Data
     }
 
     static const char * name() { return "anyHeavy"; }
+
+    static constexpr bool suitable_for_constant_folding = true;
 };
 
 
@@ -724,6 +730,11 @@ public:
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+
+    bool suitableForConstantFolding() const override
+    {
+        return Data::suitable_for_constant_folding;
+    }
 };
 
 }
