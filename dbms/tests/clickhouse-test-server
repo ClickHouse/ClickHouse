@@ -65,8 +65,8 @@ if [ -n "$*" ]; then
     $*
 else
     TEST_RUN=${TEST_RUN=1}
+    TEST_PERF=${TEST_PERF=1}
     ${BIN_DIR}clickhouse-client --config ${CONFIG_CLIENT} -q 'SELECT * from system.build_options;'
     [ "$TEST_RUN" ] && env PATH=$PATH:$BIN_DIR ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient $CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT
     [ "$TEST_PERF" ] && ${BIN_DIR}clickhouse-performance-test --port `$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port` --r $CUR_DIR/performance --skip-tags=long $*
-    # > $DATA_DIR/performance${BUILD_TYPE}.`hostname`.`date '+%Y%M%''d%H%M%''S'`.json
 fi
