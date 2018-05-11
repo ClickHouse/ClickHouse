@@ -1,10 +1,12 @@
+<a name="table_functions-file"></a>
+
 # file
 
 `file(path, format, structure)` - создаёт таблицу из файла типа format, вида structure.
 
 path - относительный путь до файла от [user_files_path](../operations/server_settings/settings.md#table_functions-file).
 
-format - [формат](../formats) файла.
+format - [формат](../formats#formats) файла.
 
 structure - структура таблицы в форме UserID UInt64, URL String. Определяет имена и типы столбцов.
 
