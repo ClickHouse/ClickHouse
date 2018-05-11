@@ -1,10 +1,10 @@
 # file
 
-`file(path, format, structure)` - загружает на сервер временную таблицу, созданную из файла типа format, вида structure.
+`file(path, format, structure)` - создаёт таблицу из файла типа format, вида structure.
 
 path - относительный путь до файла от [user_files_path](../operations/server_settings/settings.md).
 
-format - файлы, указанные в file, будут разобраны форматом, указанным в [format](../formats).
+format - файл, указанный в file, будет разобран форматом, указанным в [format](../formats).
 
 structure - структура таблицы, в форме UserID UInt64, URL String. Определяет имена и типы столбцов.
 
