@@ -53,12 +53,26 @@ template <typename A, typename B> struct EqualsOp
     using SymmetricOp = EqualsOp<B, A>;
 
     static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y); /// qNaNs always compare false
+    }
+#endif
 };
 
 template <typename A, typename B> struct NotEqualsOp
 {
     using SymmetricOp = NotEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpONE(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOp;
@@ -67,12 +81,26 @@ template <typename A, typename B> struct LessOp
 {
     using SymmetricOp = GreaterOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLT(x, y) : b.CreateICmpULT(x, y)) : b.CreateFCmpOLT(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOp
 {
     using SymmetricOp = LessOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGT(x, y) : b.CreateICmpUGT(x, y)) : b.CreateFCmpOGT(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp;
@@ -81,12 +109,26 @@ template <typename A, typename B> struct LessOrEqualsOp
 {
     using SymmetricOp = GreaterOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLE(x, y) : b.CreateICmpULE(x, y)) : b.CreateFCmpOLE(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp
 {
     using SymmetricOp = LessOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGE(x, y) : b.CreateICmpUGE(x, y)) : b.CreateFCmpOGE(x, y);
+    }
+#endif
 };
 
 
@@ -1136,6 +1178,41 @@ public:
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
                 left_is_num, input_rows_count);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & types) const override
+    {
+        auto isBigInteger = &typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeUUID>;
+        auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
+        if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1])) || (isBigInteger(*types[1]) && isFloatingPoint(*types[0])))
+            return false; /// TODO: implement (double, int_N where N > double's mantissa width)
+        return types[0]->isValueRepresentedByNumber() && types[1]->isValueRepresentedByNumber();
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        auto * x = values[0]();
+        auto * y = values[1]();
+        if (!types[0]->equals(*types[1]))
+        {
+            llvm::Type * common;
+            if (x->getType()->isIntegerTy() && y->getType()->isIntegerTy())
+                common = b.getIntNTy(std::max(
+                    /// if one integer has a sign bit, make sure the other does as well. llvm generates optimal code
+                    /// (e.g. uses overflow flag on x86) for (word size + 1)-bit integer operations.
+                    x->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[0]) && typeIsSigned(*types[1])),
+                    y->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[1]) && typeIsSigned(*types[0]))));
+            else
+                /// (double, float) or (double, int_N where N <= double's mantissa width) -> double
+                common = b.getDoubleTy();
+            x = nativeCast(b, types[0], x, common);
+            y = nativeCast(b, types[1], y, common);
+        }
+        auto * result = Op<int, int>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
+        return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
+    }
+#endif
 };
 
 
