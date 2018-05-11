@@ -1,15 +1,25 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Columns/ColumnConst.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Common/config.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Native.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
 #include <cstdlib>
 #include <memory>
+#include <optional>
+
+#if USE_EMBEDDED_COMPILER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
+#endif
 
 
 namespace DB
@@ -20,6 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
+
 
 namespace
 {
@@ -259,4 +270,71 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
     return getReturnTypeImpl(arguments);
 }
+
+#if USE_EMBEDDED_COMPILER
+
+static std::optional<DataTypes> removeNullables(const DataTypes & types)
+{
+    for (const auto & type : types)
+    {
+        if (!typeid_cast<const DataTypeNullable *>(type.get()))
+            continue;
+        DataTypes filtered;
+        for (const auto & type : types)
+            filtered.emplace_back(removeNullable(type));
+        return filtered;
+    }
+    return {};
+}
+
+bool IFunction::isCompilable(const DataTypes & arguments) const
+{
+    if (useDefaultImplementationForNulls())
+        if (auto denulled = removeNullables(arguments))
+            return isCompilableImpl(*denulled);
+    return isCompilableImpl(arguments);
+}
+
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
+{
+    if (useDefaultImplementationForNulls())
+    {
+        if (auto denulled = removeNullables(arguments))
+        {
+            /// FIXME: when only one column is nullable, this can actually be slower than the non-jitted version
+            ///        because this involves copying the null map while `wrapInNullable` reuses it.
+            auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+            auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+            auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+            auto * zero = llvm::Constant::getNullValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
+            for (size_t i = 0; i < arguments.size(); i++)
+            {
+                if (!arguments[i]->isNullable())
+                    continue;
+                /// Would be nice to evaluate all this lazily, but that'd change semantics: if only unevaluated
+                /// arguments happen to contain NULLs, the return value would not be NULL, though it should be.
+                auto * value = values[i]();
+                auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+                b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
+                b.SetInsertPoint(ok);
+                values[i] = [value = b.CreateExtractValue(value, {0})]() { return value; };
+            }
+            auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
+            auto * result_block = b.GetInsertBlock();
+            b.CreateBr(join);
+            b.SetInsertPoint(fail);
+            auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
+            b.CreateBr(join);
+            b.SetInsertPoint(join);
+            auto * phi = b.CreatePHI(result->getType(), 2);
+            phi->addIncoming(result, result_block);
+            phi->addIncoming(null, fail);
+            return phi;
+        }
+    }
+    return compileImpl(builder, arguments, std::move(values));
+}
+
+#endif
+
 }

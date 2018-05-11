@@ -21,7 +21,7 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     add_subdirectory (double-conversion)
 endif ()
 
@@ -113,11 +113,7 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
-    if (APPLE) # tests never end
-        set (BUILD_TESTING 0 CACHE INTERNAL "")
-    else ()
-        set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
-    endif ()
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
     set (CMAKE_CXX_EXTENSIONS)
     add_subdirectory (capnproto/c++)
