@@ -117,6 +117,12 @@ private:
         MergeTreeDataMerger & merger, MergeTreeData & data,
         std::lock_guard<std::mutex> & queue_lock) const;
 
+    /// Return the version (block number) of the last mutation that we don't need to apply to the part
+    /// (either this mutation was already applied or the part was created after the mutation).
+    /// If there is no such mutation or it has already been executed and deleted, return 0.
+    /// Call under the target_state_mutex.
+    Int64 getCurrentMutationVersion(const MergeTreePartInfo & part_info, std::lock_guard<std::mutex> & /* target_state_lock */) const;
+
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under queue_mutex.
       */
@@ -217,7 +223,7 @@ public:
       */
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
-    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper) const;
+    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
@@ -226,9 +232,6 @@ public:
       * Locks queue's mutex.
       */
     bool addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason);
-
-    /// Count the number of merges in the queue.
-    size_t countMerges() const;
 
     struct Status
     {
@@ -258,9 +261,7 @@ public:
 class ReplicatedMergeTreeMergePredicate
 {
 public:
-    ReplicatedMergeTreeMergePredicate(
-        const ReplicatedMergeTreeQueue & queue_, ActiveDataPartSet virtual_parts_, Int64 log_pointer,
-        zkutil::ZooKeeperPtr & zookeeper);
+    ReplicatedMergeTreeMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper);
 
     /// Can we assign a merge with these two parts?
     /// (assuming that no merge was assigned after the predicate was constructed)
@@ -269,17 +270,19 @@ public:
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
 
+    /// Count the number of merges in the queue.
+    size_t countMerges() const;
+
 private:
     const ReplicatedMergeTreeQueue & queue;
 
     /// A snapshot of active parts that would appear if the replica executes all log entries in its queue.
-    ActiveDataPartSet virtual_parts;
-    /// partition ID -> block numbers of the inserts that are about to commit (loaded at some later time than virtual_parts).
-    std::unordered_map<String, std::set<Int64>> current_inserts;
-    /// The same as virtual_parts but loaded at some later time than current inserts.
-    ActiveDataPartSet next_virtual_parts;
+    ActiveDataPartSet prev_virtual_parts;
+    /// partition ID -> block numbers of the inserts and mutations that are about to commit
+    /// (loaded at some later time than prev_virtual_parts).
+    std::unordered_map<String, std::set<Int64>> committing_blocks;
 
-    /// Quorum state taken at some later time than virtual_parts.
+    /// Quorum state taken at some later time than prev_virtual_parts.
     String last_quorum_part;
     String inprogress_quorum_part;
 };

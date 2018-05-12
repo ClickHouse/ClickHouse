@@ -1723,18 +1723,12 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
             auto zookeeper = getZooKeeper();
 
-            /// You need to load new entries into the queue to count merges.
-            if (merge_selecting_logs_pulling_is_required)
-            {
-                queue.pullLogsToQueue(zookeeper, nullptr);
-                merge_selecting_logs_pulling_is_required = false;
-            }
+            ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
 
             /// If many merges is already queued, then will queue only small enough merges.
             /// Otherwise merge queue could be filled with only large merges,
             /// and in the same time, many small parts could be created and won't be merged.
-            size_t merges_queued = queue.countMerges();
-
+            size_t merges_queued = merge_pred.countMerges();
             if (merges_queued >= data.settings.max_replicated_merges_in_queue)
             {
                 LOG_TRACE(log, "Number of queued merges (" << merges_queued
@@ -1747,11 +1741,9 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
                 if (max_parts_size_for_merge > 0)
                 {
-                    ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
                     MergeTreeDataMerger::FuturePart future_merged_part;
-                    if (merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, can_merge))
+                    if (merger.selectPartsToMerge(future_merged_part, false, max_parts_size_for_merge, merge_pred))
                     {
-                        merge_selecting_logs_pulling_is_required = true;
                         success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
                     }
                 }
@@ -2390,9 +2382,6 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
             return handle_noop(disable_reason);
         }
-
-        /// It is important to pull new logs (even if creation of the entry fails due to network error)
-        merge_selecting_logs_pulling_is_required = true;
 
         if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return handle_noop("Can't create merge queue node in ZooKeeper");
