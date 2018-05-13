@@ -89,7 +89,7 @@ struct AggregateFunctionWindowFunnelData
     void sort()
     {
         if (!sorted)
-       {
+        {
             std::sort(std::begin(events_list), std::end(events_list), Comparator{});
             sorted = true;
         }
@@ -113,6 +113,8 @@ struct AggregateFunctionWindowFunnelData
 
         size_t size;
         readBinary(size, buf);
+        
+        /// TODO Protection against huge size
 
         events_list.clear();
         events_list.resize(size);
@@ -149,7 +151,8 @@ private:
     // The Algorithm complexity is O(n).
     UInt8 getEventLevel(const AggregateFunctionWindowFunnelData & data) const
     {
-        if(data.size() == 0) return 0;
+        if (data.size() == 0)
+            return 0;
         if (events_size == 1)
             return 1;
 
@@ -190,7 +193,7 @@ public:
             throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function "
                     + getName() + ", must be DateTime or UInt32"};
 
-       if(arguments.size() - 1 > AggregateFunctionWindowFunnelData::max_events)
+       if (arguments.size() - 1 > AggregateFunctionWindowFunnelData::max_events)
            throw Exception{"Aggregate function " + getName() + " supports up to " +
                    toString(AggregateFunctionWindowFunnelData::max_events) + " event arguments.",
                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION};
