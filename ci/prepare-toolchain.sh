@@ -3,6 +3,7 @@ set -e -x
 
 source default-config
 
+# TODO Non debian systems
 apt-cache search cmake3 | grep -P '^cmake3 ' && $SUDO apt-get -y install cmake3 || $SUDO apt-get -y install cmake
 
 if [[ "$COMPILER_INSTALL_METHOD" == "packages" ]]; then
