@@ -40,9 +40,9 @@ private:
         {arrow::Type::UINT64, std::make_shared<DataTypeUInt64>()},
         {arrow::Type::INT64,  std::make_shared<DataTypeInt64>()},
         {arrow::Type::FLOAT,  std::make_shared<DataTypeFloat32>()},
-        {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()}//,
+        {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()},
         // TODO:
-        /* {arrow::Type::STRING, std::make_shared<DataTypeString>()}//, */
+        {arrow::Type::STRING, std::make_shared<DataTypeString>()}//,
         /* {arrow::Type::BINARY, Binary, ByteArrayType}, */
         /* {arrow::Type::DATE32, Date32, Int32Type}, */
         /* {arrow::Type::DATE64, Date64, Int32Type}//, */
