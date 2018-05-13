@@ -115,6 +115,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
+    ParserIdentifierWithParameters codec_parser;
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
@@ -128,13 +129,16 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /** column name should be followed by type name if it
       *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS}
       */
-    ASTPtr type;
+    ASTPtr type, codec;
     const auto fallback_pos = pos;
     if (!s_default.check(pos, expected) &&
         !s_materialized.check(pos, expected) &&
         !s_alias.check(pos, expected))
     {
         type_parser.parse(pos, type, expected);
+        /// codec
+        if (!codec_parser.parse(pos, codec, expected))
+            return false;
     }
     else
         pos = fallback_pos;
@@ -170,6 +174,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->default_specifier = default_specifier;
         column_declaration->default_expression = default_expression;
         column_declaration->children.push_back(std::move(default_expression));
+    }
+
+    if (codec)
+    {
+        column_declaration->codec = codec;
+        column_declaration->children.push_back(std::move(codec));
     }
 
     return true;

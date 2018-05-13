@@ -13,6 +13,7 @@ class ASTColumnDeclaration : public IAST
 public:
     String name;
     ASTPtr type;
+    ASTPtr codec;
     String default_specifier;
     ASTPtr default_expression;
 
@@ -29,6 +30,13 @@ public:
         {
             res->type = type;
             res->children.push_back(res->type);
+        }
+
+
+        if (codec)
+        {
+            res->codec = codec;
+            res->children.push_back(res->codec);
         }
 
         if (default_expression)
@@ -51,6 +59,11 @@ protected:
         {
             settings.ostr << ' ';
             type->formatImpl(settings, state, frame);
+            if (codec)
+            {
+                settings.ostr << ' ';
+                codec->formatImpl(settings, state, frame);
+            }
         }
 
         if (default_expression)
