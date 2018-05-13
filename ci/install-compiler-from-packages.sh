@@ -14,7 +14,8 @@ if [ -f '/etc/lsb-release' ]; then
             export CC=gcc-${COMPILER_PACKAGE_VERSION}
             export CXX=g++-${COMPILER_PACKAGE_VERSION}
         elif [[ "$COMPILER" == "clang" ]]; then
-            sudo apt-get -y install clang-${COMPILER_PACKAGE_VERSION} lld-${COMPILER_PACKAGE_VERSION} libc++-dev libc++abi-dev
+            [[ $(uname -m) == "x86_64" ]] && LLD="lld-${COMPILER_PACKAGE_VERSION}"
+            sudo apt-get -y install clang-${COMPILER_PACKAGE_VERSION} "$LLD" libc++-dev libc++abi-dev
             export CC=clang-${COMPILER_PACKAGE_VERSION}
             export CXX=clang++-${COMPILER_PACKAGE_VERSION}
         else
