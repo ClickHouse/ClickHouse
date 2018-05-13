@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e -x
 
+# Usage example:
+# ./run-with-docker.sh centos:centos6 ./run-clickhouse-from-binaries.sh
+
 source default-config
 
 SERVER_BIN="${WORKSPACE}/build/dbms/src/Server/clickhouse"
