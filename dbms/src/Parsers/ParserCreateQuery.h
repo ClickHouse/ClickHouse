@@ -8,9 +8,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/CommonParsers.h>
-#include <IO/ReadHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -145,7 +145,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr codec, _codec;
     const auto codec_fallback_pos = pos;
     if (codec_parser.parse(pos, _codec, expected) &&
-        checkStringCaseInsensitive("CODEC", typeid_cast<ASTFunction &>(*_codec).name))
+        boost::iequals("CODEC" , typeid_cast<ASTFunction &>(*_codec).name))
     {
         codec = _codec;
     }
