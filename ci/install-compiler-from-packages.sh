@@ -10,12 +10,12 @@ if [ -f '/etc/lsb-release' ]; then
     source /etc/lsb-release
     if [[ "$DISTRIB_ID" == "Ubuntu" ]]; then
         if [[ "$COMPILER" == "gcc" ]]; then
-            sudo apt-get -y install gcc-${COMPILER_PACKAGE_VERSION} g++-${COMPILER_PACKAGE_VERSION}
+            $SUDO apt-get -y install gcc-${COMPILER_PACKAGE_VERSION} g++-${COMPILER_PACKAGE_VERSION}
             export CC=gcc-${COMPILER_PACKAGE_VERSION}
             export CXX=g++-${COMPILER_PACKAGE_VERSION}
         elif [[ "$COMPILER" == "clang" ]]; then
             [[ $(uname -m) == "x86_64" ]] && LLD="lld-${COMPILER_PACKAGE_VERSION}"
-            sudo apt-get -y install clang-${COMPILER_PACKAGE_VERSION} "$LLD" libc++-dev libc++abi-dev
+            $SUDO apt-get -y install clang-${COMPILER_PACKAGE_VERSION} "$LLD" libc++-dev libc++abi-dev
             export CC=clang-${COMPILER_PACKAGE_VERSION}
             export CXX=clang++-${COMPILER_PACKAGE_VERSION}
         else

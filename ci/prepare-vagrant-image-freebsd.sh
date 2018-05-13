@@ -3,7 +3,7 @@ set -e -x
 
 source default-config
 
-sudo apt-get -y install vagrant virtualbox
+$SUDO apt-get -y install vagrant virtualbox
 
 pushd "vagrant-freebsd"
 vagrant up

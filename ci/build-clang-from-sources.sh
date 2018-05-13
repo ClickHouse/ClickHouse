@@ -3,7 +3,7 @@ set -e -x
 
 source default-config
 
-sudo apt-get install -y subversion cmake
+$SUDO apt-get install -y subversion cmake
 
 mkdir "${WORKSPACE}/llvm"
 
@@ -27,7 +27,7 @@ cd "${WORKSPACE}/llvm/build"
 cmake -D CMAKE_BUILD_TYPE:STRING=Release ../llvm
 
 make -j $THREADS
-sudo make install
+$SUDO make install
 hash clang
 
 cd ../../..

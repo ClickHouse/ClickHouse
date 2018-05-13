@@ -6,11 +6,11 @@ source default-config
 ./check-docker.sh
 
 # http://fl47l1n3.net/2015/12/24/binfmt/
-sudo apt-get -y install qemu-user-static
+$SUDO apt-get -y install qemu-user-static
 
 pushd docker-multiarch
 
-sudo ./update.sh \
+$SUDO ./update.sh \
  -a "$DOCKER_UBUNTU_ARCH" \
  -v "$DOCKER_UBUNTU_VERSION" \
  -q "$DOCKER_UBUNTU_QUEMU_ARCH" \

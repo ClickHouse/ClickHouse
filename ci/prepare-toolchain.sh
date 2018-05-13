@@ -3,7 +3,7 @@ set -e -x
 
 source default-config
 
-apt-cache search cmake3 | grep -P '^cmake3 ' && sudo apt-get -y install cmake3 || sudo apt-get -y install cmake
+apt-cache search cmake3 | grep -P '^cmake3 ' && $SUDO apt-get -y install cmake3 || sudo apt-get -y install cmake
 
 if [[ "$COMPILER_INSTALL_METHOD" == "packages" ]]; then
     . install-compiler-from-packages.sh;

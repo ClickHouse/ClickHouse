@@ -4,7 +4,7 @@ set -e -x
 source default-config
 
 if [[ "$SOURCES_METHOD" == "clone" ]]; then
-    sudo apt-get install -y git
+    $SUDO apt-get install -y git
     SOURCES_DIR="${WORKSPACE}/sources"
     mkdir -p "${SOURCES_DIR}"
     git clone --recursive --branch "$SOURCES_BRANCH" "$SOURCES_CLONE_URL" "${SOURCES_DIR}"

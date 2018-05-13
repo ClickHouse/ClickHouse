@@ -53,7 +53,7 @@ function die {
     exit ${2:1}
 }
 
-command -v sudo > /dev/null || (apt-get update && apt-get install -y sudo)
+[[ $EUID -ne 0 ]] && SUDO=sudo
 
 # Configuration parameters may be overriden with CONFIG environment variable pointing to config file.
 [[ -n "$CONFIG" ]] && source $CONFIG

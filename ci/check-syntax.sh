@@ -7,7 +7,7 @@ source default-config
 #  fatal error: re2_st/re2.h: No such file or directory
 # due to generated headers.
 
-sudo apt-get install -y jq
+$SUDO apt-get install -y jq
 
 [[ -d "${WORKSPACE}/sources" ]] || die "Run get-sources.sh first"
 
