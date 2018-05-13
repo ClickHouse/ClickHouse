@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -e -x
 
 source default-config
 

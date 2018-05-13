@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -e
+set -e -x
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.."; pwd -P)"
-docker run --network=host --mount=type=bind,source=${PROJECT_ROOT},destination=/ClickHouse --workdir=/ClickHouse/ci --env=CONFIG "$1" "$2"
+[[ -n "$CONFIG" ]] && DOCKER_ENV="--env=CONFIG"
+docker run --network=host --mount=type=bind,source=${PROJECT_ROOT},destination=/ClickHouse --workdir=/ClickHouse/ci $DOCKER_ENV "$1" "$2"

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e -x
 
 # How to run:
 # From "ci" directory:
@@ -7,10 +8,11 @@
 #     ./run-with-docker.sh ubuntu:bionic jobs/quick-build/run.sh
 
 CONFIG="$(dirname $0)"/config
-
 cd "$(dirname $0)"/../..
 
-./get-sources.sh
-./prepare-toolchain.sh
-./install-libraries.sh
-./build-normal.sh
+. default-config
+
+. get-sources.sh
+. prepare-toolchain.sh
+. install-libraries.sh
+. build-normal.sh

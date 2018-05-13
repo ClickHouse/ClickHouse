@@ -1,5 +1,12 @@
 ### Build and test ClickHouse on various plaforms
 
+Usage example:
+```
+./run-with-docker.sh ubuntu:bionic jobs/quick-build/run.sh
+```
+
+Look at `default_config` and `jobs/quick-build/config`
+
 Various possible options. We are not going to automate testing all of them.
 
 ##### CPU architectures:

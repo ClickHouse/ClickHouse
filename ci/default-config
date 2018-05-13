@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
+set -e -x
 
-SCRIPTPATH="$(cd "$(dirname "$0")"; pwd -P)"
+if [[ -z "$INITIALIZED" ]]; then
+
+INITIALIZED=1
+
+SCRIPTPATH=$(pwd)
 WORKSPACE=${SCRIPTPATH}/workspace
 PROJECT_ROOT=$(realpath $SCRIPTPATH/..)
 
@@ -23,6 +28,7 @@ GCC_SOURCES_VERSION=latest          # or gcc-7.1.0
 
 # install-libraries
 USE_LLVM_LIBRARIES_FROM_SYSTEM=0    # 0 or 1
+ENABLE_EMBEDDED_COMPILER=1
 
 # build
 BUILD_METHOD=normal                 # normal, debian
@@ -53,3 +59,5 @@ command -v sudo > /dev/null || (apt-get update && apt-get install -y sudo)
 [[ -n "$CONFIG" ]] && source $CONFIG
 
 mkdir -p $WORKSPACE
+
+fi
