@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 
-CONFIG=config
+# How to run:
+# From "ci" directory:
+#     jobs/quick-build/run.sh
+# or:
+#     ./run-with-docker.sh ubuntu:bionic jobs/quick-build/run.sh
+
+CONFIG="$(dirname $0)"/config
 
 cd "$(dirname $0)"/../..
 
