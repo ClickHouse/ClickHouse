@@ -55,6 +55,8 @@ function die {
 
 [[ $EUID -ne 0 ]] && SUDO=sudo
 
+command -v apt-get && $SUDO apt-get update
+
 # Configuration parameters may be overriden with CONFIG environment variable pointing to config file.
 [[ -n "$CONFIG" ]] && source $CONFIG
 
