@@ -89,11 +89,11 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
 
-    if (args.size() != 5)
-        throw Exception("Table function 'mysql' requires exactly 5 arguments: host:port, database name, table name, username and password",
+    if (args.size() < 5 || args.size() > 7)
+        throw Exception("Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause' ]).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (size_t i = 0; i < 5; ++i)
+    for (size_t i = 0; i < args.size(); ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     std::string host_port = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
@@ -101,6 +101,13 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     std::string table_name = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
     std::string user_name = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
     std::string password = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+
+    bool replace_query = false;
+    std::string on_duplicate_clause;
+    if(args.size() >= 6)
+        replace_query = static_cast<const ASTLiteral &>(*args[5]).value.safeGet<UInt64>() > 0;
+    if(args.size() == 7)
+        on_duplicate_clause = static_cast<const ASTLiteral &>(*args[6]).value.safeGet<String>();
 
     /// 3306 is the default MySQL port number
     auto parsed_host_port = parseAddress(host_port, 3306);
@@ -152,6 +159,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         std::move(pool),
         database_name,
         table_name,
+        replace_query,
+        on_duplicate_clause,
         ColumnsDescription{columns},
         context);
 

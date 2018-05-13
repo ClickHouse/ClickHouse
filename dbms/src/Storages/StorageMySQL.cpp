@@ -32,12 +32,16 @@ StorageMySQL::StorageMySQL(const std::string & name,
     mysqlxx::Pool && pool,
     const std::string & remote_database_name,
     const std::string & remote_table_name,
+    const bool & replace_query,
+    const std::string & on_duplicate_clause,
     const ColumnsDescription & columns_,
     const Context & context)
     : IStorage{columns_}
     , name(name)
     , remote_database_name(remote_database_name)
     , remote_table_name(remote_table_name)
+    , replace_query{replace_query}
+    , on_duplicate_clause{on_duplicate_clause}
     , pool(std::move(pool))
     , context(context)
 {
@@ -108,10 +112,15 @@ public:
    void writeBlockData(const Block & block)
    {
        WriteBufferFromOwnString sqlbuf;
-       sqlbuf << "INSERT INTO `" << remote_database_name << "`.`" << remote_table_name << "` ( " << block.dumpNames() << " ) VALUES ";
+       // If both `replace_query` and `on_duplicate_clause` are specified, only use the `on_duplicate_clause`.
+       sqlbuf << ( (storage.replace_query && storage.on_duplicate_clause.empty()) ? "REPLACE" : "INSERT");
+       sqlbuf << " INTO `" << remote_database_name << "`.`" << remote_table_name << "`"
+              << " ( " << block.dumpNames() << " ) VALUES ";
 
        auto writer = FormatFactory().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
        writer->write(block);
+       if(!storage.on_duplicate_clause.empty())
+           sqlbuf << " ON DUPLICATE KEY " << storage.on_duplicate_clause;
        sqlbuf << ";";
 
        auto query = this->entry->query(sqlbuf.str());
@@ -169,12 +178,12 @@ void registerStorageMySQL(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 5)
+        if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(
-                "Storage MySQL requires exactly 5 parameters: MySQL('host:port', database, table, 'user', 'password').",
+                "Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause' ]).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < 5; ++i)
+        for (size_t i = 0; i < engine_args.size(); ++i)
             engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
         /// 3306 is the default MySQL port.
@@ -187,11 +196,18 @@ void registerStorageMySQL(StorageFactory & factory)
 
         mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
 
+        bool replace_query = false;
+        std::string on_duplicate_clause;
+        if(engine_args.size() >= 6) replace_query = static_cast<const ASTLiteral &>(*engine_args[5]).value.safeGet<UInt64>() > 0;
+        if(engine_args.size() == 7) on_duplicate_clause = static_cast<const ASTLiteral &>(*engine_args[6]).value.safeGet<String>();
+
         return StorageMySQL::create(
             args.table_name,
             std::move(pool),
             remote_database,
             remote_table,
+            replace_query,
+            on_duplicate_clause,
             args.columns,
             args.context);
     });
