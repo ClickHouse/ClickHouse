@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Storages/MutationCommands.h>
 #include <atomic>
 #include <functional>
 #include <Common/ActionBlocker.h>
@@ -90,6 +91,11 @@ public:
         const FuturePart & future_part,
         MergeListEntry & merge_entry,
         size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
+
+    MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
+        const FuturePart & future_part,
+        const std::vector<MutationCommand> & commands,
+        const Context & context);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

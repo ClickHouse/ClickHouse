@@ -17,6 +17,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
+#include <DataStreams/ApplyingMutationsBlockInputStream.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <DataTypes/NestedUtils.h>
@@ -792,6 +793,70 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// For convenience, even CollapsingSortedBlockInputStream can not return zero rows.
     if (0 == to.getRowsCount())
         throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
+
+    return new_data_part;
+}
+
+
+MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
+    const FuturePart & future_part,
+    const std::vector<MutationCommand> & commands,
+    const Context & context)
+{
+    if (actions_blocker.isCancelled())
+        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+
+    if (future_part.parts.size() != 1)
+        throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
+            "This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    const auto & source_part = future_part.parts[0];
+    LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
+
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
+        data, future_part.name, future_part.part_info);
+    new_data_part->relative_path = "tmp_mut_" + future_part.name;
+    new_data_part->is_temp = true;
+
+    String new_part_tmp_path = new_data_part->getFullPath();
+
+    Poco::File(new_part_tmp_path).createDirectories();
+
+    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+
+    BlockInputStreamPtr in = std::make_shared<MergeTreeBlockInputStream>(
+        data, source_part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, all_columns.getNames(),
+        MarkRanges(1, MarkRange(0, source_part->marks_count)),
+        false, nullptr, String(), true, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+
+    in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
+
+    auto compression_settings = context.chooseCompressionSettings(
+        source_part->bytes_on_disk,
+        static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
+
+    MergedBlockOutputStream out(data, new_part_tmp_path, all_columns, compression_settings);
+
+    MergeTreeDataPart::MinMaxIndex minmax_idx;
+
+    in->readPrefix();
+    out.writePrefix();
+
+    Block block;
+    while (!actions_blocker.isCancelled() && (block = in->read()))
+    {
+        minmax_idx.update(block, data.minmax_idx_columns);
+        out.write(block);
+    }
+
+    if (actions_blocker.isCancelled())
+        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+
+    new_data_part->partition.assign(source_part->partition);
+    new_data_part->minmax_idx = std::move(minmax_idx);
+
+    in->readSuffix();
+    out.writeSuffixAndFinalizePart(new_data_part);
 
     return new_data_part;
 }
