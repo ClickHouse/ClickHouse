@@ -136,9 +136,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         !s_alias.check(pos, expected))
     {
         type_parser.parse(pos, type, expected);
-        /// codec
-        if (!codec_parser.parse(pos, codec, expected))
-            return false;
+
+        codec_parser.parse(pos, codec, expected);
+        if ((typeid_cast<ASTFunction &>(*codec)).name != "CODEC") {
+            codec = nullptr;
+            pos = fallback_pos;
+        }
     }
     else
         pos = fallback_pos;

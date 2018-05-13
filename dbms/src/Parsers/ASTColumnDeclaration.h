@@ -59,11 +59,12 @@ protected:
         {
             settings.ostr << ' ';
             type->formatImpl(settings, state, frame);
-            if (codec)
-            {
-                settings.ostr << ' ';
-                codec->formatImpl(settings, state, frame);
-            }
+        }
+
+        if (codec)
+        {
+            settings.ostr << ' ';
+            codec->formatImpl(settings, state, frame);
         }
 
         if (default_expression)
