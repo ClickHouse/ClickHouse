@@ -1,0 +1,988 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+    
+    <url>
+     <loc>/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+    
+
+    
+        
+    <url>
+     <loc>/introduction/distinctive_features/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/introduction/features_considered_disadvantages/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/introduction/ya_metrika_task/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/introduction/possible_silly_questions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/introduction/performance/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/getting_started/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc></loc>
+     <lastmod></lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/interfaces/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/interfaces/cli/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/interfaces/http_interface/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/interfaces/jdbc/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/interfaces/tcp/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/interfaces/third-party_client_libraries/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/interfaces/third-party_gui/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/query_language/queries/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/query_language/syntax/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/table_engines/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/tinylog/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/log/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/memory/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/mergetree/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/custom_partitioning_key/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/replacingmergetree/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/summingmergetree/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/aggregatingmergetree/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/collapsingmergetree/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/graphitemergetree/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/replication/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/distributed/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/dictionary/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/merge/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/buffer/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/file/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/null/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/set/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/join/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/view/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/materializedview/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/kafka/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/mysql/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_engines/external_data/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/system_tables/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.one/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.numbers/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.numbers_mt/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.databases/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.tables/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.columns/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.parts/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.processes/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.merges/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.events/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.metrics/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.asynchronous_metrics/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.replicas/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.dictionaries/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.clusters/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.settings/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/system_tables/system.zookeeper/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/table_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_functions/remote/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_functions/merge/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/table_functions/numbers/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/formats/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/tabseparated/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/tabseparatedraw/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/tabseparatedwithnames/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/tabseparatedwithnamesandtypes/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/csv/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/csvwithnames/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/values/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/vertical/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/verticalraw/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/json/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/jsoncompact/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/jsoneachrow/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/tskv/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/pretty/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/prettycompact/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/prettycompactmonoblock/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/prettynoescapes/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/prettyspace/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/rowbinary/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/native/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/null/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/xml/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/formats/capnproto/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/data_types/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/int_uint/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/float/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/boolean/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/string/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/fixedstring/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/date/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/datetime/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/enum/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/array/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/nested_data_structures/aggregatefunction/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/data_types/tuple/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc></loc>
+     <lastmod></lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc></loc>
+     <lastmod></lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+    <url>
+     <loc>/operators/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+    
+
+    
+        
+    <url>
+     <loc>/functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/arithmetic_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/comparison_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/logical_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/type_conversion_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/date_time_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/string_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/string_search_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/string_replace_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/conditional_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/math_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/rounding_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/array_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/splitting_merging_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/bit_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/hash_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/random_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/encoding_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/url_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/ip_address_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/json_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/higher_order_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/other_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/ext_dict_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/ym_dict_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/in_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/functions/array_join/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/agg_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/agg_functions/reference/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/agg_functions/combinators/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/agg_functions/parametric_functions/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/dicts/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc></loc>
+     <lastmod></lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/dicts/internal_dicts/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/operations/access_rights/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/operations/configuration_files/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/operations/quotas/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/operations/tips/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc></loc>
+     <lastmod></lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc></loc>
+     <lastmod></lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/utils/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/utils/clickhouse-copier/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/utils/clickhouse-local/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+        
+    <url>
+     <loc>/development/architecture/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/development/build/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/development/build_osx/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/development/style/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    <url>
+     <loc>/development/tests/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+        
+    
+
+    
+    <url>
+     <loc>/roadmap/</loc>
+     <lastmod>2018-05-13</lastmod>
+     <changefreq>daily</changefreq>
+    </url>
+    
+
+</urlset>

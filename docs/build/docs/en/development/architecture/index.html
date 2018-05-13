@@ -1,0 +1,3278 @@
+
+
+
+
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <meta http-equiv="x-ua-compatible" content="ie=edge">
+      
+      
+      
+      
+        <meta name="lang:clipboard.copy" content="Copy to clipboard">
+      
+        <meta name="lang:clipboard.copied" content="Copied to clipboard">
+      
+        <meta name="lang:search.language" content="en">
+      
+        <meta name="lang:search.result.none" content="No matching documents">
+      
+        <meta name="lang:search.result.one" content="1 matching document">
+      
+        <meta name="lang:search.result.other" content="# matching documents">
+      
+        <meta name="lang:search.tokenizer" content="[\s\-]+">
+      
+      <link rel="shortcut icon" href="../../assets/images/favicon.ico">
+      <meta name="generator" content="mkdocs-0.17.3, mkdocs-material-2.2.1">
+    
+    
+      
+        <title>Overview of ClickHouse architecture - ClickHouse Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/application.ac64251e.css">
+      
+        <link rel="stylesheet" href="../../assets/stylesheets/application-palette.792431c1.css">
+      
+    
+    
+      <script src="../../assets/javascripts/modernizr.1aa3b519.js"></script>
+    
+    
+      
+      <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/custom.css">
+    
+    
+  </head>
+  
+    
+    
+    
+      <body data-md-color-primary="white" data-md-color-accent="white">
+    
+  
+    <svg class="md-svg">
+      <defs>
+        
+        
+          <svg xmlns="http://www.w3.org/2000/svg" width="416" height="448" viewBox="0 0 416 448" id="github"><path fill="currentColor" d="M160 304q0 10-3.125 20.5t-10.75 19T128 352t-18.125-8.5-10.75-19T96 304t3.125-20.5 10.75-19T128 256t18.125 8.5 10.75 19T160 304zm160 0q0 10-3.125 20.5t-10.75 19T288 352t-18.125-8.5-10.75-19T256 304t3.125-20.5 10.75-19T288 256t18.125 8.5 10.75 19T320 304zm40 0q0-30-17.25-51T296 232q-10.25 0-48.75 5.25Q229.5 240 208 240t-39.25-2.75Q130.75 232 120 232q-29.5 0-46.75 21T56 304q0 22 8 38.375t20.25 25.75 30.5 15 35 7.375 37.25 1.75h42q20.5 0 37.25-1.75t35-7.375 30.5-15 20.25-25.75T360 304zm56-44q0 51.75-15.25 82.75-9.5 19.25-26.375 33.25t-35.25 21.5-42.5 11.875-42.875 5.5T212 416q-19.5 0-35.5-.75t-36.875-3.125-38.125-7.5-34.25-12.875T37 371.5t-21.5-28.75Q0 312 0 260q0-59.25 34-99-6.75-20.5-6.75-42.5 0-29 12.75-54.5 27 0 47.5 9.875t47.25 30.875Q171.5 96 212 96q37 0 70 8 26.25-20.5 46.75-30.25T376 64q12.75 25.5 12.75 54.5 0 21.75-6.75 42 34 40 34 99.5z"/></svg>
+        
+      </defs>
+    </svg>
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="drawer">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="search">
+    <label class="md-overlay" data-md-component="overlay" for="drawer"></label>
+    
+      <header class="md-header" data-md-component="header">
+
+  <!-- Yandex.Metrika counter -->
+  <script type="text/javascript">
+      (function (d, w, c) {
+          (w[c] = w[c] || []).push(function() {
+              try {
+                  w.yaCounter18343495 = new Ya.Metrika2({
+                      id:18343495,
+                      clickmap:true,
+                      trackLinks:true,
+                      accurateTrackBounce:true,
+                      webvisor: true
+                  });
+              } catch(e) { }
+          });
+          var n = d.getElementsByTagName("script")[0],
+              s = d.createElement("script"),
+              f = function () { n.parentNode.insertBefore(s, n); };
+          s.type = "text/javascript";
+          s.async = true;
+          s.src = "https://mc.yandex.ru/metrika/tag.js";
+          if (w.opera == "[object Opera]") {
+              d.addEventListener("DOMContentLoaded", f, false);
+          } else { f(); }
+      })(document, window, "yandex_metrika_callbacks2");
+  </script>
+  <noscript>
+      <div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""/></div>
+  </noscript>
+  <!-- /Yandex.Metrika counter -->
+
+  <nav class="md-header-nav md-grid">
+    <div class="md-flex">
+      <div class="md-flex__cell md-flex__cell--shrink">
+        <a href="/" title="ClickHouse Documentation" class="md-header-nav__button md-logo">
+          
+            <img src="../../images/logo.svg" width="40" height="40">
+          
+        </a>
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+        <label class="md-icon md-icon--menu md-header-nav__button" for="drawer"></label>
+      </div>
+      <div class="md-flex__cell md-flex__cell--stretch">
+        <div class="md-flex__ellipsis md-header-nav__title" data-md-component="title">
+          
+            
+              <span class="md-header-nav__topic">
+                ClickHouse Documentation
+              </span>
+              <span class="md-header-nav__topic">
+                Overview of ClickHouse architecture
+              </span>
+            
+          
+        </div>
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+        
+          
+            <label class="md-icon md-icon--search md-header-nav__button" for="search"></label>
+            
+<div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="search"></label>
+  <div class="md-search__inner">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" required placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="query">
+      <label class="md-icon md-search__icon" for="search"></label>
+      <button type="reset" class="md-icon md-search__icon" data-md-component="reset">&#xE5CD;</button>
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="result">
+          <div class="md-search-result__meta">
+            Type to start searching
+          </div>
+          <ol class="md-search-result__list"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+          
+        
+      </div>
+      
+        <div class="md-flex__cell md-flex__cell--shrink">
+          <div class="md-header-nav__source">
+            <script type="text/javascript">
+                if (window.location.pathname.indexOf('/ru/') >= 0) {
+                  url = window.location.pathname.replace('/ru/', '/en/');
+                  text = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"30\" viewBox=\"0,0 25,15\" style=\"border:1px solid #eee;margin: .8rem 0 0 -1.25rem;\">\n" +
+                      "<rect width=\"25\" height=\"15\" fill=\"#00247d\"></rect>\n" +
+                      "<path d=\"M 0,0 L 25,15 M 25,0 L 0,15\" stroke=\"#fff\" stroke-width=\"3\"></path>\n" +
+                      "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#fff\" stroke-width=\"5\"></path>\n" +
+                      "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#cf142b\" stroke-width=\"3\"></path>\n" +
+                      "</svg>";
+                  title = "Switch to English"
+                }else{
+                  url = window.location.pathname.replace('/en/', '/ru/');
+                  text = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 6\" width=\"50\" height=\"30\" style=\"border: 1px solid #eee;margin: .8rem 0 0 -1.25rem\">\n" +
+                      "<rect fill=\"#fff\" width=\"10\" height=\"3\"></rect>\n" +
+                      "<rect fill=\"#d52b1e\" y=\"3\" width=\"10\" height=\"3\"></rect>\n" +
+                      "<rect fill=\"#0039a6\" y=\"2\" width=\"10\" height=\"2\"></rect>\n" +
+                      "</svg>";
+                  title = "Переключить на русский язык"
+               }
+               document.write('<a href="' + url + '" title="' + title + '" class="md-flex__ellipsis md-header-nav__title">' + text + '</a>')
+             </script>
+          </div>
+        </div>
+      
+    </div>
+  </nav>
+</header>
+    
+    <div class="md-container">
+      
+        
+      
+      
+      <main class="md-main">
+        <div class="md-main__inner md-grid" data-md-component="container">
+          
+            
+              <div class="md-sidebar md-sidebar--primary" data-md-component="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    <nav class="md-nav md-nav--primary" data-md-level="0">
+  <label class="md-nav__title md-nav__title--site" for="drawer">
+    ClickHouse Documentation
+  </label>
+
+  <ul class="md-nav__list" data-md-scrollfix>
+    <li class="md-nav__item md-nav__item--active">
+      <script type="text/javascript">
+        if (window.location.pathname.indexOf('/ru/') >= 0) {
+          if (window.location.pathname.indexOf('/single/') >= 0) {
+            document.write("<a href=\"../../../\" class=\"md-nav__link md-nav__link--active\">Многостраничная версия</a>")
+          } else {
+            document.write("<a href=\"../../single/\" class=\"md-nav__link md-nav__link--active\">Одностраничная версия</a>")
+          }
+        }else{
+          if (window.location.pathname.indexOf('/single/') >= 0) {
+            document.write("<a href=\"../../../\" class=\"md-nav__link md-nav__link--active\">Multi page version</a>")
+          }else{
+            document.write("<a href=\"../../single/\" class=\"md-nav__link md-nav__link--active\">Single page version</a>")
+          }
+        }
+     </script>
+    </li>
+    <li class="md-nav__item md-nav__item--active">
+      <a href="https://github.com/yandex/ClickHouse/" rel="external nofollow" target="_blank" class="md-nav__link">
+        <script type="text/javascript">
+        if (window.location.pathname.indexOf('/ru/') >= 0) {
+          document.write('Исходники ClickHouse');
+        } else {
+          document.write('ClickHouse sources');
+        }
+     </script>
+      </a>
+    </li>
+  </ul>
+
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+
+  <li class="md-nav__item">
+    <a href="../.." title="ClickHouse" class="md-nav__link">
+      ClickHouse
+    </a>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-2" type="checkbox" id="nav-2">
+    
+    <label class="md-nav__link" for="nav-2">
+      Introduction
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-2">
+        Introduction
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../introduction/distinctive_features/" title="Distinctive features of ClickHouse" class="md-nav__link">
+      Distinctive features of ClickHouse
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../introduction/features_considered_disadvantages/" title="ClickHouse features that can be considered disadvantages" class="md-nav__link">
+      ClickHouse features that can be considered disadvantages
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../introduction/ya_metrika_task/" title="The Yandex.Metrica task" class="md-nav__link">
+      The Yandex.Metrica task
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../introduction/possible_silly_questions/" title="Everything you were afraid to ask" class="md-nav__link">
+      Everything you were afraid to ask
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../introduction/performance/" title="Performance" class="md-nav__link">
+      Performance
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-3" type="checkbox" id="nav-3">
+    
+    <label class="md-nav__link" for="nav-3">
+      Getting started
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-3">
+        Getting started
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../getting_started/" title="Deploying and running" class="md-nav__link">
+      Deploying and running
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-3-2" type="checkbox" id="nav-3-2">
+    
+    <label class="md-nav__link" for="nav-3-2">
+      Testing data
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-3-2">
+        Testing data
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../getting_started/example_datasets/ontime/" title="OnTime" class="md-nav__link">
+      OnTime
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../getting_started/example_datasets/nyc_taxi/" title="New York Taxi data" class="md-nav__link">
+      New York Taxi data
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../getting_started/example_datasets/amplab_benchmark/" title="AMPLab Big Data Benchmark" class="md-nav__link">
+      AMPLab Big Data Benchmark
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../getting_started/example_datasets/wikistat/" title="WikiStat" class="md-nav__link">
+      WikiStat
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../getting_started/example_datasets/criteo/" title="Terabyte click logs from Criteo" class="md-nav__link">
+      Terabyte click logs from Criteo
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../getting_started/example_datasets/star_schema/" title="Star Schema Benchmark" class="md-nav__link">
+      Star Schema Benchmark
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-4" type="checkbox" id="nav-4">
+    
+    <label class="md-nav__link" for="nav-4">
+      Interfaces
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-4">
+        Interfaces
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../interfaces/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../interfaces/cli/" title="Command-line client" class="md-nav__link">
+      Command-line client
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../interfaces/http_interface/" title="HTTP interface" class="md-nav__link">
+      HTTP interface
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../interfaces/jdbc/" title="JDBC driver" class="md-nav__link">
+      JDBC driver
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../interfaces/tcp/" title="Native interface (TCP)" class="md-nav__link">
+      Native interface (TCP)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../interfaces/third-party_client_libraries/" title="Libraries from third-party developers" class="md-nav__link">
+      Libraries from third-party developers
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../interfaces/third-party_gui/" title="Visual interfaces from third-party developers" class="md-nav__link">
+      Visual interfaces from third-party developers
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-5" type="checkbox" id="nav-5">
+    
+    <label class="md-nav__link" for="nav-5">
+      Query language
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-5">
+        Query language
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../query_language/queries/" title="Queries" class="md-nav__link">
+      Queries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../query_language/syntax/" title="Syntax" class="md-nav__link">
+      Syntax
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-6" type="checkbox" id="nav-6">
+    
+    <label class="md-nav__link" for="nav-6">
+      Table engines
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-6">
+        Table engines
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/tinylog/" title="TinyLog" class="md-nav__link">
+      TinyLog
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/log/" title="Log" class="md-nav__link">
+      Log
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/memory/" title="Memory" class="md-nav__link">
+      Memory
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/mergetree/" title="MergeTree" class="md-nav__link">
+      MergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/custom_partitioning_key/" title="Custom partitioning key" class="md-nav__link">
+      Custom partitioning key
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/replacingmergetree/" title="ReplacingMergeTree" class="md-nav__link">
+      ReplacingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/summingmergetree/" title="SummingMergeTree" class="md-nav__link">
+      SummingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/aggregatingmergetree/" title="AggregatingMergeTree" class="md-nav__link">
+      AggregatingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/collapsingmergetree/" title="CollapsingMergeTree" class="md-nav__link">
+      CollapsingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/graphitemergetree/" title="GraphiteMergeTree" class="md-nav__link">
+      GraphiteMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/replication/" title="Data replication" class="md-nav__link">
+      Data replication
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/distributed/" title="Distributed" class="md-nav__link">
+      Distributed
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/dictionary/" title="Dictionary" class="md-nav__link">
+      Dictionary
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/merge/" title="Merge" class="md-nav__link">
+      Merge
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/buffer/" title="Buffer" class="md-nav__link">
+      Buffer
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/file/" title="File" class="md-nav__link">
+      File
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/null/" title="Null" class="md-nav__link">
+      Null
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/set/" title="Set" class="md-nav__link">
+      Set
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/join/" title="Join" class="md-nav__link">
+      Join
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/view/" title="View" class="md-nav__link">
+      View
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/materializedview/" title="MaterializedView" class="md-nav__link">
+      MaterializedView
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/kafka/" title="Kafka" class="md-nav__link">
+      Kafka
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/mysql/" title="MySQL" class="md-nav__link">
+      MySQL
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_engines/external_data/" title="External data for query processing" class="md-nav__link">
+      External data for query processing
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-7" type="checkbox" id="nav-7">
+    
+    <label class="md-nav__link" for="nav-7">
+      System tables
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-7">
+        System tables
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.one/" title="system.one" class="md-nav__link">
+      system.one
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.numbers/" title="system.numbers" class="md-nav__link">
+      system.numbers
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.numbers_mt/" title="system.numbers_mt" class="md-nav__link">
+      system.numbers_mt
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.databases/" title="system.databases" class="md-nav__link">
+      system.databases
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.tables/" title="system.tables" class="md-nav__link">
+      system.tables
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.columns/" title="system.columns" class="md-nav__link">
+      system.columns
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.parts/" title="system.parts" class="md-nav__link">
+      system.parts
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.processes/" title="system.processes" class="md-nav__link">
+      system.processes
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.merges/" title="system.merges" class="md-nav__link">
+      system.merges
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.events/" title="system.events" class="md-nav__link">
+      system.events
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.metrics/" title="system.metrics" class="md-nav__link">
+      system.metrics
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.asynchronous_metrics/" title="system.asynchronous_metrics" class="md-nav__link">
+      system.asynchronous_metrics
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.replicas/" title="system.replicas" class="md-nav__link">
+      system.replicas
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.dictionaries/" title="system.dictionaries" class="md-nav__link">
+      system.dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.clusters/" title="system.clusters" class="md-nav__link">
+      system.clusters
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.functions/" title="system.functions" class="md-nav__link">
+      system.functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.settings/" title="system.settings" class="md-nav__link">
+      system.settings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../system_tables/system.zookeeper/" title="system.zookeeper" class="md-nav__link">
+      system.zookeeper
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-8" type="checkbox" id="nav-8">
+    
+    <label class="md-nav__link" for="nav-8">
+      Table functions
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-8">
+        Table functions
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_functions/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_functions/remote/" title="remote" class="md-nav__link">
+      remote
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_functions/merge/" title="merge" class="md-nav__link">
+      merge
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../table_functions/numbers/" title="numbers" class="md-nav__link">
+      numbers
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-9" type="checkbox" id="nav-9">
+    
+    <label class="md-nav__link" for="nav-9">
+      Formats
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-9">
+        Formats
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/tabseparated/" title="TabSeparated" class="md-nav__link">
+      TabSeparated
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/tabseparatedraw/" title="TabSeparatedRaw" class="md-nav__link">
+      TabSeparatedRaw
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/tabseparatedwithnames/" title="TabSeparatedWithNames" class="md-nav__link">
+      TabSeparatedWithNames
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/tabseparatedwithnamesandtypes/" title="TabSeparatedWithNamesAndTypes" class="md-nav__link">
+      TabSeparatedWithNamesAndTypes
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/csv/" title="CSV" class="md-nav__link">
+      CSV
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/csvwithnames/" title="CSVWithNames" class="md-nav__link">
+      CSVWithNames
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/values/" title="Values" class="md-nav__link">
+      Values
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/vertical/" title="Vertical" class="md-nav__link">
+      Vertical
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/verticalraw/" title="VerticalRaw" class="md-nav__link">
+      VerticalRaw
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/json/" title="JSON" class="md-nav__link">
+      JSON
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/jsoncompact/" title="JSONCompact" class="md-nav__link">
+      JSONCompact
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/jsoneachrow/" title="JSONEachRow" class="md-nav__link">
+      JSONEachRow
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/tskv/" title="TSKV" class="md-nav__link">
+      TSKV
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/pretty/" title="Pretty" class="md-nav__link">
+      Pretty
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/prettycompact/" title="PrettyCompact" class="md-nav__link">
+      PrettyCompact
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/prettycompactmonoblock/" title="PrettyCompactMonoBlock" class="md-nav__link">
+      PrettyCompactMonoBlock
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/prettynoescapes/" title="PrettyNoEscapes" class="md-nav__link">
+      PrettyNoEscapes
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/prettyspace/" title="PrettySpace" class="md-nav__link">
+      PrettySpace
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/rowbinary/" title="RowBinary" class="md-nav__link">
+      RowBinary
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/native/" title="Native" class="md-nav__link">
+      Native
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/null/" title="Null" class="md-nav__link">
+      Null
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/xml/" title="XML" class="md-nav__link">
+      XML
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../formats/capnproto/" title="CapnProto" class="md-nav__link">
+      CapnProto
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-10" type="checkbox" id="nav-10">
+    
+    <label class="md-nav__link" for="nav-10">
+      Data types
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-10">
+        Data types
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/int_uint/" title="UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64" class="md-nav__link">
+      UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/float/" title="Float32, Float64" class="md-nav__link">
+      Float32, Float64
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/boolean/" title="Boolean values" class="md-nav__link">
+      Boolean values
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/string/" title="String" class="md-nav__link">
+      String
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/fixedstring/" title="FixedString(N)" class="md-nav__link">
+      FixedString(N)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/date/" title="Date" class="md-nav__link">
+      Date
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/datetime/" title="DateTime" class="md-nav__link">
+      DateTime
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/enum/" title="Enum" class="md-nav__link">
+      Enum
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/array/" title="Array(T)" class="md-nav__link">
+      Array(T)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/nested_data_structures/aggregatefunction/" title="AggregateFunction(name, types_of_arguments...)" class="md-nav__link">
+      AggregateFunction(name, types_of_arguments...)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/tuple/" title="Tuple(T1, T2, ...)" class="md-nav__link">
+      Tuple(T1, T2, ...)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-10-13" type="checkbox" id="nav-10-13">
+    
+    <label class="md-nav__link" for="nav-10-13">
+      Nested data structures
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-10-13">
+        Nested data structures
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/nested_data_structures/nested/" title="Nested(Name1 Type1, Name2 Type2, ...)" class="md-nav__link">
+      Nested(Name1 Type1, Name2 Type2, ...)
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-10-14" type="checkbox" id="nav-10-14">
+    
+    <label class="md-nav__link" for="nav-10-14">
+      Special data types
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-10-14">
+        Special data types
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/special_data_types/expression/" title="Expression" class="md-nav__link">
+      Expression
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../data_types/special_data_types/set/" title="Set" class="md-nav__link">
+      Set
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item">
+    <a href="../../operators/" title="Operators" class="md-nav__link">
+      Operators
+    </a>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-12" type="checkbox" id="nav-12">
+    
+    <label class="md-nav__link" for="nav-12">
+      Functions
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-12">
+        Functions
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/arithmetic_functions/" title="Arithmetic functions" class="md-nav__link">
+      Arithmetic functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/comparison_functions/" title="Comparison functions" class="md-nav__link">
+      Comparison functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/logical_functions/" title="Logical functions" class="md-nav__link">
+      Logical functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/type_conversion_functions/" title="Type conversion functions" class="md-nav__link">
+      Type conversion functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/date_time_functions/" title="Functions for working with dates and times" class="md-nav__link">
+      Functions for working with dates and times
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/string_functions/" title="Functions for working with strings" class="md-nav__link">
+      Functions for working with strings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/string_search_functions/" title="Functions for searching strings" class="md-nav__link">
+      Functions for searching strings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/string_replace_functions/" title="Functions for searching and replacing in strings" class="md-nav__link">
+      Functions for searching and replacing in strings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/conditional_functions/" title="Conditional functions" class="md-nav__link">
+      Conditional functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/math_functions/" title="Mathematical functions" class="md-nav__link">
+      Mathematical functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/rounding_functions/" title="Rounding functions" class="md-nav__link">
+      Rounding functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/array_functions/" title="Functions for working with arrays" class="md-nav__link">
+      Functions for working with arrays
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/splitting_merging_functions/" title="Functions for splitting and merging strings and arrays" class="md-nav__link">
+      Functions for splitting and merging strings and arrays
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/bit_functions/" title="Bit functions" class="md-nav__link">
+      Bit functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/hash_functions/" title="Hash functions" class="md-nav__link">
+      Hash functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/random_functions/" title="Functions for generating pseudo-random numbers" class="md-nav__link">
+      Functions for generating pseudo-random numbers
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/encoding_functions/" title="Encoding functions" class="md-nav__link">
+      Encoding functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/url_functions/" title="Functions for working with URLs" class="md-nav__link">
+      Functions for working with URLs
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/ip_address_functions/" title="Functions for working with IP addresses" class="md-nav__link">
+      Functions for working with IP addresses
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/json_functions/" title="Functions for working with JSON." class="md-nav__link">
+      Functions for working with JSON.
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/higher_order_functions/" title="Higher-order functions" class="md-nav__link">
+      Higher-order functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/other_functions/" title="Other functions" class="md-nav__link">
+      Other functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/ext_dict_functions/" title="Functions for working with external dictionaries" class="md-nav__link">
+      Functions for working with external dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/ym_dict_functions/" title="Functions for working with Yandex.Metrica dictionaries" class="md-nav__link">
+      Functions for working with Yandex.Metrica dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/in_functions/" title="Functions for implementing the IN operator" class="md-nav__link">
+      Functions for implementing the IN operator
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../functions/array_join/" title="arrayJoin function" class="md-nav__link">
+      arrayJoin function
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-13" type="checkbox" id="nav-13">
+    
+    <label class="md-nav__link" for="nav-13">
+      Aggregate functions
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-13">
+        Aggregate functions
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../agg_functions/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../agg_functions/reference/" title="Function reference" class="md-nav__link">
+      Function reference
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../agg_functions/combinators/" title="Aggregate function combinators" class="md-nav__link">
+      Aggregate function combinators
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../agg_functions/parametric_functions/" title="Parametric aggregate functions" class="md-nav__link">
+      Parametric aggregate functions
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-14" type="checkbox" id="nav-14">
+    
+    <label class="md-nav__link" for="nav-14">
+      Dictionaries
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-14">
+        Dictionaries
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-14-2" type="checkbox" id="nav-14-2">
+    
+    <label class="md-nav__link" for="nav-14-2">
+      External dictionaries
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-14-2">
+        External dictionaries
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/external_dicts/" title="General desription" class="md-nav__link">
+      General desription
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/external_dicts_dict/" title="Configuring an external dictionary" class="md-nav__link">
+      Configuring an external dictionary
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/external_dicts_dict_layout/" title="Storing dictionaries in memory" class="md-nav__link">
+      Storing dictionaries in memory
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/external_dicts_dict_lifetime/" title="Dictionary updates" class="md-nav__link">
+      Dictionary updates
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/external_dicts_dict_sources/" title="Sources of external dictionaries" class="md-nav__link">
+      Sources of external dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/external_dicts_dict_structure/" title="Dictionary key and fields" class="md-nav__link">
+      Dictionary key and fields
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../dicts/internal_dicts/" title="Internal dictionaries" class="md-nav__link">
+      Internal dictionaries
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-15" type="checkbox" id="nav-15">
+    
+    <label class="md-nav__link" for="nav-15">
+      Operation
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-15">
+        Operation
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/access_rights/" title="Access rights" class="md-nav__link">
+      Access rights
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/configuration_files/" title="Configuration files" class="md-nav__link">
+      Configuration files
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/quotas/" title="Quotas" class="md-nav__link">
+      Quotas
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/tips/" title="Usage recommendations" class="md-nav__link">
+      Usage recommendations
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-15-5" type="checkbox" id="nav-15-5">
+    
+    <label class="md-nav__link" for="nav-15-5">
+      Server configuration parameters
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-15-5">
+        Server configuration parameters
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/server_settings/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/server_settings/settings/" title="Server settings" class="md-nav__link">
+      Server settings
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-15-6" type="checkbox" id="nav-15-6">
+    
+    <label class="md-nav__link" for="nav-15-6">
+      Settings
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-15-6">
+        Settings
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/settings/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/settings/query_complexity/" title="Restrictions on query complexity" class="md-nav__link">
+      Restrictions on query complexity
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/settings/settings/" title="Settings" class="md-nav__link">
+      Settings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../operations/settings/settings_profiles/" title="Settings profiles" class="md-nav__link">
+      Settings profiles
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-16" type="checkbox" id="nav-16">
+    
+    <label class="md-nav__link" for="nav-16">
+      Utilites
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-16">
+        Utilites
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../utils/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../utils/clickhouse-copier/" title="clickhouse-copier" class="md-nav__link">
+      clickhouse-copier
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../utils/clickhouse-local/" title="clickhouse-local" class="md-nav__link">
+      clickhouse-local
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+  
+
+
+  <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-17" type="checkbox" id="nav-17" checked>
+    
+    <label class="md-nav__link" for="nav-17">
+      ClickHouse Development
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-17">
+        ClickHouse Development
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+  
+
+
+  <li class="md-nav__item md-nav__item--active">
+    
+    <input class="md-toggle md-nav__toggle" data-md-toggle="toc" type="checkbox" id="toc">
+    
+      
+    
+    
+      <label class="md-nav__link md-nav__link--active" for="toc">
+        Overview of ClickHouse architecture
+      </label>
+    
+    <a href="./" title="Overview of ClickHouse architecture" class="md-nav__link md-nav__link--active">
+      Overview of ClickHouse architecture
+    </a>
+    
+      
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="toc">Table of contents</label>
+    <ul class="md-nav__list" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#columns" title="Columns" class="md-nav__link">
+    Columns
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#field" title="Field" class="md-nav__link">
+    Field
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leaky-abstractions" title="Leaky abstractions" class="md-nav__link">
+    Leaky abstractions
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-types" title="Data types" class="md-nav__link">
+    Data types
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#block" title="Block" class="md-nav__link">
+    Block
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#block-streams" title="Block Streams" class="md-nav__link">
+    Block Streams
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#formats" title="Formats" class="md-nav__link">
+    Formats
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#io" title="I/O" class="md-nav__link">
+    I/O
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tables" title="Tables" class="md-nav__link">
+    Tables
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsers" title="Parsers" class="md-nav__link">
+    Parsers
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interpreters" title="Interpreters" class="md-nav__link">
+    Interpreters
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#functions" title="Functions" class="md-nav__link">
+    Functions
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aggregate-functions" title="Aggregate Functions" class="md-nav__link">
+    Aggregate Functions
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server" title="Server" class="md-nav__link">
+    Server
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-query-execution" title="Distributed query execution" class="md-nav__link">
+    Distributed query execution
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-tree" title="Merge Tree" class="md-nav__link">
+    Merge Tree
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replication" title="Replication" class="md-nav__link">
+    Replication
+  </a>
+  
+</li>
+      
+      
+      
+    </ul>
+  
+</nav>
+    
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../build/" title="How to build ClickHouse on Linux" class="md-nav__link">
+      How to build ClickHouse on Linux
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../build_osx/" title="How to build ClickHouse on Mac OS X" class="md-nav__link">
+      How to build ClickHouse on Mac OS X
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../style/" title="How to write  C++ code" class="md-nav__link">
+      How to write  C++ code
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../tests/" title="How to run ClickHouse tests" class="md-nav__link">
+      How to run ClickHouse tests
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item">
+    <a href="../../roadmap/" title="Roadmap" class="md-nav__link">
+      Roadmap
+    </a>
+  </li>
+
+    
+  </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="toc">Table of contents</label>
+    <ul class="md-nav__list" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#columns" title="Columns" class="md-nav__link">
+    Columns
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#field" title="Field" class="md-nav__link">
+    Field
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leaky-abstractions" title="Leaky abstractions" class="md-nav__link">
+    Leaky abstractions
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-types" title="Data types" class="md-nav__link">
+    Data types
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#block" title="Block" class="md-nav__link">
+    Block
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#block-streams" title="Block Streams" class="md-nav__link">
+    Block Streams
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#formats" title="Formats" class="md-nav__link">
+    Formats
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#io" title="I/O" class="md-nav__link">
+    I/O
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tables" title="Tables" class="md-nav__link">
+    Tables
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsers" title="Parsers" class="md-nav__link">
+    Parsers
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interpreters" title="Interpreters" class="md-nav__link">
+    Interpreters
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#functions" title="Functions" class="md-nav__link">
+    Functions
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aggregate-functions" title="Aggregate Functions" class="md-nav__link">
+    Aggregate Functions
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server" title="Server" class="md-nav__link">
+    Server
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-query-execution" title="Distributed query execution" class="md-nav__link">
+    Distributed query execution
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-tree" title="Merge Tree" class="md-nav__link">
+    Merge Tree
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replication" title="Replication" class="md-nav__link">
+    Replication
+  </a>
+  
+</li>
+      
+      
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          <div class="md-content">
+            <article class="md-content__inner md-typeset">
+              
+                
+                  
+                    <a href="https://github.com/yandex/ClickHouse/edit/master/docs/en/development/architecture.md" title="Edit this page" class="md-icon md-content__icon">&#xE3C9;</a>
+                  
+                
+                
+                <h1 id="overview-of-clickhouse-architecture">Overview of ClickHouse architecture</h1>
+<p>ClickHouse is a true column-oriented DBMS. Data is stored by columns, and during the execution of arrays (vectors or chunks of columns). Whenever possible, operations are dispatched on arrays, rather than on individual values. This is called "vectorized query execution," and it helps lower the cost of actual data processing.</p>
+<blockquote>
+<p>This idea is nothing new. It dates back to the <code>APL</code> programming language and its descendants: <code>A +</code>, <code>J</code>, <code>K</code>, and <code>Q</code>. Array programming is used in scientific data processing. Neither is this idea something new in relational databases: for example, it is used in the <code>Vectorwise</code> system.</p>
+</blockquote>
+<p>There are two different approaches for speeding up the query processing: vectorized query execution and runtime code generation. In the latter, the code is generated for every kind of query on the fly, removing all indirection and dynamic dispatch. Neither of these approaches is strictly better than the other. Runtime code generation can be better when it's fuses many operations together, thus fully utilizing CPU execution units and the pipeline. Vectorized query execution can be less practical, because it involves the temporary vectors that must be written to the cache and read back. If the temporary data does not fit in the L2 cache, this becomes an issue. But vectorized query execution more easily utilizes the SIMD capabilities of the CPU. A <a href="http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf">research paper</a> written by our friends shows that it is better to combine both approaches. ClickHouse uses vectorized query execution and has limited initial support for runtime code.</p>
+<h2 id="columns">Columns</h2>
+<p>To represent columns in memory (actually, chunks of columns), the <code>IColumn</code> interface is used. This interface provides helper methods for implementation of various relational operators. Almost all operations are immutable: they do not modify the original column, but create a new modified one. For example, the <code>IColumn :: filter</code> method accepts a filter byte mask. It is used for the <code>WHERE</code> and <code>HAVING</code> relational operators. Additional examples: the <code>IColumn :: permute</code> method to support <code>ORDER BY</code>, the <code>IColumn :: cut</code> method to support <code>LIMIT</code>, and so on.</p>
+<p>Various <code>IColumn</code> implementations (<code>ColumnUInt8</code>, <code>ColumnString</code> and so on) are responsible for the memory layout of columns. Memory layout is usually a contiguous array. For the integer type of columns it is just one contiguous array, like <code>std :: vector</code>. For <code>String</code> and <code>Array</code> columns, it is two vectors: one for all array elements, placed contiguously, and a second one for offsets to the beginning of each array. There is also <code>ColumnConst</code> that stores just one value in memory, but looks like a column.</p>
+<h2 id="field">Field</h2>
+<p>Nevertheless, it is possible to work with individual values as well. To represent an individual value, the <code>Field</code> is used. <code>Field</code> is just a discriminated union of <code>UInt64</code>, <code>Int64</code>, <code>Float64</code>, <code>String</code> and <code>Array</code>. <code>IColumn</code> has the <code>operator[]</code> method to get the n-th value as a <code>Field</code>, and the <code>insert</code> method to append a <code>Field</code> to the end of a column. These methods are not very efficient, because they require dealing with temporary <code>Field</code> objects representing an individual value. There are more efficient methods, such as <code>insertFrom</code>, <code>insertRangeFrom</code>, and so on.</p>
+<p><code>Field</code> doesn't have enough information about a specific data type for a table. For example, <code>UInt8</code>, <code>UInt16</code>, <code>UInt32</code>, and <code>UInt64</code> are all represented as <code>UInt64</code> in a <code>Field</code>.</p>
+<h2 id="leaky-abstractions">Leaky abstractions</h2>
+<p><code>IColumn</code> has methods for common relational transformations of data, but they don't meet all needs. For example, <code>ColumnUInt64</code> doesn't have a method to calculate the sum of two columns, and <code>ColumnString</code> doesn't have a method to run a substring search. These countless routines are implemented outside of <code>IColumn</code>.</p>
+<p>Various functions on columns can be implemented in a generic, non-efficient way using <code>IColumn</code> methods to extract <code>Field</code> values, or in a specialized way using knowledge of inner memory layout of data in a specific <code>IColumn</code> implementation. To do this, functions are cast to a specific <code>IColumn</code> type and deal with internal representation directly. For example, <code>ColumnUInt64</code> has the <code>getData</code> method that returns a reference to an internal array, then a separate routine reads or fills that array directly. In fact, we have "leaky abstractions" to allow efficient specializations of various routines.</p>
+<h2 id="data-types">Data types</h2>
+<p><code>IDataType</code> is responsible for serialization and deserialization: for reading and writing chunks of columns or individual values in binary or text form.
+<code>IDataType</code> directly corresponds to data types in tables. For example, there are <code>DataTypeUInt32</code>, <code>DataTypeDateTime</code>, <code>DataTypeString</code> and so on.</p>
+<p><code>IDataType</code> and <code>IColumn</code> are only loosely related to each other. Different data types can be represented in memory by the same <code>IColumn</code> implementations. For example, <code>DataTypeUInt32</code> and <code>DataTypeDateTime</code> are both represented by <code>ColumnUInt32</code> or <code>ColumnConstUInt32</code>. In addition, the same data type can be represented by different <code>IColumn</code> implementations. For example, <code>DataTypeUInt8</code> can be represented by <code>ColumnUInt8</code> or <code>ColumnConstUInt8</code>.</p>
+<p><code>IDataType</code> only stores metadata. For instance, <code>DataTypeUInt8</code> doesn't store anything at all (except vptr) and <code>DataTypeFixedString</code> stores just <code>N</code> (the size of fixed-size strings).</p>
+<p><code>IDataType</code> has helper methods for various data formats. Examples are methods to serialize a value with possible quoting, to serialize a value for JSON, and to serialize a value as part of XML format. There is no direct correspondence to data formats. For example, the different data formats <code>Pretty</code> and <code>TabSeparated</code> can use the same <code>serializeTextEscaped</code> helper method from the <code>IDataType</code> interface.</p>
+<h2 id="block">Block</h2>
+<p>A <code>Block</code> is a container that represents a subset (chunk) of a table in memory. It is just a set of triples: <code>(IColumn, IDataType, column name)</code>. During query execution, data is processed by <code>Block</code>s. If we have a <code>Block</code>, we have data (in the <code>IColumn</code> object), we have information about its type (in <code>IDataType</code>) that tells us how to deal with that column, and we have the column name (either the original column name from the table, or some artificial name assigned for getting temporary results of calculations).</p>
+<p>When we calculate some function over columns in a block, we add another column with its result to the block, and we don't touch columns for arguments of the function because operations are immutable. Later, unneeded columns can be removed from the block, but not modified. This is convenient for elimination of common subexpressions.</p>
+<p>Blocks are created for every processed chunk of data. Note that for the same type of calculation, the column names and types remain the same for different blocks, and only column data changes. It is better to split block data from the block header, because small block sizes will have a high overhead of temporary strings for copying shared_ptrs and column names.</p>
+<h2 id="block-streams">Block Streams</h2>
+<p>Block streams are for processing data. We use streams of blocks to read data from somewhere, perform data transformations, or write data to somewhere. <code>IBlockInputStream</code> has the <code>read</code> method to fetch the next block while available. <code>IBlockOutputStream</code> has the <code>write</code> method to push the block somewhere.</p>
+<p>Streams are responsible for:</p>
+<ol>
+<li>Reading or writing to a table. The table just returns a stream for reading or writing blocks.</li>
+<li>Implementing data formats. For example, if you want to output data to a terminal in <code>Pretty</code> format, you create a block output stream where you push blocks, and it formats them.</li>
+<li>Performing data transformations. Let's say you have <code>IBlockInputStream</code> and want to create a filtered stream. You create <code>FilterBlockInputStream</code> and initialize it with your stream. Then when you pull a block from <code>FilterBlockInputStream</code>, it pulls a block from your stream, filters it, and returns the filtered block to you. Query execution pipelines are represented this way.</li>
+</ol>
+<p>There are more sophisticated transformations. For example, when you pull from <code>AggregatingBlockInputStream</code>, it reads all data from its source, aggregates it, and then returns a stream of aggregated data for you. Another example: <code>UnionBlockInputStream</code> accepts many input sources in the constructor and also a number of threads. It launches multiple threads and reads from multiple sources in parallel.</p>
+<blockquote>
+<p>Block streams use the "pull" approach to control flow: when you pull a block from the first stream, it consequently pulls the required blocks from nested streams, and the entire execution pipeline will work. Neither "pull" nor "push" is the best solution, because control flow is implicit, and that limits implementation of various features like simultaneous execution of multiple queries (merging many pipelines together). This limitation could be overcome with coroutines or just running extra threads that wait for each other. We may have more possibilities if we make control flow explicit: if we locate the logic for passing data from one calculation unit to another outside of those calculation units. Read this <a href="http://journal.stuffwithstuff.com/2013/01/13/iteration-inside-and-out/">article</a> for more thoughts.</p>
+</blockquote>
+<p>We should note that the query execution pipeline creates temporary data at each step. We try to keep block size small enough so that temporary data fits in the CPU cache. With that assumption, writing and reading temporary data is almost free in comparison with other calculations. We could consider an alternative, which is to fuse many operations in the pipeline together, to make the pipeline as short as possible and remove much of the temporary data. This could be an advantage, but it also has drawbacks. For example, a split pipeline makes it easy to implement caching intermediate data, stealing intermediate data from similar queries running at the same time, and merging pipelines for similar queries.</p>
+<h2 id="formats">Formats</h2>
+<p>Data formats are implemented with block streams. There are "presentational" formats only suitable for output of data to the client, such as <code>Pretty</code> format, which provides only <code>IBlockOutputStream</code>. And there are input/output formats, such as <code>TabSeparated</code> or <code>JSONEachRow</code>.</p>
+<p>There are also row streams: <code>IRowInputStream</code> and <code>IRowOutputStream</code>. They allow you to pull/push data by individual rows, not by blocks. And they are only needed to simplify implementation of row-oriented formats. The wrappers <code>BlockInputStreamFromRowInputStream</code> and <code>BlockOutputStreamFromRowOutputStream</code> allow you to convert row-oriented streams to regular block-oriented streams.</p>
+<h2 id="io">I/O</h2>
+<p>For byte-oriented input/output, there are <code>ReadBuffer</code> and <code>WriteBuffer</code> abstract classes. They are used instead of C++ <code>iostream</code>'s. Don't worry: every mature C++ project is using something other than <code>iostream</code>'s for good reasons.</p>
+<p><code>ReadBuffer</code> and <code>WriteBuffer</code> are just a contiguous buffer and a cursor pointing to the position in that buffer. Implementations may own or not own the memory for the buffer. There is a virtual method to fill the buffer with the following data (for <code>ReadBuffer</code>) or to flush the buffer somewhere (for <code>WriteBuffer</code>). The virtual methods are rarely called.</p>
+<p>Implementations of <code>ReadBuffer</code>/<code>WriteBuffer</code> are used for working with files and file descriptors and network sockets, for implementing compression (<code>CompressedWriteBuffer</code> is initialized with another WriteBuffer and performs compression before writing data to it), and for other purposes – the names <code>ConcatReadBuffer</code>, <code>LimitReadBuffer</code>, and <code>HashingWriteBuffer</code> speak for themselves.</p>
+<p>Read/WriteBuffers only deal with bytes. To help with formatted input/output (for instance, to write a number in decimal format), there are functions from <code>ReadHelpers</code> and <code>WriteHelpers</code> header files.</p>
+<p>Let's look at what happens when you want to write a result set in <code>JSON</code> format to stdout. You have a result set ready to be fetched from <code>IBlockInputStream</code>. You create <code>WriteBufferFromFileDescriptor(STDOUT_FILENO)</code> to write bytes to stdout. You create <code>JSONRowOutputStream</code>, initialized with that <code>WriteBuffer</code>, to write rows in <code>JSON</code> to stdout. You create <code>BlockOutputStreamFromRowOutputStream</code> on top of it, to represent it as <code>IBlockOutputStream</code>. Then you call <code>copyData</code> to transfer data from <code>IBlockInputStream</code> to <code>IBlockOutputStream</code>, and everything works. Internally, <code>JSONRowOutputStream</code> will write various JSON delimiters and call the <code>IDataType::serializeTextJSON</code> method with a reference to <code>IColumn</code> and the row number as arguments. Consequently, <code>IDataType::serializeTextJSON</code> will call a method from <code>WriteHelpers.h</code>: for example, <code>writeText</code> for numeric types and <code>writeJSONString</code> for <code>DataTypeString</code>.</p>
+<h2 id="tables">Tables</h2>
+<p>Tables are represented by the <code>IStorage</code> interface. Different implementations of that interface are different table engines. Examples are <code>StorageMergeTree</code>, <code>StorageMemory</code>, and so on. Instances of these classes are just tables.</p>
+<p>The most important <code>IStorage</code> methods are <code>read</code> and <code>write</code>. There are also <code>alter</code>, <code>rename</code>, <code>drop</code>, and so on. The <code>read</code> method accepts the following arguments: the set of columns to read from a table, the <code>AST</code> query to consider, and the desired number of streams to return. It returns one or multiple <code>IBlockInputStream</code> objects and information about the stage of data processing that was completed inside a table engine during query execution.</p>
+<p>In most cases, the read method is only responsible for reading the specified columns from a table, not for any further data processing. All further data processing is done by the query interpreter and is outside the responsibility of <code>IStorage</code>.</p>
+<p>But there are notable exceptions:</p>
+<ul>
+<li>The AST query is passed to the <code>read</code> method and the table engine can use it to derive index usage and to read less data from a table.</li>
+<li>Sometimes the table engine can process data itself to a specific stage. For example, <code>StorageDistributed</code> can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data.
+The query interpreter then finishes processing the data.</li>
+</ul>
+<p>The table's <code>read</code> method can return multiple <code>IBlockInputStream</code> objects to allow parallel data processing. These multiple block input streams can read from a table in parallel. Then you can wrap these streams with various transformations (such as expression evaluation or filtering) that can be calculated independently and create a <code>UnionBlockInputStream</code> on top of them, to read from multiple streams in parallel.</p>
+<p>There are also <code>TableFunction</code>s. These are functions that return a temporary <code>IStorage</code> object to use in the <code>FROM</code> clause of a query.</p>
+<p>To get a quick idea of how to implement your own table engine, look at something simple, like <code>StorageMemory</code> or <code>StorageTinyLog</code>.</p>
+<blockquote>
+<p>As the result of the <code>read</code> method, <code>IStorage</code> returns <code>QueryProcessingStage</code> – information about what parts of the query were already calculated inside storage. Currently we have only very coarse granularity for that information. There is no way for the storage to say "I have already processed this part of the expression in WHERE, for this range of data". We need to work on that.</p>
+</blockquote>
+<h2 id="parsers">Parsers</h2>
+<p>A query is parsed by a hand-written recursive descent parser. For example, <code>ParserSelectQuery</code> just recursively calls the underlying parsers for various parts of the query. Parsers create an <code>AST</code>. The <code>AST</code> is represented by nodes, which are instances of <code>IAST</code>.</p>
+<blockquote>
+<p>Parser generators are not used for historical reasons.</p>
+</blockquote>
+<h2 id="interpreters">Interpreters</h2>
+<p>Interpreters are responsible for creating the query execution pipeline from an <code>AST</code>. There are simple interpreters, such as <code>InterpreterExistsQuery</code>and <code>InterpreterDropQuery</code>, or the more sophisticated <code>InterpreterSelectQuery</code>. The query execution pipeline is a combination of block input or output streams. For example, the result of interpreting the <code>SELECT</code> query is the <code>IBlockInputStream</code> to read the result set from; the result of the INSERT query is the <code>IBlockOutputStream</code> to write data for insertion to; and the result of interpreting the <code>INSERT SELECT</code> query is the <code>IBlockInputStream</code> that returns an empty result set on the first read, but that copies data from <code>SELECT</code> to <code>INSERT</code> at the same time.</p>
+<p><code>InterpreterSelectQuery</code> uses <code>ExpressionAnalyzer</code> and <code>ExpressionActions</code> machinery for query analysis and transformations. This is where most rule-based query optimizations are done. <code>ExpressionAnalyzer</code> is quite messy and should be rewritten: various query transformations and optimizations should be extracted to separate classes to allow modular transformations or query.</p>
+<h2 id="functions">Functions</h2>
+<p>There are ordinary functions and aggregate functions. For aggregate functions, see the next section.</p>
+<p>Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for <code>Block</code>'s of data to implement vectorized query execution.</p>
+<p>There are some miscellaneous functions, like <code>blockSize</code>, <code>rowNumberInBlock</code>, and <code>runningAccumulate</code>, that exploit block processing and violate the independence of rows.</p>
+<p>ClickHouse has strong typing, so implicit type conversion doesn't occur. If a function doesn't support a specific combination of types, an exception will be thrown. But functions can work (be overloaded) for many different combinations of types. For example, the <code>plus</code> function (to implement the <code>+</code> operator) works for any combination of numeric types: <code>UInt8</code> + <code>Float32</code>, <code>UInt16</code> + <code>Int8</code>, and so on. Also, some variadic functions can accept any number of arguments, such as the <code>concat</code> function.</p>
+<p>Implementing a function may be slightly inconvenient because a function explicitly dispatches supported data types and supported <code>IColumns</code>. For example, the <code>plus</code> function has code generated by instantiation of a C++ template for each combination of numeric types, and for constant or non-constant left and right arguments.</p>
+<blockquote>
+<p>This is a nice place to implement runtime code generation to avoid template code bloat. Also, it will make it possible to add fused functions like fused multiply-add, or to make multiple comparisons in one loop iteration.</p>
+</blockquote>
+<p>Due to vectorized query execution, functions are not short-circuit. For example, if you write <code>WHERE f(x) AND g(y)</code>, both sides will be calculated, even for rows, when <code>f(x)</code> is zero (except when <code>f(x)</code> is a zero constant expression). But if selectivity of the <code>f(x)</code> condition is high, and calculation of <code>f(x)</code> is much cheaper than <code>g(y)</code>, it's better to implement multi-pass calculation: first calculate <code>f(x)</code>, then filter columns by the result, and then calculate <code>g(y)</code> only for smaller, filtered chunks of data.</p>
+<h2 id="aggregate-functions">Aggregate Functions</h2>
+<p>Aggregate functions are stateful functions. They accumulate passed values into some state, and allow you to get results from that state. They are managed with the <code>IAggregateFunction</code> interface. States can be rather simple (the state for <code>AggregateFunctionCount</code> is just a single <code>UInt64</code> value) or quite complex (the state of <code>AggregateFunctionUniqCombined</code> is a combination of a linear array, a hash table and a <code>HyperLogLog</code> probabilistic data structure).</p>
+<p>To deal with multiple states while executing a high-cardinality <code>GROUP BY</code> query, states are allocated in <code>Arena</code> (a memory pool), or they could be allocated in any suitable piece of memory. States can have a non-trivial constructor and destructor: for example, complex aggregation states can allocate additional memory themselves. This requires some attention to creating and destroying states and properly passing their ownership, to keep track of who and when will destroy states.</p>
+<p>Aggregation states can be serialized and deserialized to pass over the network during distributed query execution or to write them on disk where there is not enough RAM. They can even be stored in a table with the <code>DataTypeAggregateFunction</code> to allow incremental aggregation of data.</p>
+<blockquote>
+<p>The serialized data format for aggregate function states is not versioned right now. This is ok if aggregate states are only stored temporarily. But we have the <code>AggregatingMergeTree</code> table engine for incremental aggregation, and people are already using it in production. This is why we should add support for backward compatibility when changing the serialized format for any aggregate function in the future.</p>
+</blockquote>
+<h2 id="server">Server</h2>
+<p>The server implements several different interfaces:</p>
+<ul>
+<li>An HTTP interface for any foreign clients.</li>
+<li>A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.</li>
+<li>An interface for transferring data for replication.</li>
+</ul>
+<p>Internally, it is just a basic multithreaded server without coroutines, fibers, etc. Since the server is not designed to process a high rate of simple queries but is intended to process a relatively low rate of complex queries, each of them can process a vast amount of data for analytics.</p>
+<p>The server initializes the <code>Context</code> class with the necessary environment for query execution: the list of available databases, users and access rights, settings, clusters, the process list, the query log, and so on. This environment is used by interpreters.</p>
+<p>We maintain full backward and forward compatibility for the server TCP protocol: old clients can talk to new servers and new clients can talk to old servers. But we don't want to maintain it eternally, and we are removing support for old versions after about one year.</p>
+<blockquote>
+<p>For all external applications, we recommend using the HTTP interface because it is simple and easy to use. The TCP protocol is more tightly linked to internal data structures: it uses an internal format for passing blocks of data and it uses custom framing for compressed data. We haven't released a C library for that protocol because it requires linking most of the ClickHouse codebase, which is not practical.</p>
+</blockquote>
+<h2 id="distributed-query-execution">Distributed query execution</h2>
+<p>Servers in a cluster setup are mostly independent. You can create a <code>Distributed</code> table on one or all servers in a cluster. The <code>Distributed</code> table does not store data itself – it only provides a "view" to all local tables on multiple nodes of a cluster. When you SELECT from a <code>Distributed</code> table, it rewrites that query, chooses remote nodes according to load balancing settings, and sends the query to them. The <code>Distributed</code> table requests remote servers to process a query just up to a stage where intermediate results from different servers can be merged. Then it receives the intermediate results and merges them. The distributed table tries to distribute as much work as possible to remote servers, and does not send much intermediate data over the network.</p>
+<blockquote>
+<p>Things become more complicated when you have subqueries in IN or JOIN clauses and each of them uses a <code>Distributed</code> table. We have different strategies for execution of these queries.</p>
+</blockquote>
+<p>There is no global query plan for distributed query execution. Each node has its own local query plan for its part of the job. We only have simple one-pass distributed query execution: we send queries for remote nodes and then merge the results. But this is not feasible for difficult queries with high cardinality GROUP BYs or with a large amount of temporary data for JOIN: in such cases, we need to "reshuffle" data between servers, which requires additional coordination. ClickHouse does not support that kind of query execution, and we need to work on it.</p>
+<h2 id="merge-tree">Merge Tree</h2>
+<p><code>MergeTree</code> is a family of storage engines that supports indexing by primary key. The primary key can be an arbitary tuple of columns or expressions. Data in a <code>MergeTree</code> table is stored in "parts". Each part stores data in the primary key order (data is ordered lexicographically by the primary key tuple). All the table columns are stored in separate <code>column.bin</code> files in these parts. The files consist of compressed blocks. Each block is usually from 64 KB to 1 MB of uncompressed data, depending on the average value size. The blocks consist of column values placed contiguously one after the other. Column values are in the same order for each column (the order is defined by the primary key), so when you iterate by many columns, you get values for the corresponding rows.</p>
+<p>The primary key itself is "sparse". It doesn't address each single row, but only some ranges of data. A separate <code>primary.idx</code> file has the value of the primary key for each N-th row, where N is called <code>index_granularity</code> (usually, N = 8192). Also, for each column, we have <code>column.mrk</code> files with "marks," which are offsets to each N-th row in the data file. Each mark is a pair: the offset in the file to the beginning of the compressed block, and the offset in the decompressed block to the beginning of data. Usually compressed blocks are aligned by marks, and the offset in the decompressed block is zero. Data for <code>primary.idx</code> always resides in memory and data for <code>column.mrk</code> files is cached.</p>
+<p>When we are going to read something from a part in <code>MergeTree</code>, we look at <code>primary.idx</code> data and locate ranges that could possibly contain requested data, then look at <code>column.mrk</code> data and calculate offsets for where to start reading those ranges. Because of sparseness, excess data may be read. ClickHouse is not suitable for a high load of simple point queries, because the entire range with <code>index_granularity</code> rows must be read for each key, and the entire compressed block must be decompressed for each column. We made the index sparse because we must be able to maintain trillions of rows per single server without noticeable memory consumption for the index. Also, because the primary key is sparse, it is not unique: it cannot check the existence of the key in the table at INSERT time. You could have many rows with the same key in a table.</p>
+<p>When you <code>INSERT</code> a bunch of data into <code>MergeTree</code>, that bunch is sorted by primary key order and forms a new part. To keep the number of parts relatively low, there are background threads that periodically select some parts and merge them to a single sorted part. That's why it is called <code>MergeTree</code>. Of course, merging leads to "write amplification". All parts are immutable: they are only created and deleted, but not modified. When SELECT is run, it holds a snapshot of the table (a set of parts). After merging, we also keep old parts for some time to make recovery after failure easier, so if we see that some merged part is probably broken, we can replace it with its source parts.</p>
+<p><code>MergeTree</code> is not an LSM tree because it doesn't contain "memtable" and "log": inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity's sake, and because we are already inserting data in batches in our applications.</p>
+<blockquote>
+<p>MergeTree tables can only have one (primary) index: there aren't any secondary indices. It would be nice to allow multiple physical representations under one logical table, for example, to store data in more than one physical order or even to allow representations with pre-aggregated data along with original data.</p>
+</blockquote>
+<p>There are MergeTree engines that are doing additional work during background merges. Examples are <code>CollapsingMergeTree</code> and <code>AggregatingMergeTree</code>. This could be treated as special support for updates. Keep in mind that these are not real updates because users usually have no control over the time when background merges will be executed, and data in a <code>MergeTree</code> table is almost always stored in more than one part, not in completely merged form.</p>
+<h2 id="replication">Replication</h2>
+<p>Replication in ClickHouse is implemented on a per-table basis. You could have some replicated and some non-replicated tables on the same server. You could also have tables replicated in different ways, such as one table with two-factor replication and another with three-factor.</p>
+<p>Replication is implemented in the <code>ReplicatedMergeTree</code> storage engine. The path in <code>ZooKeeper</code> is specified as a parameter for the storage engine. All tables with the same path in <code>ZooKeeper</code> become replicas of each other: they synchronize their data and maintain consistency. Replicas can be added and removed dynamically simply by creating or dropping a table.</p>
+<p>Replication uses an asynchronous multi-master scheme. You can insert data into any replica that has a session with <code>ZooKeeper</code>, and data is replicated to all other replicas asynchronously. Because ClickHouse doesn't support UPDATEs, replication is conflict-free. As there is no quorum acknowledgment of inserts, just-inserted data might be lost if one node fails.</p>
+<p>Metadata for replication is stored in ZooKeeper. There is a replication log that lists what actions to do. Actions are: get part; merge parts; drop partition, etc. Each replica copies the replication log to its queue and then executes the actions from the queue. For example, on insertion, the "get part" action is created in the log, and every replica downloads that part. Merges are coordinated between replicas to get byte-identical results. All parts are merged in the same way on all replicas. To achieve this, one replica is elected as the leader, and that replica initiates merges and writes "merge parts" actions to the log.</p>
+<p>Replication is physical: only compressed parts are transferred between nodes, not queries. To lower the network cost (to avoid network amplification), merges are processed on each replica independently in most cases. Large merged parts are sent over the network only in cases of significant replication lag.</p>
+<p>In addition, each replica stores its state in ZooKeeper as the set of parts and its checksums. When the state on the local filesystem diverges from the reference state in ZooKeeper, the replica restores its consistency by downloading missing and broken parts from other replicas. When there is some unexpected or broken data in the local filesystem, ClickHouse does not remove it, but moves it to a separate directory and forgets it.</p>
+<blockquote>
+<p>The ClickHouse cluster consists of independent shards, and each shard consists of replicas. The cluster is not elastic, so after adding a new shard, data is not rebalanced between shards automatically. Instead, the cluster load will be uneven. This implementation gives you more control, and it is fine for relatively small clusters such as tens of nodes. But for clusters with hundreds of nodes that we are using in production, this approach becomes a significant drawback. We should implement a table engine that will span its data across the cluster with dynamically replicated regions that could be split and balanced between clusters automatically.</p>
+</blockquote>
+                
+                  
+                
+              
+              
+                
+              
+            </article>
+          </div>
+        </div>
+      </main>
+      
+        
+<footer class="md-footer">
+  
+    <div class="md-footer-nav">
+      <nav class="md-footer-nav__inner md-grid">
+        
+          <a href="../../utils/clickhouse-local/" title="clickhouse-local" class="md-flex md-footer-nav__link md-footer-nav__link--prev" rel="prev">
+            <div class="md-flex__cell md-flex__cell--shrink">
+              <i class="md-icon md-icon--arrow-back md-footer-nav__button"></i>
+            </div>
+            <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title">
+              <span class="md-flex__ellipsis">
+                <span class="md-footer-nav__direction">
+                  Previous
+                </span>
+                clickhouse-local
+              </span>
+            </div>
+          </a>
+        
+        
+          <a href="../build/" title="How to build ClickHouse on Linux" class="md-flex md-footer-nav__link md-footer-nav__link--next" rel="next">
+            <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title">
+              <span class="md-flex__ellipsis">
+                <span class="md-footer-nav__direction">
+                  Next
+                </span>
+                How to build ClickHouse on Linux
+              </span>
+            </div>
+            <div class="md-flex__cell md-flex__cell--shrink">
+              <i class="md-icon md-icon--arrow-forward md-footer-nav__button"></i>
+            </div>
+          </a>
+        
+      </nav>
+    </div>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-footer-copyright">
+        
+          <div class="md-footer-copyright__highlight">
+            ©2016–2018 Yandex LLC
+          </div>
+        
+      </div>
+      
+        
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    
+      <script src="../../assets/javascripts/application.5165553b.js"></script>
+      
+      <script>app.initialize({version:"0.17.3",url:{base:"../.."}})</script>
+      
+    
+    
+      
+    
+  </body>
+</html>

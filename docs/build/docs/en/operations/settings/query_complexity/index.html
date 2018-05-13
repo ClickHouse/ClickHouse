@@ -1,0 +1,3511 @@
+
+
+
+
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <meta http-equiv="x-ua-compatible" content="ie=edge">
+      
+      
+      
+      
+        <meta name="lang:clipboard.copy" content="Copy to clipboard">
+      
+        <meta name="lang:clipboard.copied" content="Copied to clipboard">
+      
+        <meta name="lang:search.language" content="en">
+      
+        <meta name="lang:search.result.none" content="No matching documents">
+      
+        <meta name="lang:search.result.one" content="1 matching document">
+      
+        <meta name="lang:search.result.other" content="# matching documents">
+      
+        <meta name="lang:search.tokenizer" content="[\s\-]+">
+      
+      <link rel="shortcut icon" href="../../../assets/images/favicon.ico">
+      <meta name="generator" content="mkdocs-0.17.3, mkdocs-material-2.2.1">
+    
+    
+      
+        <title>Restrictions on query complexity - ClickHouse Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/application.ac64251e.css">
+      
+        <link rel="stylesheet" href="../../../assets/stylesheets/application-palette.792431c1.css">
+      
+    
+    
+      <script src="../../../assets/javascripts/modernizr.1aa3b519.js"></script>
+    
+    
+      
+      <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/custom.css">
+    
+    
+  </head>
+  
+    
+    
+    
+      <body data-md-color-primary="white" data-md-color-accent="white">
+    
+  
+    <svg class="md-svg">
+      <defs>
+        
+        
+          <svg xmlns="http://www.w3.org/2000/svg" width="416" height="448" viewBox="0 0 416 448" id="github"><path fill="currentColor" d="M160 304q0 10-3.125 20.5t-10.75 19T128 352t-18.125-8.5-10.75-19T96 304t3.125-20.5 10.75-19T128 256t18.125 8.5 10.75 19T160 304zm160 0q0 10-3.125 20.5t-10.75 19T288 352t-18.125-8.5-10.75-19T256 304t3.125-20.5 10.75-19T288 256t18.125 8.5 10.75 19T320 304zm40 0q0-30-17.25-51T296 232q-10.25 0-48.75 5.25Q229.5 240 208 240t-39.25-2.75Q130.75 232 120 232q-29.5 0-46.75 21T56 304q0 22 8 38.375t20.25 25.75 30.5 15 35 7.375 37.25 1.75h42q20.5 0 37.25-1.75t35-7.375 30.5-15 20.25-25.75T360 304zm56-44q0 51.75-15.25 82.75-9.5 19.25-26.375 33.25t-35.25 21.5-42.5 11.875-42.875 5.5T212 416q-19.5 0-35.5-.75t-36.875-3.125-38.125-7.5-34.25-12.875T37 371.5t-21.5-28.75Q0 312 0 260q0-59.25 34-99-6.75-20.5-6.75-42.5 0-29 12.75-54.5 27 0 47.5 9.875t47.25 30.875Q171.5 96 212 96q37 0 70 8 26.25-20.5 46.75-30.25T376 64q12.75 25.5 12.75 54.5 0 21.75-6.75 42 34 40 34 99.5z"/></svg>
+        
+      </defs>
+    </svg>
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="drawer">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="search">
+    <label class="md-overlay" data-md-component="overlay" for="drawer"></label>
+    
+      <header class="md-header" data-md-component="header">
+
+  <!-- Yandex.Metrika counter -->
+  <script type="text/javascript">
+      (function (d, w, c) {
+          (w[c] = w[c] || []).push(function() {
+              try {
+                  w.yaCounter18343495 = new Ya.Metrika2({
+                      id:18343495,
+                      clickmap:true,
+                      trackLinks:true,
+                      accurateTrackBounce:true,
+                      webvisor: true
+                  });
+              } catch(e) { }
+          });
+          var n = d.getElementsByTagName("script")[0],
+              s = d.createElement("script"),
+              f = function () { n.parentNode.insertBefore(s, n); };
+          s.type = "text/javascript";
+          s.async = true;
+          s.src = "https://mc.yandex.ru/metrika/tag.js";
+          if (w.opera == "[object Opera]") {
+              d.addEventListener("DOMContentLoaded", f, false);
+          } else { f(); }
+      })(document, window, "yandex_metrika_callbacks2");
+  </script>
+  <noscript>
+      <div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""/></div>
+  </noscript>
+  <!-- /Yandex.Metrika counter -->
+
+  <nav class="md-header-nav md-grid">
+    <div class="md-flex">
+      <div class="md-flex__cell md-flex__cell--shrink">
+        <a href="/" title="ClickHouse Documentation" class="md-header-nav__button md-logo">
+          
+            <img src="../../../images/logo.svg" width="40" height="40">
+          
+        </a>
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+        <label class="md-icon md-icon--menu md-header-nav__button" for="drawer"></label>
+      </div>
+      <div class="md-flex__cell md-flex__cell--stretch">
+        <div class="md-flex__ellipsis md-header-nav__title" data-md-component="title">
+          
+            
+              <span class="md-header-nav__topic">
+                ClickHouse Documentation
+              </span>
+              <span class="md-header-nav__topic">
+                Restrictions on query complexity
+              </span>
+            
+          
+        </div>
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+        
+          
+            <label class="md-icon md-icon--search md-header-nav__button" for="search"></label>
+            
+<div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="search"></label>
+  <div class="md-search__inner">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" required placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="query">
+      <label class="md-icon md-search__icon" for="search"></label>
+      <button type="reset" class="md-icon md-search__icon" data-md-component="reset">&#xE5CD;</button>
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="result">
+          <div class="md-search-result__meta">
+            Type to start searching
+          </div>
+          <ol class="md-search-result__list"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+          
+        
+      </div>
+      
+        <div class="md-flex__cell md-flex__cell--shrink">
+          <div class="md-header-nav__source">
+            <script type="text/javascript">
+                if (window.location.pathname.indexOf('/ru/') >= 0) {
+                  url = window.location.pathname.replace('/ru/', '/en/');
+                  text = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"30\" viewBox=\"0,0 25,15\" style=\"border:1px solid #eee;margin: .8rem 0 0 -1.25rem;\">\n" +
+                      "<rect width=\"25\" height=\"15\" fill=\"#00247d\"></rect>\n" +
+                      "<path d=\"M 0,0 L 25,15 M 25,0 L 0,15\" stroke=\"#fff\" stroke-width=\"3\"></path>\n" +
+                      "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#fff\" stroke-width=\"5\"></path>\n" +
+                      "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#cf142b\" stroke-width=\"3\"></path>\n" +
+                      "</svg>";
+                  title = "Switch to English"
+                }else{
+                  url = window.location.pathname.replace('/en/', '/ru/');
+                  text = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 6\" width=\"50\" height=\"30\" style=\"border: 1px solid #eee;margin: .8rem 0 0 -1.25rem\">\n" +
+                      "<rect fill=\"#fff\" width=\"10\" height=\"3\"></rect>\n" +
+                      "<rect fill=\"#d52b1e\" y=\"3\" width=\"10\" height=\"3\"></rect>\n" +
+                      "<rect fill=\"#0039a6\" y=\"2\" width=\"10\" height=\"2\"></rect>\n" +
+                      "</svg>";
+                  title = "Переключить на русский язык"
+               }
+               document.write('<a href="' + url + '" title="' + title + '" class="md-flex__ellipsis md-header-nav__title">' + text + '</a>')
+             </script>
+          </div>
+        </div>
+      
+    </div>
+  </nav>
+</header>
+    
+    <div class="md-container">
+      
+        
+      
+      
+      <main class="md-main">
+        <div class="md-main__inner md-grid" data-md-component="container">
+          
+            
+              <div class="md-sidebar md-sidebar--primary" data-md-component="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    <nav class="md-nav md-nav--primary" data-md-level="0">
+  <label class="md-nav__title md-nav__title--site" for="drawer">
+    ClickHouse Documentation
+  </label>
+
+  <ul class="md-nav__list" data-md-scrollfix>
+    <li class="md-nav__item md-nav__item--active">
+      <script type="text/javascript">
+        if (window.location.pathname.indexOf('/ru/') >= 0) {
+          if (window.location.pathname.indexOf('/single/') >= 0) {
+            document.write("<a href=\"../../../../\" class=\"md-nav__link md-nav__link--active\">Многостраничная версия</a>")
+          } else {
+            document.write("<a href=\"../../../single/\" class=\"md-nav__link md-nav__link--active\">Одностраничная версия</a>")
+          }
+        }else{
+          if (window.location.pathname.indexOf('/single/') >= 0) {
+            document.write("<a href=\"../../../../\" class=\"md-nav__link md-nav__link--active\">Multi page version</a>")
+          }else{
+            document.write("<a href=\"../../../single/\" class=\"md-nav__link md-nav__link--active\">Single page version</a>")
+          }
+        }
+     </script>
+    </li>
+    <li class="md-nav__item md-nav__item--active">
+      <a href="https://github.com/yandex/ClickHouse/" rel="external nofollow" target="_blank" class="md-nav__link">
+        <script type="text/javascript">
+        if (window.location.pathname.indexOf('/ru/') >= 0) {
+          document.write('Исходники ClickHouse');
+        } else {
+          document.write('ClickHouse sources');
+        }
+     </script>
+      </a>
+    </li>
+  </ul>
+
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+
+  <li class="md-nav__item">
+    <a href="../../.." title="ClickHouse" class="md-nav__link">
+      ClickHouse
+    </a>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-2" type="checkbox" id="nav-2">
+    
+    <label class="md-nav__link" for="nav-2">
+      Introduction
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-2">
+        Introduction
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../introduction/distinctive_features/" title="Distinctive features of ClickHouse" class="md-nav__link">
+      Distinctive features of ClickHouse
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../introduction/features_considered_disadvantages/" title="ClickHouse features that can be considered disadvantages" class="md-nav__link">
+      ClickHouse features that can be considered disadvantages
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../introduction/ya_metrika_task/" title="The Yandex.Metrica task" class="md-nav__link">
+      The Yandex.Metrica task
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../introduction/possible_silly_questions/" title="Everything you were afraid to ask" class="md-nav__link">
+      Everything you were afraid to ask
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../introduction/performance/" title="Performance" class="md-nav__link">
+      Performance
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-3" type="checkbox" id="nav-3">
+    
+    <label class="md-nav__link" for="nav-3">
+      Getting started
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-3">
+        Getting started
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../getting_started/" title="Deploying and running" class="md-nav__link">
+      Deploying and running
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-3-2" type="checkbox" id="nav-3-2">
+    
+    <label class="md-nav__link" for="nav-3-2">
+      Testing data
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-3-2">
+        Testing data
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../getting_started/example_datasets/ontime/" title="OnTime" class="md-nav__link">
+      OnTime
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../getting_started/example_datasets/nyc_taxi/" title="New York Taxi data" class="md-nav__link">
+      New York Taxi data
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../getting_started/example_datasets/amplab_benchmark/" title="AMPLab Big Data Benchmark" class="md-nav__link">
+      AMPLab Big Data Benchmark
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../getting_started/example_datasets/wikistat/" title="WikiStat" class="md-nav__link">
+      WikiStat
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../getting_started/example_datasets/criteo/" title="Terabyte click logs from Criteo" class="md-nav__link">
+      Terabyte click logs from Criteo
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../getting_started/example_datasets/star_schema/" title="Star Schema Benchmark" class="md-nav__link">
+      Star Schema Benchmark
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-4" type="checkbox" id="nav-4">
+    
+    <label class="md-nav__link" for="nav-4">
+      Interfaces
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-4">
+        Interfaces
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../interfaces/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../interfaces/cli/" title="Command-line client" class="md-nav__link">
+      Command-line client
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../interfaces/http_interface/" title="HTTP interface" class="md-nav__link">
+      HTTP interface
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../interfaces/jdbc/" title="JDBC driver" class="md-nav__link">
+      JDBC driver
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../interfaces/tcp/" title="Native interface (TCP)" class="md-nav__link">
+      Native interface (TCP)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../interfaces/third-party_client_libraries/" title="Libraries from third-party developers" class="md-nav__link">
+      Libraries from third-party developers
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../interfaces/third-party_gui/" title="Visual interfaces from third-party developers" class="md-nav__link">
+      Visual interfaces from third-party developers
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-5" type="checkbox" id="nav-5">
+    
+    <label class="md-nav__link" for="nav-5">
+      Query language
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-5">
+        Query language
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../query_language/queries/" title="Queries" class="md-nav__link">
+      Queries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../query_language/syntax/" title="Syntax" class="md-nav__link">
+      Syntax
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-6" type="checkbox" id="nav-6">
+    
+    <label class="md-nav__link" for="nav-6">
+      Table engines
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-6">
+        Table engines
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/tinylog/" title="TinyLog" class="md-nav__link">
+      TinyLog
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/log/" title="Log" class="md-nav__link">
+      Log
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/memory/" title="Memory" class="md-nav__link">
+      Memory
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/mergetree/" title="MergeTree" class="md-nav__link">
+      MergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/custom_partitioning_key/" title="Custom partitioning key" class="md-nav__link">
+      Custom partitioning key
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/replacingmergetree/" title="ReplacingMergeTree" class="md-nav__link">
+      ReplacingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/summingmergetree/" title="SummingMergeTree" class="md-nav__link">
+      SummingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/aggregatingmergetree/" title="AggregatingMergeTree" class="md-nav__link">
+      AggregatingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/collapsingmergetree/" title="CollapsingMergeTree" class="md-nav__link">
+      CollapsingMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/graphitemergetree/" title="GraphiteMergeTree" class="md-nav__link">
+      GraphiteMergeTree
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/replication/" title="Data replication" class="md-nav__link">
+      Data replication
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/distributed/" title="Distributed" class="md-nav__link">
+      Distributed
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/dictionary/" title="Dictionary" class="md-nav__link">
+      Dictionary
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/merge/" title="Merge" class="md-nav__link">
+      Merge
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/buffer/" title="Buffer" class="md-nav__link">
+      Buffer
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/file/" title="File" class="md-nav__link">
+      File
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/null/" title="Null" class="md-nav__link">
+      Null
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/set/" title="Set" class="md-nav__link">
+      Set
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/join/" title="Join" class="md-nav__link">
+      Join
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/view/" title="View" class="md-nav__link">
+      View
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/materializedview/" title="MaterializedView" class="md-nav__link">
+      MaterializedView
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/kafka/" title="Kafka" class="md-nav__link">
+      Kafka
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/mysql/" title="MySQL" class="md-nav__link">
+      MySQL
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_engines/external_data/" title="External data for query processing" class="md-nav__link">
+      External data for query processing
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-7" type="checkbox" id="nav-7">
+    
+    <label class="md-nav__link" for="nav-7">
+      System tables
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-7">
+        System tables
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.one/" title="system.one" class="md-nav__link">
+      system.one
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.numbers/" title="system.numbers" class="md-nav__link">
+      system.numbers
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.numbers_mt/" title="system.numbers_mt" class="md-nav__link">
+      system.numbers_mt
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.databases/" title="system.databases" class="md-nav__link">
+      system.databases
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.tables/" title="system.tables" class="md-nav__link">
+      system.tables
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.columns/" title="system.columns" class="md-nav__link">
+      system.columns
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.parts/" title="system.parts" class="md-nav__link">
+      system.parts
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.processes/" title="system.processes" class="md-nav__link">
+      system.processes
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.merges/" title="system.merges" class="md-nav__link">
+      system.merges
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.events/" title="system.events" class="md-nav__link">
+      system.events
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.metrics/" title="system.metrics" class="md-nav__link">
+      system.metrics
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.asynchronous_metrics/" title="system.asynchronous_metrics" class="md-nav__link">
+      system.asynchronous_metrics
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.replicas/" title="system.replicas" class="md-nav__link">
+      system.replicas
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.dictionaries/" title="system.dictionaries" class="md-nav__link">
+      system.dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.clusters/" title="system.clusters" class="md-nav__link">
+      system.clusters
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.functions/" title="system.functions" class="md-nav__link">
+      system.functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.settings/" title="system.settings" class="md-nav__link">
+      system.settings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../system_tables/system.zookeeper/" title="system.zookeeper" class="md-nav__link">
+      system.zookeeper
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-8" type="checkbox" id="nav-8">
+    
+    <label class="md-nav__link" for="nav-8">
+      Table functions
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-8">
+        Table functions
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_functions/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_functions/remote/" title="remote" class="md-nav__link">
+      remote
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_functions/merge/" title="merge" class="md-nav__link">
+      merge
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../table_functions/numbers/" title="numbers" class="md-nav__link">
+      numbers
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-9" type="checkbox" id="nav-9">
+    
+    <label class="md-nav__link" for="nav-9">
+      Formats
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-9">
+        Formats
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/tabseparated/" title="TabSeparated" class="md-nav__link">
+      TabSeparated
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/tabseparatedraw/" title="TabSeparatedRaw" class="md-nav__link">
+      TabSeparatedRaw
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/tabseparatedwithnames/" title="TabSeparatedWithNames" class="md-nav__link">
+      TabSeparatedWithNames
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/tabseparatedwithnamesandtypes/" title="TabSeparatedWithNamesAndTypes" class="md-nav__link">
+      TabSeparatedWithNamesAndTypes
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/csv/" title="CSV" class="md-nav__link">
+      CSV
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/csvwithnames/" title="CSVWithNames" class="md-nav__link">
+      CSVWithNames
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/values/" title="Values" class="md-nav__link">
+      Values
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/vertical/" title="Vertical" class="md-nav__link">
+      Vertical
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/verticalraw/" title="VerticalRaw" class="md-nav__link">
+      VerticalRaw
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/json/" title="JSON" class="md-nav__link">
+      JSON
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/jsoncompact/" title="JSONCompact" class="md-nav__link">
+      JSONCompact
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/jsoneachrow/" title="JSONEachRow" class="md-nav__link">
+      JSONEachRow
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/tskv/" title="TSKV" class="md-nav__link">
+      TSKV
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/pretty/" title="Pretty" class="md-nav__link">
+      Pretty
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/prettycompact/" title="PrettyCompact" class="md-nav__link">
+      PrettyCompact
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/prettycompactmonoblock/" title="PrettyCompactMonoBlock" class="md-nav__link">
+      PrettyCompactMonoBlock
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/prettynoescapes/" title="PrettyNoEscapes" class="md-nav__link">
+      PrettyNoEscapes
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/prettyspace/" title="PrettySpace" class="md-nav__link">
+      PrettySpace
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/rowbinary/" title="RowBinary" class="md-nav__link">
+      RowBinary
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/native/" title="Native" class="md-nav__link">
+      Native
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/null/" title="Null" class="md-nav__link">
+      Null
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/xml/" title="XML" class="md-nav__link">
+      XML
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../formats/capnproto/" title="CapnProto" class="md-nav__link">
+      CapnProto
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-10" type="checkbox" id="nav-10">
+    
+    <label class="md-nav__link" for="nav-10">
+      Data types
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-10">
+        Data types
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/int_uint/" title="UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64" class="md-nav__link">
+      UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/float/" title="Float32, Float64" class="md-nav__link">
+      Float32, Float64
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/boolean/" title="Boolean values" class="md-nav__link">
+      Boolean values
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/string/" title="String" class="md-nav__link">
+      String
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/fixedstring/" title="FixedString(N)" class="md-nav__link">
+      FixedString(N)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/date/" title="Date" class="md-nav__link">
+      Date
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/datetime/" title="DateTime" class="md-nav__link">
+      DateTime
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/enum/" title="Enum" class="md-nav__link">
+      Enum
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/array/" title="Array(T)" class="md-nav__link">
+      Array(T)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/nested_data_structures/aggregatefunction/" title="AggregateFunction(name, types_of_arguments...)" class="md-nav__link">
+      AggregateFunction(name, types_of_arguments...)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/tuple/" title="Tuple(T1, T2, ...)" class="md-nav__link">
+      Tuple(T1, T2, ...)
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-10-13" type="checkbox" id="nav-10-13">
+    
+    <label class="md-nav__link" for="nav-10-13">
+      Nested data structures
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-10-13">
+        Nested data structures
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/nested_data_structures/nested/" title="Nested(Name1 Type1, Name2 Type2, ...)" class="md-nav__link">
+      Nested(Name1 Type1, Name2 Type2, ...)
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-10-14" type="checkbox" id="nav-10-14">
+    
+    <label class="md-nav__link" for="nav-10-14">
+      Special data types
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-10-14">
+        Special data types
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/special_data_types/expression/" title="Expression" class="md-nav__link">
+      Expression
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../data_types/special_data_types/set/" title="Set" class="md-nav__link">
+      Set
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item">
+    <a href="../../../operators/" title="Operators" class="md-nav__link">
+      Operators
+    </a>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-12" type="checkbox" id="nav-12">
+    
+    <label class="md-nav__link" for="nav-12">
+      Functions
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-12">
+        Functions
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/arithmetic_functions/" title="Arithmetic functions" class="md-nav__link">
+      Arithmetic functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/comparison_functions/" title="Comparison functions" class="md-nav__link">
+      Comparison functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/logical_functions/" title="Logical functions" class="md-nav__link">
+      Logical functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/type_conversion_functions/" title="Type conversion functions" class="md-nav__link">
+      Type conversion functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/date_time_functions/" title="Functions for working with dates and times" class="md-nav__link">
+      Functions for working with dates and times
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/string_functions/" title="Functions for working with strings" class="md-nav__link">
+      Functions for working with strings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/string_search_functions/" title="Functions for searching strings" class="md-nav__link">
+      Functions for searching strings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/string_replace_functions/" title="Functions for searching and replacing in strings" class="md-nav__link">
+      Functions for searching and replacing in strings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/conditional_functions/" title="Conditional functions" class="md-nav__link">
+      Conditional functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/math_functions/" title="Mathematical functions" class="md-nav__link">
+      Mathematical functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/rounding_functions/" title="Rounding functions" class="md-nav__link">
+      Rounding functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/array_functions/" title="Functions for working with arrays" class="md-nav__link">
+      Functions for working with arrays
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/splitting_merging_functions/" title="Functions for splitting and merging strings and arrays" class="md-nav__link">
+      Functions for splitting and merging strings and arrays
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/bit_functions/" title="Bit functions" class="md-nav__link">
+      Bit functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/hash_functions/" title="Hash functions" class="md-nav__link">
+      Hash functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/random_functions/" title="Functions for generating pseudo-random numbers" class="md-nav__link">
+      Functions for generating pseudo-random numbers
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/encoding_functions/" title="Encoding functions" class="md-nav__link">
+      Encoding functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/url_functions/" title="Functions for working with URLs" class="md-nav__link">
+      Functions for working with URLs
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/ip_address_functions/" title="Functions for working with IP addresses" class="md-nav__link">
+      Functions for working with IP addresses
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/json_functions/" title="Functions for working with JSON." class="md-nav__link">
+      Functions for working with JSON.
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/higher_order_functions/" title="Higher-order functions" class="md-nav__link">
+      Higher-order functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/other_functions/" title="Other functions" class="md-nav__link">
+      Other functions
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/ext_dict_functions/" title="Functions for working with external dictionaries" class="md-nav__link">
+      Functions for working with external dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/ym_dict_functions/" title="Functions for working with Yandex.Metrica dictionaries" class="md-nav__link">
+      Functions for working with Yandex.Metrica dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/in_functions/" title="Functions for implementing the IN operator" class="md-nav__link">
+      Functions for implementing the IN operator
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../functions/array_join/" title="arrayJoin function" class="md-nav__link">
+      arrayJoin function
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-13" type="checkbox" id="nav-13">
+    
+    <label class="md-nav__link" for="nav-13">
+      Aggregate functions
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-13">
+        Aggregate functions
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../agg_functions/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../agg_functions/reference/" title="Function reference" class="md-nav__link">
+      Function reference
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../agg_functions/combinators/" title="Aggregate function combinators" class="md-nav__link">
+      Aggregate function combinators
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../agg_functions/parametric_functions/" title="Parametric aggregate functions" class="md-nav__link">
+      Parametric aggregate functions
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-14" type="checkbox" id="nav-14">
+    
+    <label class="md-nav__link" for="nav-14">
+      Dictionaries
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-14">
+        Dictionaries
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-14-2" type="checkbox" id="nav-14-2">
+    
+    <label class="md-nav__link" for="nav-14-2">
+      External dictionaries
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-14-2">
+        External dictionaries
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/external_dicts/" title="General desription" class="md-nav__link">
+      General desription
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/external_dicts_dict/" title="Configuring an external dictionary" class="md-nav__link">
+      Configuring an external dictionary
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/external_dicts_dict_layout/" title="Storing dictionaries in memory" class="md-nav__link">
+      Storing dictionaries in memory
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/external_dicts_dict_lifetime/" title="Dictionary updates" class="md-nav__link">
+      Dictionary updates
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/external_dicts_dict_sources/" title="Sources of external dictionaries" class="md-nav__link">
+      Sources of external dictionaries
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/external_dicts_dict_structure/" title="Dictionary key and fields" class="md-nav__link">
+      Dictionary key and fields
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../dicts/internal_dicts/" title="Internal dictionaries" class="md-nav__link">
+      Internal dictionaries
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+  
+
+
+  <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-15" type="checkbox" id="nav-15" checked>
+    
+    <label class="md-nav__link" for="nav-15">
+      Operation
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-15">
+        Operation
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../access_rights/" title="Access rights" class="md-nav__link">
+      Access rights
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../configuration_files/" title="Configuration files" class="md-nav__link">
+      Configuration files
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../quotas/" title="Quotas" class="md-nav__link">
+      Quotas
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../tips/" title="Usage recommendations" class="md-nav__link">
+      Usage recommendations
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-15-5" type="checkbox" id="nav-15-5">
+    
+    <label class="md-nav__link" for="nav-15-5">
+      Server configuration parameters
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-15-5">
+        Server configuration parameters
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../server_settings/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../server_settings/settings/" title="Server settings" class="md-nav__link">
+      Server settings
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+          
+          
+          
+
+  
+
+
+  <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-15-6" type="checkbox" id="nav-15-6" checked>
+    
+    <label class="md-nav__link" for="nav-15-6">
+      Settings
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="2">
+      <label class="md-nav__title" for="nav-15-6">
+        Settings
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+  
+
+
+  <li class="md-nav__item md-nav__item--active">
+    
+    <input class="md-toggle md-nav__toggle" data-md-toggle="toc" type="checkbox" id="toc">
+    
+      
+    
+    
+      <label class="md-nav__link md-nav__link--active" for="toc">
+        Restrictions on query complexity
+      </label>
+    
+    <a href="./" title="Restrictions on query complexity" class="md-nav__link md-nav__link--active">
+      Restrictions on query complexity
+    </a>
+    
+      
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="toc">Table of contents</label>
+    <ul class="md-nav__list" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#readonly" title="readonly" class="md-nav__link">
+    readonly
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_memory_usage" title="max_memory_usage" class="md-nav__link">
+    max_memory_usage
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_memory_usage_for_user" title="max_memory_usage_for_user" class="md-nav__link">
+    max_memory_usage_for_user
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_memory_usage_for_all_queries" title="max_memory_usage_for_all_queries" class="md-nav__link">
+    max_memory_usage_for_all_queries
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_read" title="max_rows_to_read" class="md-nav__link">
+    max_rows_to_read
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_to_read" title="max_bytes_to_read" class="md-nav__link">
+    max_bytes_to_read
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read_overflow_mode" title="read_overflow_mode" class="md-nav__link">
+    read_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_group_by" title="max_rows_to_group_by" class="md-nav__link">
+    max_rows_to_group_by
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#group_by_overflow_mode" title="group_by_overflow_mode" class="md-nav__link">
+    group_by_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_sort" title="max_rows_to_sort" class="md-nav__link">
+    max_rows_to_sort
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_to_sort" title="max_bytes_to_sort" class="md-nav__link">
+    max_bytes_to_sort
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sort_overflow_mode" title="sort_overflow_mode" class="md-nav__link">
+    sort_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_result_rows" title="max_result_rows" class="md-nav__link">
+    max_result_rows
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_result_bytes" title="max_result_bytes" class="md-nav__link">
+    max_result_bytes
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#result_overflow_mode" title="result_overflow_mode" class="md-nav__link">
+    result_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_execution_time" title="max_execution_time" class="md-nav__link">
+    max_execution_time
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeout_overflow_mode" title="timeout_overflow_mode" class="md-nav__link">
+    timeout_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#min_execution_speed" title="min_execution_speed" class="md-nav__link">
+    min_execution_speed
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeout_before_checking_execution_speed" title="timeout_before_checking_execution_speed" class="md-nav__link">
+    timeout_before_checking_execution_speed
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_columns_to_read" title="max_columns_to_read" class="md-nav__link">
+    max_columns_to_read
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_temporary_columns" title="max_temporary_columns" class="md-nav__link">
+    max_temporary_columns
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_temporary_non_const_columns" title="max_temporary_non_const_columns" class="md-nav__link">
+    max_temporary_non_const_columns
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_subquery_depth" title="max_subquery_depth" class="md-nav__link">
+    max_subquery_depth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_pipeline_depth" title="max_pipeline_depth" class="md-nav__link">
+    max_pipeline_depth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_ast_depth" title="max_ast_depth" class="md-nav__link">
+    max_ast_depth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_ast_elements" title="max_ast_elements" class="md-nav__link">
+    max_ast_elements
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_in_set" title="max_rows_in_set" class="md-nav__link">
+    max_rows_in_set
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_in_set" title="max_bytes_in_set" class="md-nav__link">
+    max_bytes_in_set
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#set_overflow_mode" title="set_overflow_mode" class="md-nav__link">
+    set_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_in_distinct" title="max_rows_in_distinct" class="md-nav__link">
+    max_rows_in_distinct
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_in_distinct" title="max_bytes_in_distinct" class="md-nav__link">
+    max_bytes_in_distinct
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distinct_overflow_mode" title="distinct_overflow_mode" class="md-nav__link">
+    distinct_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_transfer" title="max_rows_to_transfer" class="md-nav__link">
+    max_rows_to_transfer
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_to_transfer" title="max_bytes_to_transfer" class="md-nav__link">
+    max_bytes_to_transfer
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transfer_overflow_mode" title="transfer_overflow_mode" class="md-nav__link">
+    transfer_overflow_mode
+  </a>
+  
+</li>
+      
+      
+      
+    </ul>
+  
+</nav>
+    
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../settings/" title="Settings" class="md-nav__link">
+      Settings
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../settings_profiles/" title="Settings profiles" class="md-nav__link">
+      Settings profiles
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-16" type="checkbox" id="nav-16">
+    
+    <label class="md-nav__link" for="nav-16">
+      Utilites
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-16">
+        Utilites
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../utils/" title="Introduction" class="md-nav__link">
+      Introduction
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../utils/clickhouse-copier/" title="clickhouse-copier" class="md-nav__link">
+      clickhouse-copier
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../utils/clickhouse-local/" title="clickhouse-local" class="md-nav__link">
+      clickhouse-local
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item md-nav__item--nested">
+    
+      <input class="md-toggle md-nav__toggle" data-md-toggle="nav-17" type="checkbox" id="nav-17">
+    
+    <label class="md-nav__link" for="nav-17">
+      ClickHouse Development
+    </label>
+    <nav class="md-nav" data-md-component="collapsible" data-md-level="1">
+      <label class="md-nav__title" for="nav-17">
+        ClickHouse Development
+      </label>
+      <ul class="md-nav__list" data-md-scrollfix>
+        
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../development/architecture/" title="Overview of ClickHouse architecture" class="md-nav__link">
+      Overview of ClickHouse architecture
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../development/build/" title="How to build ClickHouse on Linux" class="md-nav__link">
+      How to build ClickHouse on Linux
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../development/build_osx/" title="How to build ClickHouse on Mac OS X" class="md-nav__link">
+      How to build ClickHouse on Mac OS X
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../development/style/" title="How to write  C++ code" class="md-nav__link">
+      How to write  C++ code
+    </a>
+  </li>
+
+        
+          
+          
+          
+
+
+  <li class="md-nav__item">
+    <a href="../../../development/tests/" title="How to run ClickHouse tests" class="md-nav__link">
+      How to run ClickHouse tests
+    </a>
+  </li>
+
+        
+      </ul>
+    </nav>
+  </li>
+
+    
+      
+      
+      
+
+
+  <li class="md-nav__item">
+    <a href="../../../roadmap/" title="Roadmap" class="md-nav__link">
+      Roadmap
+    </a>
+  </li>
+
+    
+  </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="toc">Table of contents</label>
+    <ul class="md-nav__list" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#readonly" title="readonly" class="md-nav__link">
+    readonly
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_memory_usage" title="max_memory_usage" class="md-nav__link">
+    max_memory_usage
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_memory_usage_for_user" title="max_memory_usage_for_user" class="md-nav__link">
+    max_memory_usage_for_user
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_memory_usage_for_all_queries" title="max_memory_usage_for_all_queries" class="md-nav__link">
+    max_memory_usage_for_all_queries
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_read" title="max_rows_to_read" class="md-nav__link">
+    max_rows_to_read
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_to_read" title="max_bytes_to_read" class="md-nav__link">
+    max_bytes_to_read
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read_overflow_mode" title="read_overflow_mode" class="md-nav__link">
+    read_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_group_by" title="max_rows_to_group_by" class="md-nav__link">
+    max_rows_to_group_by
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#group_by_overflow_mode" title="group_by_overflow_mode" class="md-nav__link">
+    group_by_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_sort" title="max_rows_to_sort" class="md-nav__link">
+    max_rows_to_sort
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_to_sort" title="max_bytes_to_sort" class="md-nav__link">
+    max_bytes_to_sort
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sort_overflow_mode" title="sort_overflow_mode" class="md-nav__link">
+    sort_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_result_rows" title="max_result_rows" class="md-nav__link">
+    max_result_rows
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_result_bytes" title="max_result_bytes" class="md-nav__link">
+    max_result_bytes
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#result_overflow_mode" title="result_overflow_mode" class="md-nav__link">
+    result_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_execution_time" title="max_execution_time" class="md-nav__link">
+    max_execution_time
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeout_overflow_mode" title="timeout_overflow_mode" class="md-nav__link">
+    timeout_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#min_execution_speed" title="min_execution_speed" class="md-nav__link">
+    min_execution_speed
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeout_before_checking_execution_speed" title="timeout_before_checking_execution_speed" class="md-nav__link">
+    timeout_before_checking_execution_speed
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_columns_to_read" title="max_columns_to_read" class="md-nav__link">
+    max_columns_to_read
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_temporary_columns" title="max_temporary_columns" class="md-nav__link">
+    max_temporary_columns
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_temporary_non_const_columns" title="max_temporary_non_const_columns" class="md-nav__link">
+    max_temporary_non_const_columns
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_subquery_depth" title="max_subquery_depth" class="md-nav__link">
+    max_subquery_depth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_pipeline_depth" title="max_pipeline_depth" class="md-nav__link">
+    max_pipeline_depth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_ast_depth" title="max_ast_depth" class="md-nav__link">
+    max_ast_depth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_ast_elements" title="max_ast_elements" class="md-nav__link">
+    max_ast_elements
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_in_set" title="max_rows_in_set" class="md-nav__link">
+    max_rows_in_set
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_in_set" title="max_bytes_in_set" class="md-nav__link">
+    max_bytes_in_set
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#set_overflow_mode" title="set_overflow_mode" class="md-nav__link">
+    set_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_in_distinct" title="max_rows_in_distinct" class="md-nav__link">
+    max_rows_in_distinct
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_in_distinct" title="max_bytes_in_distinct" class="md-nav__link">
+    max_bytes_in_distinct
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distinct_overflow_mode" title="distinct_overflow_mode" class="md-nav__link">
+    distinct_overflow_mode
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_rows_to_transfer" title="max_rows_to_transfer" class="md-nav__link">
+    max_rows_to_transfer
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#max_bytes_to_transfer" title="max_bytes_to_transfer" class="md-nav__link">
+    max_bytes_to_transfer
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transfer_overflow_mode" title="transfer_overflow_mode" class="md-nav__link">
+    transfer_overflow_mode
+  </a>
+  
+</li>
+      
+      
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          <div class="md-content">
+            <article class="md-content__inner md-typeset">
+              
+                
+                  
+                    <a href="https://github.com/yandex/ClickHouse/edit/master/docs/en/operations/settings/query_complexity.md" title="Edit this page" class="md-icon md-content__icon">&#xE3C9;</a>
+                  
+                
+                
+                <h1 id="restrictions-on-query-complexity">Restrictions on query complexity</h1>
+<p>Restrictions on query complexity are part of the settings.
+They are used in order to provide safer execution from the user interface.
+Almost all the restrictions only apply to SELECTs.For distributed query processing, restrictions are applied on each server separately.</p>
+<p>Restrictions on the "maximum amount of something" can take the value 0, which means "unrestricted".
+Most restrictions also have an 'overflow_mode' setting, meaning what to do when the limit is exceeded.
+It can take one of two values: <code>throw</code> or <code>break</code>. Restrictions on aggregation (group_by_overflow_mode) also have the value <code>any</code>.</p>
+<p><code>throw</code> – Throw an exception (default).</p>
+<p><code>break</code> – Stop executing the query and return the partial result, as if the source data ran out.</p>
+<p><code>any (only for group_by_overflow_mode)</code> – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.</p>
+<p><a name="query_complexity_readonly"></a></p>
+<h2 id="readonly">readonly</h2>
+<p>With a value of 0, you can execute any queries.
+With a value of 1, you can only execute read requests (such as SELECT and SHOW). Requests for writing and changing settings (INSERT, SET) are prohibited.
+With a value of 2, you can process read queries (SELECT, SHOW) and change settings (SET).</p>
+<p>After enabling readonly mode, you can't disable it in the current session.</p>
+<p>When using the GET method in the HTTP interface, 'readonly = 1' is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.</p>
+<p><a name="settings_max_memory_usage"></a></p>
+<h2 id="max_memory_usage">max_memory_usage</h2>
+<p>The maximum amount of RAM to use for running a query on a single server.</p>
+<p>In the default configuration file, the maximum is 10 GB.</p>
+<p>The setting doesn't consider the volume of available memory or the total volume of memory on the machine.
+The restriction applies to a single query within a single server.
+You can use <code>SHOW PROCESSLIST</code> to see the current memory consumption for each query.
+In addition, the peak memory consumption is tracked for each query and written to the log.</p>
+<p>Memory usage is not monitored for the states of certain aggregate functions.</p>
+<p>Memory usage is not fully tracked for states of the aggregate functions <code>min</code>, <code>max</code>, <code>any</code>, <code>anyLast</code>, <code>argMin</code>, <code>argMax</code> from <code>String</code> and <code>Array</code> arguments.</p>
+<p>Memory consumption is also restricted by the parameters <code>max_memory_usage_for_user</code> and <code>max_memory_usage_for_all_queries</code>.</p>
+<h2 id="max_memory_usage_for_user">max_memory_usage_for_user</h2>
+<p>The maximum amount of RAM to use for running a user's queries on a single server.</p>
+<p>Default values are defined in <a href="https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L244">Settings.h</a>. By default, the amount is not restricted (<code>max_memory_usage_for_user = 0</code>).</p>
+<p>See also the description of <a href="#settings_max_memory_usage">max_memory_usage</a>.</p>
+<h2 id="max_memory_usage_for_all_queries">max_memory_usage_for_all_queries</h2>
+<p>The maximum amount of RAM to use for running all queries on a single server.</p>
+<p>Default values are defined in <a href="https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L245">Settings.h</a>. By default, the amount is not restricted (<code>max_memory_usage_for_all_queries = 0</code>).</p>
+<p>See also the description of <a href="#settings_max_memory_usage">max_memory_usage</a>.</p>
+<h2 id="max_rows_to_read">max_rows_to_read</h2>
+<p>The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
+When running a query in multiple threads, the following restrictions apply to each thread separately.</p>
+<p>Maximum number of rows that can be read from a table when running a query.</p>
+<h2 id="max_bytes_to_read">max_bytes_to_read</h2>
+<p>Maximum number of bytes (uncompressed data) that can be read from a table when running a query.</p>
+<h2 id="read_overflow_mode">read_overflow_mode</h2>
+<p>What to do when the volume of data read exceeds one of the limits: 'throw' or 'break'. By default, throw.</p>
+<h2 id="max_rows_to_group_by">max_rows_to_group_by</h2>
+<p>Maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.</p>
+<h2 id="group_by_overflow_mode">group_by_overflow_mode</h2>
+<p>What to do when the number of unique keys for aggregation exceeds the limit: 'throw', 'break', or 'any'. By default, throw.
+Using the 'any' value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.</p>
+<h2 id="max_rows_to_sort">max_rows_to_sort</h2>
+<p>Maximum number of rows before sorting. This allows you to limit memory consumption when sorting.</p>
+<h2 id="max_bytes_to_sort">max_bytes_to_sort</h2>
+<p>Maximum number of bytes before sorting.</p>
+<h2 id="sort_overflow_mode">sort_overflow_mode</h2>
+<p>What to do if the number of rows received before sorting exceeds one of the limits: 'throw' or 'break'. By default, throw.</p>
+<h2 id="max_result_rows">max_result_rows</h2>
+<p>Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.</p>
+<h2 id="max_result_bytes">max_result_bytes</h2>
+<p>Limit on the number of bytes in the result. The same as the previous setting.</p>
+<h2 id="result_overflow_mode">result_overflow_mode</h2>
+<p>What to do if the volume of the result exceeds one of the limits: 'throw' or 'break'. By default, throw.
+Using 'break' is similar to using LIMIT.</p>
+<h2 id="max_execution_time">max_execution_time</h2>
+<p>Maximum query execution time in seconds.
+At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.</p>
+<h2 id="timeout_overflow_mode">timeout_overflow_mode</h2>
+<p>What to do if the query is run longer than 'max_execution_time': 'throw' or 'break'. By default, throw.</p>
+<h2 id="min_execution_speed">min_execution_speed</h2>
+<p>Minimal execution speed in rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.</p>
+<h2 id="timeout_before_checking_execution_speed">timeout_before_checking_execution_speed</h2>
+<p>Checks that execution speed is not too slow (no less than 'min_execution_speed'), after the specified time in seconds has expired.</p>
+<h2 id="max_columns_to_read">max_columns_to_read</h2>
+<p>Maximum number of columns that can be read from a table in a single query. If a query requires reading a greater number of columns, it throws an exception.</p>
+<h2 id="max_temporary_columns">max_temporary_columns</h2>
+<p>Maximum number of temporary columns that must be kept in RAM at the same time when running a query, including constant columns. If there are more temporary columns than this, it throws an exception.</p>
+<h2 id="max_temporary_non_const_columns">max_temporary_non_const_columns</h2>
+<p>The same thing as 'max_temporary_columns', but without counting constant columns.
+Note that constant columns are formed fairly often when running a query, but they require approximately zero computing resources.</p>
+<h2 id="max_subquery_depth">max_subquery_depth</h2>
+<p>Maximum nesting depth of subqueries. If subqueries are deeper, an exception is thrown. By default, 100.</p>
+<h2 id="max_pipeline_depth">max_pipeline_depth</h2>
+<p>Maximum pipeline depth. Corresponds to the number of transformations that each data block goes through during query processing. Counted within the limits of a single server. If the pipeline depth is greater, an exception is thrown. By default, 1000.</p>
+<h2 id="max_ast_depth">max_ast_depth</h2>
+<p>Maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
+At this time, it isn't checked during parsing, but only after parsing the query. That is, a syntactic tree that is too deep can be created during parsing, but the query will fail. By default, 1000.</p>
+<h2 id="max_ast_elements">max_ast_elements</h2>
+<p>Maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
+In the same way as the previous setting, it is checked only after parsing the query. By default, 10,000.</p>
+<h2 id="max_rows_in_set">max_rows_in_set</h2>
+<p>Maximum number of rows for a data set in the IN clause created from a subquery.</p>
+<h2 id="max_bytes_in_set">max_bytes_in_set</h2>
+<p>Maximum number of bytes (uncompressed data) used by a set in the IN clause created from a subquery.</p>
+<h2 id="set_overflow_mode">set_overflow_mode</h2>
+<p>What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.</p>
+<h2 id="max_rows_in_distinct">max_rows_in_distinct</h2>
+<p>Maximum number of different rows when using DISTINCT.</p>
+<h2 id="max_bytes_in_distinct">max_bytes_in_distinct</h2>
+<p>Maximum number of bytes used by a hash table when using DISTINCT.</p>
+<h2 id="distinct_overflow_mode">distinct_overflow_mode</h2>
+<p>What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.</p>
+<h2 id="max_rows_to_transfer">max_rows_to_transfer</h2>
+<p>Maximum number of rows that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.</p>
+<h2 id="max_bytes_to_transfer">max_bytes_to_transfer</h2>
+<p>Maximum number of bytes (uncompressed data) that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.</p>
+<h2 id="transfer_overflow_mode">transfer_overflow_mode</h2>
+<p>What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.</p>
+                
+                  
+                
+              
+              
+                
+              
+            </article>
+          </div>
+        </div>
+      </main>
+      
+        
+<footer class="md-footer">
+  
+    <div class="md-footer-nav">
+      <nav class="md-footer-nav__inner md-grid">
+        
+          <a href="../" title="Introduction" class="md-flex md-footer-nav__link md-footer-nav__link--prev" rel="prev">
+            <div class="md-flex__cell md-flex__cell--shrink">
+              <i class="md-icon md-icon--arrow-back md-footer-nav__button"></i>
+            </div>
+            <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title">
+              <span class="md-flex__ellipsis">
+                <span class="md-footer-nav__direction">
+                  Previous
+                </span>
+                Introduction
+              </span>
+            </div>
+          </a>
+        
+        
+          <a href="../settings/" title="Settings" class="md-flex md-footer-nav__link md-footer-nav__link--next" rel="next">
+            <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title">
+              <span class="md-flex__ellipsis">
+                <span class="md-footer-nav__direction">
+                  Next
+                </span>
+                Settings
+              </span>
+            </div>
+            <div class="md-flex__cell md-flex__cell--shrink">
+              <i class="md-icon md-icon--arrow-forward md-footer-nav__button"></i>
+            </div>
+          </a>
+        
+      </nav>
+    </div>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-footer-copyright">
+        
+          <div class="md-footer-copyright__highlight">
+            ©2016–2018 Yandex LLC
+          </div>
+        
+      </div>
+      
+        
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    
+      <script src="../../../assets/javascripts/application.5165553b.js"></script>
+      
+      <script>app.initialize({version:"0.17.3",url:{base:"../../.."}})</script>
+      
+    
+    
+      
+    
+  </body>
+</html>
