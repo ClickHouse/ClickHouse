@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 
-WORKSPACE=./workspace
+SCRIPTPATH="$(cd "$(dirname "$0")"; pwd -P)"
+WORKSPACE=${SCRIPTPATH}/workspace
+command -v git > /dev/null && GIT_ROOT=$(git rev-parse --show-toplevel)
+
+# All scripts take no arguments. All arguments must be in config.
 
 # get-sources
-SOURCES_METHOD=clone                # clone, local, tarball
+SOURCES_METHOD=local                # clone, local, tarball
 SOURCES_CLONE_URL="https://github.com/yandex/ClickHouse.git"
 SOURCES_BRANCH="master"
+SOURCES_COMMIT=HEAD                 # do checkout of this commit after clone
 
 # prepare-toolchain
 COMPILER=gcc                        # gcc, clang
@@ -33,9 +38,6 @@ DOCKER_UBUNTU_TAG_ARCH=arm64        # How the architecture is named in Docker
 DOCKER_UBUNTU_QEMU_VER=v2.9.1
 DOCKER_UBUNTU_REPO=multiarch/ubuntu-core
 
-# prepare-vagrant-image-freebsd
-
-
 THREADS=$(grep -c ^processor /proc/cpuinfo || nproc || sysctl -a | grep -F 'hw.ncpu')
 
 # All scripts should return 0 in case of success, 1 in case of permanent error,
@@ -45,9 +47,9 @@ function die {
     exit ${2:1}
 }
 
-command -v sudo > /dev/null || apt-get install sudo
+command -v sudo > /dev/null || (apt-get update && apt-get install -y sudo)
 
-# Configuration parameters may be overriden with CONFIG environment variable.
+# Configuration parameters may be overriden with CONFIG environment variable pointing to config file.
 [[ -n "$CONFIG" ]] && source $CONFIG
 
 mkdir -p $WORKSPACE

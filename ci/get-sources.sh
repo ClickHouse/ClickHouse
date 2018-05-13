@@ -4,10 +4,16 @@ set -e
 source default-config
 
 if [[ "$SOURCES_METHOD" == "clone" ]]; then
-    mkdir -p "${WORKSPACE}/sources"
-    git clone --recursive --branch "$SOURCES_BRANCH" "$SOURCES_CLONE_URL" "${WORKSPACE}/sources"
+    sudo apt-get install -y git
+    SOURCES_DIR="${WORKSPACE}/sources"
+    mkdir -p "${SOURCES_DIR}"
+    git clone --recursive --branch "$SOURCES_BRANCH" "$SOURCES_CLONE_URL" "${SOURCES_DIR}"
+    pushd "${SOURCES_DIR}"
+    git checkout "$SOURCES_COMMIT"
+    popd
 elif [[ "$SOURCES_METHOD" == "local" ]]; then
-    ln -s $(git rev-parse --show-toplevel) "${WORKSPACE}/sources"
+    sudo apt-get install -y git
+    ln -f -s "${GIT_ROOT}" "${WORKSPACE}/sources"
 else
     die "Unknown SOURCES_METHOD"
 fi

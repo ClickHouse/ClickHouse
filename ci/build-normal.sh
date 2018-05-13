@@ -5,7 +5,7 @@ source default-config
 
 [[ -d "${WORKSPACE}/sources" ]] || die "Run get-sources.sh first"
 
-mkdir "${WORKSPACE}/build"
+mkdir -p "${WORKSPACE}/build"
 pushd "${WORKSPACE}/build"
 
 [[ "$USE_LLVM_LIBRARIES_FROM_SYSTEM" == 0 ]] && CMAKE_FLAGS="$CMAKE_FLAGS -D USE_INTERNAL_LLVM_LIBRARY=1"

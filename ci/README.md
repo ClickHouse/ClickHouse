@@ -107,12 +107,13 @@ We also have support for shared linking, but it is indended only for developers.
 - Functional tests;
 - Integration tests;
 - Unit tests;
+- Simple sh/reference tests;
 - Performance tests (note that they require predictable computing power);
 - Tests for external dictionaries (should be moved to integration tests);
 - Jepsen like tests for quorum inserts (not yet available in opensource).
 
 ##### Tests extra:
-Run functional tests with Valgrind.
+- Run functional tests with Valgrind.
 
 ##### Static analyzers:
 - CppCheck;
