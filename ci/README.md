@@ -62,7 +62,7 @@ When building with clang, libc++ is used. When building with gcc, we choose libs
 - ldd;
 - gold;
 
-When building with clang, ldd is used. Otherwise we use gold.
+When building with clang on x86_64, ldd is used. Otherwise we use gold.
 
 ##### Build types:
 - RelWithDebInfo;
