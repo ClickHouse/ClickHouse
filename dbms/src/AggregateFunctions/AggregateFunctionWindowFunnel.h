@@ -157,13 +157,13 @@ private:
 
         const_cast<AggregateFunctionWindowFunnelData &>(data).sort();
 
-        // events_timestamp stores the timestamp that lastest level 1 happen.
+        // events_timestamp stores the timestamp that latest i-th level event happen withing time window after previous level event.
         // timestamp defaults to -1, which unsigned timestamp value never meet
         std::vector<Int32> events_timestamp(events_size, -1);
-        for (const auto i : ext::range(0, data.size()))
+        for (const auto & pair : data.events_list)
         {
-            const auto & timestamp = (data.events_list)[i].first;
-            const auto & event_idx = (data.events_list)[i].second - 1;
+            const auto & timestamp = pair.first;
+            const auto & event_idx = pair.second - 1;
             if (event_idx == 0)
                 events_timestamp[0] = timestamp;
             else if (events_timestamp[event_idx - 1] >= 0 && timestamp <= events_timestamp[event_idx - 1] + window)
@@ -189,17 +189,10 @@ public:
 
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
     {
-        DataTypePtr windowType = arguments[0];
-
         const auto time_arg = arguments.front().get();
         if (!typeid_cast<const DataTypeDateTime *>(time_arg) && !typeid_cast<const DataTypeUInt32 *>(time_arg))
             throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function " + getName()
                 + ", must be DateTime or UInt32"};
-
-        if (arguments.size() - 1 > AggregateFunctionWindowFunnelData::max_events)
-            throw Exception{"Aggregate function " + getName() + " supports up to " + toString(AggregateFunctionWindowFunnelData::max_events)
-                    + " event arguments.",
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION};
 
         for (const auto i : ext::range(1, arguments.size()))
         {
@@ -210,12 +203,8 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + getName() + " requires exactly 1 args(timestamp_window).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         events_size = arguments.size() - 1;
-        window = params[0].safeGet<UInt64>();
+        window = params.at(0).safeGet<UInt64>();
     }
 
 
@@ -267,4 +256,5 @@ public:
         return __FILE__;
     }
 };
+
 }
