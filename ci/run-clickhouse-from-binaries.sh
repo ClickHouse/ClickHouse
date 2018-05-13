@@ -12,4 +12,4 @@ SERVER_DATADIR="${WORKSPACE}/clickhouse"
 
 mkdir "${SERVER_DATADIR}"
 
-$SERVER_BIN server --config-file "$SERVER_CONF" --pid-file="${WORKSPACE}/clickhouse.pid" --path "$SERVER_DATADIR" --daemon
+$SERVER_BIN server --config-file "$SERVER_CONF" --pid-file="${WORKSPACE}/clickhouse.pid" --path "$SERVER_DATADIR"
