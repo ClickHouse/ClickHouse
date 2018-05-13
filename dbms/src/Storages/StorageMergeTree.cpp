@@ -64,7 +64,7 @@ StorageMergeTree::StorageMergeTree(
     if (!attach && !data.getDataParts().empty())
         throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
 
-    increment.set(data.getMaxDataPartIndex());
+    increment.set(data.getMaxBlockNumber());
 }
 
 
