@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/CommonParsers.h>
+#include <IO/ReadHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 
