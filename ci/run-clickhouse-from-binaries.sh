@@ -10,6 +10,6 @@ SERVER_DATADIR="${WORKSPACE}/clickhouse"
 [[ -x "$SERVER_BIN" ]] || die "Run build-normal.sh first"
 [[ -r "$SERVER_CONF" ]] || die "Run get-sources.sh first"
 
-mkdir "${SERVER_DATADIR}"
+mkdir -p "${SERVER_DATADIR}"
 
 $SERVER_BIN server --config-file "$SERVER_CONF" --pid-file="${WORKSPACE}/clickhouse.pid" --path "$SERVER_DATADIR"
