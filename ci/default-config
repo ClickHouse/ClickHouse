@@ -2,7 +2,7 @@
 
 SCRIPTPATH="$(cd "$(dirname "$0")"; pwd -P)"
 WORKSPACE=${SCRIPTPATH}/workspace
-command -v git > /dev/null && GIT_ROOT=$(git rev-parse --show-toplevel)
+GIT_ROOT=$(realpath $SCRIPTPATH/..)
 
 # All scripts take no arguments. All arguments must be in config.
 
