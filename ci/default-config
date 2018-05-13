@@ -7,7 +7,7 @@ INITIALIZED=1
 
 SCRIPTPATH=$(pwd)
 WORKSPACE=${SCRIPTPATH}/workspace
-PROJECT_ROOT=$(realpath $SCRIPTPATH/..)
+PROJECT_ROOT=$(cd $SCRIPTPATH/.. && pwd)
 
 # All scripts take no arguments. All arguments must be in config.
 
