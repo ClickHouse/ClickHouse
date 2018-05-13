@@ -50,7 +50,7 @@ Events that occur during the same second can be put in the chain in any order. T
 Works the same way as the sequenceMatch function, but instead of returning whether there is an event chain, it returns UInt64 with the number of event chains found.
 Chains are searched for without overlapping. In other words, the next chain can start only after the end of the previous one.
 
-## windowFunnel(window)(timestamp, cond1, cond2, cond3, ....)
+## windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 
 Window funnel matching for event chains, calculates the max event level in a sliding window.
 
@@ -62,7 +62,7 @@ Window funnel matching for event chains, calculates the max event level in a sli
 
 Example: 
 
-Consider you are doing a website analytics, intend to find out the user counts clicked login button( event = 1001 ), then the user counts followed by searched the phones( event = 1003 and product = 'phone' ) , then the user counts followed by made an order ( event = 1009 ). And all event chains must be in a 3600 seconds sliding window. 
+Consider you are doing a website analytics, intend to find out the user counts clicked login button (event = 1001), then the user counts followed by searched the phones( event = 1003 and product = 'phone'), then the user counts followed by made an order (event = 1009). And all event chains must be in a 3600 seconds sliding window. 
 
 This could be easily calculate by `windowFunnel`
 
@@ -83,7 +83,7 @@ GROUP BY level
 ORDER BY level
 ```
 
-Simply, the level value could only be 0,1,2,3, it means the maxium event action stage that one user could reach.
+Simply, the level value could only be 0, 1, 2, 3, it means the maxium event action stage that one user could reach.
 
 
 ## uniqUpTo(N)(x)
