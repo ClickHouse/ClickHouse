@@ -2,7 +2,7 @@
 
 CONFIG=config
 
-cd ../..
+cd "$(dirname $0)"/../..
 
 ./get-sources.sh
 ./prepare-toolchain.sh
