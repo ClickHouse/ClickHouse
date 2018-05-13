@@ -3,7 +3,8 @@ set -e -x
 
 source default-config
 
-$SUDO apt-get install -y subversion cmake
+$SUDO apt-get install -y subversion
+apt-cache search cmake3 | grep -P '^cmake3 ' && $SUDO apt-get -y install cmake3 || $SUDO apt-get -y install cmake
 
 mkdir "${WORKSPACE}/llvm"
 
