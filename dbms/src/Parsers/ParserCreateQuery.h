@@ -145,7 +145,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr codec, _codec;
     const auto codec_fallback_pos = pos;
     if (codec_parser.parse(pos, _codec, expected) &&
-        checkStringCaseInsensitive(typeid_cast<ASTFunction &>(*_codec).name, "CODEC"))
+        checkStringCaseInsensitive("CODEC", typeid_cast<ASTFunction &>(*_codec).name))
     {
         codec = _codec;
     }
