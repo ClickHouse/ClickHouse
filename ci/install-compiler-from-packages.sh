@@ -16,7 +16,7 @@ if [ -f '/etc/lsb-release' ]; then
         elif [[ "$COMPILER" == "clang" ]]; then
             sudo apt-get -y install clang-${COMPILER_PACKAGE_VERSION} lld-${COMPILER_PACKAGE_VERSION} libc++-dev libc++abi-dev
             export CC=clang-${COMPILER_PACKAGE_VERSION}
-            export CXX=clang-${COMPILER_PACKAGE_VERSION}
+            export CXX=clang++-${COMPILER_PACKAGE_VERSION}
         else
             die "Unknown compiler specified"
         fi

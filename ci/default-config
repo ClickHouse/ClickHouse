@@ -37,7 +37,7 @@ BUILD_TYPE=RelWithDebInfo           # RelWithDebInfo, Debug, ASan, TSan
 CMAKE_FLAGS=""
 
 # prepare-docker-image-ubuntu
-DOCKER_UBUNTU_VERSION=artful
+DOCKER_UBUNTU_VERSION=bionic
 DOCKER_UBUNTU_ARCH=arm64            # How the architecture is named in a tarball at https://partner-images.canonical.com/core/
 DOCKER_UBUNTU_QUEMU_ARCH=aarch64    # How the architecture is named in QEMU
 DOCKER_UBUNTU_TAG_ARCH=arm64        # How the architecture is named in Docker
