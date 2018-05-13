@@ -12,7 +12,6 @@ if [[ "$SOURCES_METHOD" == "clone" ]]; then
     git checkout "$SOURCES_COMMIT"
     popd
 elif [[ "$SOURCES_METHOD" == "local" ]]; then
-    sudo apt-get install -y git
     ln -f -s "${PROJECT_ROOT}" "${WORKSPACE}/sources"
 else
     die "Unknown SOURCES_METHOD"
