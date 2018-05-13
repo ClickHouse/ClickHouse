@@ -1,5 +1,7 @@
 ### Build and test ClickHouse on various plaforms
 
+Quick and dirty scripts.
+
 Usage example:
 ```
 ./run-with-docker.sh ubuntu:bionic jobs/quick-build/run.sh
