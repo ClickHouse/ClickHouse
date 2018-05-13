@@ -2,7 +2,7 @@
 
 SCRIPTPATH="$(cd "$(dirname "$0")"; pwd -P)"
 WORKSPACE=${SCRIPTPATH}/workspace
-GIT_ROOT=$(realpath $SCRIPTPATH/..)
+PROJECT_ROOT=$(realpath $SCRIPTPATH/..)
 
 # All scripts take no arguments. All arguments must be in config.
 
