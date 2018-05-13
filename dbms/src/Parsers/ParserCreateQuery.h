@@ -130,19 +130,22 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /** column name should be followed by type name if it
       *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS}
       */
-    ASTPtr type, codec;
+    ASTPtr type;
     const auto fallback_pos = pos;
     if (!s_default.check(pos, expected) &&
         !s_materialized.check(pos, expected) &&
         !s_alias.check(pos, expected))
     {
         type_parser.parse(pos, type, expected);
+    }
+    else
+        pos = fallback_pos;
 
-        codec_parser.parse(pos, codec, expected);
-        if (typeid_cast<ASTFunction &>(*codec).name != "CODEC") {
-            codec = nullptr;
-            pos = fallback_pos;
-        }
+    ASTPtr codec, _codec;
+    fallback_pos = pos;
+    if (codec_parser.parse(pos, _codec, expected) && typeid_cast<ASTFunction &>(*_codec).name == "CODEC")
+    {
+        codec = _codec;
     }
     else
         pos = fallback_pos;
