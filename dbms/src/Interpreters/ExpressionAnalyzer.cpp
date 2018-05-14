@@ -58,7 +58,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <DataTypes/DataTypeTuple.h>
 #include "ProjectionManipulation.h"
+#include "evaluateConstantExpression.h"
 
 
 namespace DB
@@ -1645,82 +1647,76 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     if (args.children.size() != 2)
         throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTPtr & arg = args.children.at(1);
+    const ASTPtr & left_arg = args.children.at(0);
+    const ASTPtr & right_arg = args.children.at(1);
+    const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
+
+    std::function<size_t(const DataTypePtr &)> getTupleDepth;
+    getTupleDepth = [&getTupleDepth](const DataTypePtr & type) -> size_t
+    {
+        if (auto tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+            return 1 + (tuple_type->getElements().empty() ? 0 : getTupleDepth(tuple_type->getElements().at(0)));
+
+        return 0;
+    };
+
+    auto getTupleDepthFromAst = [&getTupleDepth](const ASTPtr & node) -> size_t
+    {
+        size_t depth = 0;
+        ASTPtr element = node;
+
+        auto ast_function = typeid_cast<const ASTFunction *>(node.get());
+        if (ast_function && ast_function->name == "tuple" && !ast_function->arguments->children.empty())
+        {
+            ++depth;
+            element = ast_function->arguments->children.at(0);
+        }
+
+        std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
+        return depth + getTupleDepth(value_raw.second);
+    };
+
+    size_t left_tuple_depth = getTupleDepth(left_arg_type);
+    size_t right_tuple_depth = getTupleDepthFromAst(right_arg);
 
     DataTypes set_element_types;
-    const ASTPtr & left_arg = args.children.at(0);
+    ASTPtr elements_ast = nullptr;
 
-    const ASTFunction * left_arg_tuple = typeid_cast<const ASTFunction *>(left_arg.get());
-
-    /** NOTE If tuple in left hand side specified non-explicitly
-      * Example: identity((a, b)) IN ((1, 2), (3, 4))
-      *  instead of       (a, b)) IN ((1, 2), (3, 4))
-      * then set creation doesn't work correctly.
-      */
-    if (left_arg_tuple && left_arg_tuple->name == "tuple")
+    if (left_tuple_depth > 0)
     {
-        for (const auto & arg : left_arg_tuple->arguments->children)
-            set_element_types.push_back(sample_block.getByName(arg->getColumnName()).type);
+        auto left_tuple_type = static_cast<const DataTypeTuple *>(left_arg_type.get());
+        set_element_types = left_tuple_type->getElements();
     }
     else
-    {
-        DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-        set_element_types.push_back(left_type);
-    }
+        set_element_types.push_back(left_arg_type);
 
-    /// The case `x in (1, 2)` distinguishes from the case `x in 1` (also `x in (1)`).
-    bool single_value = false;
-    ASTPtr elements_ast = arg;
-
-    if (ASTFunction * set_func = typeid_cast<ASTFunction *>(arg.get()))
-    {
-        if (set_func->name == "tuple")
-        {
-            if (set_func->arguments->children.empty())
-            {
-                /// Empty set.
-                elements_ast = set_func->arguments;
-            }
-            else
-            {
-                /// Distinguish the case `(x, y) in ((1, 2), (3, 4))` from the case `(x, y) in (1, 2)`.
-                ASTFunction * any_element = typeid_cast<ASTFunction *>(set_func->arguments->children.at(0).get());
-                if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-                    single_value = true;
-                else
-                    elements_ast = set_func->arguments;
-            }
-        }
-        else
-        {
-            if (set_element_types.size() >= 2)
-                throw Exception("Incorrect type of 2nd argument for function " + node->name
-                    + ". Must be subquery or set of " + toString(set_element_types.size()) + "-element tuples.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            single_value = true;
-        }
-    }
-    else if (typeid_cast<ASTLiteral *>(arg.get()))
-    {
-        single_value = true;
-    }
-    else
-    {
-        throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    if (single_value)
+    /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
+    if (left_tuple_depth == right_tuple_depth)
     {
         ASTPtr exp_list = std::make_shared<ASTExpressionList>();
-        exp_list->children.push_back(elements_ast);
+        exp_list->children.push_back(right_arg);
         elements_ast = exp_list;
     }
+    /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
+    else if (left_tuple_depth + 1 == right_tuple_depth)
+    {
+        ASTFunction * set_func = typeid_cast<ASTFunction *>(right_arg.get());
+
+        if (!set_func || set_func->name != "tuple")
+            throw Exception("Incorrect type of 2nd argument for function " + node->name
+                            + ". Must be subquery or set of elements with type " + left_arg_type->getName() + ".",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        elements_ast = set_func->arguments;
+    }
+    else
+        throw Exception("Invalid types for IN function: "
+                        + left_arg_type->getName() + " and " + right_arg_type->getName() + ".",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
     set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
-    prepared_sets[arg.get()] = std::move(set);
+    prepared_sets[right_arg.get()] = std::move(set);
 }
 
 
