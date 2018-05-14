@@ -2743,10 +2743,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 /// The name of an imaginary part covering all possible parts in the specified partition with numbers in the range from zero to specified right bound.
 static String getFakePartNameCoveringPartRange(
-        MergeTreeDataFormatVersion format_version, const String & partition_id, UInt64 left, UInt64 right)
+    MergeTreeDataFormatVersion format_version, const String & partition_id, UInt64 left, UInt64 right, Int64 mutation_version)
 {
     /// Artificial high level is choosen, to make this part "covering" all parts inside.
-    MergeTreePartInfo part_info(partition_id, left, right, 999999999);
+    MergeTreePartInfo part_info(partition_id, left, right, 999999999, mutation_version);
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// The date range is all month long.
@@ -2775,11 +2775,13 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(
       *     to guarantee this invariant.
       */
     Int64 right;
+    Int64 mutation_version;
 
     {
         auto zookeeper = getZooKeeper();
         AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(partition_id, zookeeper);
         right = block_number_lock.getNumber();
+        mutation_version = queue.getCurrentMutationVersion(partition_id, right);
         block_number_lock.unlock();
     }
 
@@ -2793,7 +2795,7 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(
         *out_min_block = left;
     if (out_max_block)
         *out_max_block = right;
-    return getFakePartNameCoveringPartRange(data.format_version, partition_id, left, right);
+    return getFakePartNameCoveringPartRange(data.format_version, partition_id, left, right, mutation_version);
 }
 
 
