@@ -26,7 +26,7 @@ case $PACKAGE_MANAGER in
                 ;;
             clang*)
                 $SUDO apt-get install -y $WHAT libc++-dev libc++abi-dev
-                [[ $(uname -m) == "x86_64" ]] && $SUDO apt-get install -y ${WHAT/clang/lld}
+                [[ $(uname -m) == "x86_64" ]] && $SUDO apt-get install -y ${WHAT/clang/lld} || true
                 ;;
             git)
                 $SUDO apt-get install -y git
