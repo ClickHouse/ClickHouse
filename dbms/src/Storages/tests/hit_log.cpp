@@ -98,8 +98,8 @@ try
 
     /// create a hit log table
 
-    StoragePtr table = StorageLog::create("./", "HitLog", names_and_types_list,
-        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    StoragePtr table = StorageLog::create(
+        "./", "HitLog", ColumnsDescription{names_and_types_list}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
     table->startup();
 
     /// create a description of how to read data from the tab separated dump

@@ -11,6 +11,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -113,12 +114,12 @@ public:
             }
         }
 
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
+        block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
+
         if (rows)
         {
-            block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
-            block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
-            block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
-
             /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
             VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
             rows = block_to_filter.rows();
@@ -160,7 +161,7 @@ public:
 
             try
             {
-                /// For table not to be dropped.
+                /// For table not to be dropped and set of columns to remain constant.
                 info.table_lock = info.storage->lockStructure(false, __PRETTY_FUNCTION__);
             }
             catch (const Exception & e)
@@ -245,20 +246,20 @@ BlockInputStreams StorageSystemPartsBase::read(
 
     /// Create the result.
 
-    MutableColumns columns = getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
-        columns.push_back(ColumnString::create());
+        res_columns.push_back(ColumnString::create());
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(columns, info, has_state_column);
+        processNextStorage(res_columns, info, has_state_column);
     }
 
     Block block = getSampleBlock();
     if (has_state_column)
         block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(columns))));
+    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
 }
 
 NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
@@ -280,7 +281,31 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
     : name(std::move(name_))
 {
-    columns = columns_;
+    NamesAndTypesList aliases;
+    ColumnDefaults defaults;
+    auto add_alias = [&](const String & alias_name, const String & column_name)
+    {
+        DataTypePtr type;
+        for (const NameAndTypePair & col : columns_)
+        {
+            if (col.name == column_name)
+            {
+                type = col.type;
+                break;
+            }
+        }
+        if (!type)
+            throw Exception("No column " + column_name + " in table system." + name, ErrorCodes::LOGICAL_ERROR);
+
+        aliases.push_back({alias_name, type});
+        defaults[alias_name] = ColumnDefault{ColumnDefaultKind::Alias, std::make_shared<ASTIdentifier>(column_name)};
+    };
+
+    /// Add aliases for old column names for backwards compatibility.
+    add_alias("bytes", "bytes_on_disk");
+    add_alias("marks_size", "marks_bytes");
+
+    setColumns(ColumnsDescription(std::move(columns_), {}, std::move(aliases), std::move(defaults)));
 }
 
 }

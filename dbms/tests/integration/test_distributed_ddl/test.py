@@ -315,6 +315,24 @@ def test_macro(started_cluster):
     ddl_check_query(instance, "DROP TABLE IF EXISTS distr ON CLUSTER '{cluster}'")
     ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
 
+
+def test_allowed_databases(started_cluster):
+    instance = cluster.instances['ch2']
+    instance.query("CREATE DATABASE IF NOT EXISTS db1 ON CLUSTER cluster")
+    instance.query("CREATE DATABASE IF NOT EXISTS db2 ON CLUSTER cluster")
+
+    instance.query("CREATE TABLE db1.t1 ON CLUSTER cluster (i Int8) ENGINE = Memory", settings={"user" : "restricted_user"})
+    
+    with pytest.raises(Exception):
+        instance.query("CREATE TABLE db2.t2 ON CLUSTER cluster (i Int8) ENGINE = Memory", settings={"user" : "restricted_user"})
+    with pytest.raises(Exception):
+        instance.query("CREATE TABLE t3 ON CLUSTER cluster (i Int8) ENGINE = Memory", settings={"user" : "restricted_user"})
+    with pytest.raises(Exception):
+        instance.query("DROP DATABASE db2 ON CLUSTER cluster", settings={"user" : "restricted_user"})
+
+    instance.query("DROP DATABASE db1 ON CLUSTER cluster", settings={"user" : "restricted_user"})
+
+
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
        for name, instance in cluster.instances.items():

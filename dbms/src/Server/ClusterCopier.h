@@ -1,5 +1,6 @@
 #pragma once
 #include <Poco/Util/ServerApplication.h>
+#include <daemon/BaseDaemon.h>
 
 /* clickhouse cluster copier util
  * Copies tables data from one cluster to new tables of other (possibly the same) cluster in distributed fault-tolerant manner.
@@ -24,7 +25,7 @@
  *          /server_fqdn#PID_timestamp  - cluster-copier worker ID
  *          ...
  *      /tables             - directory with table tasks
- *      /cluster.db.table   - directory of table_hits task
+ *      /cluster.db.table1  - directory of table_hits task
  *          /partition1     - directory for partition1
  *              /shards     - directory for source cluster shards
  *                  /1      - worker job for the first shard of partition1 of table test.hits
@@ -45,14 +46,14 @@
  *                            During this procedure a single 'cleaner' worker is selected. The worker waits for stopping all partition
  *                            workers, removes /shards node, executes DROP PARTITION on each destination node and removes /is_dirty node.
  *                  /cleaner- An ephemeral node used to select 'cleaner' worker. Contains ID of the worker.
- *      /test_visits
+ *      /cluster.db.table2
  *          ...
  */
 
 namespace DB
 {
 
-class ClusterCopierApp : public Poco::Util::ServerApplication
+class ClusterCopierApp : public BaseDaemon
 {
 public:
 
@@ -65,6 +66,8 @@ public:
     int main(const std::vector<std::string> &) override;
 
 private:
+
+    using Base = BaseDaemon;
 
     void mainImpl();
 

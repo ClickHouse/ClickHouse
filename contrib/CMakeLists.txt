@@ -21,12 +21,8 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     add_subdirectory (double-conversion)
-endif ()
-
-if (USE_INTERNAL_ZOOKEEPER_LIBRARY)
-    add_subdirectory (zookeeper/src/c)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
@@ -100,24 +96,24 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
     mark_as_advanced (ZLIB_INCLUDE_DIR)
 
     if (USE_INTERNAL_SSL_LIBRARY)
-        add_library(bundled-ssl ALIAS ${OPENSSL_SSL_LIBRARY})
-        set (WITH_BUNDLED_SSL 1)
+        if (MAKE_STATIC_LIBRARIES)
+            add_library(bundled-ssl ALIAS ${OPENSSL_SSL_LIBRARY})
+            set (WITH_BUNDLED_SSL 1 CACHE INTERNAL "")
+        else ()
+            set (WITH_SSL 0 CACHE INTERNAL "")
+        endif ()
     endif ()
 
     add_subdirectory (librdkafka)
 
-    if (USE_INTERNAL_SSL_LIBRARY)
+    if (USE_INTERNAL_SSL_LIBRARY AND MAKE_STATIC_LIBRARIES)
         target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
     endif ()
     target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
-    if (APPLE) # tests never end
-        set (BUILD_TESTING 0 CACHE INTERNAL "")
-    else ()
-        set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
-    endif ()
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
     set (CMAKE_CXX_EXTENSIONS)
     add_subdirectory (capnproto/c++)
@@ -127,16 +123,18 @@ endif ()
 
 
 if (USE_INTERNAL_POCO_LIBRARY)
-    set (ALLOW_DUPLICATE_CUSTOM_TARGETS 1)
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
     if (USE_INTERNAL_SSL_LIBRARY)
-        set (DISABLE_INTERNAL_OPENSSL 1)
-        set (ENABLE_NETSSL 0) # TODO!
-        set (ENABLE_CRYPTO 0) # TODO!
+        set (DISABLE_INTERNAL_OPENSSL 1 CACHE INTERNAL "")
+        set (ENABLE_NETSSL 0 CACHE INTERNAL "") # TODO!
+        set (ENABLE_CRYPTO 0 CACHE INTERNAL "") # TODO!
+    endif ()
+    if (MSVC)
+        set (ENABLE_DATA_ODBC 0 CACHE INTERNAL "") # TODO (build fail)
     endif ()
     add_subdirectory (poco)
     unset (CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
@@ -147,4 +145,8 @@ if (USE_INTERNAL_POCO_LIBRARY)
         # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
         target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
+endif ()
+
+if (USE_INTERNAL_LLVM_LIBRARY)
+    add_subdirectory (llvm/llvm)
 endif ()

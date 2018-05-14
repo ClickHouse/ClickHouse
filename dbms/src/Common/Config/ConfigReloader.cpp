@@ -67,12 +67,15 @@ void ConfigReloader::run()
         catch (...)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            std::this_thread::sleep_for(reload_interval);
         }
     }
 }
 
 void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
+    std::lock_guard<std::mutex> lock(reload_mutex);
+
     FilesChangesTracker new_files = getNewFileList();
     if (force || new_files.isDifferOrNewerThan(files))
     {

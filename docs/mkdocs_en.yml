@@ -86,6 +86,7 @@ pages:
   - 'GraphiteMergeTree': 'table_engines/graphitemergetree.md'
   - 'Data replication': 'table_engines/replication.md'
   - 'Distributed': 'table_engines/distributed.md'
+  - 'Dictionary': 'table_engines/dictionary.md'
   - 'Merge': 'table_engines/merge.md'
   - 'Buffer': 'table_engines/buffer.md'
   - 'File': 'table_engines/file.md'
@@ -95,6 +96,7 @@ pages:
   - 'View': 'table_engines/view.md'
   - 'MaterializedView': 'table_engines/materializedview.md'
   - 'Kafka': 'table_engines/kafka.md'
+  - 'MySQL': 'table_engines/mysql.md'
   - 'External data for query processing': 'table_engines/external_data.md'
 
 - 'System tables':
@@ -122,6 +124,7 @@ pages:
   - 'Introduction': 'table_functions/index.md'
   - 'remote': 'table_functions/remote.md'
   - 'merge': 'table_functions/merge.md'
+  - 'numbers': 'table_functions/numbers.md'
 
 - 'Formats':
   - 'Introduction': 'formats/index.md'
@@ -133,6 +136,7 @@ pages:
   - 'CSVWithNames': 'formats/csvwithnames.md'
   - 'Values': 'formats/values.md'
   - 'Vertical': 'formats/vertical.md'
+  - 'VerticalRaw': 'formats/verticalraw.md'
   - 'JSON': 'formats/json.md'
   - 'JSONCompact': 'formats/jsoncompact.md'
   - 'JSONEachRow': 'formats/jsoneachrow.md'
@@ -209,7 +213,7 @@ pages:
 - 'Dictionaries':
   - 'Introduction': 'dicts/index.md'
   - 'External dictionaries':
-    - 'External dictionaries': 'dicts/external_dicts.md'
+    - 'General desription': 'dicts/external_dicts.md'
     - 'Configuring an external dictionary': 'dicts/external_dicts_dict.md'
     - 'Storing dictionaries in memory': 'dicts/external_dicts_dict_layout.md'
     - 'Dictionary updates': 'dicts/external_dicts_dict_lifetime.md'
@@ -218,7 +222,7 @@ pages:
   - 'Internal dictionaries': 'dicts/internal_dicts.md'
 
 - 'Operation':
-  - 'Operation': 'operations/index.md'
+#  - 'Operation': 'operations/index.md'
   - 'Access rights': 'operations/access_rights.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'

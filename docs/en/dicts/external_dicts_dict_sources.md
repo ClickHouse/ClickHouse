@@ -80,7 +80,7 @@ Setting fields:
 
 ## HTTP(s)
 
-Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -137,7 +137,7 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 ```
     [DEFAULT]
     Driver = myconnection
-    
+
     [myconnection]
     Description         = PostgreSQL connection to my_db
     Driver              = PostgreSQL Unicode
@@ -159,9 +159,9 @@ The dictionary configuration in ClickHouse:
 <dictionary>
     <name>table_name</name>
     <source>
-        <odbc>
-            <!-- You can specifiy the following parameters in connection_string: -->
-            <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+    <odbc>
+        <!-- You can specifiy the following parameters in connection_string: -->
+        <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
             <connection_string>DSN=myconnection</connection_string>
             <table>postgresql_table</table>
         </odbc>
@@ -195,7 +195,7 @@ Ubuntu OS.
 Installing the driver: :
 
 ```
-sudo apt-get install tdsodbc freetds-bin sqsh
+    sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
 Configuring the driver: :

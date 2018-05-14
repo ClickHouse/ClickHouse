@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -84,7 +85,8 @@ public:
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
     bool supportsReplication() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
+    const ColumnsDescription & getColumns() const override { return data.getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -219,8 +221,8 @@ private:
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
-    std::atomic_bool is_leader_node {false};
-    std::mutex leader_node_mutex;
+    std::atomic<bool> is_leader {false};
+    zkutil::LeaderElectionPtr leader_election;
 
     InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
 
@@ -238,7 +240,9 @@ private:
 
     DataPartsExchange::Fetcher fetcher;
 
-    zkutil::LeaderElectionPtr leader_election;
+
+    /// When activated, replica is initialized and startup() method could exit
+    Poco::Event startup_event;
 
     /// Do I need to complete background threads (except restarting_thread)?
     std::atomic<bool> shutdown_called {false};
@@ -316,14 +320,21 @@ private:
       * Adds actions to `ops` that add data about the part into ZooKeeper.
       * Call under TableStructureLock.
       */
-    void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
+    void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
+                                           zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+
+    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums);
+
+    /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
+    MergeTreeData::DataPartsVector checkPartChecksumsAndCommit(MergeTreeData::Transaction & transaction,
+                                                               const MergeTreeData::DataPartPtr & part);
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
+    void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
-                                  NameSet * parts_should_be_retied = nullptr);
+                                  NameSet * parts_should_be_retried = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -357,9 +368,15 @@ private:
       */
     bool queueTask();
 
-    /// Select the parts to merge.
+    /// Postcondition:
+    /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
+    /// or an exception is thrown and leader_election is destroyed.
+    void enterLeaderElection();
 
-    void becomeLeader();
+    /// Postcondition:
+    /// is_leader is false, merge_selecting_thread is stopped, leader_election is nullptr.
+    /// leader_election node in ZK is either deleted, or the session is marked expired.
+    void exitLeaderElection();
 
     /** Selects the parts to merge and writes to the log.
       */
@@ -404,7 +421,7 @@ private:
 
     /// Creates new block number and additionally perform precheck_ops while creates 'abandoned node'
     AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                   zkutil::Ops * precheck_ops = nullptr);
+                                                   zkutil::Requests * precheck_ops = nullptr);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
@@ -435,6 +452,9 @@ private:
     void clearBlocksInPartition(
         zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
 
+    /// Info about how other replicas can access this one.
+    ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -443,10 +463,7 @@ protected:
         const String & replica_name_,
         bool attach,
         const String & path_, const String & database_name_, const String & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
         const ASTPtr & secondary_sorting_expr_list_,

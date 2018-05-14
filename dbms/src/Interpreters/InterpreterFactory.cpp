@@ -49,8 +49,15 @@ namespace ErrorCodes
 
 static void throwIfReadOnly(Context & context)
 {
-    if (context.getSettingsRef().limits.readonly)
-        throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
+    if (context.getSettingsRef().readonly)
+    {
+        const auto & client_info = context.getClientInfo();
+        if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
+            throw Exception("Cannot execute query in readonly mode. "
+                "For queries over HTTP, method GET implies readonly. You should use method POST for modifying queries.", ErrorCodes::READONLY);
+        else
+            throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
+    }
 }
 
 
@@ -107,7 +114,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
-    else if (typeid_cast<ASTShowCreateQuery *>(query.get()))
+    else if (typeid_cast<ASTShowCreateTableQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (typeid_cast<ASTShowCreateDatabaseQuery *>(query.get()))
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }

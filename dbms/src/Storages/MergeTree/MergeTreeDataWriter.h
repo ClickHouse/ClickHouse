@@ -30,7 +30,7 @@ struct BlockWithPartition
 
 using BlocksWithPartition = std::vector<BlockWithPartition>;
 
- /** Writes new parts of data to the merge tree.
+/** Writes new parts of data to the merge tree.
   */
 class MergeTreeDataWriter
 {

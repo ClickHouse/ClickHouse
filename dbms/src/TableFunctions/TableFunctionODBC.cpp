@@ -1,6 +1,6 @@
 #include <TableFunctions/TableFunctionODBC.h>
 
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
 #include <type_traits>
 #include <ext/scope_guard.h>
 
@@ -39,9 +39,9 @@ DataTypePtr getDataType(SQLSMALLINT type)
     switch (type)
     {
         case SQL_INTEGER:
-            return factory.get("UInt32");
+            return factory.get("Int32");
         case SQL_SMALLINT:
-            return factory.get("UInt16");
+            return factory.get("Int16");
         case SQL_FLOAT:
             return factory.get("Float32");
         case SQL_REAL:
@@ -113,7 +113,7 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
         columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
     }
 
-    auto result = StorageODBC::create(table_name, connection_string, "", table_name, columns);
+    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns});
     result->startup();
     return result;
 }

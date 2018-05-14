@@ -99,6 +99,19 @@ else ()
     install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
+if (USE_EMBEDDED_COMPILER)
+    llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
+    if (TERMCAP_LIBRARY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
+    endif ()
+    if (LTDL_LIBRARY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES ${LTDL_LIBRARY})
+    endif ()
+
+    target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+endif ()
+
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
@@ -131,7 +144,6 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
-    ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
     ${Poco_Data_LIBRARY}
@@ -146,8 +158,6 @@ target_link_libraries (dbms
     clickhouse_common_config
     clickhouse_common_io
     ${MYSQLXX_LIBRARY}
-    ${FARMHASH_LIBRARIES}
-    ${METROHASH_LIBRARIES}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
@@ -158,18 +168,32 @@ if (NOT USE_INTERNAL_RE2_LIBRARY)
     target_include_directories (dbms BEFORE PRIVATE ${RE2_INCLUDE_DIR})
 endif ()
 
-if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
-    target_include_directories (clickhouse_common_io BEFORE PUBLIC ${ZOOKEEPER_INCLUDE_DIR})
-endif ()
-
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-if (Poco_DataODBC_FOUND)
-    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
-    target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES})
+if (Poco_SQLODBC_FOUND)
+    target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
+    target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
+    if (NOT USE_INTERNAL_POCO_LIBRARY)
+        target_include_directories (clickhouse_common_io PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
+        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
+    endif()
 endif()
+
+if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories (clickhouse_common_io PRIVATE ${Poco_Data_INCLUDE_DIRS})
+    target_include_directories (dbms PRIVATE ${Poco_Data_INCLUDE_DIRS})
+endif()
+
+if (Poco_DataODBC_FOUND)
+    target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
+    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    if (NOT USE_INTERNAL_POCO_LIBRARY)
+        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+    endif()
+endif()
+
 
 if (Poco_MongoDB_FOUND)
     target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
@@ -217,6 +241,7 @@ endif ()
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
 target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 # also for copy_headers.sh:

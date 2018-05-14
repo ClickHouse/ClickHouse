@@ -16,6 +16,28 @@ namespace ErrorCodes
 }
 
 
+CreatingSetsBlockInputStream::CreatingSetsBlockInputStream(
+    const BlockInputStreamPtr & input,
+    const SubqueriesForSets & subqueries_for_sets_,
+    const SizeLimits & network_transfer_limits)
+    : subqueries_for_sets(subqueries_for_sets_),
+    network_transfer_limits(network_transfer_limits)
+{
+    for (auto & elem : subqueries_for_sets)
+    {
+        if (elem.second.source)
+        {
+            children.push_back(elem.second.source);
+
+            if (elem.second.set)
+                elem.second.set->setHeader(elem.second.source->getHeader());
+        }
+    }
+
+    children.push_back(input);
+}
+
+
 Block CreatingSetsBlockInputStream::readImpl()
 {
     Block res;
@@ -115,25 +137,8 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
             rows_to_transfer += block.rows();
             bytes_to_transfer += block.bytes();
 
-            if ((max_rows_to_transfer && rows_to_transfer > max_rows_to_transfer)
-                || (max_bytes_to_transfer && bytes_to_transfer > max_bytes_to_transfer))
-            {
-                switch (transfer_overflow_mode)
-                {
-                    case OverflowMode::THROW:
-                        throw Exception("IN/JOIN external table size limit exceeded."
-                            " Rows: " + toString(rows_to_transfer)
-                            + ", limit: " + toString(max_rows_to_transfer)
-                            + ". Bytes: " + toString(bytes_to_transfer)
-                            + ", limit: " + toString(max_bytes_to_transfer) + ".",
-                            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-                    case OverflowMode::BREAK:
-                        done_with_table = true;
-                        break;
-                    default:
-                        throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-                }
-            }
+            if (!network_transfer_limits.check(rows_to_transfer, bytes_to_transfer, "IN/JOIN external table", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+                done_with_table = true;
         }
 
         if (done_with_set && done_with_join && done_with_table)

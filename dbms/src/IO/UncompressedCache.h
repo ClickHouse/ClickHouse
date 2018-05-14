@@ -69,11 +69,10 @@ public:
         return res;
     }
 
-    void set(const Key & key, const MappedPtr & mapped)
+private:
+    void onRemoveOverflowWeightLoss(size_t weight_loss) override
     {
-        Base::set(key, mapped);
-        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, current_weight_lost);
-        current_weight_lost = 0;
+        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
     }
 };
 

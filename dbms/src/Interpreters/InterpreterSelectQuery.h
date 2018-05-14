@@ -50,7 +50,8 @@ public:
         const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        const BlockInputStreamPtr & input = nullptr);
+        const BlockInputStreamPtr & input = nullptr,
+        bool only_analyze = false);
 
     ~InterpreterSelectQuery();
 

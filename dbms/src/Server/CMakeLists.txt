@@ -10,7 +10,7 @@ option (ENABLE_CLICKHOUSE_LOCAL "Enable local" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_BENCHMARK "Enable benchmark" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_PERFORMANCE "Enable performance" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_TOOLS "Enable tools: compressor format extract-from-config-lib" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_COPIER "Enable copier" ${ENABLE_CLICKHOUSE_COPIER})
+option (ENABLE_CLICKHOUSE_COPIER "Enable copier" ${ENABLE_CLICKHOUSE_ALL})
 
 configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
@@ -31,13 +31,13 @@ target_link_libraries (clickhouse-server-lib clickhouse_common_io daemon clickho
 target_include_directories (clickhouse-server-lib PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 add_library (clickhouse-local-lib LocalServer.cpp)
-target_link_libraries (clickhouse-local-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_link_libraries (clickhouse-local-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-extract-from-config-lib ${SPLIT_SHARED} ExtractFromConfig.cpp)
 target_link_libraries (clickhouse-extract-from-config-lib clickhouse_common_config clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-client-lib Client.cpp)
-target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-client-lib PRIVATE ${READLINE_INCLUDE_DIR})
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
 
@@ -55,8 +55,8 @@ target_link_libraries (clickhouse-compressor-lib clickhouse_common_io ${Boost_PR
 add_library (clickhouse-format-lib ${SPLIT_SHARED} Format.cpp)
 target_link_libraries (clickhouse-format-lib dbms clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
-add_library (clickhouse-cluster-copier-lib ClusterCopier.cpp)
-target_link_libraries (clickhouse-cluster-copier-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+add_library (clickhouse-copier-lib ClusterCopier.cpp)
+target_link_libraries (clickhouse-copier-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions)
 
 if (USE_EMBEDDED_COMPILER)
     link_directories (${LLVM_LIBRARY_DIRS})
@@ -81,11 +81,11 @@ if (CLICKHOUSE_SPLIT_BINARY)
     target_link_libraries (clickhouse-compressor clickhouse-compressor-lib)
     add_executable (clickhouse-format clickhouse-format.cpp)
     target_link_libraries (clickhouse-format clickhouse-format-lib)
-    add_executable (clickhouse-cluster-copier clickhouse-cluster-copier.cpp)
-    target_link_libraries (clickhouse-cluster-copier clickhouse-cluster-copier-lib)
+    add_executable (clickhouse-copier clickhouse-copier.cpp)
+    target_link_libraries (clickhouse-copier clickhouse-copier-lib)
 
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
-            clickhouse-extract-from-config clickhouse-format clickhouse-cluster-copier)
+            clickhouse-extract-from-config clickhouse-format clickhouse-copier)
 
     if (USE_EMBEDDED_COMPILER)
         add_executable (clickhouse-clang clickhouse-clang.cpp)
@@ -132,7 +132,7 @@ else ()
     )
     endif ()
     if (ENABLE_CLICKHOUSE_COPIER)
-        target_link_libraries (clickhouse clickhouse-cluster-copier-lib)
+        target_link_libraries (clickhouse clickhouse-copier-lib)
     endif ()
 
     set (CLICKHOUSE_BUNDLE)
@@ -173,8 +173,8 @@ else ()
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-extract-from-config clickhouse-compressor clickhouse-format)
     endif ()
     if (ENABLE_CLICKHOUSE_COPIER)
-        add_custom_target (clickhouse-cluster-copier ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-cluster-copier DEPENDS clickhouse)
-        install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-cluster-copier DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        add_custom_target (clickhouse-copier ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-copier DEPENDS clickhouse)
+        install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-copier DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-copier)
     endif ()
     # install always because depian package want this files:
@@ -191,6 +191,9 @@ else ()
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 endif ()
+
+set (GLIBC_MAX_REQUIRED 2.4)
+add_test(NAME GLIBC_required_version COMMAND bash -c "readelf -s ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-server | grep '@GLIBC' | grep -oP 'GLIBC_[\\d\\.]+' | sort | uniq | sort -r | perl -lnE 'exit 1 if $_ gt q{GLIBC_${GLIBC_MAX_REQUIRED}}'")
 
 install (
     FILES config.xml users.xml

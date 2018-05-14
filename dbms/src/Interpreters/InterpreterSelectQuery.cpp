@@ -61,8 +61,9 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
-    extern const int TOO_MUCH_COLUMNS;
+    extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -71,12 +72,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Names & required_result_column_names_,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
-    const BlockInputStreamPtr & input)
+    const BlockInputStreamPtr & input,
+    bool only_analyze)
     : query_ptr(query_ptr_->clone())    /// Note: the query is cloned because it will be modified during analysis.
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
+    , only_analyze(only_analyze)
     , input(input)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -109,8 +112,8 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     initSettings();
     const Settings & settings = context.getSettingsRef();
 
-    if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
-        throw Exception("Too deep subqueries. Maximum: " + settings.limits.max_subquery_depth.toString(),
+    if (settings.max_subquery_depth && subquery_depth > settings.max_subquery_depth)
+        throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
     max_streams = settings.max_threads;
@@ -150,19 +153,22 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
         query_ptr, context, storage, source_columns, required_result_column_names, subquery_depth, !only_analyze);
 
-    if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
-        throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+    if (!only_analyze)
+    {
+        if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
+            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-    if (query.final() && (input || !storage || !storage->supportsFinal()))
-        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+        if (query.final() && (input || !storage || !storage->supportsFinal()))
+            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
 
-    if (query.prewhere_expression && (input || !storage || !storage->supportsPrewhere()))
-        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+        if (query.prewhere_expression && (input || !storage || !storage->supportsPrewhere()))
+            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
-    /// Save the new temporary tables in the query context
-    for (const auto & it : query_analyzer->getExternalTables())
-        if (!context.tryGetExternalTable(it.first))
-            context.addExternalTable(it.first, it.second);
+        /// Save the new temporary tables in the query context
+        for (const auto & it : query_analyzer->getExternalTables())
+            if (!context.tryGetExternalTable(it.first))
+                context.addExternalTable(it.first, it.second);
+    }
 }
 
 
@@ -333,6 +339,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
     QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
 
+    if (from_stage == QueryProcessingStage::WithMergeableState && to_stage == QueryProcessingStage::WithMergeableState)
+        throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
     if (!dry_run)
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
@@ -348,8 +357,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         bool aggregate_overflow_row =
             expressions.need_aggregate &&
             query.group_by_with_totals &&
-            settings.limits.max_rows_to_group_by &&
-            settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
+            settings.max_rows_to_group_by &&
+            settings.group_by_overflow_mode == OverflowMode::ANY &&
             settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
 
         /// Do I need to immediately finalize the aggregate functions after the aggregation?
@@ -511,12 +520,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     /// Are ALIAS columns required for query execution?
     auto alias_columns_required = false;
 
-    if (storage && !storage->alias_columns.empty())
+    if (storage && !storage->getColumns().aliases.empty())
     {
+        const auto & column_defaults = storage->getColumns().defaults;
         for (const auto & column : required_columns)
         {
-            const auto default_it = storage->column_defaults.find(column);
-            if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+            const auto default_it = column_defaults.find(column);
+            if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
             {
                 alias_columns_required = true;
                 break;
@@ -530,8 +540,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
             for (const auto & column : required_columns)
             {
-                const auto default_it = storage->column_defaults.find(column);
-                if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+                const auto default_it = column_defaults.find(column);
+                if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
                     required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
                 else
                     required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));
@@ -555,8 +565,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
          */
         Context subquery_context = context;
         Settings subquery_settings = context.getSettings();
-        subquery_settings.limits.max_result_rows = 0;
-        subquery_settings.limits.max_result_bytes = 0;
+        subquery_settings.max_result_rows = 0;
+        subquery_settings.max_result_bytes = 0;
         /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
         subquery_settings.extremes = 0;
         subquery_context.setSettings(subquery_settings);
@@ -573,11 +583,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
     /// Limitation on the number of columns to read.
     /// It's not applied in 'dry_run' mode, because the query could be analyzed without removal of unnecessary columns.
-    if (!dry_run && settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
+    if (!dry_run && settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
         throw Exception("Limit for number of columns to read exceeded. "
             "Requested: " + toString(required_columns.size())
-            + ", maximum: " + settings.limits.max_columns_to_read.toString(),
-            ErrorCodes::TOO_MUCH_COLUMNS);
+            + ", maximum: " + settings.max_columns_to_read.toString(),
+            ErrorCodes::TOO_MANY_COLUMNS);
 
     size_t limit_length = 0;
     size_t limit_offset = 0;
@@ -620,8 +630,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
-    query_analyzer->makeSetsForIndex();
-
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (!pipeline.streams.empty())
     {
@@ -646,6 +654,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
+
+        query_analyzer->makeSetsForIndex();
 
         SelectQueryInfo query_info;
         query_info.query = query_ptr;
@@ -677,21 +687,26 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             stream->addTableLock(table_lock);
         });
 
-        /** Set the limits and quota for reading data, the speed and time of the query.
-          *  Such restrictions are checked on the initiating server of the request, and not on remote servers.
-          *  Because the initiating server has a summary of the execution of the request on all servers.
-          */
-        if (to_stage == QueryProcessingStage::Complete)
+        /// Set the limits and quota for reading data, the speed and time of the query.
         {
             IProfilingBlockInputStream::LocalLimits limits;
             limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
-            limits.max_rows_to_read = settings.limits.max_rows_to_read;
-            limits.max_bytes_to_read = settings.limits.max_bytes_to_read;
-            limits.read_overflow_mode = settings.limits.read_overflow_mode;
-            limits.max_execution_time = settings.limits.max_execution_time;
-            limits.timeout_overflow_mode = settings.limits.timeout_overflow_mode;
-            limits.min_execution_speed = settings.limits.min_execution_speed;
-            limits.timeout_before_checking_execution_speed = settings.limits.timeout_before_checking_execution_speed;
+            limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
+            limits.max_execution_time = settings.max_execution_time;
+            limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+            /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+              *  because the initiating server has a summary of the execution of the request on all servers.
+              *
+              * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+              *  additionally on each remote server, because these limits are checked per block of data processed,
+              *  and remote servers may process way more blocks of data than are received by initiator.
+              */
+            if (to_stage == QueryProcessingStage::Complete)
+            {
+                limits.min_execution_speed = settings.min_execution_speed;
+                limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+            }
 
             QuotaForIntervals & quota = context.getQuota();
 
@@ -700,7 +715,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
                 {
                     p_stream->setLimits(limits);
-                    p_stream->setQuota(quota);
+
+                    if (to_stage == QueryProcessingStage::Complete)
+                        p_stream->setQuota(quota);
                 }
             });
         }
@@ -756,14 +773,14 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    bool allow_to_use_two_level_group_by = pipeline.streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
+    bool allow_to_use_two_level_group_by = pipeline.streams.size() > 1 || settings.max_bytes_before_external_group_by != 0;
 
     Aggregator::Params params(header, keys, aggregates,
-        overflow_row, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
+        overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
-        settings.limits.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+        settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
         context.getTemporaryPath());
 
     /// If there are several sources, then we perform parallel aggregation
@@ -928,9 +945,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
         /// Limits on sorting
         IProfilingBlockInputStream::LocalLimits limits;
         limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
-        limits.max_rows_to_read = settings.limits.max_rows_to_sort;
-        limits.max_bytes_to_read = settings.limits.max_bytes_to_sort;
-        limits.read_overflow_mode = settings.limits.sort_overflow_mode;
+        limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
         sorting_stream->setLimits(limits);
 
         stream = sorting_stream;
@@ -942,7 +957,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
     /// Merge the sorted blocks.
     pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
         pipeline.firstStream(), order_descr, settings.max_block_size, limit,
-        settings.limits.max_bytes_before_external_sort, context.getTemporaryPath());
+        settings.max_bytes_before_external_sort, context.getTemporaryPath());
 }
 
 
@@ -998,10 +1013,12 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
 
         pipeline.transform([&](auto & stream)
         {
+            SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
             if (stream->isGroupedOutput())
-                stream = std::make_shared<DistinctSortedBlockInputStream>(stream, settings.limits, limit_for_distinct, columns);
+                stream = std::make_shared<DistinctSortedBlockInputStream>(stream, limits, limit_for_distinct, columns);
             else
-                stream = std::make_shared<DistinctBlockInputStream>(stream, settings.limits, limit_for_distinct, columns);
+                stream = std::make_shared<DistinctBlockInputStream>(stream, limits, limit_for_distinct, columns);
         });
     }
 }
@@ -1137,7 +1154,9 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
     const Settings & settings = context.getSettingsRef();
 
     executeUnion(pipeline);
-    pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(pipeline.firstStream(), subqueries_for_sets, settings.limits);
+    pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
+        pipeline.firstStream(), subqueries_for_sets,
+        SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
 }
 
 

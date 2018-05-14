@@ -2,4 +2,4 @@
 
 # Try stop parallel build after timeout
 
-killall make gcc gcc-7 g++-7 clang-5.0 clang++-5.0 || true
+killall make gcc gcc-7 g++-7 gcc-8 g++-8 clang-5.0 clang++-5.0 clang-6.0 clang++-6.0 clang-7 clang++-7 || true

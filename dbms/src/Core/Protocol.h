@@ -116,7 +116,7 @@ namespace Protocol
     };
 
     /// Whether the ssl must be used.
-    enum class Encryption
+    enum class Secure
     {
         Disable = 0,
         Enable = 1,

@@ -3,14 +3,11 @@
 #include <limits>
 #include <regex>
 #include <thread>
-#include <unistd.h>
-
+#include <port/unistd.h>
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <sys/stat.h>
-
 #include <common/DateLUT.h>
-
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <Client/Connection.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -27,13 +24,11 @@
 #include <Interpreters/Settings.h>
 #include <common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
-
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
 #include <Poco/SAX/InputSource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
-
 #include "InterruptListener.h"
 
 /** Tests launcher for ClickHouse.
@@ -848,7 +843,6 @@ private:
         settings.set(#NAME, settings_to_apply[#NAME]);
 
             APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-            APPLY_FOR_LIMITS(EXTRACT_SETTING)
 
 #undef EXTRACT_SETTING
 
@@ -1486,7 +1480,7 @@ try
     Strings tests_names_regexp = options.count("names-regexp") ? options["names-regexp"].as<Strings>() : Strings({});
     Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
-    auto timeouts = DB::ConnectionTimeouts::getTCPTimeouts(DB::Settings());
+    auto timeouts = DB::ConnectionTimeouts::getTCPTimeoutsWithoutFailover(DB::Settings());
 
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),

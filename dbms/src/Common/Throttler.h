@@ -27,6 +27,9 @@ namespace ErrorCodes
 class Throttler
 {
 public:
+    Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent = nullptr)
+            : max_speed(max_speed_), limit_exceeded_exception_message(""), parent(parent) {}
+
     Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
               const std::shared_ptr<Throttler> & parent = nullptr)
         : max_speed(max_speed_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), parent(parent) {}
@@ -37,7 +40,7 @@ public:
         UInt64 elapsed_ns = 0;
 
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
 
             if (max_speed)
             {
@@ -76,10 +79,24 @@ public:
             parent->add(amount);
     }
 
+    /// Not thread safe
+    void setParent(const std::shared_ptr<Throttler> & parent_)
+    {
+        parent = parent_;
+    }
+
+    void reset()
+    {
+        std::lock_guard lock(mutex);
+
+        count = 0;
+        watch.reset();
+    }
+
 private:
-    size_t max_speed = 0;
     size_t count = 0;
-    size_t limit = 0;        /// 0 - not limited.
+    const size_t max_speed = 0;
+    const size_t limit = 0;        /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     Stopwatch watch {CLOCK_MONOTONIC_COARSE};
     std::mutex mutex;

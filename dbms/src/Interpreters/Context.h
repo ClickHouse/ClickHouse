@@ -7,6 +7,7 @@
 #include <mutex>
 #include <thread>
 
+#include <common/MultiVersion.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Settings.h>
@@ -45,7 +46,7 @@ class Compiler;
 class MarkCache;
 class UncompressedCache;
 class ProcessList;
-struct QueryStatus;
+class QueryStatus;
 class Macros;
 struct Progress;
 class Clusters;
@@ -77,6 +78,8 @@ using DatabaseAndTableName = std::pair<String, String>;
 using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
 using Dependencies = std::vector<DatabaseAndTableName>;
 
+using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
+using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -103,7 +106,7 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-    Tables external_tables;                 /// Temporary tables. Keyed by table name.
+    TableAndCreateASTs external_tables;     /// Temporary tables.
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
@@ -129,15 +132,17 @@ public:
     String getPath() const;
     String getTemporaryPath() const;
     String getFlagsPath() const;
+    String getUserFilesPath() const;
+
     void setPath(const String & path);
     void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
+    void setUserFilesPath(const String & path);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
-    ConfigurationPtr getConfig() const;
     Poco::Util::AbstractConfiguration & getConfigRef() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
@@ -165,6 +170,7 @@ public:
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
+    bool isExternalTableExist(const String & table_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
@@ -175,12 +181,13 @@ public:
     void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
 
     void assertDatabaseDoesntExist(const String & database_name) const;
+    void checkDatabaseAccessRights(const std::string & database_name) const;
 
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    void addExternalTable(const String & table_name, const StoragePtr & storage);
+    void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
@@ -202,13 +209,11 @@ public:
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 
-    const Macros & getMacros() const;
-    void setMacros(Macros && macros);
+    MultiVersion<Macros>::Version getMacros() const;
+    void setMacros(std::unique_ptr<Macros> && macros);
 
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
-
-    Limits getLimits() const;
 
     /// Set a setting by name.
     void setSetting(const String & name, const Field & value);
@@ -239,7 +244,9 @@ public:
     UInt16 getTCPPort() const;
 
     /// Get query for the CREATE table.
-    ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
+    ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
+    ASTPtr getCreateExternalTableQuery(const String & table_name) const;
+    ASTPtr getCreateDatabaseQuery(const String & database_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
@@ -296,8 +303,8 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
+    /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
@@ -334,11 +341,17 @@ public:
     void reloadClusterConfig();
 
     Compiler & getCompiler();
-    QueryLog & getQueryLog();
+
+    /// Call after initialization before using system logs. Call for global context.
+    void initializeSystemLogs();
+
+    /// Nullptr if the query log is not ready for this moment.
+    QueryLog * getQueryLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & database, const String & table);
+    PartLog * getPartLog(const String & part_database);
+
     const MergeTreeSettings & getMergeTreeSettings();
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
@@ -350,6 +363,10 @@ public:
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
+
+    using ConfigReloadCallback = std::function<void()>;
+    void setConfigReloadCallback(ConfigReloadCallback && callback);
+    void reloadConfig() const;
 
     void shutdown();
 
@@ -380,7 +397,7 @@ private:
       * If access is denied, throw an exception.
       * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
       */
-    void checkDatabaseAccessRights(const std::string & database_name) const;
+    void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
     ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;

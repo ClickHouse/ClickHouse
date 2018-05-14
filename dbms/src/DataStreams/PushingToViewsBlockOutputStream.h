@@ -29,18 +29,27 @@ public:
     {
         if (output)
             output->flush();
+
+        for (auto & view : views)
+            view.out->flush();
     }
 
     void writePrefix() override
     {
         if (output)
             output->writePrefix();
+
+        for (auto & view : views)
+            view.out->writePrefix();
     }
 
     void writeSuffix() override
     {
         if (output)
             output->writeSuffix();
+
+        for (auto & view : views)
+            view.out->writeSuffix();
     }
 
 private:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/HashTable/HashMap.h>
+#include <Common/NaNUtils.h>
 
 
 namespace DB
@@ -33,12 +34,15 @@ struct QuantileExactWeighted
 
     void add(const Value & x)
     {
-        ++map[x];
+        /// We must skip NaNs as they are not compatible with comparison sorting.
+        if (!isNaN(x))
+            ++map[x];
     }
 
     void add(const Value & x, const Weight & weight)
     {
-        map[x] += weight;
+        if (!isNaN(x))
+            map[x] += weight;
     }
 
     void merge(const QuantileExactWeighted & rhs)

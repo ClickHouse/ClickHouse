@@ -595,7 +595,7 @@ struct Transformer
 template <typename FromType, typename ToType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         using Op = Transformer<FromType, ToType, Transform>;
 
@@ -638,20 +638,19 @@ public:
         if (arguments.size() == 1)
         {
             if (!arguments[0].type->isDateOrDateTime())
-                throw Exception{
-                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else if (arguments.size() == 2)
         {
             if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
                 || !checkDataType<DataTypeString>(arguments[1].type.get()))
-                throw Exception{
+                throw Exception(
                     "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument (optional) must be "
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -668,14 +667,14 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if (checkDataType<DataTypeDate>(from_type))
-            DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result);
+            DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
         else if (checkDataType<DataTypeDateTime>(from_type))
-            DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result);
+            DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -953,21 +952,20 @@ public:
         if (arguments.size() == 2)
         {
             if (!arguments[0].type->isDateOrDateTime())
-                throw Exception{
-                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+                throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
         else
         {
             if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
                 || !checkDataType<DataTypeString>(arguments[2].type.get()))
-                throw Exception{
+                throw Exception(
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument must be number. "
                     "The 3rd argument (optional) must be "
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if (checkDataType<DataTypeDate>(arguments[0].type.get()))
@@ -989,7 +987,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -1056,7 +1054,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         auto * unit_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!unit_column)
@@ -1067,7 +1065,7 @@ public:
         const IColumn & x = *block.getByPosition(arguments[1]).column;
         const IColumn & y = *block.getByPosition(arguments[2]).column;
 
-        size_t rows = block.rows();
+        size_t rows = input_rows_count;
         auto res = ColumnInt64::create(rows);
 
         const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(block, arguments, 3, 1);
@@ -1210,10 +1208,10 @@ public:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = DataTypeUInt32().createColumnConst(
-            block.rows(),
+            input_rows_count,
             static_cast<UInt64>(time(nullptr)));
     }
 };
@@ -1239,10 +1237,10 @@ public:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
-            block.rows(),
+            input_rows_count,
             UInt64(DateLUT::instance().toDayNum(time(nullptr))));
     }
 };
@@ -1268,10 +1266,10 @@ public:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
-            block.rows(),
+            input_rows_count,
             UInt64(DateLUT::instance().toDayNum(time(nullptr)) - 1));
     }
 };
@@ -1299,15 +1297,14 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!checkDataType<DataTypeDateTime>(arguments[0].type.get()))
-            throw Exception{
-                "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+            throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                 ". Should be DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
         return std::make_shared<DataTypeDateTime>(time_zone_name);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
     }
@@ -1338,7 +1335,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -1467,7 +1464,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         auto starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
         auto const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
@@ -1497,7 +1494,7 @@ public:
         {
             Array const_res;
             TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), const_res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), const_res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, const_res);
         }
         else
             throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
