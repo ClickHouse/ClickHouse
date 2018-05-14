@@ -1,3 +1,8 @@
+# ClickHouse release 1.1.54381, 2018-05-14
+
+## Bug fixes:
+* Fixed a nodes leak in ZooKeeper when ClickHouse loses connection to ZooKeeper server.
+
 # ClickHouse release 1.1.54380, 2018-04-21
 
 ## New features:
