@@ -93,6 +93,10 @@ struct RoundToExp2Impl
     {
         return roundDownToPowerOfTwo<T>(x);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 
@@ -120,6 +124,10 @@ struct RoundDurationImpl
             : (x < 36000 ? 18000
             : 36000))))))))))))));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 template <typename A>
@@ -137,6 +145,10 @@ struct RoundAgeImpl
             : (x < 55 ? 45
             : 55)))));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 

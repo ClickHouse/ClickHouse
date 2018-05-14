@@ -39,6 +39,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RELOAD DICTIONARY";
         case Type::RELOAD_DICTIONARIES:
             return "RELOAD DICTIONARIES";
+        case Type::RELOAD_EMBEDDED_DICTIONARIES:
+            return "RELOAD EMBEDDED DICTIONARIES";
         case Type::RELOAD_CONFIG:
             return "RELOAD CONFIG";
         case Type::STOP_MERGES:

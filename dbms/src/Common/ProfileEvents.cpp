@@ -79,6 +79,8 @@
     M(CompileAttempt) \
     M(CompileSuccess) \
     \
+    M(CompileFunction) \
+    \
     M(ExternalSortWritePart) \
     M(ExternalSortMerge) \
     M(ExternalAggregationWritePart) \
@@ -138,7 +140,9 @@
     M(RWLockAcquiredReadLocks) \
     M(RWLockAcquiredWriteLocks) \
     M(RWLockReadersWaitMilliseconds) \
-    M(RWLockWritersWaitMilliseconds)
+    M(RWLockWritersWaitMilliseconds) \
+    \
+    M(NetworkErrors)
 
 namespace ProfileEvents
 {
