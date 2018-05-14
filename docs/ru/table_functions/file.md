@@ -8,7 +8,7 @@ path - относительный путь до файла от [user_files_path
 
 format - [формат](../formats/index.md) файла.
 
-structure - структура таблицы в форме UserID UInt64, URL String. Определяет имена и типы столбцов.
+structure - структура таблицы в форме 'UserID UInt64, URL String'. Определяет имена и типы столбцов.
 
 **Пример**
 
