@@ -8,7 +8,7 @@ pushd vagrant-$1
 shopt -s extglob
 
 vagrant ssh -c "mkdir -p ClickHouse"
-scp -F vagrant-ssh -r ../../!(*build*) default:~/ClickHouse
+scp -q -F vagrant-ssh -r ../../!(*build*) default:~/ClickHouse
 vagrant ssh -c "cd ClickHouse/ci; $2"
 
 popd
