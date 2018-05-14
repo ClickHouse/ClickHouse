@@ -3,6 +3,8 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
+#include "ExpressionActions.h"
+#include "ProjectionManipulation.h"
 
 
 namespace DB
@@ -54,6 +56,31 @@ struct SubqueryForSet
 /// ID of subquery -> what to do with it.
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
+struct ScopeStack
+{
+    struct Level
+    {
+        ExpressionActionsPtr actions;
+        NameSet new_columns;
+    };
+
+    using Levels = std::vector<Level>;
+
+    Levels stack;
+    Settings settings;
+
+    ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
+
+    void pushLevel(const NamesAndTypesList & input_columns);
+
+    size_t getColumnLevel(const std::string & name);
+
+    void addAction(const ExpressionAction & action);
+
+    ExpressionActionsPtr popLevel();
+
+    const Block & getSampleBlock() const;
+};
 
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
   *
@@ -140,6 +167,7 @@ public:
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
+
 private:
     ASTPtr ast;
     ASTSelectQuery * select_query;
@@ -158,6 +186,8 @@ private:
 
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
+
+    NamesAndTypesList array_join_columns;
 
     /// The main table in FROM clause, if exists.
     StoragePtr storage;
@@ -208,9 +238,6 @@ private:
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
     size_t external_table_id = 1;
-
-    static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
-    NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, source_columns); }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
@@ -272,8 +299,10 @@ private:
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
-    struct ScopeStack;
-    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
+    bool isThereArrayJoin(const ASTPtr & ast);
+
+    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack,
+                        ProjectionManipulatorPtr projection_manipulator);
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 

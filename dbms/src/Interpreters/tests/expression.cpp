@@ -41,7 +41,7 @@ int main(int argc, char ** argv)
             "s1 < s2 AND x % 3 < x % 5";
 
         ParserSelectQuery parser;
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;

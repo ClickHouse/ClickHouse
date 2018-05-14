@@ -2,9 +2,12 @@
 
 #include <Core/Types.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 #include <thread>
 #include <map>
+
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -26,6 +29,7 @@ private:
     StorageReplicatedMergeTree & storage;
     Logger * log;
     std::thread thread;
+    pcg64 rng;
 
     void run();
     void iterate();

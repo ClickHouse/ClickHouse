@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
@@ -108,7 +109,9 @@ public:
     template <typename F>
     void forEachChild(F && f)
     {
-        std::lock_guard lock(children_mutex);
+        /// NOTE: Acquire a read lock, therefore f() should be thread safe
+        std::shared_lock lock(children_mutex);
+
         for (auto & child : children)
             if (f(*child))
                 return;
@@ -116,7 +119,7 @@ public:
 
 protected:
     BlockInputStreams children;
-    std::mutex children_mutex;
+    std::shared_mutex children_mutex;
 
 private:
     TableStructureReadLocks table_locks;

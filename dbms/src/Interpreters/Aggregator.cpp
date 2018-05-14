@@ -22,7 +22,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 #include <Interpreters/config_compile.h>
 #include "Common/ThreadStatus.h"
 
@@ -45,7 +45,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_CODE;
-    extern const int TOO_MUCH_ROWS;
+    extern const int TOO_MANY_ROWS;
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
 }
@@ -841,6 +841,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     Stopwatch watch;
     size_t rows = data_variants.size();
 
+    Poco::File(params.tmp_path).createDirectories();
     auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
@@ -977,7 +978,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::THROW:
                 throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
                     + " rows, maximum: " + toString(params.max_rows_to_group_by),
-                    ErrorCodes::TOO_MUCH_ROWS);
+                    ErrorCodes::TOO_MANY_ROWS);
 
             case OverflowMode::BREAK:
                 return false;

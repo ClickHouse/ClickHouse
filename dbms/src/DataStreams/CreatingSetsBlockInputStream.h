@@ -20,18 +20,7 @@ public:
     CreatingSetsBlockInputStream(
         const BlockInputStreamPtr & input,
         const SubqueriesForSets & subqueries_for_sets_,
-        const Limits & limits)
-        : subqueries_for_sets(subqueries_for_sets_),
-        max_rows_to_transfer(limits.max_rows_to_transfer),
-        max_bytes_to_transfer(limits.max_bytes_to_transfer),
-        transfer_overflow_mode(limits.transfer_overflow_mode)
-    {
-        for (auto & elem : subqueries_for_sets)
-            if (elem.second.source)
-                children.push_back(elem.second.source);
-
-        children.push_back(input);
-    }
+        const SizeLimits & network_transfer_limits);
 
     String getName() const override { return "CreatingSets"; }
 
@@ -48,9 +37,7 @@ private:
     SubqueriesForSets subqueries_for_sets;
     bool created = false;
 
-    size_t max_rows_to_transfer;
-    size_t max_bytes_to_transfer;
-    OverflowMode transfer_overflow_mode;
+    SizeLimits network_transfer_limits;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;

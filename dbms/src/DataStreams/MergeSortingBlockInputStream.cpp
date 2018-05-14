@@ -63,17 +63,26 @@ static void enrichBlockWithConstants(Block & block, const Block & header)
 }
 
 
+MergeSortingBlockInputStream::MergeSortingBlockInputStream(
+    const BlockInputStreamPtr & input, SortDescription & description_,
+    size_t max_merged_block_size_, size_t limit_,
+    size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
+    : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
+    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
+{
+    children.push_back(input);
+    header = children.at(0)->getHeader();
+    header_without_constants = header;
+    removeConstantsFromBlock(header_without_constants);
+    removeConstantsFromSortDescription(header, description);
+}
+
+
 Block MergeSortingBlockInputStream::readImpl()
 {
-    if (!header)
-    {
-        header = getHeader();
-        removeConstantsFromSortDescription(header, description);
-    }
-
     /** Algorithm:
       * - read to memory blocks from source stream;
-      * - if too much of them and if external sorting is enabled,
+      * - if too many of them and if external sorting is enabled,
       *   - merge all blocks to sorted stream and write it to temporary file;
       * - at the end, merge all sorted streams from temporary files and also from rest of blocks in memory.
       */
@@ -93,17 +102,18 @@ Block MergeSortingBlockInputStream::readImpl()
             blocks.push_back(block);
             sum_bytes_in_blocks += block.bytes();
 
-            /** If too much of them and if external sorting is enabled,
+            /** If too many of them and if external sorting is enabled,
               *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
               * NOTE. It's possible to check free space in filesystem.
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
+                Poco::File(tmp_path).createDirectories();
                 temporary_files.emplace_back(new Poco::TemporaryFile(tmp_path));
                 const std::string & path = temporary_files.back()->path();
                 WriteBufferFromFile file_buf(path);
                 CompressedWriteBuffer compressed_buf(file_buf);
-                NativeBlockOutputStream block_out(compressed_buf, 0, block.cloneEmpty());
+                NativeBlockOutputStream block_out(compressed_buf, 0, header_without_constants);
                 MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
                 LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
@@ -133,7 +143,7 @@ Block MergeSortingBlockInputStream::readImpl()
             /// Create sorted streams to merge.
             for (const auto & file : temporary_files)
             {
-                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
+                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path(), header_without_constants));
                 inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
             }
 

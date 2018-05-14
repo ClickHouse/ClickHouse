@@ -6,7 +6,12 @@
     <!-- Common setting for pull and push operations -->
     <settings>
         <connect_timeout>1</connect_timeout>
+        <max_block_size>2</max_block_size>
     </settings>
+
+    <settings_pull>
+        <max_rows_in_distinct>0</max_rows_in_distinct>
+    </settings_pull>
 
     <!-- Tasks -->
     <tables>

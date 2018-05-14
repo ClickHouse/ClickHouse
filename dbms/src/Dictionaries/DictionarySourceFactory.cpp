@@ -19,7 +19,7 @@
 #if Poco_MongoDB_FOUND
     #include <Dictionaries/MongoDBDictionarySource.h>
 #endif
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
     #include <Poco/Data/ODBC/Connector.h>
@@ -53,8 +53,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
     Block block;
 
     if (dict_struct.id)
-        block.insert(ColumnWithTypeAndName{
-            ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
+        block.insert(ColumnWithTypeAndName{ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
 
     if (dict_struct.key)
     {
@@ -89,7 +88,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 DictionarySourceFactory::DictionarySourceFactory()
     : log(&Poco::Logger::get("DictionarySourceFactory"))
 {
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
     Poco::Data::ODBC::Connector::registerConnector();
 #endif
 }
@@ -109,10 +108,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
     if (keys.size() != 1)
-        throw Exception{
-            name +": element dictionary.source should have exactly one child element",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG
-        };
+        throw Exception{name +": element dictionary.source should have exactly one child element", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
     auto sample_block = createSampleBlock(dict_struct);
 
@@ -121,9 +117,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     if ("file" == source_type)
     {
         if (dict_struct.has_expressions)
-            throw Exception{
-                "Dictionary source of type `file` does not support attribute expressions",
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
         const auto filename = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
@@ -154,7 +148,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     }
     else if ("odbc" == source_type)
     {
-#if Poco_DataODBC_FOUND
+#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
         return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context);
 #else
         throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
@@ -164,9 +158,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     else if ("executable" == source_type)
     {
         if (dict_struct.has_expressions)
-            throw Exception{
-                "Dictionary source of type `executable` does not support attribute expressions",
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
         return std::make_unique<ExecutableDictionarySource>(dict_struct, config, config_prefix + ".executable", sample_block, context);
     }
@@ -174,9 +166,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
 
         if (dict_struct.has_expressions)
-            throw Exception{
-                "Dictionary source of type `http` does not support attribute expressions",
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
 #if Poco_NetSSL_FOUND
         // Used for https queries
@@ -199,9 +189,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
         }
     }
 
-    throw Exception{
-        name + ": unknown dictionary source type: " + source_type,
-        ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
+    throw Exception{name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
 
 }

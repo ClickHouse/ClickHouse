@@ -26,7 +26,10 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str << hilite_keyword << "UNION ALL" << hilite_none << settings.nl_or_ws;
+            settings.ostr
+                << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+                << "UNION ALL" << (settings.hilite ? hilite_keyword : "")
+                << settings.nl_or_ws;
 
         (*it)->formatImpl(settings, state, frame);
     }

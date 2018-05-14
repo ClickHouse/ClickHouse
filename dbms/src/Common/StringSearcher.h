@@ -86,8 +86,8 @@ public:
         if (*needle < 0x80u)
         {
             first_needle_symbol_is_ascii = true;
-            l = static_cast<const UInt8>(std::tolower(*needle));
-            u = static_cast<const UInt8>(std::toupper(*needle));
+            l = std::tolower(*needle);
+            u = std::toupper(*needle);
         }
         else
         {
@@ -121,7 +121,7 @@ public:
                 continue;
             }
 
-            const auto src_len = DB::UTF8::seqLength(*needle_pos);
+            const auto src_len = UTF8::seqLength(*needle_pos);
             const auto c_u32 = utf8.convert(needle_pos);
 
             const auto c_l_u32 = Poco::Unicode::toLower(c_u32);
@@ -132,9 +132,7 @@ public:
 
             /// @note Unicode standard states it is a rare but possible occasion
             if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
-                throw DB::Exception{
-                    "UTF8 sequences with different lowercase and uppercase lengths are not supported",
-                    DB::ErrorCodes::UNSUPPORTED_PARAMETER};
+                throw Exception{"UTF8 sequences with different lowercase and uppercase lengths are not supported", ErrorCodes::UNSUPPORTED_PARAMETER};
 
             cache_actual_len += src_len;
             if (cache_actual_len < n)
@@ -183,7 +181,7 @@ public:
                            Poco::Unicode::toLower(utf8.convert(needle_pos)))
                     {
                         /// @note assuming sequences for lowercase and uppercase have exact same length
-                        const auto len = DB::UTF8::seqLength(*pos);
+                        const auto len = UTF8::seqLength(*pos);
                         pos += len, needle_pos += len;
                     }
 
@@ -207,7 +205,7 @@ public:
                    Poco::Unicode::toLower(utf8.convert(pos)) ==
                    Poco::Unicode::toLower(utf8.convert(needle_pos)))
             {
-                const auto len = DB::UTF8::seqLength(*pos);
+                const auto len = UTF8::seqLength(*pos);
                 pos += len, needle_pos += len;
             }
 
@@ -240,7 +238,7 @@ public:
                 if (mask == 0)
                 {
                     haystack += n;
-                    DB::UTF8::syncForward(haystack, haystack_end);
+                    UTF8::syncForward(haystack, haystack_end);
                     continue;
                 }
 
@@ -267,7 +265,7 @@ public:
                                    Poco::Unicode::toLower(utf8.convert(needle_pos)))
                             {
                                 /// @note assuming sequences for lowercase and uppercase have exact same length
-                                const auto len = DB::UTF8::seqLength(*haystack_pos);
+                                const auto len = UTF8::seqLength(*haystack_pos);
                                 haystack_pos += len, needle_pos += len;
                             }
 
@@ -279,7 +277,7 @@ public:
                         return haystack;
 
                     /// first octet was ok, but not the first 16, move to start of next sequence and reapply
-                    haystack += DB::UTF8::seqLength(*haystack);
+                    haystack += UTF8::seqLength(*haystack);
                     continue;
                 }
             }
@@ -297,7 +295,7 @@ public:
                        Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
                        Poco::Unicode::toLower(utf8.convert(needle_pos)))
                 {
-                    const auto len = DB::UTF8::seqLength(*haystack_pos);
+                    const auto len = UTF8::seqLength(*haystack_pos);
                     haystack_pos += len, needle_pos += len;
                 }
 
@@ -306,7 +304,7 @@ public:
             }
 
             /// advance to the start of the next sequence
-            haystack += DB::UTF8::seqLength(*haystack);
+            haystack += UTF8::seqLength(*haystack);
         }
 
         return haystack_end;

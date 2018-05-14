@@ -16,6 +16,9 @@
 namespace DB
 {
 
+class BackgroundProcessingPool;
+class BackgroundProcessingPoolTaskInfo;
+
 /** Using a fixed number of threads, perform an arbitrary number of tasks in an infinite loop.
   * In this case, one task can run simultaneously from different threads.
   * Designed for tasks that perform continuous background work (for example, merge).
@@ -27,29 +30,7 @@ class BackgroundProcessingPool
 public:
     /// Returns true, if some useful work was done. In that case, thread will not sleep before next run of this task.
     using Task = std::function<bool()>;
-
-
-    class TaskInfo
-    {
-    public:
-        /// Wake up any thread.
-        void wake();
-
-        TaskInfo(BackgroundProcessingPool & pool_, const Task & function_) : pool(pool_), function(function_) {}
-
-    private:
-        friend class BackgroundProcessingPool;
-
-        BackgroundProcessingPool & pool;
-        Task function;
-
-        /// Read lock is hold when task is executed.
-        std::shared_mutex rwlock;
-        std::atomic<bool> removed {false};
-
-        std::multimap<Poco::Timestamp, std::shared_ptr<TaskInfo>>::iterator iterator;
-    };
-
+    using TaskInfo = BackgroundProcessingPoolTaskInfo;
     using TaskHandle = std::shared_ptr<TaskInfo>;
 
 
@@ -65,7 +46,9 @@ public:
 
     ~BackgroundProcessingPool();
 
-private:
+protected:
+    friend class BackgroundProcessingPoolTaskInfo;
+
     using Tasks = std::multimap<Poco::Timestamp, TaskHandle>;    /// key is desired next time to execute (priority).
     using Threads = std::vector<std::thread>;
 
@@ -86,5 +69,28 @@ private:
 };
 
 using BackgroundProcessingPoolPtr = std::shared_ptr<BackgroundProcessingPool>;
+
+
+class BackgroundProcessingPoolTaskInfo
+{
+public:
+    /// Wake up any thread.
+    void wake();
+
+    BackgroundProcessingPoolTaskInfo(BackgroundProcessingPool & pool_, const BackgroundProcessingPool::Task & function_)
+        : pool(pool_), function(function_) {}
+
+protected:
+    friend class BackgroundProcessingPool;
+
+    BackgroundProcessingPool & pool;
+    BackgroundProcessingPool::Task function;
+
+    /// Read lock is hold when task is executed.
+    std::shared_mutex rwlock;
+    std::atomic<bool> removed {false};
+
+    std::multimap<Poco::Timestamp, std::shared_ptr<BackgroundProcessingPoolTaskInfo>>::iterator iterator;
+};
 
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/QueryProcessingStage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
@@ -7,7 +9,7 @@
 namespace DB
 {
 
-class PKCondition;
+class KeyCondition;
 
 
 /** Executes SELECT queries on data from the merge tree.
@@ -53,13 +55,12 @@ private:
         ExpressionActionsPtr prewhere_actions,
         const String & prewhere_column,
         const Names & virt_columns,
-        const Settings & settings,
-        const Context & context) const;
+        const Settings & settings) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
-        const PKCondition & key_condition,
+        const KeyCondition & key_condition,
         const Settings & settings) const;
 
     /// Create the expression "Sign == 1".
@@ -70,7 +71,7 @@ private:
 
     MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPart::Index & index,
-        const PKCondition & key_condition,
+        const KeyCondition & key_condition,
         const Settings & settings) const;
 };
 

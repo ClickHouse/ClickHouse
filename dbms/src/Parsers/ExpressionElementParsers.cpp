@@ -374,6 +374,69 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
+bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+    ParserIdentifier id_parser;
+    ASTPtr identifier;
+
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    ASTPtr expr;
+    const char * function_name = nullptr;
+
+    if (ParserKeyword("SECOND").ignore(pos, expected))
+        function_name = "toSecond";
+    else if (ParserKeyword("MINUTE").ignore(pos, expected))
+        function_name = "toMinute";
+    else if (ParserKeyword("HOUR").ignore(pos, expected))
+        function_name = "toHour";
+    else if (ParserKeyword("DAY").ignore(pos, expected))
+        function_name = "toDayOfMonth";
+
+    // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
+    // else if (ParserKeyword("WEEK").ignore(pos, expected))
+    //    function_name = "toRelativeWeekNum";
+
+    else if (ParserKeyword("MONTH").ignore(pos, expected))
+        function_name = "toMonth";
+    else if (ParserKeyword("YEAR").ignore(pos, expected))
+        function_name = "toYear";
+    else
+        return false;
+
+    ParserKeyword s_from("FROM");
+    if (!s_from.ignore(pos, expected))
+        return false;
+
+    ParserExpression elem_parser;
+    if (!elem_parser.parse(pos, expr, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function = std::make_shared<ASTFunction>();
+    auto exp_list = std::make_shared<ASTExpressionList>();
+    function->range.first = begin->begin;
+    function->range.second = pos->begin;
+    function->name = function_name; //"toYear";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+    exp_list->children.push_back(expr);
+    exp_list->range.first = begin->begin;
+    exp_list->range.second = pos->begin;
+    node = function;
+
+    return true;
+}
+
 
 bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -677,7 +740,8 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ParserArray array_p;
     ParserArrayOfLiterals array_lite_p;
     ParserLiteral lit_p;
-    ParserCastExpression fun_p;
+    ParserExtractExpression extract_p;
+    ParserCastExpression cast_p;
     ParserCompoundIdentifier id_p;
     ParserAsterisk asterisk_p;
     ParserQualifiedAsterisk qualified_asterisk_p;
@@ -697,7 +761,10 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (lit_p.parse(pos, node, expected))
         return true;
 
-    if (fun_p.parse(pos, node, expected))
+    if (extract_p.parse(pos, node, expected))
+        return true;
+
+    if (cast_p.parse(pos, node, expected))
         return true;
 
     if (qualified_asterisk_p.parse(pos, node, expected))

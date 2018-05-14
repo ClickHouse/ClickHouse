@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
 #include <ctime>
 #include <memory>
 #include <functional>
@@ -113,10 +113,7 @@ public:
     virtual void alterTable(
         const Context & context,
         const String & name,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
+        const ColumnsDescription & columns,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
@@ -125,9 +122,15 @@ public:
         const String & name) = 0;
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    virtual ASTPtr getCreateQuery(
-        const Context & context,
-        const String & name) const = 0;
+    virtual ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const = 0;
+
+    virtual ASTPtr getCreateTableQuery(const Context & context, const String & name) const
+    {
+        return tryGetCreateTableQuery(context, name);
+    }
+
+    /// Get the CREATE DATABASE query for current database.
+    virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }

@@ -63,6 +63,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
 
+
 using Poco::Logger;
 using Poco::AutoPtr;
 using Poco::Observer;
@@ -310,19 +311,6 @@ private:
         LOG_ERROR(log, "(from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
-        if (sig == SIGSEGV)
-        {
-            /// Print info about address and reason.
-            if (nullptr == info.si_addr)
-                LOG_ERROR(log, "Address: NULL pointer.");
-            else
-                LOG_ERROR(log, "Address: " << info.si_addr
-                    << (info.si_code == SEGV_ACCERR ? ". Attempted access has violated the permissions assigned to the memory area." : ""));
-        }
-
-        if (already_printed_stack_trace)
-            return;
-
         void * caller_address = nullptr;
 
 #if defined(__x86_64__)
@@ -333,10 +321,150 @@ private:
         caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
         #else
         caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
+        auto err_mask = context.uc_mcontext.gregs[REG_ERR];
         #endif
 #elif defined(__aarch64__)
         caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
 #endif
+
+        switch (sig)
+        {
+            case SIGSEGV:
+            {
+                /// Print info about address and reason.
+                if (nullptr == info.si_addr)
+                    LOG_ERROR(log, "Address: NULL pointer.");
+                else
+                    LOG_ERROR(log, "Address: " << info.si_addr);
+
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
+                if ((err_mask & 0x02))
+                    LOG_ERROR(log, "Access: write.");
+                else
+                    LOG_ERROR(log, "Access: read.");
+#endif
+
+                switch (info.si_code)
+                {
+                    case SEGV_ACCERR:
+                        LOG_ERROR(log, "Attempted access has violated the permissions assigned to the memory area.");
+                        break;
+                    case SEGV_MAPERR:
+                        LOG_ERROR(log, "Address not mapped to object.");
+                        break;
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+
+            case SIGBUS:
+            {
+                switch (info.si_code)
+                {
+                    case BUS_ADRALN:
+                        LOG_ERROR(log, "Invalid address alignment.");
+                        break;
+                    case BUS_ADRERR:
+                        LOG_ERROR(log, "Non-existant physical address.");
+                        break;
+                    case BUS_OBJERR:
+                        LOG_ERROR(log, "Object specific hardware error.");
+                        break;
+
+                    // Linux specific
+#if defined(BUS_MCEERR_AR)
+                    case BUS_MCEERR_AR:
+                        LOG_ERROR(log, "Hardware memory error: action required.");
+                        break;
+#endif
+#if defined(BUS_MCEERR_AO)
+                    case BUS_MCEERR_AO:
+                        LOG_ERROR(log, "Hardware memory error: action optional.");
+                        break;
+#endif
+
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+
+            case SIGILL:
+            {
+                switch (info.si_code)
+                {
+                    case ILL_ILLOPC:
+                        LOG_ERROR(log, "Illegal opcode.");
+                        break;
+                    case ILL_ILLOPN:
+                        LOG_ERROR(log, "Illegal operand.");
+                        break;
+                    case ILL_ILLADR:
+                        LOG_ERROR(log, "Illegal addressing mode.");
+                        break;
+                    case ILL_ILLTRP:
+                        LOG_ERROR(log, "Illegal trap.");
+                        break;
+                    case ILL_PRVOPC:
+                        LOG_ERROR(log, "Privileged opcode.");
+                        break;
+                    case ILL_PRVREG:
+                        LOG_ERROR(log, "Privileged register.");
+                        break;
+                    case ILL_COPROC:
+                        LOG_ERROR(log, "Coprocessor error.");
+                        break;
+                    case ILL_BADSTK:
+                        LOG_ERROR(log, "Internal stack error.");
+                        break;
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+
+            case SIGFPE:
+            {
+                switch (info.si_code)
+                {
+                    case FPE_INTDIV:
+                        LOG_ERROR(log, "Integer divide by zero.");
+                        break;
+                    case FPE_INTOVF:
+                        LOG_ERROR(log, "Integer overflow.");
+                        break;
+                    case FPE_FLTDIV:
+                        LOG_ERROR(log, "Floating point divide by zero.");
+                        break;
+                    case FPE_FLTOVF:
+                        LOG_ERROR(log, "Floating point overflow.");
+                        break;
+                    case FPE_FLTUND:
+                        LOG_ERROR(log, "Floating point underflow.");
+                        break;
+                    case FPE_FLTRES:
+                        LOG_ERROR(log, "Floating point inexact result.");
+                        break;
+                    case FPE_FLTINV:
+                        LOG_ERROR(log, "Floating point invalid operation.");
+                        break;
+                    case FPE_FLTSUB:
+                        LOG_ERROR(log, "Subscript out of range.");
+                        break;
+                    default:
+                        LOG_ERROR(log, "Unknown si_code.");
+                        break;
+                }
+                break;
+            }
+        }
+
+        if (already_printed_stack_trace)
+            return;
 
         static const int max_frames = 50;
         void * frames[max_frames];
@@ -572,23 +700,24 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         return;
     config_logger = current_logger;
 
-    bool is_daemon = config.getBool("application.runAsDaemon", false);
+    bool is_daemon = config.getBool("application.runAsDaemon", true);
 
     // Split log and error log.
     Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
     auto log_level = config.getString("logger.level", "trace");
-    if (config.hasProperty("logger.log"))
+    const auto log_path = config.getString("logger.log", "");
+    if (!log_path.empty())
     {
-        createDirectory(config.getString("logger.log"));
-        std::cerr << "Logging " << log_level << " to " << config.getString("logger.log") << std::endl;
+        createDirectory(log_path);
+        std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log_file = new FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.log")).absolute().toString());
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(log_path).absolute().toString());
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
@@ -600,17 +729,18 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         log_file->open();
     }
 
-    if (config.hasProperty("logger.errorlog"))
+    const auto errorlog_path = config.getString("logger.errorlog", "");
+    if (!errorlog_path.empty())
     {
-        createDirectory(config.getString("logger.errorlog"));
-        std::cerr << "Logging errors to " << config.getString("logger.errorlog") << std::endl;
+        createDirectory(errorlog_path);
+        std::cerr << "Logging errors to " << errorlog_path << std::endl;
         Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
         level->setLevel(Message::PRIO_NOTICE);
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
         error_log_file = new FileChannel;
-        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.errorlog")).absolute().toString());
+        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(errorlog_path).absolute().toString());
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
@@ -753,7 +883,7 @@ void BaseDaemon::initialize(Application & self)
         config().add(map_config, PRIO_APPLICATION - 100);
     }
 
-    bool is_daemon = config().getBool("application.runAsDaemon", false);
+    bool is_daemon = config().getBool("application.runAsDaemon", true);
 
     if (is_daemon)
     {
@@ -837,9 +967,9 @@ void BaseDaemon::initialize(Application & self)
     }
 
     /// Change path for logging.
-    if (config().hasProperty("logger.log"))
+    if (!log_path.empty())
     {
-        std::string path = createDirectory(config().getString("logger.log"));
+        std::string path = createDirectory(log_path);
         if (is_daemon
             && chdir(path.c_str()) != 0)
             throw Poco::Exception("Cannot change directory to " + path);

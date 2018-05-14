@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <cxxabi.h>
 
@@ -11,7 +10,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Common/Exception.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 
 
 namespace DB

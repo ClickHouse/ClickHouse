@@ -1,6 +1,3 @@
-#include <iomanip>
-#include <random>
-
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -11,8 +8,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MUCH_ROWS;
-    extern const int TOO_MUCH_BYTES;
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
@@ -44,7 +42,7 @@ Block IProfilingBlockInputStream::read()
     if (isCancelledOrThrowIfKilled())
         return res;
 
-    if (!checkTimeLimits())
+    if (!checkTimeLimit())
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
@@ -57,7 +55,7 @@ Block IProfilingBlockInputStream::read()
         if (enabled_extremes)
             updateExtremes(res);
 
-        if (!checkDataSizeLimits())
+        if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
         if (quota != nullptr)
@@ -192,32 +190,8 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
     }
 };
 
-bool IProfilingBlockInputStream::checkDataSizeLimits()
-{
-    if (limits.mode == LIMITS_CURRENT)
-    {
-        /// Check current stream limitations (i.e. max_result_{rows,bytes})
 
-        if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
-            return handleOverflowMode(limits.read_overflow_mode,
-                std::string("Limit for result rows")
-                    + " exceeded: read " + toString(info.rows)
-                    + " rows, maximum: " + toString(limits.max_rows_to_read),
-                ErrorCodes::TOO_MUCH_ROWS);
-
-        if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
-            return handleOverflowMode(limits.read_overflow_mode,
-                std::string("Limit for result bytes (uncompressed)")
-                    + " exceeded: read " + toString(info.bytes)
-                    + " bytes, maximum: " + toString(limits.max_bytes_to_read),
-                ErrorCodes::TOO_MUCH_BYTES);
-    }
-
-    return true;
-}
-
-
-bool IProfilingBlockInputStream::checkTimeLimits()
+bool IProfilingBlockInputStream::checkTimeLimit()
 {
     if (limits.max_execution_time != 0
         && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
@@ -264,43 +238,41 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
     if (process_list_elem)
     {
         if (!process_list_elem->updateProgressIn(value))
-            cancel(false);
+            cancel(/* kill */ true);
 
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
-        size_t rows_processed = process_list_elem->progress_in.rows;
-        size_t bytes_processed = process_list_elem->progress_in.bytes;
-
-        size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress_in.total_rows.load(std::memory_order_relaxed));
+        ProgressValues progress = process_list_elem->getProgressIn();
+        size_t total_rows_estimate = std::max(progress.rows, progress.total_rows);
 
         /** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
             * NOTE: Maybe it makes sense to have them checked directly in ProcessList?
             */
 
         if (limits.mode == LIMITS_TOTAL
-            && ((limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
-                || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read)))
+            && ((limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
+                || (limits.size_limits.max_bytes && progress.bytes > limits.size_limits.max_bytes)))
         {
-            switch (limits.read_overflow_mode)
+            switch (limits.size_limits.overflow_mode)
             {
                 case OverflowMode::THROW:
                 {
-                    if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+                    if (limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
                         throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
-                            + " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
-                            ErrorCodes::TOO_MUCH_ROWS);
+                            + " rows read (or to read), maximum: " + toString(limits.size_limits.max_rows),
+                            ErrorCodes::TOO_MANY_ROWS);
                     else
-                        throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
-                            + " bytes read, maximum: " + toString(limits.max_bytes_to_read),
-                            ErrorCodes::TOO_MUCH_BYTES);
+                        throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(progress.bytes)
+                            + " bytes read, maximum: " + toString(limits.size_limits.max_bytes),
+                            ErrorCodes::TOO_MANY_BYTES);
                     break;
                 }
 
                 case OverflowMode::BREAK:
                 {
-                    /// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
-                    if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
-                        || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
+                    /// For `break`, we will stop only if so many rows were actually read, and not just supposed to be read.
+                    if ((limits.size_limits.max_rows && progress.rows > limits.size_limits.max_rows)
+                        || (limits.size_limits.max_bytes && progress.bytes > limits.size_limits.max_bytes))
                     {
                         cancel(false);
                     }
@@ -313,7 +285,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
             }
         }
 
-        size_t total_rows = process_list_elem->progress_in.total_rows;
+        size_t total_rows = progress.total_rows;
 
         if (limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
         {
@@ -321,17 +293,17 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
             if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0)
             {
-                if (limits.min_execution_speed && rows_processed / total_elapsed < limits.min_execution_speed)
-                    throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
+                if (limits.min_execution_speed && progress.rows / total_elapsed < limits.min_execution_speed)
+                    throw Exception("Query is executing too slow: " + toString(progress.rows / total_elapsed)
                         + " rows/sec., minimum: " + toString(limits.min_execution_speed),
                         ErrorCodes::TOO_SLOW);
 
-                size_t total_rows = process_list_elem->progress_in.total_rows;
+                size_t total_rows = progress.total_rows;
 
                 /// If the predicted execution time is longer than `max_execution_time`.
                 if (limits.max_execution_time != 0 && total_rows)
                 {
-                    double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / rows_processed);
+                    double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / progress.rows);
 
                     if (estimated_execution_time_seconds > limits.max_execution_time.totalSeconds())
                         throw Exception("Estimated query execution time (" + toString(estimated_execution_time_seconds) + " seconds)"
@@ -364,6 +336,21 @@ void IProfilingBlockInputStream::cancel(bool kill)
         child.cancel(kill);
         return false;
     });
+}
+
+
+bool IProfilingBlockInputStream::isCancelled() const
+{
+    return is_cancelled;
+}
+
+bool IProfilingBlockInputStream::isCancelledOrThrowIfKilled() const
+{
+    if (!is_cancelled)
+        return false;
+    if (is_killed)
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+    return true;
 }
 
 

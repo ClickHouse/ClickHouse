@@ -17,7 +17,6 @@ else ()
     message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 5+ and GCC 7+.")
 endif ()
 
-
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
@@ -247,18 +246,19 @@ include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
 include (cmake/find_ltdl.cmake) # for odbc
+include (cmake/find_termcap.cmake)
 if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake)
     include (${CMAKE_CURRENT_SOURCE_DIR}/contrib/poco/cmake/FindODBC.cmake) # for poco
 else ()
     include (cmake/find_odbc.cmake)
 endif ()
+message (STATUS "Using odbc: ${ODBC_INCLUDE_DIRECTORIES} : ${ODBC_LIBRARIES}")
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
 include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_execinfo.cmake)
 include (cmake/find_readline_edit.cmake)
-include (cmake/find_zookeeper.cmake)
 include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)

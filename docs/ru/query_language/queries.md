@@ -1,3 +1,5 @@
+<a name="queries"></a>
+
 # Запросы
 
 ## CREATE DATABASE
@@ -76,7 +78,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 Его значения не могут быть вставлены в таблицу, он не подставляется при использовании звёздочки в запросе SELECT.
 Он может быть использован в SELECT-ах - в таком случае, во время разбора запроса, алиас раскрывается.
 
-При добавлении новых столбцов с помощью запроса ALTER, старые данные для этих столбцов не записываются. Вместо этого, при чтении старых данных, для которых отсутствуют значения новых столбцов, выполняется вычисление выражений по умолчанию налету. При этом, если выполнение выражения требует использования других столбцов, не указанных в запросе, то эти столбцы будут дополнительно прочитаны, но только для тех блоков данных, для которых это необходимо.
+При добавлении новых столбцов с помощью запроса ALTER, старые данные для этих столбцов не записываются. Вместо этого, при чтении старых данных, для которых отсутствуют значения новых столбцов, выполняется вычисление выражений по умолчанию на лету. При этом, если выполнение выражения требует использования других столбцов, не указанных в запросе, то эти столбцы будут дополнительно прочитаны, но только для тех блоков данных, для которых это необходимо.
 
 Если добавить в таблицу новый столбец, а через некоторое время изменить его выражение по умолчанию, то используемые значения для старых данных (для данных, где значения не хранились на диске) поменяются. Также заметим, что при выполнении фоновых слияний, данные для столбцов, отсутствующих в одном из сливаемых кусков, записываются в объединённый кусок.
 
@@ -180,7 +182,7 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 Если указано `IF EXISTS` - не выдавать ошибку, если база данных не существует.
 
 ```sql
-DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Удаляет таблицу.
@@ -306,10 +308,10 @@ SELECT * FROM system.parts WHERE active
 ```bash
 $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse  4096 мая   13 02:55 detached
--rw-rw-rw- 1 clickhouse clickhouse     2 мая   13 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 May  5 02:58 increment.txt
 ```
 
 Здесь `20140317_20140323_2_2_0`, `20140317_20140323_4_4_0` - директории кусков.
@@ -444,7 +446,7 @@ SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ## SHOW TABLES
 
 ```sql
-SHOW TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
+SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Выводит список таблиц
@@ -491,7 +493,7 @@ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ## SHOW CREATE TABLE
 
 ```sql
-SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Возвращает один столбец statement типа `String`, содержащий одно значение - запрос `CREATE`, с помощью которого создана указанная таблица.
@@ -509,7 +511,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ## EXISTS
 
 ```sql
-EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
+EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Возвращает один столбец типа `UInt8`, содержащий одно значение - `0`, если таблицы или БД не существует и `1`, если таблица в указанной БД существует.
@@ -1430,7 +1432,7 @@ SELECT UserID FROM distributed_table WHERE CounterID = 34
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
-, и вместе с запросом, на каждый удалённый сервер будет отправлена временная таблица _data1 (имя временной таблицы - implementation defined).
+, и вместе с запросом, на каждый удалённый сервер будет отправлена временная таблица `_data1` (имя временной таблицы - implementation defined).
 
 Это гораздо более оптимально, чем при использовании обычного IN. Но при этом, следует помнить о нескольких вещах:
 
@@ -1472,33 +1474,33 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 ## KILL QUERY
 
 ```sql
-KILL QUERY WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
+KILL QUERY
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
 ```
 
-Пытается завершить исполняющиеся в данный момент запросы.
-Запросы для завершения выбираются из таблицы system.processes для которых выражение expression_for_system.processes истинно.
+Пытается принудительно остановить исполняющиеся в данный момент запросы.
+Запросы для принудительной остановки выбираются из таблицы system.processes с помощью условия, указанного в секции `WHERE` запроса `KILL`.
 
 Примеры:
-
 ```sql
+-- Принудительно останавливает все запросы с указанным query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
-```
 
-Завершает все запросы с указанным query_id.
-
-```sql
+-- Синхронно останавливает все запросы пользователя 'username':
 KILL QUERY WHERE user='username' SYNC
 ```
 
-Синхронно завершает все запросы пользователя `username`.
+Readonly-пользователи могут останавливать только свои запросы.
 
-Readonly-пользователи могут совершать только свои запросы.
-По-умолчанию используется асинхронный вариант запроса (`ASYNC`), который завершается не ожидая завершения запросов.
-Синхронный вариант (`SYNC`) ожидает завершения всех запросов и построчно выводит информацию о процессах по ходу их завершения.
+По-умолчанию используется асинхронный вариант запроса (`ASYNC`), который не дожидается подтверждения остановки запросов.
+
+Синхронный вариант (`SYNC`) ожидает остановки всех запросов и построчно выводит информацию о процессах по ходу их остановки.
 Ответ содержит колонку `kill_status`, которая может принимать следующие значения:
 
-1.  'finished' - запрос успешно завершился;
-2.  'waiting' - запросу отправлен сигнал завершения, ожидается его завершение;
-3.  остальные значения описывают причину невозможности завершения запроса.
+1.  'finished' - запрос был успешно остановлен;
+2.  'waiting' - запросу отправлен сигнал завершения, ожидается его остановка;
+3.  остальные значения описывают причину невозможности остановки запроса.
 
-Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для завершения.
+Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
