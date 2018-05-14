@@ -4,8 +4,8 @@ set -e -x
 source default-config
 
 # TODO Non debian systems
-$SUDO apt-get install -y subversion
-apt-cache search cmake3 | grep -P '^cmake3 ' && $SUDO apt-get -y install cmake3 || $SUDO apt-get -y install cmake
+./install-os-packages.sh svn
+./install-os-packages.sh cmake
 
 mkdir "${WORKSPACE}/llvm"
 

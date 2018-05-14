@@ -9,7 +9,7 @@ SCRIPTPATH=$(pwd)
 WORKSPACE=${SCRIPTPATH}/workspace
 PROJECT_ROOT=$(cd $SCRIPTPATH/.. && pwd)
 
-# All scripts take no arguments. All arguments must be in config.
+# Almost all scripts take no arguments. Arguments should be in config.
 
 # get-sources
 SOURCES_METHOD=local                # clone, local, tarball
@@ -55,7 +55,7 @@ function die {
 
 [[ $EUID -ne 0 ]] && SUDO=sudo
 
-command -v apt-get && $SUDO apt-get update
+./install-os-packages.sh prepare
 
 # Configuration parameters may be overriden with CONFIG environment variable pointing to config file.
 [[ -n "$CONFIG" ]] && source $CONFIG
