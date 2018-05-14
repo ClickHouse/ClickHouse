@@ -16,6 +16,7 @@
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
+#include <Common/ClickHouseRevision.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -27,6 +28,8 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options.hpp>
 
 
 namespace DB
@@ -53,178 +56,42 @@ void LocalServer::initialize(Poco::Util::Application & self)
     Poco::Util::Application::initialize(self);
 
     // Turn off server logging to stderr
-    if (config().has("silent"))
+    if (!config().has("verbose"))
     {
         Poco::Logger::root().setLevel("none");
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
     }
 }
 
-
-void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
+void LocalServer::applyCmdSettings(Context & context)
 {
-    Poco::Util::Application::defineOptions (_options);
-
-    _options.addOption(
-        Poco::Util::Option("config-file", "", "Load configuration from a given file")
-            .required(false)
-            .repeatable(false)
-            .argument("[config.xml]")
-            .binding("config-file"));
-
-    /// Arguments that define first query creating initial table:
-    /// (If structure argument is omitted then initial query is not generated)
-    _options.addOption(
-        Poco::Util::Option("structure", "S", "Structure of initial table(list columns names with their types)")
-            .required(false)
-            .repeatable(false)
-            .argument("[name Type]")
-            .binding("table-structure"));
-
-    /// Turn off logging
-    _options.addOption(
-        Poco::Util::Option("silent", "s", "Quiet mode, print only errors")
-            .required(false)
-            .repeatable(false)
-            .binding("silent"));
-
-    _options.addOption(
-        Poco::Util::Option("table", "N", "Name of initial table")
-            .required(false)
-            .repeatable(false)
-            .argument("[table]")
-            .binding("table-name"));
-
-    _options.addOption(
-        Poco::Util::Option("file", "f", "Path to file with data of initial table (stdin if not specified)")
-            .required(false)
-            .repeatable(false)
-            .argument(" stdin")
-            .binding("table-file"));
-
-    _options.addOption(
-        Poco::Util::Option("input-format", "if", "Input format of initial table data")
-            .required(false)
-            .repeatable(false)
-            .argument("<TSV>")
-            .binding("table-data-format"));
-
-    /// List of queries to execute
-    _options.addOption(
-        Poco::Util::Option("query", "q", "Queries to execute")
-            .required(false)
-            .repeatable(false)
-            .argument("<query>")
-            .binding("query"));
-
-    /// Default Output format
-    _options.addOption(
-        Poco::Util::Option("output-format", "of", "Default output format")
-            .required(false)
-            .repeatable(false)
-            .argument("[TSV]", true)
-            .binding("output-format"));
-
-    /// Alias for previous one, required for clickhouse-client compatibility
-    _options.addOption(
-        Poco::Util::Option("format", "", "Default output format")
-            .required(false)
-            .repeatable(false)
-            .argument("[TSV]", true)
-            .binding("format"));
-
-    _options.addOption(
-        Poco::Util::Option("stacktrace", "", "Print stack traces of exceptions")
-            .required(false)
-            .repeatable(false)
-            .binding("stacktrace"));
-
-    _options.addOption(
-        Poco::Util::Option("verbose", "", "Print info about execution of queries")
-            .required(false)
-            .repeatable(false)
-            .noArgument()
-            .binding("verbose"));
-
-    _options.addOption(
-        Poco::Util::Option("help", "", "Display help information")
-        .required(false)
-        .repeatable(false)
-        .noArgument()
-        .binding("help")
-        .callback(Poco::Util::OptionCallback<LocalServer>(this, &LocalServer::handleHelp)));
-
-    /// These arrays prevent "variable tracking size limit exceeded" compiler notice.
-    static const char * settings_names[] = {
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) #NAME,
-    APPLY_FOR_SETTINGS(DECLARE_SETTING)
-#undef DECLARE_SETTING
-    nullptr};
-
-    for (const char ** name = settings_names; *name; ++name)
-        _options.addOption(Poco::Util::Option(*name, "", "Settings.h").required(false).argument("<value>")
-        .repeatable(false).binding(*name));
-}
-
-
-void LocalServer::applyOptions()
-{
-    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
-
-    /// settings and limits could be specified in config file, but passed settings has higher priority
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context->getSettingsRef().NAME.changed) \
-            context->setSetting(#NAME, config().getString(#NAME));
+        if (cmd_settings.NAME.changed) \
+            context.getSettingsRef().NAME = cmd_settings.NAME;
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 }
 
-
-void LocalServer::displayHelp()
-{
-    Poco::Util::HelpFormatter helpFormatter(options());
-    helpFormatter.setCommand(commandName());
-    helpFormatter.setUsage("[initial table definition] [--query <query>]");
-    helpFormatter.setHeader("\n"
-        "clickhouse-local allows to execute SQL queries on your data files via single command line call.\n"
-        "To do so, intially you need to define your data source and its format.\n"
-        "After you can execute your SQL queries in the usual manner.\n"
-        "There are two ways to define initial table keeping your data:\n"
-        "either just in first query like this:\n"
-        "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
-        "either through corresponding command line parameters."
-    );
-    helpFormatter.setWidth(132); /// 80 is ugly due to wide settings params
-
-    helpFormatter.format(std::cerr);
-    std::cerr << "Example printing memory used by each Unix user:\n"
-    "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
-    "clickhouse-local -S \"user String, mem Float64\" -q \"SELECT user, round(sum(mem), 2) as memTotal FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty\"\n";
-}
-
-
-void LocalServer::handleHelp(const std::string & /*name*/, const std::string & /*value*/)
-{
-    displayHelp();
-    stopOptionsProcessing();
-}
-
-
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
 {
-    if (!config().has("path") || (path = config().getString("path")).empty())
-        return;
-
+    std::string path = config().getString("path", "");
     Poco::trimInPlace(path);
-    if (path.empty())
+
+    if (!path.empty())
+    {
+        if (path.back() != '/')
+            path += '/';
+
+        context->setPath(path);
         return;
-    if (path.back() != '/')
-        path += '/';
+    }
 
-    context->setPath(path);
-
-    StatusFile status{path + "status"};
+    /// In case of empty path set paths to helpful directories
+    std::string cd = Poco::Path::current();
+    context->setTemporaryPath(cd + "tmp");
+    context->setFlagsPath(cd + "flags");
+    context->setUserFilesPath(""); // user's files are everywhere
 }
 
 
@@ -235,11 +102,8 @@ try
 
     if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
     {
-        if (!config().hasOption("help"))
-        {
+        if (!config().hasOption("silent"))
             std::cerr << "There are no queries to process." << std::endl;
-            displayHelp();
-        }
 
         return Application::EXIT_OK;
     }
@@ -258,7 +122,7 @@ try
     context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
 
-    applyOptions();
+    std::optional<StatusFile> status;
 
     /// Skip temp path installation
 
@@ -304,13 +168,17 @@ try
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
-    const std::string default_database = "_local";
+    std::string default_database = config().getString("default_database", "_local");
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
+    applyCmdOptions(*context);
 
-    if (!path.empty())
+    if (!context->getPath().empty())
     {
-        LOG_DEBUG(log, "Loading metadata from " << path);
+        /// Lock path directory before read
+        status.emplace(context->getPath() + "status");
+
+        LOG_DEBUG(log, "Loading metadata from " << context->getPath());
         loadMetadataSystem(*context);
         attachSystemTables();
         loadMetadata(*context);
@@ -330,20 +198,8 @@ try
 }
 catch (const Exception & e)
 {
-    bool print_stack_trace = config().has("stacktrace");
-
-    std::string text = e.displayText();
-
-    auto embedded_stack_trace_pos = text.find("Stack trace");
-    if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
-        text.resize(embedded_stack_trace_pos);
-
-    std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
-
-    if (print_stack_trace && std::string::npos == embedded_stack_trace_pos)
-    {
-        std::cerr << "Stack trace:" << std::endl << e.getStackTrace().toString();
-    }
+    if (!config().hasOption("silent"))
+        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
@@ -397,12 +253,8 @@ void LocalServer::attachSystemTables()
 
 void LocalServer::processQueries()
 {
-    Logger * log = &logger();
-
     String initial_create_query = getInitialCreateTableQuery();
     String queries_str = initial_create_query + config().getString("query");
-
-    bool verbose = config().hasOption("verbose");
 
     std::vector<String> queries;
     auto parse_res = splitMultipartQuery(queries_str, queries);
@@ -410,19 +262,43 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
+    context->setSessionContext(*context);
+    context->setQueryContext(*context);
+
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
+    applyCmdSettings(*context);
+
+    bool echo_query = config().hasOption("echo") || config().hasOption("verbose");
+    std::exception_ptr exception;
 
     for (const auto & query : queries)
     {
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
-        if (verbose)
-            LOG_INFO(log, "Executing query: " << query);
+        if (echo_query)
+            std::cerr << query << "\n";
 
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
+        try
+        {
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
+        }
+        catch (...)
+        {
+            if (!config().hasOption("ignore-error"))
+                throw;
+
+            if (!exception)
+                exception = std::current_exception();
+
+            if (!config().has("silent"))
+                std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
+        }
     }
+
+    if (exception)
+        std::rethrow_exception(exception);
 }
 
 static const char * minimal_default_user_xml =
@@ -475,6 +351,139 @@ void LocalServer::setupUsers()
         context->setUsersConfig(users_config);
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+}
+
+static void showClientVersion()
+{
+    std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
+        << "." << DBMS_VERSION_MINOR
+        << "." << ClickHouseRevision::get()
+        << "." << std::endl;
+}
+
+std::string LocalServer::getHelpHeader() const
+{
+    return
+        "usage: clickhouse-local [initial table definition] [--query <query>]\n"
+
+        "clickhouse-local allows to execute SQL queries on your data files via single command line call."
+        " To do so, initially you need to define your data source and its format."
+        " After you can execute your SQL queries in usual manner.\n"
+
+        "There are two ways to define initial table keeping your data."
+        " Either just in first query like this:\n"
+        "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
+        "Either through corresponding command line parameters --table --structure --input-format and --file.";
+}
+
+std::string LocalServer::getHelpFooter() const
+{
+    return
+        "Example printing memory used by each Unix user:\n"
+        "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
+        "clickhouse-local -S \"user String, mem Float64\" -q"
+            " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
+            " BY mem_total DESC FORMAT PrettyCompact\"";
+}
+
+void LocalServer::init(int argc, char ** argv)
+{
+    /// Don't parse options with Poco library, we prefer neat boost::program_options
+    stopOptionsProcessing();
+
+    winsize terminal_size{};
+    ioctl(0, TIOCGWINSZ, &terminal_size);
+
+    namespace po = boost::program_options;
+
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
+    po::options_description description("Main options", terminal_size.ws_col);
+    description.add_options()
+        ("help", "produce help message")
+        ("config-file,c", po::value<std::string>(), "config-file path")
+        ("query,q", po::value<std::string>(), "query")
+        ("database,d", po::value<std::string>(), "database")
+
+        ("table,N", po::value<std::string>(), "name of the initial table")
+        /// If structure argument is omitted then initial query is not generated
+        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
+        ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+        ("input-format", po::value<std::string>(), "input format of the initial table data")
+        ("format,f", po::value<std::string>(), "default output format (clickhouse-client compatibility)")
+        ("output-format", po::value<std::string>(), "default output format")
+
+        ("silent,s", "quiet mode, do not print errors")
+        ("stacktrace", "print stack traces of exceptions")
+        ("echo", "print query before execution")
+        ("verbose", "print query and other debugging info")
+        ("ignore-error", "do not stop processing if a query failed")
+        ("version,V", "print version information and exit")
+        APPLY_FOR_SETTINGS(DECLARE_SETTING);
+#undef DECLARE_SETTING
+
+    /// Parse main commandline options.
+    po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
+    po::variables_map options;
+    po::store(parsed, options);
+
+    if (options.count("version") || options.count("V"))
+    {
+        showClientVersion();
+        exit(0);
+    }
+
+    if (options.count("help"))
+    {
+        std::cout << getHelpHeader() << "\n";
+        std::cout << description << "\n";
+        std::cout << getHelpFooter() << "\n";
+        exit(0);
+    }
+
+    /// Extract settings and limits from the options.
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    if (options.count(#NAME)) \
+        cmd_settings.set(#NAME, options[#NAME].as<std::string>());
+    APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
+
+    /// Save received data into the internal config.
+    if (options.count("config-file"))
+        config().setString("config-file", options["config-file"].as<std::string>());
+    if (options.count("query"))
+        config().setString("query", options["query"].as<std::string>());
+    if (options.count("database"))
+        config().setString("default_database", options["database"].as<std::string>());
+
+    if (options.count("table"))
+        config().setString("table-name", options["table"].as<std::string>());
+    if (options.count("file"))
+        config().setString("table-file", options["file"].as<std::string>());
+    if (options.count("structure"))
+        config().setString("table-structure", options["structure"].as<std::string>());
+    if (options.count("input-format"))
+        config().setString("table-data-format", options["input-format"].as<std::string>());
+    if (options.count("format"))
+        config().setString("format", options["format"].as<std::string>());
+    if (options.count("output-format"))
+        config().setString("output-format", options["output-format"].as<std::string>());
+
+    if (options.count("silent"))
+        config().setBool("silent", true);
+    if (options.count("stacktrace"))
+        config().setBool("stacktrace", true);
+    if (options.count("echo"))
+        config().setBool("echo", true);
+    if (options.count("verbose"))
+        config().setBool("verbose", true);
+    if (options.count("ignore-error"))
+        config().setBool("ignore-error", true);
+}
+
+void LocalServer::applyCmdOptions(Context & context)
+{
+    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings(context);
 }
 
 }

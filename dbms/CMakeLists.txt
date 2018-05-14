@@ -99,6 +99,15 @@ else ()
     install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
+if (USE_EMBEDDED_COMPILER)
+    llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
+    if (TERMCAP_LIBRARY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
+    endif()
+    target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+endif ()
+
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.

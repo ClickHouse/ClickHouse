@@ -109,3 +109,7 @@ endif ()
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()
+
+if (USE_EMBEDDED_COMPILER)
+    target_include_directories (clickhouse_functions BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+endif ()
