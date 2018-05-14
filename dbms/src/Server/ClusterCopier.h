@@ -53,7 +53,7 @@
 namespace DB
 {
 
-class ClusterCopierApp : public Poco::Util::ServerApplication
+class ClusterCopierApp : public BaseDaemon
 {
 public:
 
@@ -66,6 +66,8 @@ public:
     int main(const std::vector<std::string> &) override;
 
 private:
+
+    using Base = BaseDaemon;
 
     void mainImpl();
 
