@@ -126,7 +126,6 @@ pages:
   - 'numbers': 'table_functions/numbers.md'
   - 'remote': 'table_functions/remote.md'
 
-
 - 'Formats':
   - 'Introduction': 'formats/index.md'
   - 'TabSeparated': 'formats/tabseparated.md'
