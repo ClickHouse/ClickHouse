@@ -5,7 +5,9 @@ set -e -x
 
 pushd vagrant-$1
 
+shopt -s dotglob
 shopt -s extglob
+
 vagrant ssh -c "mkdir -p ClickHouse"
 scp -F vagrant-ssh -r ../../../ClickHouse/!(*build*) default:~/ClickHouse
 vagrant ssh -c "cd ClickHouse/ci; $2"
