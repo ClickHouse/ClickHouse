@@ -387,7 +387,7 @@ class ClickHouseInstance:
                 binary_path=self.server_bin_path,
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,
-                db_dir=db_dir,  
+                db_dir=db_dir,
                 logs_dir=logs_dir,
                 depends_on=str(depends_on)))
 
