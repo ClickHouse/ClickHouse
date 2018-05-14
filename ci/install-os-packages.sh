@@ -59,7 +59,7 @@ case $PACKAGE_MANAGER in
                 $SUDO apt-get -y install ${WHAT/llvm-libs/liblld}-dev ${WHAT/llvm-libs/libclang}-dev
                 ;;
             qemu-user-static)
-                $SUDO apt-get install -y quemu-user-static
+                $SUDO apt-get install -y qemu-user-static
                 ;;
             vagrant-virtualbox)
                 $SUDO apt-get install -y vagrant virtualbox
