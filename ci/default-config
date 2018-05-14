@@ -44,7 +44,7 @@ DOCKER_UBUNTU_TAG_ARCH=arm64        # How the architecture is named in Docker
 DOCKER_UBUNTU_QEMU_VER=v2.9.1
 DOCKER_UBUNTU_REPO=multiarch/ubuntu-core
 
-THREADS=$(grep -c ^processor /proc/cpuinfo || nproc || sysctl -a | grep -F 'hw.ncpu')
+THREADS=$(grep -c ^processor /proc/cpuinfo || nproc || sysctl -a | grep -F 'hw.ncpu' | grep -oE '[0-9]+')
 
 # All scripts should return 0 in case of success, 1 in case of permanent error,
 #  2 in case of temporary error, any other code in case of permanent error.
