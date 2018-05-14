@@ -125,7 +125,7 @@ class ClickHouseCluster:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
 
         # Uncomment for debugging
-        # print ' '.join(self.base_cmd + ['up', '--no-recreate'])
+        #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
 
         subprocess.check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
