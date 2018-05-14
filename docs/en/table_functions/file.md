@@ -8,7 +8,7 @@ path - a relative path to a file from [user_files_path](../operations/server_set
 
 format - file [format](../formats/index.md).
 
-structure -  table structure in UserID UInt64, URL String formats. Determines column names and types.
+structure -  table structure in 'UserID UInt64, URL String' format. Determines column names and types.
 
 **Example**
 
