@@ -29,8 +29,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;;
 }
 
 
@@ -90,7 +90,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
 
     if (args.size() < 5 || args.size() > 7)
-        throw Exception("Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause' ]).",
+        throw Exception("Table function 'mysql' requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (size_t i = 0; i < args.size(); ++i)
@@ -104,10 +104,15 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
 
     bool replace_query = false;
     std::string on_duplicate_clause;
-    if(args.size() >= 6)
+    if (args.size() >= 6)
         replace_query = static_cast<const ASTLiteral &>(*args[5]).value.safeGet<UInt64>() > 0;
-    if(args.size() == 7)
+    if (args.size() == 7)
         on_duplicate_clause = static_cast<const ASTLiteral &>(*args[6]).value.safeGet<String>();
+
+    if (replace_query && !on_duplicate_clause.empty())
+        throw Exception(
+            "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them",
+            ErrorCodes::BAD_ARGUMENTS);
 
     /// 3306 is the default MySQL port number
     auto parsed_host_port = parseAddress(host_port, 3306);
