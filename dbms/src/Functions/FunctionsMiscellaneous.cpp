@@ -755,7 +755,7 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        if (tuple)
+        if (tuple && type_tuple->getElements().size() != 1)
         {
             const Columns & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();

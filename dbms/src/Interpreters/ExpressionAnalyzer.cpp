@@ -1649,7 +1649,23 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
 
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
+
+    auto getTupleTypeFromAst = [this](const ASTPtr & node) -> DataTypePtr
+    {
+        auto ast_function = typeid_cast<const ASTFunction *>(node.get());
+        if (ast_function && ast_function->name == "tuple" && !ast_function->arguments->children.empty())
+        {
+            /// Won't parse all values of outer tuple.
+            auto element = ast_function->arguments->children.at(0);
+            std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
+            return std::make_shared<DataTypeTuple>(DataTypes({value_raw.second}));
+        }
+
+        return evaluateConstantExpression(node, context).second;
+    };
+
     const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
+    const DataTypePtr & right_arg_type = getTupleTypeFromAst(right_arg);
 
     std::function<size_t(const DataTypePtr &)> getTupleDepth;
     getTupleDepth = [&getTupleDepth](const DataTypePtr & type) -> size_t
@@ -1660,35 +1676,15 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
         return 0;
     };
 
-    auto getTupleDepthFromAst = [&getTupleDepth](const ASTPtr & node) -> size_t
-    {
-        size_t depth = 0;
-        ASTPtr element = node;
-
-        auto ast_function = typeid_cast<const ASTFunction *>(node.get());
-        if (ast_function && ast_function->name == "tuple" && !ast_function->arguments->children.empty())
-        {
-            ++depth;
-            element = ast_function->arguments->children.at(0);
-        }
-
-        std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
-        return depth + getTupleDepth(value_raw.second);
-    };
-
     size_t left_tuple_depth = getTupleDepth(left_arg_type);
-    size_t right_tuple_depth = getTupleDepthFromAst(right_arg);
+    size_t right_tuple_depth = getTupleDepth(right_arg_type);
 
-    DataTypes set_element_types;
-    ASTPtr elements_ast = nullptr;
-
-    if (left_tuple_depth > 0)
-    {
-        auto left_tuple_type = static_cast<const DataTypeTuple *>(left_arg_type.get());
+    DataTypes set_element_types = {left_arg_type};
+    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
+    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
-    }
-    else
-        set_element_types.push_back(left_arg_type);
+
+    ASTPtr elements_ast = nullptr;
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_tuple_depth == right_tuple_depth)
