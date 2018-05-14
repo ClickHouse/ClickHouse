@@ -128,7 +128,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
-    if (USE_INTERNAL_SSL_LIBRARY)
+    if (USE_INTERNAL_SSL_LIBRARY OR DISABLE_POCO_SSL)
         set (DISABLE_INTERNAL_OPENSSL 1 CACHE INTERNAL "")
         set (ENABLE_NETSSL 0 CACHE INTERNAL "") # TODO!
         set (ENABLE_CRYPTO 0 CACHE INTERNAL "") # TODO!
@@ -141,9 +141,14 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (ENABLE_TESTS ${_save})
     set (CMAKE_CXX_FLAGS ${save_CMAKE_CXX_FLAGS})
     set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    if (OPENSSL_FOUND AND TARGET Crypto)
-        # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
-        target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
+
+    if (DISABLE_POCO_SSL)
+        set (Poco_NetSSL_FOUND 0)
+    else()
+        if (OPENSSL_FOUND AND TARGET Crypto)
+            # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
+            target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
+        endif ()
     endif ()
 endif ()
 
