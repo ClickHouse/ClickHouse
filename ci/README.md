@@ -7,6 +7,12 @@ Usage example:
 ./run-with-docker.sh ubuntu:bionic jobs/quick-build/run.sh
 ```
 
+Another example, check build on ARM 64:
+```
+./prepare-docker-image-ubuntu.sh
+./run-with-docker.sh multiarch/ubuntu-core:arm64-bionic jobs/quick-build/run.sh
+```
+
 Look at `default_config` and `jobs/quick-build/config`
 
 Various possible options. We are not going to automate testing all of them.
