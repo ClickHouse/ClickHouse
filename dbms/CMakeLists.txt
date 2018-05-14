@@ -147,6 +147,7 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Data_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
+    ${ELF_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${CMAKE_DL_LIBS}
 )
