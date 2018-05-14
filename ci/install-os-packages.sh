@@ -78,11 +78,9 @@ case $PACKAGE_MANAGER in
                 ;;
             gcc*)
                 $SUDO pkg install -y ${WHAT/-/}
-                export COMPILER_PATH=/usr/local/bin     # Otherwise ld cannot link some binaries.
                 ;;
             clang*)
                 $SUDO pkg install -y clang-devel
-                export COMPILER_PATH=/usr/local/bin
                 ;;
             git)
                 $SUDO pkg install -y git
