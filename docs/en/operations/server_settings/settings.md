@@ -661,7 +661,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 A catalog with user files. Used in a [file()](../../table_functions/file.md#table_functions-file) table function.
 
-**Пример**
+**Example**
 
 ```xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
