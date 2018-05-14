@@ -104,7 +104,7 @@ case $PACKAGE_MANAGER in
                 $SUDO pkg install -y readline
                 ;;
             libunixodbc-dev)
-                $SUDO pkg install -y unixODBC
+                $SUDO pkg install -y unixODBC libltdl
                 ;;
             libmysqlclient-dev)
                 $SUDO pkg install -y mysql57-client
