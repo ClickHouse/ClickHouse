@@ -52,11 +52,11 @@ case $PACKAGE_MANAGER in
             libunixodbc-dev)
                 $SUDO apt-get install -y unixodbc-dev
                 ;;
-            libmysqlclient-dev)
-                $SUDO apt-get install -y libmysqlclient-dev
+            libmariadbclient-dev)
+                $SUDO apt-get install -y libmariadbclient-dev
                 ;;
             llvm-libs*)
-                $SUDO apt-get -y install ${WHAT/llvm-libs/liblld}-dev ${WHAT/llvm-libs/libclang}-dev
+                $SUDO apt-get install -y ${WHAT/llvm-libs/liblld}-dev ${WHAT/llvm-libs/libclang}-dev
                 ;;
             qemu-user-static)
                 $SUDO apt-get install -y qemu-user-static
@@ -106,8 +106,8 @@ case $PACKAGE_MANAGER in
             libunixodbc-dev)
                 $SUDO pkg install -y unixODBC libltdl
                 ;;
-            libmysqlclient-dev)
-                $SUDO pkg install -y mysql57-client
+            libmariadbclient-dev)
+                $SUDO pkg install -y mariadb102-client
                 ;;
             *)
                 echo "Unknown package"; exit 1;
