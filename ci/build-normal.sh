@@ -3,9 +3,6 @@ set -e -x
 
 source default-config
 
-ccache -M 32G
-ccache -s
-
 [[ -d "${WORKSPACE}/sources" ]] || die "Run get-sources.sh first"
 
 mkdir -p "${WORKSPACE}/build"
