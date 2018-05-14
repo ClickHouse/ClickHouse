@@ -24,7 +24,7 @@ public:
         mysqlxx::Pool && pool,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const bool & replace_query,
+        const bool replace_query,
         const std::string & on_duplicate_clause,
         const ColumnsDescription & columns,
         const Context & context);
