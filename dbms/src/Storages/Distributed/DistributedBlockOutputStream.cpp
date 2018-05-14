@@ -358,6 +358,14 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
 void DistributedBlockOutputStream::writeSuffix()
 {
+    auto log_performance = [this] ()
+    {
+        double elapsed = watch.elapsedSeconds();
+        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
+                   << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
+                   << ". " << getCurrentStateDescription());
+    };
+
     if (insert_sync && pool)
     {
         finished_jobs_count = 0;
@@ -365,23 +373,24 @@ void DistributedBlockOutputStream::writeSuffix()
             for (JobReplica & job : shard_jobs.replicas_jobs)
             {
                 if (job.stream)
-                    pool->schedule([&job] () { job.stream->writeSuffix(); });
+                {
+                    pool->schedule([&job] () {
+                        job.stream->writeSuffix();
+                    });
+                }
             }
 
         try
         {
             pool->wait();
+            log_performance();
         }
         catch (Exception & exception)
         {
+            log_performance();
             exception.addMessage(getCurrentStateDescription());
             throw;
         }
-
-        double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
-                       << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
-                       << ". " << getCurrentStateDescription());
     }
 }
 
