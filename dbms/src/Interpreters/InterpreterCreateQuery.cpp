@@ -205,9 +205,13 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
             else
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
         }
+        /// parse codec definition and store pipe for column
         if (col_decl.codec) {
             codecs.emplace(col_decl.name, typeid_cast<const ASTFunction *>(col_decl.codec.get())->name);
         }
+        else
+            /// by default use None compression
+            codecs.emplace(col_decl.name, CompressionPipeline::instance().get(0))
     }
 
     /// set missing types and wrap default_expression's in a conversion-function if necessary

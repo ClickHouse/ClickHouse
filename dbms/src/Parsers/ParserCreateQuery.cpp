@@ -102,6 +102,12 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
         .parse(pos, node, expected);
 }
 
+bool ParserCodecDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+                      std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, node, expected);
+}
 
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

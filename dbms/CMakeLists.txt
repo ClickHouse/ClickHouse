@@ -32,7 +32,7 @@ find_package (Threads)
 add_subdirectory (src)
 
 set(dbms_headers)
-set(dbms_sources)
+set(dbms_sources src/Compression/CompressionPipeline.cpp src/Compression/CompressionPipeline.h src/Compression/ICompressionCodec.cpp src/Compression/ICompressionCodec.h src/Compression/CompressionCodecFactory.cpp src/Compression/CompressionCodecFactory.h src/Compression/CompressionCodecNull.cpp src/Compression/CompressionCodecNull.h src/Compression/CompressionCodecZSTD.cpp src/Compression/CompressionCodecZSTD.h src/Compression/CompressionCodecLZ4.cpp src/Compression/CompressionCodecLZ4.h)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 

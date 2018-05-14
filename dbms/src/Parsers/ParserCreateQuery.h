@@ -202,6 +202,14 @@ protected:
 };
 
 
+class ParserCodecDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const { return "codec declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
 /** ENGINE = name [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name = value, ...] */
 class ParserStorage : public IParserBase
 {
