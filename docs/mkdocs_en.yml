@@ -122,9 +122,10 @@ pages:
 
 - 'Table functions':
   - 'Introduction': 'table_functions/index.md'
-  - 'remote': 'table_functions/remote.md'
+  - 'file': 'table_functions/file.md'
   - 'merge': 'table_functions/merge.md'
   - 'numbers': 'table_functions/numbers.md'
+  - 'remote': 'table_functions/remote.md'
 
 - 'Formats':
   - 'Introduction': 'formats/index.md'
