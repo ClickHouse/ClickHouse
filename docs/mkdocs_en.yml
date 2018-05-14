@@ -120,8 +120,8 @@ pages:
   - 'system.zookeeper': 'system_tables/system.zookeeper.md'
 
 - 'Table functions':
-  - 'file': 'table_functions/file.md'
   - 'Introduction': 'table_functions/index.md'
+  - 'file': 'table_functions/file.md'
   - 'merge': 'table_functions/merge.md'
   - 'numbers': 'table_functions/numbers.md'
   - 'remote': 'table_functions/remote.md'
