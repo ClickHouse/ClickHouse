@@ -7,7 +7,6 @@ set -e -x
 # or:
 #     ./run-with-docker.sh ubuntu:bionic jobs/quick-build/run.sh
 
-CONFIG="$(dirname $0)"/config
 cd "$(dirname $0)"/../..
 
 . default-config
