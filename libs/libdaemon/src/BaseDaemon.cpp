@@ -949,14 +949,14 @@ void BaseDaemon::initialize(Application & self)
       * We have to do it before buildLoggers, for errors on logger initialization will be written to these files.
       * If logger.stderr is specified then stderr will be forcibly redirected to that file.
       */
-    if (!log_path.empty() && is_daemon || config().has("logger.stderr"))
+    if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr");
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
     }
 
-    if (!log_path.empty() && is_daemon || config().has("logger.stdout"))
+    if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
         std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout");
         if (!freopen(stdout_path.c_str(), "a+", stdout))
