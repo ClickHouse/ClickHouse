@@ -2081,8 +2081,10 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         /// If the function has an argument-lambda expression, you need to determine its type before the recursive call.
         bool has_lambda_arguments = false;
 
-        for (auto & child : node->arguments->children)
+        for (size_t arg = 0; arg < node->arguments->children.size(); ++arg)
         {
+            auto & child = node->arguments->children[arg];
+
             ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
             if (lambda && lambda->name == "lambda")
             {
@@ -2100,7 +2102,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 /// Select the name in the next cycle.
                 argument_names.emplace_back();
             }
-            else if (prepared_sets.count(child.get()))
+            else if (prepared_sets.count(child.get()) && functionIsInOrGlobalInOperator(node->name) && arg == 1)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
@@ -2196,9 +2198,9 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
                     Names captured;
                     Names required = lambda_actions->getRequiredColumns();
-                    for (size_t j = 0; j < required.size(); ++j)
-                        if (findColumn(required[j], lambda_arguments) == lambda_arguments.end())
-                            captured.push_back(required[j]);
+                    for (const auto & required_arg : required)
+                        if (findColumn(required_arg, lambda_arguments) == lambda_arguments.end())
+                            captured.push_back(required_arg);
 
                     /// We can not name `getColumnName()`,
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
@@ -2218,9 +2220,9 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
         if (only_consts)
         {
-            for (size_t i = 0; i < argument_names.size(); ++i)
+            for (const auto & argument_name : argument_names)
             {
-                if (!actions_stack.getSampleBlock().has(argument_names[i]))
+                if (!actions_stack.getSampleBlock().has(argument_name))
                 {
                     arguments_present = false;
                     break;
