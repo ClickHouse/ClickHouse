@@ -6,6 +6,9 @@
 namespace DB
 {
 
+class IStorage;
+class Context;
+
 struct MutationCommand
 {
     enum Type
@@ -30,6 +33,8 @@ struct MutationCommand
 struct MutationCommands
 {
     std::vector<MutationCommand> commands;
+
+    void validate(const IStorage & table, const Context & context);
 };
 
 }
