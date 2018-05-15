@@ -3,7 +3,7 @@ set -e -x
 
 source default-config
 
-$SUDO apt-get install -y curl
+./install-os-packages.sh curl
 
 if [[ "${GCC_SOURCES_VERSION}" == "latest" ]]; then
     GCC_SOURCES_VERSION=$(curl -sSL https://ftpmirror.gnu.org/gcc/ | grep -oE 'gcc-[0-9]+(\.[0-9]+)+' | sort -Vr | head -n1)

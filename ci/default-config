@@ -9,7 +9,7 @@ SCRIPTPATH=$(pwd)
 WORKSPACE=${SCRIPTPATH}/workspace
 PROJECT_ROOT=$(cd $SCRIPTPATH/.. && pwd)
 
-# All scripts take no arguments. All arguments must be in config.
+# Almost all scripts take no arguments. Arguments should be in config.
 
 # get-sources
 SOURCES_METHOD=local                # clone, local, tarball
@@ -44,7 +44,7 @@ DOCKER_UBUNTU_TAG_ARCH=arm64        # How the architecture is named in Docker
 DOCKER_UBUNTU_QEMU_VER=v2.9.1
 DOCKER_UBUNTU_REPO=multiarch/ubuntu-core
 
-THREADS=$(grep -c ^processor /proc/cpuinfo || nproc || sysctl -a | grep -F 'hw.ncpu')
+THREADS=$(grep -c ^processor /proc/cpuinfo || nproc || sysctl -a | grep -F 'hw.ncpu' | grep -oE '[0-9]+')
 
 # All scripts should return 0 in case of success, 1 in case of permanent error,
 #  2 in case of temporary error, any other code in case of permanent error.
@@ -55,7 +55,7 @@ function die {
 
 [[ $EUID -ne 0 ]] && SUDO=sudo
 
-command -v apt-get && $SUDO apt-get update
+./install-os-packages.sh prepare
 
 # Configuration parameters may be overriden with CONFIG environment variable pointing to config file.
 [[ -n "$CONFIG" ]] && source $CONFIG
