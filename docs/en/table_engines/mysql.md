@@ -4,7 +4,7 @@
 
 The MySQL engine allows you to perform SELECT queries on data that is stored on a remote MySQL server.
 
-The engine takes 5-7 parameters: the server address (host and port); the name of the database; the name of the table; the user's name; the user's password; wheter to use replace query; the on duplcate clause. Example:
+The engine takes 5-7 parameters: the server address (host and port); the name of the database; the name of the table; the user's name; the user's password; whether to use replace query; the on duplcate clause. Example:
 
 ```text
 MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
