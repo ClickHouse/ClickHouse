@@ -32,6 +32,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/ProjectionManipulation.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -59,8 +61,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <DataTypes/DataTypeTuple.h>
-#include "ProjectionManipulation.h"
-#include "evaluateConstantExpression.h"
 
 
 namespace DB
