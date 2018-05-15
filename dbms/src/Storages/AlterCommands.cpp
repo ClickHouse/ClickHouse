@@ -171,10 +171,10 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
     columns_description = std::move(new_columns_description);
 }
 
-void AlterCommands::validate(IStorage * table, const Context & context)
+void AlterCommands::validate(const IStorage & table, const Context & context)
 {
-    auto all_columns = table->getColumns().getAll();
-    auto defaults = table->getColumns().defaults;
+    auto all_columns = table.getColumns().getAll();
+    auto defaults = table.getColumns().defaults;
 
     std::vector<std::pair<NameAndTypePair, AlterCommand *>> defaulted_columns{};
 

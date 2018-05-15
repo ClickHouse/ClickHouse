@@ -55,11 +55,11 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.commands.empty())
     {
-        /// TODO: validate
+        mutation_commands.validate(*table, context);
         table->mutate(mutation_commands, context);
     }
 
-    partition_commands.validate(table.get());
+    partition_commands.validate(*table);
     for (const PartitionCommand & command : partition_commands)
     {
         switch (command.type)
@@ -88,7 +88,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!alter_commands.empty())
     {
-        alter_commands.validate(table.get(), context);
+        alter_commands.validate(*table, context);
         table->alter(alter_commands, database_name, table_name, context);
     }
 
@@ -205,7 +205,7 @@ void InterpreterAlterQuery::parseAlter(
 }
 
 
-void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
+void InterpreterAlterQuery::PartitionCommands::validate(const IStorage & table)
 {
     for (const PartitionCommand & command : *this)
     {
@@ -213,7 +213,7 @@ void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
         {
             String column_name = command.column_name.safeGet<String>();
 
-            if (!table->getColumns().hasPhysical(column_name))
+            if (!table.getColumns().hasPhysical(column_name))
             {
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
                     DB::ErrorCodes::ILLEGAL_COLUMN);
