@@ -183,7 +183,7 @@ def execute_task(task, cmd_options):
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
-        '--config', '/etc/clickhouse-server/config-preprocessed.xml',
+        '--config', '/etc/clickhouse-server/config-copier.xml',
         '--task-path', zk_task_path,
         '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
