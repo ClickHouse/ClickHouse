@@ -95,7 +95,7 @@ private:
     class PartitionCommands : public std::vector<PartitionCommand>
     {
     public:
-        void validate(const IStorage * table);
+        void validate(const IStorage & table);
     };
 
     ASTPtr query_ptr;
