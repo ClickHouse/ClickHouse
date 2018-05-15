@@ -3,7 +3,7 @@ set -e -x
 
 source default-config
 
-$SUDO apt-get install -y jq
+./install-os-packages.sh jq
 
 [[ -d "${WORKSPACE}/sources" ]] || die "Run get-sources.sh first"
 
