@@ -700,7 +700,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         return;
     config_logger = current_logger;
 
-    bool is_daemon = config.getBool("application.runAsDaemon", true);
+    bool is_daemon = config.getBool("application.runAsDaemon", false);
 
     // Split log and error log.
     Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
@@ -883,7 +883,7 @@ void BaseDaemon::initialize(Application & self)
         config().add(map_config, PRIO_APPLICATION - 100);
     }
 
-    bool is_daemon = config().getBool("application.runAsDaemon", true);
+    bool is_daemon = config().getBool("application.runAsDaemon", false);
 
     if (is_daemon)
     {
