@@ -1,3 +1,5 @@
+<a name="tabseparatedraw"></a>
+
 # TabSeparatedRaw
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
