@@ -4,6 +4,7 @@
 #include <Parsers/TokenIterator.h>
 #include <map>
 #include <memory>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -14,9 +15,10 @@ struct StringRange
     const char * first = nullptr;
     const char * second = nullptr;
 
-    StringRange() {}
+    StringRange() = default;
+    StringRange(const StringRange & other) = default;
     StringRange(const char * begin, const char * end) : first(begin), second(end) {}
-    StringRange(TokenIterator token) : first(token->begin), second(token->end) {}
+    explicit StringRange(TokenIterator token) : first(token->begin), second(token->end) {}
 
     StringRange(TokenIterator token_begin, TokenIterator token_end)
     {
@@ -34,6 +36,8 @@ struct StringRange
         first = token_begin->begin;
         second = token_last->end;
     }
+
+    bool operator==(const StringRange & rhs) const { return std::tie(first, second) == std::tie(rhs.first, rhs.second); }
 };
 
 using StringPtr = std::shared_ptr<String>;
@@ -44,4 +48,16 @@ inline String toString(const StringRange & range)
     return range.first ? String(range.first, range.second) : String();
 }
 
+struct StringRangeHash
+{
+    UInt64 operator()(const StringRange & range) const
+    {
+        SipHash hash;
+        hash.update(range.first);
+        hash.update(range.second);
+        return hash.get64();
+    }
+};
+
 }
+
