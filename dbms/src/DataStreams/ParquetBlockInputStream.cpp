@@ -95,6 +95,22 @@ void ParquetBlockInputStream::fillColumnWithStringData(std::shared_ptr<arrow::Co
     }
 }
 
+void ParquetBlockInputStream::fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+{
+    PaddedPODArray<UInt8> & column_data = static_cast<ColumnVector<UInt8> &>(*internal_column).getData();
+    column_data.resize(arrow_column->length());
+
+    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    {
+        arrow::BooleanArray & chunk = static_cast<arrow::BooleanArray &>(*(arrow_column->data()->chunk(chunk_i)));
+        /// buffers[0] is a null bitmap and buffers[1] are actual values
+        std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
+
+        for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
+            column_data[bool_i] = chunk.Value(bool_i);
+    }
+}
+
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8,  UInt8) \
         M(arrow::Type::INT8,   Int8) \
@@ -186,6 +202,10 @@ Block ParquetBlockInputStream::readImpl()
         if (arrow::Type::STRING == arrow_type)
         {
             fillColumnWithStringData(arrow_column, read_column);
+        }
+        else if (arrow::Type::BOOL == arrow_type)
+        {
+            fillColumnWithBooleanData(arrow_column, read_column);
         }
         // TODO: check that values smaller than INT32 are being read correctly
 #define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
