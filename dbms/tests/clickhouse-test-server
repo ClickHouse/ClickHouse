@@ -11,7 +11,7 @@ LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
 [ -x "$CUR_DIR/clickhouse-server" ] && [ -x "${CUR_DIR}/${CLICKHOUSE_BINARY}-client" ] && BIN_DIR= # Allow run in /usr/bin
-[ -x "$BUILD_DIR/dbms/src/Server/${CLICKHOUSE_BINARY}-server" ] && BIN_DIR=${BIN_DIR=$BUILD_DIR/dbms/src/Server/}
+[ -x "$BUILD_DIR/dbms/src/Server/${CLICKHOUSE_BINARY}-server" ] && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/src/Server/}
 [ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
 CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=$CONFIG_DIR}
 CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=$CONFIG_DIR}
