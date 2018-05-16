@@ -47,3 +47,128 @@ SELECT 'Still alive';
 DROP TABLE test.dict_string;
 DROP TABLE test.dict_ui64;
 DROP TABLE test.video_views;
+
+
+
+-- Test for tsan: Ensure cache used from one thread
+SET max_threads = 32;
+
+DROP TABLE IF EXISTS test.sample;
+
+CREATE TABLE test.sample (d Date DEFAULT '2000-01-01', x UInt16) ENGINE = MergeTree(d, x, x, 10);
+INSERT INTO test.sample (x) SELECT toUInt16(number) AS x FROM system.numbers LIMIT 65536;
+
+SELECT count()
+FROM
+(
+    SELECT
+        x,
+        count() AS c
+    FROM
+    (
+                  SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+        UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    UNION ALL SELECT * FROM ( SELECT * FROM test.sample WHERE x > 0 )
+    )
+    GROUP BY x
+    --HAVING c = 1
+    ORDER BY x ASC
+);
+DROP TABLE test.sample;
