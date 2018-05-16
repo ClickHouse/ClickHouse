@@ -234,7 +234,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
                     throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
                                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-                tuple = &function_result.get<Tuple>().t;
+                tuple = &function_result.get<Tuple>().toUnderType();
             }
 
             size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
