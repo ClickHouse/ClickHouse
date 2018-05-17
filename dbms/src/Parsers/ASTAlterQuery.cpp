@@ -17,7 +17,9 @@ void ASTAlterQuery::Parameters::clone(Parameters & p) const
     p = *this;
     if (col_decl)           p.col_decl = col_decl->clone();
     if (column)             p.column = column->clone();
+    if (primary_key)        p.primary_key = primary_key->clone();
     if (partition)          p.partition = partition->clone();
+    if (predicate)          p.predicate = predicate->clone();
 }
 
 void ASTAlterQuery::addParameters(const Parameters & params)
@@ -31,6 +33,8 @@ void ASTAlterQuery::addParameters(const Parameters & params)
         children.push_back(params.partition);
     if (params.primary_key)
         children.push_back(params.primary_key);
+    if (params.predicate)
+        children.push_back(params.predicate);
 }
 
 /** Get the text that identifies this element. */
@@ -149,6 +153,11 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
                 settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
                     << " " << std::quoted(p.with_name, '\'');
             }
+        }
+        else if (p.type == ASTAlterQuery::DELETE)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
+            p.predicate->formatImpl(settings, state, frame);
         }
         else
             throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

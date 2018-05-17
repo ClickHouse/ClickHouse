@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Interpreters/Settings.h>
 #include <Poco/Util/Application.h>
 #include <memory>
+
 
 namespace DB
 {
@@ -19,9 +21,9 @@ public:
 
     void initialize(Poco::Util::Application & self) override;
 
-    void defineOptions(Poco::Util::OptionSet& _options) override;
-
     int main(const std::vector<std::string> & args) override;
+
+    void init(int argc, char ** argv);
 
     ~LocalServer();
 
@@ -34,17 +36,21 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-    void applyOptions();
+    void applyCmdOptions(Context & context);
+    void applyCmdSettings(Context & context);
     void attachSystemTables();
     void processQueries();
     void setupUsers();
-    void displayHelp();
-    void handleHelp(const std::string & name, const std::string & value);
+
+    std::string getHelpHeader() const;
+    std::string getHelpFooter() const;
 
 protected:
 
     std::unique_ptr<Context> context;
-    std::string path;
+
+    /// Settings specified via command line args
+    Settings cmd_settings;
 };
 
 }
