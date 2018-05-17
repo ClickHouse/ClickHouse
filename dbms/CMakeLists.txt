@@ -198,7 +198,7 @@ if (USE_POCO_MONGODB)
 endif()
 
 if (USE_POCO_NETSSL)
-    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY})
+    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
