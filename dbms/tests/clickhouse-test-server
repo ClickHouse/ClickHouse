@@ -27,8 +27,12 @@ CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_B
 rm -rf $DATA_DIR
 mkdir -p $LOG_DIR
 
-openssl dhparam -out `$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.dhParamsFile` 256
-openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile` -out `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG --key=openSSL.server.certificateFile`
+DHPARAM=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.dhParamsFile`
+PRIVATEKEY=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile`
+CERT=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG --key=openSSL.server.certificateFile`
+# Do not generate in case broken extract-config
+[ -n "$DHPARAM" ] && openssl dhparam -out $DHPARAM 256
+[ -n "$PRIVATEKEY" ] && [ -n "$CERT" ] && openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout $PRIVATEKEY -out $CERT
 
 if [ "$TEST_GDB" ]; then
     echo -e "run \nset pagination off \nset logging file $DATA_DIR/gdb.log \nset logging on \nthread apply all backtrace \ndetach \nquit " > $DATA_DIR/gdb.cmd
