@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <sys/resource.h>
+#include <errno.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -10,6 +11,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -24,6 +26,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DNSCacheUpdater.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -36,7 +39,7 @@
 #include "StatusFile.h"
 #include "TCPHandlerFactory.h"
 
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -321,6 +324,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+    }
+    else
+    {
+        /// Initialize a watcher updating DNS cache in case of network errors
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+    }
+
     {
         Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
@@ -414,7 +429,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// HTTPS
                 if (config().has("https_port"))
                 {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
                     std::call_once(ssl_init_once, SSLInit);
 
                     Poco::Net::SecureServerSocket socket;
@@ -454,7 +469,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// TCP with SSL
                 if (config().has("tcp_port_secure"))
                 {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);

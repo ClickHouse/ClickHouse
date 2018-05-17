@@ -29,6 +29,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/formatReadable.h>
+#include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
@@ -64,6 +65,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Server/StatusFile.h>
+#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB
@@ -610,7 +612,7 @@ static ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, co
     res.is_remote = 1;
     for (auto & replica : replicas)
     {
-        if (isLocalAddress(replica.resolved_address))
+        if (isLocalAddress(DNSResolver::instance().resolveHost(replica.host_name)))
         {
             res.is_remote = 0;
             break;
@@ -697,15 +699,19 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     if (config.has(prefix + "settings_push"))
         settings_push.loadSettingsFromConfig(prefix + "settings_push", config);
 
-    /// Override important settings
-    settings_pull.load_balancing = LoadBalancing::NEAREST_HOSTNAME;
-    settings_pull.readonly = 1;
-    settings_pull.max_threads = 1;
-    settings_pull.max_block_size = settings_pull.max_block_size.changed ? settings_pull.max_block_size.value : 8192UL;
-    settings_pull.preferred_block_size_bytes = 0;
+    auto set_default_value = [] (auto && setting, auto && default_value)
+    {
+        setting = setting.changed ? setting.value : default_value;
+    };
 
-    settings_push.insert_distributed_timeout = 0;
+    /// Override important settings
+    settings_pull.readonly = 1;
     settings_push.insert_distributed_sync = 1;
+    set_default_value(settings_pull.load_balancing, LoadBalancing::NEAREST_HOSTNAME);
+    set_default_value(settings_pull.max_threads, 1);
+    set_default_value(settings_pull.max_block_size, 8192UL);
+    set_default_value(settings_pull.preferred_block_size_bytes, 0);
+    set_default_value(settings_push.insert_distributed_timeout, 0);
 }
 
 
@@ -1037,8 +1043,12 @@ protected:
         String workers_path = getWorkersPath();
         String current_worker_path = getCurrentWorkerNodePath();
 
+        size_t num_bad_version_errors = 0;
+
         while (true)
         {
+            updateConfigIfNeeded();
+
             zkutil::Stat stat;
             zookeeper->get(workers_version_path, &stat);
             auto version = stat.version;
@@ -1048,6 +1058,12 @@ protected:
             {
                 LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")"
                     << ". Postpone processing " << description);
+
+                if (unprioritized)
+                    current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
+
+                std::this_thread::sleep_for(current_sleep_time);
+                num_bad_version_errors = 0;
             }
             else
             {
@@ -1062,18 +1078,20 @@ protected:
 
                 if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
                 {
-                    LOG_DEBUG(log, "A concurrent worker has just been added, will check free worker slots again");
+                    ++num_bad_version_errors;
+
+                    /// Try to make fast retries
+                    if (num_bad_version_errors > 3)
+                    {
+                        LOG_DEBUG(log, "A concurrent worker has just been added, will check free worker slots again");
+                        std::chrono::milliseconds random_sleep_time(std::uniform_int_distribution<int>(1, 1000)(task_cluster->random_engine));
+                        std::this_thread::sleep_for(random_sleep_time);
+                        num_bad_version_errors = 0;
+                    }
                 }
                 else
                     throw zkutil::KeeperException(code);
             }
-
-            if (unprioritized)
-                current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
-
-            std::this_thread::sleep_for(current_sleep_time);
-
-            updateConfigIfNeeded();
         }
     }
 
@@ -1095,22 +1113,27 @@ protected:
             status_paths.emplace_back(task_shard_partition.getShardStatusPath());
         }
 
-        zkutil::Stat stat;
         std::vector<int64_t> zxid1, zxid2;
 
         try
         {
-            // Check that state is Finished and remember zxid
+            std::vector<zkutil::ZooKeeper::FutureGet> get_futures;
             for (const String & path : status_paths)
+                get_futures.emplace_back(zookeeper->asyncGet(path));
+
+            // Check that state is Finished and remember zxid
+            for (auto & future : get_futures)
             {
-                TaskStateWithOwner status = TaskStateWithOwner::fromString(zookeeper->get(path, &stat));
+                auto res = future.get();
+
+                TaskStateWithOwner status = TaskStateWithOwner::fromString(res.data);
                 if (status.state != TaskState::Finished)
                 {
-                    LOG_INFO(log, "The task " << path << " is being rewritten by " << status.owner
-                                               << ". Partition will be rechecked");
+                    LOG_INFO(log, "The task " << res.data << " is being rewritten by " << status.owner << ". Partition will be rechecked");
                     return false;
                 }
-                zxid1.push_back(stat.pzxid);
+
+                zxid1.push_back(res.stat.pzxid);
             }
 
             // Check that partition is not dirty
@@ -1120,11 +1143,15 @@ protected:
                 return false;
             }
 
+            get_futures.clear();
+            for (const String & path : status_paths)
+                get_futures.emplace_back(zookeeper->asyncGet(path));
+
             // Remember zxid of states again
-            for (const auto & path : status_paths)
+            for (auto & future : get_futures)
             {
-                zookeeper->exists(path, &stat);
-                zxid2.push_back(stat.pzxid);
+                auto res = future.get();
+                zxid2.push_back(res.stat.pzxid);
             }
         }
         catch (const zkutil::KeeperException & e)
@@ -1276,6 +1303,9 @@ protected:
 
     bool tryProcessTable(TaskTable & task_table)
     {
+        /// An heuristic: if previous shard is already done, then check next one without sleeps due to max_workers constraint
+        bool previous_shard_is_instantly_finished = false;
+
         /// Process each partition that is present in cluster
         for (const String & partition_name : task_table.ordered_partition_names)
         {
@@ -1287,7 +1317,6 @@ protected:
             Stopwatch watch;
             TasksShard expected_shards;
             size_t num_failed_shards = 0;
-            bool previous_shard_is_instantly_finished = false;
 
             ++cluster_partition.total_tries;
 
@@ -1322,6 +1351,7 @@ protected:
                     else
                     {
                         /// We have already checked that partition, but did not discover it
+                        previous_shard_is_instantly_finished = true;
                         continue;
                     }
                 }
@@ -1334,12 +1364,12 @@ protected:
                 expected_shards.emplace_back(shard);
 
                 /// Do not sleep if there is a sequence of already processed shards to increase startup
-                bool sleep_before_execution = !previous_shard_is_instantly_finished && shard->priority.is_remote;
+                bool is_unprioritized_task = !previous_shard_is_instantly_finished && shard->priority.is_remote;
                 PartitionTaskStatus task_status = PartitionTaskStatus::Error;
                 bool was_error = false;
                 for (size_t try_num = 0; try_num < max_shard_partition_tries; ++try_num)
                 {
-                    task_status = tryProcessPartitionTask(partition, sleep_before_execution);
+                    task_status = tryProcessPartitionTask(partition, is_unprioritized_task);
 
                     /// Exit if success
                     if (task_status == PartitionTaskStatus::Finished)
@@ -1425,13 +1455,13 @@ protected:
         Error,
     };
 
-    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition, bool sleep_before_execution)
+    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition, bool is_unprioritized_task)
     {
         PartitionTaskStatus res;
 
         try
         {
-            res = processPartitionTaskImpl(task_partition, sleep_before_execution);
+            res = processPartitionTaskImpl(task_partition, is_unprioritized_task);
         }
         catch (...)
         {
@@ -1452,7 +1482,7 @@ protected:
         return res;
     }
 
-    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition, bool sleep_before_execution)
+    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition, bool is_unprioritized_task)
     {
         TaskShard & task_shard = task_partition.task_shard;
         TaskTable & task_table = task_shard.task_table;
@@ -1491,7 +1521,7 @@ protected:
         };
 
         /// Load balancing
-        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, sleep_before_execution);
+        auto worker_node_holder = createTaskWorkerNodeAndWaitIfNeed(zookeeper, current_task_status_path, is_unprioritized_task);
 
         LOG_DEBUG(log, "Processing " << current_task_status_path);
 
@@ -1506,7 +1536,7 @@ protected:
             }
             catch (...)
             {
-                tryLogCurrentException(log, "An error occurred while clean partition");
+                tryLogCurrentException(log, "An error occurred when clean partition");
             }
 
             return PartitionTaskStatus::Error;
@@ -1625,8 +1655,7 @@ protected:
             bool inject_fault = false;
             if (copy_fault_probability > 0)
             {
-                std::uniform_real_distribution<> get_urand(0, 1);
-                double value = get_urand(task_table.task_cluster.random_engine);
+                double value = std::uniform_real_distribution<>(0, 1)(task_table.task_cluster.random_engine);
                 inject_fault = value < copy_fault_probability;
             }
 
@@ -1662,7 +1691,7 @@ protected:
                     BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
                     BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
-                    input = std::make_shared<AsynchronousBlockInputStream>(io_select.in);
+                    input = io_select.in;
                     output = io_insert.out;
                 }
 
@@ -2028,8 +2057,6 @@ private:
 
 void ClusterCopierApp::initialize(Poco::Util::Application & self)
 {
-    Poco::Util::ServerApplication::initialize(self);
-
     is_help = config().has("help");
     if (is_help)
         return;
@@ -2051,11 +2078,17 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
     Poco::File(process_path).createDirectories();
 
-    setupLogging();
+    /// Override variables for BaseDaemon
+    if (config().has("log-level"))
+        config().setString("logger.level", config().getString("log-level"));
 
-    std::string stderr_path = process_path + "/stderr";
-    if (!freopen(stderr_path.c_str(), "a+", stderr))
-        throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
+    if (config().has("base-dir") || !config().has("logger.log"))
+        config().setString("logger.log", process_path + "/log.log");
+
+    if (config().has("base-dir") || !config().has("logger.errorlog"))
+        config().setString("logger.errorlog", process_path + "/log.err.log");
+
+    Base::initialize(self);
 }
 
 
@@ -2073,10 +2106,8 @@ void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
 
 void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 {
-    Poco::Util::ServerApplication::defineOptions(options);
+    Base::defineOptions(options);
 
-    options.addOption(Poco::Util::Option("config-file", "c", "path to config file with ZooKeeper config", true)
-                          .argument("config-file").binding("config-file"));
     options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
                           .argument("task-path").binding("task-path"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
@@ -2094,40 +2125,11 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
-void ClusterCopierApp::setupLogging()
-{
-    Poco::AutoPtr<Poco::SplitterChannel> split_channel(new Poco::SplitterChannel);
-
-    Poco::AutoPtr<Poco::FileChannel> log_file_channel(new Poco::FileChannel);
-    log_file_channel->setProperty("path", process_path + "/log.log");
-    split_channel->addChannel(log_file_channel);
-    log_file_channel->open();
-
-    if (!config().getBool("application.runAsDaemon", true))
-    {
-        Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
-        split_channel->addChannel(console_channel);
-        console_channel->open();
-    }
-
-    Poco::AutoPtr<OwnPatternFormatter> formatter = new OwnPatternFormatter(nullptr);
-    formatter->setProperty("times", "local");
-    Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter));
-    formatting_channel->setChannel(split_channel);
-    split_channel->open();
-
-    Poco::Logger::root().setChannel(formatting_channel);
-    Poco::Logger::root().setLevel(log_level);
-}
-
-
 void ClusterCopierApp::mainImpl()
 {
-    ConfigurationPtr zookeeper_configuration(new Poco::Util::XMLConfiguration(config_xml_path));
-    auto log = &logger();
-
     StatusFile status_file(process_path + "/status");
 
+    auto log = &logger();
     LOG_INFO(log, "Starting clickhouse-copier ("
         << "id " << process_id << ", "
         << "host_id " << host_id << ", "
@@ -2137,7 +2139,7 @@ void ClusterCopierApp::mainImpl()
     auto context = std::make_unique<Context>(Context::createGlobal());
     SCOPE_EXIT(context->shutdown());
 
-    context->setConfig(zookeeper_configuration);
+    context->setConfig(loaded_config.configuration);
     context->setGlobalContext(*context);
     context->setApplicationType(Context::ApplicationType::LOCAL);
     context->setPath(process_path);
@@ -2151,8 +2153,7 @@ void ClusterCopierApp::mainImpl()
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
 
-    std::unique_ptr<ClusterCopier> copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
-
+    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->init();

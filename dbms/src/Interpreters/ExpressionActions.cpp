@@ -1,5 +1,7 @@
+#include <Common/config.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/Join.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -752,6 +754,13 @@ void ExpressionActions::finalize(const Names & output_columns)
         final_columns.insert(name);
     }
 
+#if USE_EMBEDDED_COMPILER
+    /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
+    /// because inlining may change dependency sets.
+    if (settings.compile_expressions)
+        compileFunctions(actions, output_columns, sample_block);
+#endif
+
     /// Which columns are needed to perform actions from the current to the last.
     NameSet needed_columns = final_columns;
     /// Which columns nobody will touch from the current action to the last.
@@ -934,7 +943,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         std::cerr << action.toString() << "\n";
     std::cerr << "\n";*/
 
-    optimize();
+    optimizeArrayJoin();
     checkLimits(sample_block);
 }
 
@@ -957,11 +966,6 @@ std::string ExpressionActions::dumpActions() const
         ss << it->name << " " << it->type->getName() << "\n";
 
     return ss.str();
-}
-
-void ExpressionActions::optimize()
-{
-    optimizeArrayJoin();
 }
 
 void ExpressionActions::optimizeArrayJoin()

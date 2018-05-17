@@ -9,7 +9,7 @@
 # auto generated files
 *.logrt
 
-build
+/build
 /docs/en_single_page/
 /docs/ru_single_page/
 /docs/venv/

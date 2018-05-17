@@ -16,7 +16,7 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 
 #include <Common/getFQDNOrHostName.h>
@@ -39,6 +39,7 @@
 
 #include <random>
 #include <pcg_random.hpp>
+#include <Poco/Net/NetException.h>
 
 
 namespace DB
@@ -93,9 +94,9 @@ struct HostID
     {
         try
         {
-            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port), clickhouse_port);
+            return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
         }
-        catch (const Poco::Exception & e)
+        catch (const Poco::Net::NetException & e)
         {
             /// Avoid "Host not found" exceptions
             return false;
@@ -480,7 +481,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.resolved_address, context.getTCPPort()))
+            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort()))
             {
                 if (found_via_resolving)
                 {
@@ -634,43 +635,51 @@ void DDLWorker::processTaskAlter(
     if (execute_once_on_replica && !config_is_replicated_shard)
     {
         throw Exception("Table " + ast_alter->table + " is replicated, but shard #" + toString(task.host_shard_num + 1) +
-            " isn't replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+            " isn't replicated according to its cluster definition."
+            " Possibly <internal_replication>true</internal_replication> is forgotten in the cluster config.",
+            ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
-    else if (!execute_once_on_replica && config_is_replicated_shard)
+    if (!execute_once_on_replica && config_is_replicated_shard)
     {
         throw Exception("Table " + ast_alter->table + " isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
             " is replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
 
-    if (execute_once_on_replica)
+    /// Generate unique name for shard node, it will be used to execute the query by only single host
+    /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
+    /// Where replica_name is 'replica_config_host_name:replica_port'
+    auto get_shard_name = [] (const Cluster::Addresses & shard_addresses)
     {
-        /// Generate unique name for shard node, it will be used to execute the query by only single host
-        /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
-        /// Where replica_name is 'escape(replica_ip_address):replica_port'
-        /// FIXME: this replica_name could be changed after replica restart
         Strings replica_names;
-        for (const Cluster::Address & address : task.cluster->getShardsAddresses().at(task.host_shard_num))
-            replica_names.emplace_back(address.resolved_address.host().toString());
+        for (const Cluster::Address & address : shard_addresses)
+            replica_names.emplace_back(address.readableString());
         std::sort(replica_names.begin(), replica_names.end());
 
-        String shard_node_name;
+        String res;
         for (auto it = replica_names.begin(); it != replica_names.end(); ++it)
-            shard_node_name += *it + (std::next(it) != replica_names.end() ? "," : "");
+            res += *it + (std::next(it) != replica_names.end() ? "," : "");
 
+        return res;
+    };
+
+    if (execute_once_on_replica)
+    {
+        String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
         String shard_path = node_path + "/shards/" + shard_node_name;
         String is_executed_path = shard_path + "/executed";
         zookeeper->createAncestors(shard_path + "/");
 
-        bool alter_executed_by_any_replica = false;
+        bool is_executed_by_any_replica = false;
         {
             auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
             pcg64 rng(randomSeed());
 
-            for (int num_tries = 0; num_tries < 10; ++num_tries)
+            static const size_t max_tries = 20;
+            for (size_t num_tries = 0; num_tries < max_tries; ++num_tries)
             {
                 if (zookeeper->exists(is_executed_path))
                 {
-                    alter_executed_by_any_replica = true;
+                    is_executed_by_any_replica = true;
                     break;
                 }
 
@@ -685,16 +694,19 @@ void DDLWorker::processTaskAlter(
 
                     zookeeper->create(is_executed_path, task.host_id_str, zkutil::CreateMode::Persistent);
                     lock->unlock();
-                    alter_executed_by_any_replica = true;
+                    is_executed_by_any_replica = true;
                     break;
                 }
 
-                std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, 1)(rng)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<long>(0, 1000)(rng)));
             }
         }
 
-        if (!alter_executed_by_any_replica)
-            task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED, "Cannot enqueue replicated DDL query");
+        if (!is_executed_by_any_replica)
+        {
+            task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED,
+                                                    "Cannot enqueue replicated DDL query for a replicated shard");
+        }
     }
     else
     {
