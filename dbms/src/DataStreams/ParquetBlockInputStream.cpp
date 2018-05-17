@@ -199,32 +199,29 @@ Block ParquetBlockInputStream::readImpl()
 
         // TODO: support NULL values
 
-        if (arrow::Type::STRING == arrow_type)
+        switch (arrow_type)
         {
-            fillColumnWithStringData(arrow_column, read_column);
-        }
-        else if (arrow::Type::BOOL == arrow_type)
-        {
-            fillColumnWithBooleanData(arrow_column, read_column);
-        }
-        // TODO: check that values smaller than INT32 are being read correctly
+            case arrow::Type::STRING:
+                fillColumnWithStringData(arrow_column, read_column);
+                break;
+            case arrow::Type::BOOL:
+                fillColumnWithBooleanData(arrow_column, read_column);
+                break;
+            // TODO: check that values smaller than INT32 are being read correctly
 #define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
-        else if (ARROW_NUMERIC_TYPE == arrow_type) \
-        { \
-            fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, read_column); \
-        }
+            case ARROW_NUMERIC_TYPE: \
+                fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, read_column); \
+                break;
 
-        FOR_ARROW_NUMERIC_TYPES(DISPATCH)
+            FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+            // TODO: arrow::Type::DATE32
+            // TODO: arrow::Type::DATE64
 
-        // TODO: arrow::Type::BOOLEAN
-        // TODO: arrow::Type::DATE32
-        // TODO: arrow::Type::DATE64
+            // TODO: add other types
+            default:
+                throw Exception("Unsupported parquet type " + arrow_column->type()->name()/*, ErrorCodes::TODO*/);
 
-        // TODO: add other types
-        else
-        {
-            throw Exception("Unsupported parquet type " + arrow_column->type()->name()/*, ErrorCodes::TODO*/);
         }
 
         column.column = std::move(read_column);
