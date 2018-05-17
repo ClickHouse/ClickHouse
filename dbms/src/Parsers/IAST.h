@@ -171,7 +171,7 @@ public:
     struct FormatStateStacked
     {
         UInt8 indent = 0;
-        bool need_parens = false;
+        bool need_parents = false;
         const IAST * current_select = nullptr;
     };
 
@@ -191,6 +191,8 @@ public:
     }
 
     void writeAlias(const String & name, std::ostream & s, bool hilite) const;
+
+    void cloneChildren();
 
 public:
     /// For syntax highlighting.

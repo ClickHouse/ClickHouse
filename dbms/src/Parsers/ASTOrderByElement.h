@@ -31,7 +31,11 @@ public:
 
     String getID() const override { return "OrderByElement"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTOrderByElement>(*this); }
+    ASTPtr clone() const override {
+        auto clone = std::make_shared<ASTOrderByElement>(*this);
+        clone->cloneChildren();
+        return std::move(clone);
+    }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

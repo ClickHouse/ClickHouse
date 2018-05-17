@@ -20,7 +20,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     }
 
     /// If there is an alias, then parentheses are required around the entire expression, including the alias. Because a record of the form `0 AS x + 0` is syntactically invalid.
-    if (frame.need_parens && !alias.empty())
+    if (frame.need_parents && !alias.empty())
         settings.ostr <<'(';
 
     formatImplWithoutAlias(settings, state, frame);
@@ -28,7 +28,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     if (!alias.empty())
     {
         writeAlias(alias, settings.ostr, settings.hilite);
-        if (frame.need_parens)
+        if (frame.need_parents)
             settings.ostr <<')';
     }
 }
