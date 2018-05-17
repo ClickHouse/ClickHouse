@@ -64,7 +64,7 @@ DNSCacheUpdater::DNSCacheUpdater(Context & context_)
 bool DNSCacheUpdater::run()
 {
     /// TODO: Ensusre that we get global counter (not thread local)
-    auto num_current_network_exceptions = ProfileEvents::counters[ProfileEvents::NetworkErrors].load(std::memory_order_relaxed);
+    auto num_current_network_exceptions = ProfileEvents::global_counters[ProfileEvents::NetworkErrors].load(std::memory_order_relaxed);
 
     if (num_current_network_exceptions >= last_num_network_erros + min_errors_to_update_cache
         && time(nullptr) > last_update_time + min_update_period_seconds)

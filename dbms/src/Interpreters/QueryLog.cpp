@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Interpreters/QueryLog.h>
 #include <Common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
@@ -66,6 +67,12 @@ Block QueryLogElement::createBlock()
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "quota_key"},
 
         {ColumnUInt32::create(),     std::make_shared<DataTypeUInt32>(),     "revision"},
+
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values" }
     };
 }
 
@@ -145,6 +152,38 @@ void QueryLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(client_info.quota_key);
 
     columns[i++]->insert(UInt64(ClickHouseRevision::get()));
+
+    {
+        Array threads_array;
+        threads_array.reserve(thread_numbers.size());
+        for (const UInt32 thread_number : thread_numbers)
+            threads_array.emplace_back(UInt64(thread_number));
+        columns[i++]->insert(threads_array);
+    }
+
+    if (profile_counters)
+    {
+        auto column_names = columns[i++].get();
+        auto column_values = columns[i++].get();
+        profile_counters->dumpToArrayColumns(column_names, column_values, true);
+    }
+    else
+    {
+        columns[i++]->insertDefault();
+        columns[i++]->insertDefault();
+    }
+
+    if (query_settings)
+    {
+        auto column_names = columns[i++].get();
+        auto column_values = columns[i++].get();
+        query_settings->dumpToArrayColumns(column_names, column_values, true);
+    }
+    else
+    {
+        columns[i++]->insertDefault();
+        columns[i++]->insertDefault();
+    }
 
     block.setColumns(std::move(columns));
 }

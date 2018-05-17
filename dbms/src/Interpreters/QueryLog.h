@@ -53,6 +53,10 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
+    std::vector<UInt32> thread_numbers;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<Settings> query_settings;
+
     static std::string name() { return "QueryLog"; }
 
     static Block createBlock();

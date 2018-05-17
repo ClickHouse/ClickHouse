@@ -2,12 +2,14 @@
 #include <Poco/Ext/ThreadNumber.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/TaskStatsInfoGetter.h>
+
 
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-
-#include <Interpreters/ProcessList.h>
+#include <linux/taskstats.h>
 
 
 namespace ProfileEvents
@@ -18,6 +20,11 @@ namespace ProfileEvents
     extern const Event RusagePageReclaims;
     extern const Event RusagePageVoluntaryContextSwitches;
     extern const Event RusagePageInvoluntaryContextSwitches;
+
+    extern const Event OSReadBytes;
+    extern const Event OSWriteBytes;
+    extern const Event OSReadChars;
+    extern const Event OSWriteChars;
 }
 
 
@@ -51,7 +58,7 @@ struct RusageCounters
     UInt64 involuntary_context_switches = 0;
 
     RusageCounters() = default;
-    RusageCounters(const struct rusage & rusage, UInt64 real_time_)
+    RusageCounters(const ::rusage & rusage, UInt64 real_time_)
     {
         set(rusage, real_time_);
     }
@@ -66,18 +73,18 @@ struct RusageCounters
     static RusageCounters current()
     {
         RusageCounters res;
-        res.setFromCurrent();
+        res.setCurrent();
         return res;
     }
 
-    void setFromCurrent()
+    void setCurrent()
     {
-        struct rusage rusage;
+        rusage rusage;
         getrusage(RUSAGE_THREAD, &rusage);
         set(rusage, getCurrentTimeMicroseconds());
     }
 
-    void set(const struct rusage & rusage, UInt64 real_time_)
+    void set(const ::rusage & rusage, UInt64 real_time_)
     {
         real_time = real_time_;
         user_time = rusage.ru_utime.tv_sec * 1000000UL + rusage.ru_utime.tv_usec;
@@ -110,6 +117,7 @@ struct RusageCounters
 struct ThreadStatus::Impl
 {
     RusageCounters last_rusage;
+    TaskStatsInfoGetter info_getter;
 };
 
 
@@ -140,6 +148,7 @@ static void thread_create_at_exit_key() {
 ThreadStatus::ThreadStatus()
     : poco_thread_number(Poco::ThreadNumber::get()),
       performance_counters(ProfileEvents::Level::Thread),
+      os_thread_id(TaskStatsInfoGetter::getCurrentTID()),
       log(&Poco::Logger::get("ThreadStatus"))
 {
     impl = std::make_shared<Impl>();
@@ -198,13 +207,29 @@ void ThreadStatus::init(QueryStatus * parent_query_, ProfileEvents::Counters * p
 void ThreadStatus::onStart()
 {
     /// First init of thread rusage counters, set real time to zero, other metrics remain as is
-    impl->last_rusage.setFromCurrent();
+    impl->last_rusage.setCurrent();
     RusageCounters::incrementProfileEvents(impl->last_rusage, RusageCounters::zeros(impl->last_rusage.real_time));
 }
 
 void ThreadStatus::onExit()
 {
     RusageCounters::updateProfileEvents(impl->last_rusage);
+
+    try
+    {
+        ::taskstats stat;
+        TaskStatsInfoGetter info_getter;
+        info_getter.getStat(stat);
+
+        ProfileEvents::increment(ProfileEvents::OSReadBytes, stat.read_bytes);
+        ProfileEvents::increment(ProfileEvents::OSWriteBytes, stat.write_bytes);
+        ProfileEvents::increment(ProfileEvents::OSReadChars, stat.read_char);
+        ProfileEvents::increment(ProfileEvents::OSWriteChars, stat.write_char);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 void ThreadStatus::reset()

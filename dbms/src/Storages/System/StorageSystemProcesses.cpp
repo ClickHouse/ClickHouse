@@ -7,7 +7,11 @@
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Settings.h>
 #include <Storages/System/VirtualColumnsProcessor.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 
 
 namespace DB
@@ -57,15 +61,11 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
     }));
 
     virtual_columns = ColumnsWithTypeAndName{
-        {
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()),
-            "thread_numbers"
-        },
-        {
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64 >()})),
-            "profile_counters"
-        }
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values" }
     };
 }
 
@@ -81,15 +81,18 @@ BlockInputStreams StorageSystemProcesses::read(
     processed_stage = QueryProcessingStage::FetchColumns;
 
     auto virtual_columns_processor = getVirtualColumnsProcessor();
-    bool has_thread_numbers, has_profile_counters;
-    Names real_columns = virtual_columns_processor.process(column_names, {&has_thread_numbers, &has_profile_counters});
+    bool has_thread_numbers, has_profile_events_names, has_profile_events_values, has_settigns_names, has_settings_values;
+    std::vector<bool *> flags{&has_thread_numbers, &has_profile_events_names, &has_profile_events_values, &has_settigns_names, &has_settings_values};
+
+    Names real_columns = virtual_columns_processor.process(column_names, flags);
     check(real_columns);
 
     Block res_block = getSampleBlock().cloneEmpty();
     virtual_columns_processor.appendVirtualColumns(res_block);
     MutableColumns res_columns = res_block.cloneEmptyColumns();
 
-    ProcessList::Info info = context.getProcessList().getInfo(has_thread_numbers, has_profile_counters);
+    ProcessList::Info info = context.getProcessList().getInfo(has_thread_numbers, has_profile_events_names || has_profile_events_values,
+                                                              has_settigns_names || has_settings_values);
 
     for (const auto & process : info)
     {
@@ -126,31 +129,32 @@ BlockInputStreams StorageSystemProcesses::read(
 
         if (has_thread_numbers)
         {
-            Array thread_numbers;
-            thread_numbers.reserve(process.thread_numbers.size());
-
+            Array threads_array;
+            threads_array.reserve(process.thread_numbers.size());
             for (const UInt32 thread_number : process.thread_numbers)
-                thread_numbers.emplace_back(UInt64(thread_number));
-
-            res_columns[i++]->insert(std::move(thread_numbers));
+                threads_array.emplace_back(UInt64(thread_number));
+            res_columns[i++]->insert(threads_array);
         }
 
-        if (has_profile_counters)
+        if (has_profile_events_names || has_profile_events_values)
         {
-            Array profile_counters;
-            profile_counters.reserve(ProfileEvents::Counters::num_counters);
+            IColumn * column_names = has_profile_events_names ? res_columns[i++].get() : nullptr;
+            IColumn * column_values = has_profile_events_values ? res_columns[i++].get() : nullptr;
+            process.profile_counters->dumpToArrayColumns(column_names, column_values, true);
+        }
 
-            for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
+        if (has_settigns_names || has_settings_values)
+        {
+            IColumn * column_names = has_settigns_names ? res_columns[i++].get() : nullptr;
+            IColumn * column_values = has_settings_values ? res_columns[i++].get() : nullptr;
+
+            if (process.query_settings)
+                process.query_settings->dumpToArrayColumns(column_names, column_values, true);
+            else
             {
-                Array name_and_counter{
-                    String(ProfileEvents::getDescription(event)),
-                    UInt64((*process.profile_counters)[event].load(std::memory_order_relaxed))
-                };
-
-                profile_counters.emplace_back(Tuple(std::move(name_and_counter)));
+                column_names->insertDefault();
+                column_values->insertDefault();
             }
-
-            res_columns[i++]->insert(std::move(profile_counters));
         }
     }
 

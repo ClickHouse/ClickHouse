@@ -34,6 +34,7 @@ namespace DB
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
+class Context;
 struct Settings;
 class IAST;
 
@@ -66,7 +67,8 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by request
     std::vector<UInt32> thread_numbers;
-    std::unique_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<Settings> query_settings;
 };
 
 
@@ -80,6 +82,7 @@ protected:
 
     String query;
     ClientInfo client_info;
+    Context * query_context = nullptr;
 
     Stopwatch watch;
 
@@ -172,25 +175,9 @@ public:
         return !is_killed.load(std::memory_order_relaxed);
     }
 
+    QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    QueryStatusInfo getInfo() const
-    {
-        QueryStatusInfo res;
-
-        res.query             = query;
-        res.client_info       = client_info;
-        res.elapsed_seconds   = watch.elapsedSeconds();
-        res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
-        res.read_rows         = progress_in.rows;
-        res.read_bytes        = progress_in.bytes;
-        res.total_rows        = progress_in.total_rows;
-        res.written_rows      = progress_out.rows;
-        res.written_bytes     = progress_out.bytes;
-        res.memory_usage      = memory_tracker.get();
-        res.peak_memory_usage = memory_tracker.getPeak();
-
-        return res;
-    }
+    const Context * tryGetQueryContext() const { return query_context; }
 
     /// Copies pointers to in/out streams
     void setQueryStreams(const BlockIO & io);
@@ -308,42 +295,13 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries.
       */
-    EntryPtr insert(const String & query_, const IAST * ast, const ClientInfo & client_info, const Settings & settings);
+    EntryPtr insert(const String & query_, const IAST * ast, Context & query_context);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }
 
     /// Get current state of process list.
-    Info getInfo(bool get_thread_list = false, bool get_profile_events = false) const
-    {
-        Info per_query_infos;
-
-        std::lock_guard<std::mutex> lock(mutex);
-
-        per_query_infos.reserve(processes.size());
-        for (const auto & process : processes)
-        {
-            per_query_infos.emplace_back(process.getInfo());
-            QueryStatusInfo & current_info = per_query_infos.back();
-
-            if (get_thread_list)
-            {
-                std::lock_guard lock(process.threads_mutex);
-                current_info.thread_numbers.reserve(process.thread_statuses.size());
-
-                for (auto & thread_status_elem : process.thread_statuses)
-                    current_info.thread_numbers.emplace_back(thread_status_elem.second->poco_thread_number);
-            }
-
-            if (get_profile_events)
-            {
-                current_info.profile_counters = std::make_unique<ProfileEvents::Counters>(ProfileEvents::Level::Process);
-                process.performance_counters.getPartiallyAtomicSnapshot(*current_info.profile_counters);
-            }
-        }
-
-        return per_query_infos;
-    }
+    Info getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
     void setMaxSize(size_t max_size_)
     {

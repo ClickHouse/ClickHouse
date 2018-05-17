@@ -15,19 +15,21 @@ namespace Poco
 namespace DB
 {
 
-struct QueryStatus;
-struct ThreadStatus;
+class QueryStatus;
+class ThreadStatus;
 struct ScopeCurrentThread;
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 
 
-struct ThreadStatus : public ext::shared_ptr_helper<ThreadStatus>
+class ThreadStatus : public ext::shared_ptr_helper<ThreadStatus>
 {
+public:
+
     UInt32 poco_thread_number = 0;
     QueryStatus * parent_query = nullptr;
     ProfileEvents::Counters performance_counters;
     MemoryTracker memory_tracker;
-    bool thread_exited = false;
+    int os_thread_id = -1;
     std::mutex mutex;
 
     void init(QueryStatus * parent_query_, ProfileEvents::Counters * parent_counters, MemoryTracker * parent_memory_tracker);
@@ -48,12 +50,12 @@ struct ThreadStatus : public ext::shared_ptr_helper<ThreadStatus>
     ThreadStatus();
 
     bool initialized = false;
+    bool thread_exited = false;
     Poco::Logger * log;
 
     struct Impl;
     std::shared_ptr<Impl> impl;
 };
-
 
 extern thread_local ThreadStatusPtr current_thread;
 
