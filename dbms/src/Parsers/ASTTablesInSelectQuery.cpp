@@ -176,7 +176,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
 
 void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parents = false;
+    frame.need_parens = false;
 
     if (using_expression_list)
     {

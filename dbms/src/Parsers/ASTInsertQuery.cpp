@@ -7,7 +7,7 @@ namespace DB
 
 void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parents = false;
+    frame.need_parens = false;
 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO ";
     if (table_function)

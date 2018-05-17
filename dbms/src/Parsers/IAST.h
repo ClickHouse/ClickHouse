@@ -171,7 +171,7 @@ public:
     struct FormatStateStacked
     {
         UInt8 indent = 0;
-        bool need_parents = false;
+        bool need_parens = false;
         const IAST * current_select = nullptr;
     };
 
