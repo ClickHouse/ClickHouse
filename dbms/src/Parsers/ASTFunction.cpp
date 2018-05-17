@@ -58,8 +58,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 {
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
-    nested_need_parens.need_parents = true;
-    nested_dont_need_parens.need_parents = false;
+    nested_need_parens.need_parens = true;
+    nested_dont_need_parens.need_parens = false;
 
     /// Should this function to be written as operator?
     bool written = false;
@@ -147,12 +147,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 if (0 == strcmp(name.c_str(), func[0]))
                 {
-                    if (frame.need_parents)
+                    if (frame.need_parens)
                         settings.ostr << '(';
                     arguments->children[0]->formatImpl(settings, state, nested_need_parens);
                     settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
                     arguments->children[1]->formatImpl(settings, state, nested_need_parens);
-                    if (frame.need_parents)
+                    if (frame.need_parens)
                         settings.ostr << ')';
                     written = true;
                 }
@@ -186,7 +186,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
 
-                if (frame.need_parents)
+                if (frame.need_parens)
                     settings.ostr << '(';
 
                 const ASTFunction * first_arg_func = typeid_cast<const ASTFunction *>(arguments->children[0].get());
@@ -202,7 +202,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                 settings.ostr << (settings.hilite ? hilite_operator : "") << " -> " << (settings.hilite ? hilite_none : "");
                 arguments->children[1]->formatImpl(settings, state, nested_need_parens);
-                if (frame.need_parents)
+                if (frame.need_parens)
                     settings.ostr << ')';
                 written = true;
             }
@@ -221,7 +221,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 if (0 == strcmp(name.c_str(), func[0]))
                 {
-                    if (frame.need_parents)
+                    if (frame.need_parens)
                         settings.ostr << '(';
                     for (size_t i = 0; i < arguments->children.size(); ++i)
                     {
@@ -229,7 +229,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                             settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
                         arguments->children[i]->formatImpl(settings, state, nested_need_parens);
                     }
-                    if (frame.need_parents)
+                    if (frame.need_parens)
                         settings.ostr << ')';
                     written = true;
                 }
