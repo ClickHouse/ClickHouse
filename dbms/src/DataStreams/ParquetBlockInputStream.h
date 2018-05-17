@@ -5,6 +5,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDate.h>
 // TODO: refine includes
 #include <arrow/api.h>
 /* #include <DataStreams/MarkInCompressedFile.h> */
@@ -34,6 +35,7 @@ private:
 
     void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column);
     void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column);
+    void fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column);
 
     std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type = {
         {arrow::Type::UINT8,  std::make_shared<DataTypeUInt8>()},
@@ -47,11 +49,10 @@ private:
         {arrow::Type::FLOAT,  std::make_shared<DataTypeFloat32>()},
         {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()},
 
-        {arrow::Type::STRING, std::make_shared<DataTypeString>()},
-        {arrow::Type::BOOL,   std::make_shared<DataTypeUInt8>()}//,
-        // TODO:
-        /* {arrow::Type::DATE32, Date32, Int32Type}, */
-        /* {arrow::Type::DATE64, Date64, Int32Type}//, */
+        {arrow::Type::BOOL,   std::make_shared<DataTypeUInt8>()},
+        {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
+
+        {arrow::Type::STRING, std::make_shared<DataTypeString>()}//,
         // TODO: add other types
     };
 
