@@ -373,6 +373,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES = 396;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW = 397;
     extern const int PTHREAD_ERROR = 398;
+    extern const int NETLINK_ERROR = 399;
 
 
     extern const int KEEPER_EXCEPTION = 999;

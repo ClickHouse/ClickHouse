@@ -4,6 +4,12 @@
 #include <atomic>
 #include <memory>
 
+namespace DB
+{
+
+class IColumn;
+
+}
 
 /** Implements global counters for various events happening in the application
   *  - for high level profiling.
@@ -62,6 +68,9 @@ namespace ProfileEvents
 
         /// Reset metrics
         void resetCounters();
+
+        /// Dumps profile events to two column Array(String) and Array(UInt64)
+        void dumpToArrayColumns(DB::IColumn * column_names, DB::IColumn * column_value, bool nonzero_only = true);
 
         static const Event num_counters;
     };

@@ -1,13 +1,14 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <pthread.h>
 #include <chrono>
@@ -73,10 +74,12 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::EntryPtr ProcessList::insert(
-    const String & query_, const IAST * ast, const ClientInfo & client_info, const Settings & settings)
+ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, Context & query_context)
 {
     EntryPtr res;
+
+    const ClientInfo & client_info = query_context.getClientInfo();
+    const Settings & settings = query_context.getSettingsRef();
 
     if (client_info.current_query_id.empty())
         throw Exception("Query id cannot be empty", ErrorCodes::LOGICAL_ERROR);
@@ -134,6 +137,8 @@ ProcessList::EntryPtr ProcessList::insert(
             query_, client_info, settings.max_memory_usage, settings.memory_tracker_fault_probability, priorities.insert(settings.priority));
 
         res = std::make_shared<Entry>(*this, process_it);
+
+        process_it->query_context = &query_context;
 
         if (!client_info.current_query_id.empty())
         {
@@ -391,6 +396,58 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
     }
 
     return CancellationCode::QueryIsNotInitializedYet;
+}
+
+
+QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
+{
+    QueryStatusInfo res;
+
+    res.query             = query;
+    res.client_info       = client_info;
+    res.elapsed_seconds   = watch.elapsedSeconds();
+    res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
+    res.read_rows         = progress_in.rows;
+    res.read_bytes        = progress_in.bytes;
+    res.total_rows        = progress_in.total_rows;
+    res.written_rows      = progress_out.rows;
+    res.written_bytes     = progress_out.bytes;
+    res.memory_usage      = memory_tracker.get();
+    res.peak_memory_usage = memory_tracker.getPeak();
+
+    if (get_thread_list)
+    {
+        std::lock_guard lock(threads_mutex);
+        res.thread_numbers.reserve(thread_statuses.size());
+
+        for (auto & thread_status_elem : thread_statuses)
+            res.thread_numbers.emplace_back(thread_status_elem.second->poco_thread_number);
+    }
+
+    if (get_profile_events)
+    {
+        res.profile_counters = std::make_shared<ProfileEvents::Counters>(ProfileEvents::Level::Process);
+        performance_counters.getPartiallyAtomicSnapshot(*res.profile_counters);
+    }
+
+    if (get_settings && query_context)
+        res.query_settings = std::make_shared<Settings>(query_context->getSettingsRef());
+
+    return res;
+}
+
+
+ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
+{
+    Info per_query_infos;
+
+    std::lock_guard<std::mutex> lock(mutex);
+
+    per_query_infos.reserve(processes.size());
+    for (const auto & process : processes)
+        per_query_infos.emplace_back(process.getInfo(get_thread_list, get_profile_events, get_settings));
+
+    return per_query_infos;
 }
 
 
