@@ -43,7 +43,7 @@ public:
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        frame.need_parens = false;
+        frame.need_parents = false;
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
         settings.ostr << settings.nl_or_ws << indent_str << backQuoteIfNeed(name);

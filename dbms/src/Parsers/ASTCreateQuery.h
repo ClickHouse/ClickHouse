@@ -128,7 +128,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        frame.need_parens = false;
+        frame.need_parents = false;
 
         if (!database.empty() && table.empty())
         {
