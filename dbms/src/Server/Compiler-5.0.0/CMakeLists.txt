@@ -9,6 +9,11 @@ add_library(clickhouse-compiler-lib
 target_compile_options(clickhouse-compiler-lib PRIVATE -fno-rtti -fno-exceptions -g0)
 
 llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
+if (TERMCAP_LIBRARY)
+    list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
+endif ()
+list(APPEND REQUIRED_LLVM_LIBRARIES ${CMAKE_DL_LIBS})
+
 
 message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
@@ -44,7 +49,3 @@ LLVMSupport
 
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )
-
-if (TERMCAP_LIBRARY)
-    target_link_libraries(clickhouse-compiler-lib PUBLIC ${TERMCAP_LIBRARY})
-endif()

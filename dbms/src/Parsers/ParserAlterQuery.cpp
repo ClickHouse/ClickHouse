@@ -35,6 +35,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserKeyword s_name("NAME");
 
+    ParserKeyword s_delete_where("DELETE WHERE");
+
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_comma(TokenType::Comma);
 
@@ -43,6 +45,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserPartition parser_partition;
     ParserStringLiteral parser_string_literal;
+    ParserExpression exp_elem;
 
     String cluster_str;
     ASTPtr col_type;
@@ -215,6 +218,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ++pos;
 
             params.type = ASTAlterQuery::MODIFY_PRIMARY_KEY;
+        }
+        else if (s_delete_where.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, params.predicate, expected))
+                return false;
+
+            params.type = ASTAlterQuery::DELETE;
         }
         else
             return false;

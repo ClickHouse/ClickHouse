@@ -32,6 +32,8 @@ public:
         FETCH_PARTITION,
         FREEZE_PARTITION,
 
+        DELETE,
+
         NO_TYPE,
     };
 
@@ -60,6 +62,9 @@ public:
          *  The value or ID of the partition is stored here.
           */
         ASTPtr partition;
+
+        /// For DELETE WHERE: the predicate that filters the rows to delete.
+        ASTPtr predicate;
 
         bool detach = false;        /// true for DETACH PARTITION
 
