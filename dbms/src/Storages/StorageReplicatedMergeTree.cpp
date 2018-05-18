@@ -875,7 +875,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const MergeTreeData::DataPartPtr & part : unexpected_parts)
     {
         LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-        data.forgivePartAndMoveToDetached(part, "ignored_", true);
+        data.forgetPartAndMoveToDetached(part, "ignored_", true);
     }
 }
 
@@ -1648,7 +1648,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
 
         for (const PartDescriptionPtr & part_desc : all_parts)
         {
-            if (!data.getActiveContainingPartImpl(part_desc->new_part_info, MergeTreeDataPartState::Committed, data_parts_lock))
+            if (!data.getActiveContainingPart(part_desc->new_part_info, MergeTreeDataPartState::Committed, data_parts_lock))
                 parts_to_add.emplace_back(part_desc);
         }
 
@@ -4379,7 +4379,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
             auto data_parts_lock = data.lockParts();
 
             for (MergeTreeData::MutableDataPartPtr & part : dst_parts)
-                data.renameTempPartAndReplaceImpl(part, nullptr, &transaction, data_parts_lock);
+                data.renameTempPartAndReplace(part, nullptr, &transaction, data_parts_lock);
         }
 
         op_results = zookeeper->multi(ops);

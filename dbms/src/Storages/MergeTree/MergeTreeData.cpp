@@ -1438,7 +1438,7 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
 }
 
 
-void MergeTreeData::renameTempPartAndReplaceImpl(
+void MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part, SimpleIncrement * increment, MergeTreeData::Transaction * out_transaction,
     std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts)
 {
@@ -1537,12 +1537,12 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     DataPartsVector covered_parts;
     {
         std::unique_lock<std::mutex> lock(data_parts_mutex);
-        renameTempPartAndReplaceImpl(part, increment, out_transaction, lock, &covered_parts);
+        renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts);
     }
     return covered_parts;
 }
 
-void MergeTreeData::removePartsFromWorkingSetImpl(const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
+void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & /*acquired_lock*/)
 {
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
@@ -1571,7 +1571,7 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
         part->assertState({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
     }
 
-    removePartsFromWorkingSetImpl(remove, clear_without_timeout, lock);
+    removePartsFromWorkingSet(remove, clear_without_timeout, lock);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
@@ -1623,12 +1623,12 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             parts_to_remove.emplace_back(part);
     }
 
-    removePartsFromWorkingSetImpl(parts_to_remove, clear_without_timeout, lock);
+    removePartsFromWorkingSet(parts_to_remove, clear_without_timeout, lock);
 
     return parts_to_remove;
 }
 
-void MergeTreeData::forgivePartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
+void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
 restore_covered)
 {
     LOG_INFO(log, "Renaming " << part_to_detach->relative_path << " to " << prefix << part_to_detach->name << " and forgiving it.");
@@ -1817,7 +1817,7 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPartImpl(
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/)
 {
     auto committed_parts_range = getDataPartsStateRange(state);
@@ -1848,7 +1848,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
     DataPartsLock data_parts_lock(data_parts_mutex);
-    return getActiveContainingPartImpl(part_info, DataPartState::Committed, data_parts_lock);
+    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
 }
 
 

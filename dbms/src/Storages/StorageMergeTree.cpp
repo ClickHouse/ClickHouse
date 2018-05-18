@@ -612,7 +612,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// Populate transaction
             for (MergeTreeData::MutableDataPartPtr & part : dst_parts)
-                data.renameTempPartAndReplaceImpl(part, &increment, &transaction, data_parts_lock);
+                data.renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
 
             transaction.commit(&data_parts_lock);
 

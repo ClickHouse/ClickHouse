@@ -373,7 +373,7 @@ public:
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
-    DataPartPtr getActiveContainingPartImpl(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock);
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
 
     /// Returns all parts in specified partition
     DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
@@ -406,16 +406,16 @@ public:
         MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
-    void renameTempPartAndReplaceImpl(
-        MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
-        DataPartsVector * out_covered_parts = nullptr);
+    void renameTempPartAndReplace(
+            MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
+            DataPartsVector * out_covered_parts = nullptr);
 
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
     void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
-    void removePartsFromWorkingSetImpl(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
+    void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
     /// Removes all parts from the working set parts
     ///  for which (partition_id = drop_range.partition_id && min_block >= drop_range.min_block && max_block <= drop_range.max_block).
@@ -430,7 +430,7 @@ public:
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
-    void forgivePartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
+    void forgetPartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.
