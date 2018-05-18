@@ -192,6 +192,8 @@ public:
 
     void writeAlias(const String & name, std::ostream & s, bool hilite) const;
 
+    void cloneChildren();
+
 public:
     /// For syntax highlighting.
     static const char * hilite_keyword;

@@ -21,6 +21,7 @@ CONFIG_CLIENT=${CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}client-test.xml}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
 [ -x "$CUR_DIR/clickhouse-test" ] && TEST_DIR=${TEST_DIR=$CUR_DIR/}
 [ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
+[ ! -d "$QUERIES_DIR" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
 [ ! -d "$QUERIES_DIR" ] && QUERIES_DIR=${QUERIES_DIR=/usr/share/clickhouse-test/queries}
 CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 
