@@ -347,7 +347,10 @@ if __name__ == '__main__':
     if args.queries is None and os.path.isdir('queries'):
         args.queries = 'queries'
     elif args.queries is None:
-        args.queries = '/usr/share/clickhouse-test/queries'
+        if (os.path.isdir('/usr/local/share/clickhouse-test/queries')):
+            args.queries = '/usr/local/share/clickhouse-test/queries'
+        if (args.queries is None and os.path.isdir('/usr/share/clickhouse-test/queries')):
+            args.queries = '/usr/share/clickhouse-test/queries'
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
     if args.tmp is None:
