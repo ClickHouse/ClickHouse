@@ -183,6 +183,7 @@ BlockInputStreams StorageMerge::read(
 
         SelectQueryInfo modified_query_info;
         modified_query_info.query = modified_query_ast;
+        modified_query_info.sets = query_info.sets;
 
         BlockInputStreams source_streams;
 
