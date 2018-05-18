@@ -30,6 +30,7 @@
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/ParquetBlockInputStream.h>
+#include <DataStreams/ParquetBlockOutputStream.h>
 #include <DataTypes/FormatSettingsJSON.h>
 #if USE_CAPNP
 #include <DataStreams/CapnProtoRowInputStream.h>
@@ -163,6 +164,8 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
 
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, csv_delimiter, with_names), sample);
     }
+    else if (name == "Parquet")
+        return std::make_shared<ParquetBlockOutputStream>(buf, sample);
     else if (name == "Pretty")
         return std::make_shared<PrettyBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
     else if (name == "PrettyCompact")
