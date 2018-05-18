@@ -1,5 +1,7 @@
 import time
 import os
+import threading
+import random
 from contextlib import contextmanager
 
 import pytest
@@ -62,3 +64,86 @@ def test_random_inserts(started_cluster):
         assert TSV(res) == TSV(answer), node.name + " : " + node.query("SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
 
     node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")
+
+
+class Runner:
+    def __init__(self):
+        self.mtx = threading.Lock()
+        self.total_inserted = 0
+        self.inserted_vals = set()
+        self.inserted_payloads = set()
+
+        self.stop_ev = threading.Event()
+
+    def do_insert(self, thread_num):
+        self.stop_ev.wait(random.random())
+
+        year = 2000
+        month = '01'
+        day = str(thread_num + 1).zfill(2)
+        x = 1
+        while not self.stop_ev.is_set():
+            payload = """
+{year}-{month}-{day}	{x1}
+{year}-{month}-{day}	{x2}
+""".format(year=year, month=month, day=day, x1=x, x2=(x + 1)).strip()
+
+            try:
+                random.choice(nodes).query("INSERT INTO repl_test FORMAT TSV", payload)
+
+                # print 'thread {}: insert {}, {}'.format(thread_num, i, i + 1)
+                self.mtx.acquire()
+                if payload not in self.inserted_payloads:
+                    self.inserted_payloads.add(payload)
+                    self.inserted_vals.add(x)
+                    self.inserted_vals.add(x + 1)
+                    self.total_inserted += 2 * x + 1
+                self.mtx.release()
+
+            except Exception, e:
+                print 'Exception:', e
+
+            x += 2
+            self.stop_ev.wait(0.1 + random.random() / 10)
+
+
+def test_insert_multithreaded(started_cluster):
+    DURATION_SECONDS = 50
+
+    for node in nodes:
+        node.query("DROP TABLE IF EXISTS repl_test")
+
+    for node in nodes:
+        node.query("CREATE TABLE repl_test(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/repl_test', '{replica}') ORDER BY x PARTITION BY toYYYYMM(d)")
+
+    runner = Runner()
+
+    threads = []
+    for thread_num in range(5):
+        threads.append(threading.Thread(target=runner.do_insert, args=(thread_num, )))
+
+    for t in threads:
+        t.start()
+
+    time.sleep(DURATION_SECONDS)
+    runner.stop_ev.set()
+
+    for t in threads:
+        t.join()
+
+    # Sanity check: at least something was inserted
+    assert runner.total_inserted > 0
+
+    for i in range(30): # wait for replication 3 seconds max
+        time.sleep(0.1)
+
+        def get_delay(node):
+            return int(node.query("SELECT absolute_delay FROM system.replicas WHERE table = 'repl_test'").rstrip())
+
+        if all([get_delay(n) == 0 for n in nodes]):
+            break
+
+    actual_inserted = []
+    for i, node in enumerate(nodes):
+        actual_inserted.append(int(node.query("SELECT sum(x) FROM repl_test").rstrip()))
+        assert actual_inserted[i] == runner.total_inserted

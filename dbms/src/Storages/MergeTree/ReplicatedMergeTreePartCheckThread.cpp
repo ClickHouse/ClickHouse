@@ -174,36 +174,6 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         */
     LOG_ERROR(log, "Part " << part_name << " is lost forever.");
     ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
-
-    /** You need to add the missing part to `block_numbers` so that it does not interfere with merges.
-      * But we can't just add it to `block_numbers` - if so,
-      *  ZooKeeper for some reason will skip one number for autoincrement,
-      *  and there will still be a hole in the block numbers.
-      * Especially because of this, you have to separately have `nonincrement_block_numbers`.
-      *
-      * By the way, if we die here, the mergers will not be made through these missing parts.
-      *
-      * And, we will not add if:
-      * - would need to create too many (more than 1000) nodes;
-      * - the part is the first in partition or was ATTACHed.
-      * NOTE It is possible to also add a condition if the entry in the queue is very old.
-      */
-
-    size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
-    if (part_length_in_blocks > 1000)
-    {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too many blocks (" << part_length_in_blocks << ")");
-        return;
-    }
-
-    const String & partition_id = part_info.partition_id;
-    for (auto i = part_info.min_block; i <= part_info.max_block; ++i)
-    {
-        zookeeper->createIfNotExists(storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id, "");
-        AbandonableLockInZooKeeper::createAbandonedIfNotExists(
-            storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(i),
-            *zookeeper);
-    }
 }
 
 

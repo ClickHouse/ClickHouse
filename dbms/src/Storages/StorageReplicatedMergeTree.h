@@ -37,7 +37,6 @@ namespace DB
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
-  *   or that were unused (/nonincrement_block_numbers)
   *   to ensure the linear order of data insertion and data merge only on the intervals in this sequence;
   * - coordinates writes with quorum (/quorum).
   */
@@ -344,7 +343,7 @@ private:
     /** Copies the new entries from the logs of all replicas to the queue of this replica.
       * If next_update_event != nullptr, calls this event when new entries appear in the log.
       */
-    void pullLogsToQueue(zkutil::EventPtr next_update_event = nullptr);
+    void pullLogsToQueue(zkutil::EventPtr next_update_event);
 
     /** Execute the action from the queue. Throws an exception if something is wrong.
       * Returns whether or not it succeeds. If it did not work, write it to the end of the queue.
@@ -387,6 +386,7 @@ private:
       * Returns false if any part is not in ZK.
       */
     bool createLogEntryToMergeParts(
+        zkutil::ZooKeeperPtr & zookeeper,
         const MergeTreeData::DataPartsVector & parts,
         const String & merged_name,
         bool deduplicate,
