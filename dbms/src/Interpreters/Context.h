@@ -40,6 +40,7 @@ class ExternalDictionaries;
 class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
+class BackgroundSchedulePool;
 class MergeList;
 class Cluster;
 class Compiler;
@@ -328,6 +329,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
+    BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;

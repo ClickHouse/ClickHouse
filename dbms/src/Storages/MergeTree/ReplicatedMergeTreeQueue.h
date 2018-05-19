@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -156,10 +157,10 @@ public:
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
-      * If next_update_event != nullptr, will call this event when new entries appear in the log.
+      * If next_update_task_handle != nullptr, will schedule this task when new entries appear in the log.
       * Returns true if new entries have been.
       */
-    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_task_handle);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
