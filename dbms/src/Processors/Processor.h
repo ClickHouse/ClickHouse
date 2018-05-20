@@ -353,10 +353,6 @@ public:
 
     Status prepare() override
     {
-        /// For each processor, calculate on what ports it needs data.
-        for (auto & element : processors)
-            element->prepare();
-
         bool has_someone_to_wait = false;
         bool found = false;
         Status found_status = Status::Finished;
