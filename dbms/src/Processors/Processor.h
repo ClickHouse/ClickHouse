@@ -61,6 +61,9 @@
   * Concat. Has many inputs but only one output. Pulls all data from first input, then all data from second input, etc. and pushes it to output.
   *
   * Ordered merge. Has many inputs but only one output. Pulls data from selected input in specific order, merges and pushes it to output.
+  *
+  * Fork. Has one input and many outputs. Pulls data from input and copies it to all outputs.
+  * Used to process multiple queries with common source of data.
   */
 
 namespace DB
