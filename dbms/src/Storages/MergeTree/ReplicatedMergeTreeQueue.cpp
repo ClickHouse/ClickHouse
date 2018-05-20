@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
@@ -15,6 +16,13 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
 }
+
+
+ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_)
+    : storage(storage_)
+    , format_version(storage.data.format_version)
+    , virtual_parts(format_version)
+{}
 
 
 void ReplicatedMergeTreeQueue::initVirtualParts(const MergeTreeData::DataParts & parts)
@@ -265,7 +273,7 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
 }
 
 
-bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
+void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
@@ -276,8 +284,8 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
     /// We update mutations after we have loaded the list of log entries, but before we insert them
     /// in the queue.
-    /// With this we ensure that if you read the queue state Q1 and then the state of mutations M1,
-    /// then Q1 "happened-before" M1.
+    /// With this we ensure that if you read the log state L1 and then the state of mutations M1,
+    /// then L1 "happened-before" M1.
     updateMutations(zookeeper, nullptr);
 
     if (index_str.empty())
@@ -402,13 +410,14 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
             if (!copied_entries.empty())
                 LOG_DEBUG(log, "Pulled " << copied_entries.size() << " entries to queue.");
         }
-    }
 
-    return !log_entries.empty();
+        if (storage.queue_task_handle)
+            storage.queue_task_handle->wake();
+    }
 }
 
 
-bool ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
+void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
 {
     std::lock_guard lock(update_mutations_mutex);
 
@@ -477,8 +486,6 @@ bool ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
             }
         }
     }
-
-    return !entries_to_load.empty();
 }
 
 
