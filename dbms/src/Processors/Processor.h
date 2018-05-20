@@ -199,6 +199,10 @@ public:
 };
 
 
+using InputPorts = std::vector<InputPort>;
+using OutputPorts = std::vector<OutputPort>;
+
+
 inline void connect(OutputPort & output, InputPort & input)
 {
     input.output_port = &output;
@@ -253,13 +257,13 @@ public:
 class IProcessor
 {
 protected:
-    std::list<InputPort> inputs;
-    std::list<OutputPort> outputs;
+    InputPorts inputs;
+    OutputPorts outputs;
 
 public:
     IProcessor() {}
 
-    IProcessor(std::list<InputPort> && inputs_, std::list<OutputPort> && outputs_)
+    IProcessor(InputPorts && inputs_, OutputPorts && outputs_)
         : inputs(std::move(inputs_)), outputs(std::move(outputs_))
     {
         for (auto & port : inputs)
@@ -328,6 +332,8 @@ class SequentialPipelineExecutor : IProcessor
 private:
     std::list<ProcessorPtr> processors;
 
+    /// Look for first Ready or Async processor by depth-first search in needed input ports.
+    /// NOTE: Pipeline must not have cycles.
     template <typename Visit, typename Finish>
     void traverse(IProcessor & processor, Visit && visit, Finish && finish)
     {
@@ -562,6 +568,83 @@ public:
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
+};
+
+
+class ResizeProcessor : public IProcessor
+{
+public:
+    using IProcessor::IProcessor;
+
+    String getName() const override { return "Resize"; }
+
+    Status prepare() override
+    {
+        bool all_outputs_full = true;
+        bool all_outputs_unneeded = true;
+
+        for (const auto & output : outputs)
+        {
+            if (!output.hasData())
+                all_outputs_full = false;
+
+            if (output.isNeeded())
+                all_outputs_unneeded = false;
+        }
+
+        if (all_outputs_full)
+            return Status::PortFull;
+
+        if (all_outputs_unneeded)
+        {
+            for (auto & input : inputs)
+                input.setNotNeeded();
+
+            return Status::Unneeded;
+        }
+
+        bool all_inputs_finished = true;
+        bool all_inputs_have_no_data = true;
+
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished())
+            {
+                all_inputs_finished = false;
+
+                input.setNeeded();
+                if (input.hasData())
+                    all_inputs_have_no_data = false;
+            }
+        }
+
+        if (all_inputs_finished)
+            return Status::Finished;
+
+        if (all_inputs_have_no_data)
+            return Status::NeedData;
+
+        return Status::Ready;
+    }
+
+    void work() override
+    {
+        for (auto & input : inputs)
+        {
+            if (input.hasData())
+            {
+                for (auto & output : outputs)
+                {
+                    if (!output.hasData())
+                    {
+                        output.push(input.pull());
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
 };
 
 
