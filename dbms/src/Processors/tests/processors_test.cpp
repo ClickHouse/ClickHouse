@@ -50,9 +50,6 @@ public:
 
     Status prepare() override
     {
-        if (output.hasData())
-            return Status::PortFull;
-
         if (!output.isNeeded())
             return Status::Unneeded;
 
@@ -61,6 +58,9 @@ public:
 
         if (!current_block)
             return Status::Async;
+
+        if (output.hasData())
+            return Status::PortFull;
 
         return Status::Ready;
     }
