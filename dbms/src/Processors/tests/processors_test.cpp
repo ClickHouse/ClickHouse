@@ -43,8 +43,8 @@ protected:
 public:
     String getName() const override { return "SleepyNumbers"; }
 
-    SleepyNumbersSource()
-        : IProcessor({}, {std::move(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))}), output(outputs.front())
+    SleepyNumbersSource(UInt64 start_number, unsigned sleep_useconds)
+        : IProcessor({}, {std::move(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))}), output(outputs.front()), current_number(start_number), sleep_useconds(sleep_useconds)
     {
     }
 
@@ -75,7 +75,7 @@ public:
         active = true;
         pool.schedule([&watch, this]
         {
-            usleep(100000);
+            usleep(sleep_useconds);
             current_block = generate();
             active = false;
             watch.notify();
@@ -90,6 +90,7 @@ private:
     std::atomic_bool active {false};
 
     UInt64 current_number = 0;
+    unsigned sleep_useconds;
 
     Block generate()
     {
@@ -138,14 +139,21 @@ private:
 int main(int, char **)
 try
 {
-    auto source = std::make_shared<SleepyNumbersSource>();
-    auto sink = std::make_shared<PrintSink>();
-    auto limit = std::make_shared<LimitTransform>(source->getPort().getHeader(), 100, 0);
+    auto source1 = std::make_shared<SleepyNumbersSource>(0, 100000);
+    auto source2 = std::make_shared<SleepyNumbersSource>(1000, 200000);
 
-    connect(source->getPort(), limit->getInputPort());
+    auto header = source1->getPort().getHeader();
+
+    auto resize = std::make_shared<ResizeProcessor>(InputPorts{Block(header), Block(header)}, OutputPorts{Block(header)});
+    auto limit = std::make_shared<LimitTransform>(Block(header), 100, 0);
+    auto sink = std::make_shared<PrintSink>();
+
+    connect(source1->getPort(), resize->getInputs()[0]);
+    connect(source2->getPort(), resize->getInputs()[1]);
+    connect(resize->getOutputs()[0], limit->getInputPort());
     connect(limit->getOutputPort(), sink->getPort());
 
-    SequentialPipelineExecutor executor({source, limit, sink});
+    SequentialPipelineExecutor executor({source1, source2, resize, limit, sink});
 
     EventCounter watch;
     while (true)
