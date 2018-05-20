@@ -202,7 +202,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         sampling_expression_, merging_params_,
         settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
-    reader(data), writer(data), merger(data, context.getBackgroundPool()), queue(data.format_version),
+    reader(data), writer(data), merger(data, context.getBackgroundPool()), queue(*this),
     fetcher(data),
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
@@ -1016,16 +1016,6 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
 }
 
 
-void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
-{
-    if (queue.pullLogsToQueue(getZooKeeper(), next_update_event))
-    {
-        if (queue_task_handle)
-            queue_task_handle->wake();
-    }
-}
-
-
 bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 {
     if (entry.type == LogEntry::ATTACH_PART)
@@ -1599,7 +1589,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
         }
         try
         {
-            pullLogsToQueue(queue_updating_event);
+            queue.pullLogsToQueue(getZooKeeper(), queue_updating_event);
             last_queue_update_finish_time.store(time(nullptr));
             update_in_progress = false;
             queue_updating_event->wait();

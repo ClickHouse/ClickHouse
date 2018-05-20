@@ -187,6 +187,7 @@ private:
     friend class ReplicatedMergeTreeRestartingThread;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
+    friend class ReplicatedMergeTreeQueue;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -344,11 +345,6 @@ private:
     void removePartAndEnqueueFetch(const String & part_name);
 
     /// Running jobs from the queue.
-
-    /** Copies the new entries from the logs of all replicas to the queue of this replica.
-      * If next_update_event != nullptr, calls this event when new entries appear in the log.
-      */
-    void pullLogsToQueue(zkutil::EventPtr next_update_event);
 
     /** Execute the action from the queue. Throws an exception if something is wrong.
       * Returns whether or not it succeeds. If it did not work, write it to the end of the queue.

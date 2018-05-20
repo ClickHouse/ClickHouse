@@ -13,7 +13,7 @@
 namespace DB
 {
 
-
+class StorageReplicatedMergeTree;
 class MergeTreeDataMerger;
 
 class ReplicatedMergeTreeMergePredicate;
@@ -45,6 +45,7 @@ private:
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
 
+    StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
@@ -158,11 +159,7 @@ private:
     };
 
 public:
-    ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
-        : format_version(format_version_)
-        , virtual_parts(format_version)
-    {
-    }
+    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
@@ -182,11 +179,13 @@ public:
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If next_update_event != nullptr, will call this event when new entries appear in the log.
-      * Returns true if new entries have been.
+      * If there were new entries, notifies storage.queue_task_handle.
+      * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       */
-    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
-    bool updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    /// Load new mutation entries.
+    void updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
