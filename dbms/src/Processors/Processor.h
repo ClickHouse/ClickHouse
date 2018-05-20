@@ -280,7 +280,7 @@ public:
     enum class Status
     {
         /// Processor needs some data at its inputs to proceed.
-        /// You need to run another processor to generate required input and proceed.
+        /// You need to run another processor to generate required input before proceed.
         NeedData,
 
         /// Processor cannot proceed because output port is full.
