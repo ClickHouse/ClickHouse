@@ -68,11 +68,13 @@ namespace DB
 
 class InputPort;
 class OutputPort;
+class IProcessor;
+
 
 class Port
 {
 protected:
-    friend void connect(OutputPort &, InputPort &);
+    friend class IProcessor;
 
     /// Shared state of two connected ports.
     struct State
@@ -84,6 +86,8 @@ protected:
 
     Block header;
     std::shared_ptr<State> state;
+
+    IProcessor * processor = nullptr;
 
 public:
     Port(const Block & header)
@@ -109,11 +113,23 @@ public:
         assumeConnected();
         return state->needed;
     }
+
+    IProcessor & getProcessor()
+    {
+        if (!processor)
+            throw Exception("Port does not belong to Processor");
+        return *processor;
+    }
 };
 
 
 class InputPort : public Port
 {
+    friend void connect(OutputPort &, InputPort &);
+
+private:
+    OutputPort * output_port = nullptr;
+
 public:
     using Port::Port;
 
@@ -142,11 +158,22 @@ public:
         assumeConnected();
         state->needed = false;
     }
+
+    OutputPort & getOutputPort()
+    {
+        assumeConnected();
+        return *output_port;
+    }
 };
 
 
 class OutputPort : public Port
 {
+    friend void connect(OutputPort &, InputPort &);
+
+private:
+    InputPort * input_port = nullptr;
+
 public:
     using Port::Port;
 
@@ -163,12 +190,21 @@ public:
         assumeConnected();
         state->finished = true;
     }
+
+    InputPort & getInputPort()
+    {
+        assumeConnected();
+        return *input_port;
+    }
 };
 
 
 inline void connect(OutputPort & output, InputPort & input)
 {
-    input.state = output.state = std::make_shared<Port::State>();
+    input.output_port = &output;
+    output.input_port = &input;
+    input.state = std::make_shared<Port::State>();
+    output.state = input.state;
 }
 
 
@@ -223,8 +259,14 @@ protected:
 public:
     IProcessor() {}
 
-    IProcessor(std::list<InputPort> && inputs, std::list<OutputPort> && outputs)
-        : inputs(std::move(inputs)), outputs(std::move(outputs)) {}
+    IProcessor(std::list<InputPort> && inputs_, std::list<OutputPort> && outputs_)
+        : inputs(std::move(inputs_)), outputs(std::move(outputs_))
+    {
+        for (auto & port : inputs)
+            port.processor = this;
+        for (auto & port : outputs)
+            port.processor = this;
+    }
 
     virtual String getName() const = 0;
 
@@ -241,6 +283,9 @@ public:
         /// All work is done, nothing more to do.
         Finished,
 
+        /// No one needs data on output ports.
+        Unneeded,
+
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
@@ -251,7 +296,7 @@ public:
         Wait
     };
 
-    virtual Status getStatus() = 0;
+    virtual Status prepare() = 0;
 
     /// You may call this method if 'status' returned Ready.
     virtual void work()
@@ -267,18 +312,8 @@ public:
 
     virtual ~IProcessor() {}
 
-    /// Someone needs data on at least one output port or it has no outputs.
-    bool isNeeded() const
-    {
-        if (outputs.empty())
-            return true;
-
-        for (const auto & output : outputs)
-            if (output.isNeeded())
-                return true;
-
-        return false;
-    }
+    auto & getInputs() { return inputs; }
+    auto & getOutputs() { return outputs; }
 };
 
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -293,71 +328,121 @@ class SequentialPipelineExecutor : IProcessor
 private:
     std::list<ProcessorPtr> processors;
 
+    template <typename Visit, typename Finish>
+    void traverse(IProcessor & processor, Visit && visit, Finish && finish)
+    {
+        Status status = processor.prepare();
+        visit(processor, status);
+
+        if (status == Status::Ready || status == Status::Async)
+            return finish(processor, status);
+
+        if (status == Status::NeedData)
+            for (auto & input : processor.getInputs())
+                if (input.isNeeded())
+                    traverse(input.getOutputPort().getProcessor(), std::forward<Visit>(visit), std::forward<Finish>(finish));
+    }
+
 public:
-    SequentialPipelineExecutor(const std::list<ProcessorPtr> & processors) : processors(processors) {}
+    SequentialPipelineExecutor(const std::list<ProcessorPtr> & processors)
+        : processors(processors)
+    {
+    }
 
     String getName() const override { return "SequentialPipelineExecutor"; }
 
-    Status getStatus() override
+    Status prepare() override
     {
+        /// For each processor, calculate on what ports it needs data.
         for (auto & element : processors)
-            if (element->getStatus() == Status::Async)
-                return Status::Async;
+            element->prepare();
 
-        for (auto & element : processors)
-            if (element->getStatus() == Status::Ready && element->isNeeded())
-                return Status::Ready;
-
-        for (auto & element : processors)
-            if (element->getStatus() == Status::Wait)
-                return Status::Wait;
+        bool has_someone_to_wait = false;
+        bool found = false;
+        Status found_status = Status::Finished;
 
         for (auto & element : processors)
         {
-            if (element->getStatus() == Status::NeedData)
-                throw Exception("Pipeline stuck: " + element->getName() + " processor need input data but no one is going to generate it");
-            if (element->getStatus() == Status::PortFull)
-                throw Exception("Pipeline stuck: " + element->getName() + " processor have data in output port but no one is going to consume it");
+            traverse(*element,
+                [&] (IProcessor &, Status status)
+                {
+                    if (status == Status::Wait)
+                        has_someone_to_wait = true;
+                },
+                [&] (IProcessor &, Status status)
+                {
+                    found = true;
+                    found_status = status;
+                });
+
+            if (found)
+                break;
         }
 
-        /// TODO Check that all processors are finished.
+        if (found)
+            return found_status;
+        if (has_someone_to_wait)
+            return Status::Wait;
+
+        for (auto & element : processors)
+        {
+            if (element->prepare() == Status::NeedData)
+                throw Exception("Pipeline stuck: " + element->getName() + " processor needs input data but no one is going to generate it");
+            if (element->prepare() == Status::PortFull)
+                throw Exception("Pipeline stuck: " + element->getName() + " processor has data in output port but no one is going to consume it");
+        }
+
         return Status::Finished;
     }
 
     void work() override
     {
-        /// Execute one ready and needed processor.
-        for (auto it = processors.begin(); it != processors.end(); ++it)
+        bool found = false;
+        for (auto & element : processors)
         {
-            auto & element = *it;
+            traverse(*element,
+                [] (IProcessor &, Status) {},
+                [&found] (IProcessor & processor, Status status)
+                {
+                    if (status == Status::Ready)
+                    {
+                        found = true;
+                        //std::cerr << processor.getName() << " will work\n";
+                        processor.work();
+                    }
+                });
 
-            //std::cerr << element->getName() << " status is " << static_cast<int>(element->getStatus()) << "\n";
-
-            if (element->getStatus() == Status::Ready && element->isNeeded())
-            {
-                //std::cerr << element->getName() << " will work\n";
-
-                element->work();
-                processors.splice(processors.end(), processors, it);
-                return;
-            }
+            if (found)
+                break;
         }
 
-        throw Exception("Bad pipeline");
+        if (!found)
+            throw Exception("Bad pipeline");
     }
 
     void schedule(EventCounter & watch) override
     {
-        /// Schedule all needed asynchronous jobs.
-        for (auto it = processors.begin(); it != processors.end(); ++it)
+        bool found = false;
+        for (auto & element : processors)
         {
-            auto & element = *it;
+            traverse(*element,
+                [] (IProcessor &, Status) {},
+                [&found, &watch] (IProcessor & processor, Status status)
+                {
+                    if (status == Status::Async)
+                    {
+                        found = true;
+                        //std::cerr << processor.getName() << " will schedule\n";
+                        processor.schedule(watch);
+                    }
+                });
 
-            if (element->getStatus() == Status::Async && element->isNeeded())
-                element->schedule(watch);
+            if (found)
+                break;
         }
 
-        throw Exception("Bad pipeline");
+        if (!found)
+            throw Exception("Bad pipeline");
     }
 };
 
@@ -376,13 +461,16 @@ public:
     {
     }
 
-    Status getStatus() override
+    Status prepare() override
     {
         if (finished)
             return Status::Finished;
 
         if (output.hasData())
             return Status::PortFull;
+
+        if (!output.isNeeded())
+            return Status::Unneeded;
 
         return Status::Ready;
     }
@@ -412,7 +500,7 @@ public:
     {
     }
 
-    Status getStatus() override
+    Status prepare() override
     {
         if (input.hasData())
             return Status::Ready;
@@ -451,10 +539,13 @@ public:
     {
     }
 
-    Status getStatus() override
+    Status prepare() override
     {
         if (output.hasData())
             return Status::PortFull;
+
+        if (!output.isNeeded())
+            return Status::Unneeded;
 
         if (input.hasData())
             return Status::Ready;
@@ -478,6 +569,12 @@ public:
 };
 
 
+/*class AsynchronousProcessor : public IProcessor
+{
+
+};*/
+
+
 class LimitTransform : public IProcessor
 {
 private:
@@ -499,7 +596,7 @@ public:
 
     String getName() const override { return "Limit"; }
 
-    Status getStatus() override
+    Status prepare() override
     {
         if (pos >= offset + limit)
         {
@@ -513,6 +610,9 @@ public:
 
         if (output.hasData())
             return Status::PortFull;
+
+        if (!output.isNeeded())
+            return Status::Unneeded;
 
         input.setNeeded();
         return input.hasData()

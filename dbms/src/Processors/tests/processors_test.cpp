@@ -1,6 +1,9 @@
 #include <iostream>
+#include <thread>
+#include <atomic>
 #include <Processors/Processor.h>
 #include <Columns/ColumnsNumber.h>
+#include <common/ThreadPool.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -23,6 +26,72 @@ private:
     UInt64 current_number = 0;
 
     Block generate() override
+    {
+        MutableColumns columns;
+        columns.emplace_back(ColumnUInt64::create(1, current_number));
+        ++current_number;
+        return getPort().getHeader().cloneWithColumns(std::move(columns));
+    }
+};
+
+
+class SleepyNumbersSource : public IProcessor
+{
+protected:
+    OutputPort & output;
+
+public:
+    String getName() const override { return "SleepyNumbers"; }
+
+    SleepyNumbersSource()
+        : IProcessor({}, {std::move(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))}), output(outputs.front())
+    {
+    }
+
+    Status prepare() override
+    {
+        if (output.hasData())
+            return Status::PortFull;
+
+        if (!output.isNeeded())
+            return Status::Unneeded;
+
+        if (active)
+            return Status::Wait;
+
+        if (!current_block)
+            return Status::Async;
+
+        return Status::Ready;
+    }
+
+    void work() override
+    {
+        output.push(std::move(current_block));
+    }
+
+    void schedule(EventCounter & watch) override
+    {
+        active = true;
+        pool.schedule([&watch, this]
+        {
+            usleep(100000);
+            current_block = generate();
+            active = false;
+            watch.notify();
+        });
+    }
+
+    OutputPort & getPort() { return output; }
+
+private:
+    ThreadPool pool{1};
+    Block current_block;
+    std::atomic_bool active {false};
+
+    UInt64 current_number = 0;
+
+    Block generate()
     {
         MutableColumns columns;
         columns.emplace_back(ColumnUInt64::create(1, current_number));
@@ -69,7 +138,7 @@ private:
 int main(int, char **)
 try
 {
-    auto source = std::make_shared<NumbersSource>();
+    auto source = std::make_shared<SleepyNumbersSource>();
     auto sink = std::make_shared<PrintSink>();
     auto limit = std::make_shared<LimitTransform>(source->getPort().getHeader(), 100, 0);
 
@@ -78,14 +147,19 @@ try
 
     SequentialPipelineExecutor executor({source, limit, sink});
 
+    EventCounter watch;
     while (true)
     {
-        IProcessor::Status status = executor.getStatus();
+        IProcessor::Status status = executor.prepare();
 
         if (status == IProcessor::Status::Finished)
             break;
         else if (status == IProcessor::Status::Ready)
             executor.work();
+        else if (status == IProcessor::Status::Async)
+            executor.schedule(watch);
+        else if (status == IProcessor::Status::Wait)
+            watch.wait();
         else
             throw Exception("Bad status");
     }
