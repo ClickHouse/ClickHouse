@@ -71,17 +71,19 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     const ColumnWithDictionary & column_with_dictionary = typeid_cast<const ColumnWithDictionary &>(column);
     MutableColumnPtr sub_index;
 
-    if (limit == 0)
-        limit = column.size();
+    size_t max_limit = column.size() - offset;
+    limit = limit ? std::min(limit, max_limit) : max_limit;
 
     path.push_back(Substream::DictionaryKeys);
     if (auto stream = getter(path))
     {
         const auto & indexes = column_with_dictionary.getIndexesPtr();
         const auto & keys = column_with_dictionary.getUnique()->getNestedColumn();
-        sub_index = (*indexes->cut(offset, limit - offset)).mutate();
+        sub_index = (*indexes->cut(offset, limit)).mutate();
         ColumnPtr unique_indexes = makeSubIndex(*sub_index);
+        /// unique_indexes->index(sub_index) == indexes[offset:offset + limit]
         auto used_keys = keys->index(unique_indexes, 0);
+        /// (used_keys, sub_index) is ColumnWithDictionary for range [offset:offset + limit]
 
         UInt64 used_keys_size = used_keys->size();
         writeIntBinary(used_keys_size, *stream);
@@ -94,7 +96,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         if (!sub_index)
             throw Exception("Dictionary keys wasn't serialized", ErrorCodes::LOGICAL_ERROR);
 
-        indexes_type->serializeBinaryBulk(*sub_index, *stream, offset, limit);
+        indexes_type->serializeBinaryBulk(*sub_index, *stream, 0, limit);
     }
 }
 
@@ -127,7 +129,8 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
         auto index_col = indexes_type->createColumn();
         indexes_type->deserializeBinaryBulk(*index_col, *stream, limit, 0);
-        column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(std::move(index_col), 0), 0, limit);
+        auto index_size = index_col->size();
+        column_with_dictionary.getIndexes()->insertRangeFrom(*indexes->index(std::move(index_col), 0), 0, index_size);
     }
 }
 
@@ -226,7 +229,7 @@ MutableColumnPtr DataTypeWithDictionary::createColumn() const
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
 
-        return std::move(column);
+        return column;
     }
 
     throw Exception("Unexpected dictionary type for DataTypeWithDictionary: " + type->getName(),
