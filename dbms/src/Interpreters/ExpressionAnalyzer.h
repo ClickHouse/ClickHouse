@@ -131,6 +131,14 @@ public:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
+
+    // Reserve PROJECT action caused by prewhere predication, this is uncovered by the following case:
+    //   select id from t_all where p_date='2008-01-01' limit 1 
+    // where t_all is distributed table, and t is its MergeTree tables in the cluster.
+    // if PROJECTION action is omitted because predicate p_date='2018-01-01' is moved to prewhere actions,
+    // Block struction will mismatch among local stream and remote streams while constructing the UnionStream.
+    bool appendPreWhere(ExpressionActionsChain & chain, bool only_types);
+
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
