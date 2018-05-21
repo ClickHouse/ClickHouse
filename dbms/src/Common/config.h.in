@@ -9,6 +9,8 @@
 #cmakedefine01 USE_RDKAFKA
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_EMBEDDED_COMPILER
-#cmakedefine01 Poco_DataODBC_FOUND
-#cmakedefine01 Poco_MongoDB_FOUND
-#cmakedefine01 Poco_NetSSL_FOUND
+#cmakedefine01 LLVM_HAS_RTTI
+#cmakedefine01 USE_POCO_SQLODBC
+#cmakedefine01 USE_POCO_DATAODBC
+#cmakedefine01 USE_POCO_MONGODB
+#cmakedefine01 USE_POCO_NETSSL

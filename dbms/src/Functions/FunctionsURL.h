@@ -88,34 +88,35 @@ inline StringView getURLScheme(const StringView & url)
 /// Extracts host from given url.
 inline StringView getURLHost(const StringView & url)
 {
-    StringView scheme = getURLScheme(url);
-    const char * p = url.data() + scheme.size();
-    const char * end = url.data() + url.size();
+    Pos pos = url.data();
+    Pos end = url.data() + url.size();
 
-    // Colon must follows after scheme.
-    if (p == end || *p != ':')
+    if (nullptr == (pos = strchr(pos, '/')))
         return StringView();
-    // Authority component must starts with "//".
-    if (end - p < 2 || (p[1] != '/' || p[2] != '/'))
-        return StringView();
-    else
-        p += 3;
 
-    const char * st = p;
-
-    for (; p < end; ++p)
+    if (pos != url.data())
     {
-        if (*p == '@')
-        {
-            st = p + 1;
-        }
-        else if (*p == ':' || *p == '/' || *p == '?' || *p == '#')
-        {
-            break;
-        }
+        StringView scheme = getURLScheme(url);
+        Pos scheme_end = url.data() + scheme.size();
+
+        // Colon must follows after scheme.
+        if (pos - scheme_end != 1 || *scheme_end != ':')
+            return StringView();
     }
 
-    return (p == st) ? StringView() : StringView(st, p - st);
+    if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
+        return StringView();
+
+    const char *start_of_host = (pos += 2);
+    for (; pos < end; ++pos)
+    {
+        if (*pos == '@')
+            start_of_host = pos + 1;
+        else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
+            break;
+    }
+
+    return (pos == start_of_host) ? StringView() : StringView(start_of_host, pos - start_of_host);
 }
 
 
@@ -392,18 +393,35 @@ struct ExtractWWW
         Pos pos = data;
         Pos end = pos + size;
 
-        Pos tmp;
-        size_t protocol_length;
-        ExtractProtocol::execute(data, size, tmp, protocol_length);
-        pos += protocol_length + 3;
-
-        if (pos >= end || pos[-1] != '/' || pos[-2] != '/')
-            return;
-
-        if (pos + 4 < end && !strncmp(pos, "www.", 4))
+        if (nullptr != (pos = strchr(pos, '/')))
         {
-            res_data = pos;
-            res_size = 4;
+            if (pos != data)
+            {
+                Pos tmp;
+                size_t protocol_length;
+                ExtractProtocol::execute(data, size, tmp, protocol_length);
+
+                if (pos != data + protocol_length + 1)
+                    return;
+            }
+
+            if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
+                return;
+
+            const char *start_of_host = (pos += 2);
+            for (; pos < end; ++pos)
+            {
+                if (*pos == '@')
+                    start_of_host = pos + 1;
+                else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
+                    break;
+            }
+
+            if (start_of_host + 4 < end && !strncmp(start_of_host, "www.", 4))
+            {
+                res_data = start_of_host;
+                res_size = 4;
+            }
         }
     }
 };

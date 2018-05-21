@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
-#if Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
 #include <TableFunctions/ITableFunction.h>
 
@@ -20,7 +20,8 @@ public:
     {
         return name;
     }
-    StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context) const override;
 };
 }
 

@@ -8,7 +8,7 @@
 # Требуется clang, желательно наиболее свежий (trunk).
 #
 # Используется при сборке пакетов.
-# Заголовочные файлы записываются в пакет clickhouse-server-base, в директорию /usr/share/clickhouse/headers.
+# Заголовочные файлы записываются в пакет clickhouse-common, в директорию /usr/share/clickhouse/headers.
 #
 # Если вы хотите установить их самостоятельно, без сборки пакета,
 #  чтобы clickhouse-server видел их там, где ожидается, выполните:
@@ -61,7 +61,13 @@ do
 done
 
 # Even more platform-specific headers
-for src_file in $(ls -1 $SOURCE_PATH/contrib/libboost/boost_1_65_0/boost/smart_ptr/detail/*);
+for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
+do
+    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$src_file";
+done
+
+for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
 do
     mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$src_file";

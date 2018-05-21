@@ -30,30 +30,13 @@ public:
     /// Default initialization - by nullptr.
     MultiVersion() = default;
 
-    /// Initialization with first version.
-    MultiVersion(const Version & value)
-    {
-        set(value);
-    }
-
-    /// Take an ownership of first version.
-    MultiVersion(const T * value)
-    {
-        set(value);
-    }
-
-    MultiVersion(Version && value)
-    {
-        set(std::move(value));
-    }
-
     MultiVersion(std::unique_ptr<const T> && value)
     {
         set(std::move(value));
     }
 
     /// Obtain current version for read-only usage. Returns shared_ptr, that manages lifetime of version.
-    const Version get() const
+    Version get() const
     {
         /// NOTE: is it possible to lock-free replace of shared_ptr?
         std::lock_guard lock(mutex);
@@ -61,21 +44,10 @@ public:
     }
 
     /// Update an object with new version.
-    void set(const Version & value)
-    {
-        std::lock_guard lock(mutex);
-        current_version = value;
-    }
-
-    /// Update an object with new version and take an ownership of it.
-    void set(const T * value)
-    {
-        set(Version(value));
-    }
-
     void set(std::unique_ptr<const T> && value)
     {
-        set(Version(value.release()));
+        std::lock_guard lock(mutex);
+        current_version = std::move(value);
     }
 
 private:

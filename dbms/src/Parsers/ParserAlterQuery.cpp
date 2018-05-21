@@ -12,8 +12,6 @@ namespace DB
 
 bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_add_column("ADD COLUMN");
     ParserKeyword s_drop_column("DROP COLUMN");
@@ -35,6 +33,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserKeyword s_name("NAME");
 
+    ParserKeyword s_delete_where("DELETE WHERE");
+
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_comma(TokenType::Comma);
 
@@ -43,6 +43,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserPartition parser_partition;
     ParserStringLiteral parser_string_literal;
+    ParserExpression exp_elem;
 
     ASTPtr table;
     ASTPtr database;
@@ -208,6 +209,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             params.type = ASTAlterQuery::MODIFY_PRIMARY_KEY;
         }
+        else if (s_delete_where.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, params.predicate, expected))
+                return false;
+
+            params.type = ASTAlterQuery::DELETE;
+        }
         else
             return false;
 
@@ -218,7 +226,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     while (!parsing_finished);
 
-    query->range = StringRange(begin, pos);
     query->cluster = cluster_str;
     node = query;
 

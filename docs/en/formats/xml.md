@@ -69,5 +69,6 @@ Just as for JSON, invalid UTF-8 sequences are changed to the replacement charact
 
 In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
-Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
+Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,
+and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 

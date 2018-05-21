@@ -18,7 +18,9 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+if (NOT MSVC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+endif ()
 
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -77,13 +79,17 @@ list (APPEND dbms_headers
     src/AggregateFunctions/FactoryHelpers.h
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
-list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (ARCH_FREEBSD)
+    target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
+endif ()
+
 add_subdirectory(src/Common/ZooKeeper)
-add_subdirectory(src/Common/ConfigProcessor)
+add_subdirectory(src/Common/Config)
 
 if (MAKE_STATIC_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
@@ -91,6 +97,17 @@ else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
     set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
     install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
+endif ()
+
+if (USE_EMBEDDED_COMPILER)
+    llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
+    if (TERMCAP_LIBRARY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
+    endif ()
+    list(APPEND REQUIRED_LLVM_LIBRARIES ${CMAKE_DL_LIBS})
+
+    target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
 
@@ -125,23 +142,21 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
-    ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
     ${Poco_Data_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
+    ${ELF_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${CMAKE_DL_LIBS}
 )
 
 target_link_libraries (dbms
     clickhouse_parsers
-    clickhouse_common_configprocessor
+    clickhouse_common_config
     clickhouse_common_io
     ${MYSQLXX_LIBRARY}
-    ${FARMHASH_LIBRARIES}
-    ${METROHASH_LIBRARIES}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${OPENSSL_CRYPTO_LIBRARY}
@@ -152,24 +167,38 @@ if (NOT USE_INTERNAL_RE2_LIBRARY)
     target_include_directories (dbms BEFORE PRIVATE ${RE2_INCLUDE_DIR})
 endif ()
 
-if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
-    target_include_directories (clickhouse_common_io BEFORE PUBLIC ${ZOOKEEPER_INCLUDE_DIR})
-endif ()
-
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-if (Poco_DataODBC_FOUND)
-    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+if (USE_POCO_SQLODBC)
+    target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
+    target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
+    if (NOT USE_INTERNAL_POCO_LIBRARY)
+        target_include_directories (clickhouse_common_io PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
+        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
+    endif()
 endif()
 
-if (Poco_MongoDB_FOUND)
+if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories (clickhouse_common_io PRIVATE ${Poco_Data_INCLUDE_DIRS})
+    target_include_directories (dbms PRIVATE ${Poco_Data_INCLUDE_DIRS})
+endif()
+
+if (USE_POCO_DATAODBC)
+    target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
+    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    if (NOT USE_INTERNAL_POCO_LIBRARY)
+        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+    endif()
+endif()
+
+if (USE_POCO_MONGODB)
     target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
 endif()
 
-if (Poco_NetSSL_FOUND)
-    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY})
+if (USE_POCO_NETSSL)
+    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
@@ -210,6 +239,7 @@ endif ()
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
 target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 # also for copy_headers.sh:

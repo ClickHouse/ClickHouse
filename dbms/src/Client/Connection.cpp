@@ -12,14 +12,16 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
+#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
@@ -50,21 +52,25 @@ void Connection::connect()
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
+        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed") );
 
-        if (static_cast<bool>(encryption))
+        if (static_cast<bool>(secure))
         {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
-            throw Exception{"tcp_ssl protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         }
         else
         {
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
-        socket->connect(resolved_address, timeouts.connection_timeout);
+
+        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
+
+        socket->connect(current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -148,6 +154,10 @@ void Connection::receiveHello()
         {
             readStringBinary(server_timezone, *in);
         }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+        {
+            readStringBinary(server_display_name, *in);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -203,6 +213,14 @@ const String & Connection::getServerTimezone()
     return server_timezone;
 }
 
+const String & Connection::getServerDisplayName()
+{
+    if (!connected)
+        connect();
+
+    return server_display_name;
+}
+
 void Connection::forceConnected()
 {
     if (!connected)
@@ -216,37 +234,11 @@ void Connection::forceConnected()
     }
 }
 
-struct TimeoutSetter
-{
-    TimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & timeout_)
-        : socket(socket_), timeout(timeout_)
-    {
-        old_send_timeout = socket.getSendTimeout();
-        old_receive_timeout = socket.getReceiveTimeout();
-
-        if (old_send_timeout > timeout)
-            socket.setSendTimeout(timeout);
-        if (old_receive_timeout > timeout)
-            socket.setReceiveTimeout(timeout);
-    }
-
-    ~TimeoutSetter()
-    {
-        socket.setSendTimeout(old_send_timeout);
-        socket.setReceiveTimeout(old_receive_timeout);
-    }
-
-    Poco::Net::StreamSocket & socket;
-    Poco::Timespan timeout;
-    Poco::Timespan old_send_timeout;
-    Poco::Timespan old_receive_timeout;
-};
-
 bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
         UInt64 pong = 0;
@@ -286,7 +278,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
     if (!connected)
         connect();
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -474,6 +466,14 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
+Poco::Net::SocketAddress Connection::getResolvedAddress() const
+{
+    if (connected)
+        return current_resolved_address;
+
+    return DNSResolver::instance().resolveAddress(host, port);
+}
+
 
 bool Connection::poll(size_t timeout_microseconds)
 {
@@ -583,6 +583,7 @@ void Connection::initBlockInput()
 
 void Connection::setDescription()
 {
+    auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
     auto ip_address =  resolved_address.host().toString();
 
@@ -622,7 +623,7 @@ void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
 {
     info.is_valid = true;
     info.host = host;
-    info.resolved_address = resolved_address.toString();
+    info.resolved_address = getResolvedAddress().toString();
     info.port = port;
     info.user = user;
 }

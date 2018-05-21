@@ -43,5 +43,19 @@
         </shard>
     </cluster1>
 
+    <shard_0_0>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>s0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </shard_0_0>
+
 </remote_servers>
 </yandex>

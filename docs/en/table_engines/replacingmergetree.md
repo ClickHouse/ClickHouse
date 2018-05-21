@@ -2,7 +2,7 @@
 
 This engine table differs from `MergeTree` in that it removes duplicate entries with the same primary key value.
 
-The last optional parameter for the table engine is the "version" column. When merging, it reduces all rows with the same primary key value to just one row. If the version column is specified, it leaves the row with the highest version; otherwise, it leaves the last row.
+The last optional parameter for the table engine is the version column. When merging, it reduces all rows with the same primary key value to just one row. If the version column is specified, it leaves the row with the highest version; otherwise, it leaves the last row.
 
 The version column must have a type from the `UInt` family, `Date`, or `DateTime`.
 

@@ -79,11 +79,19 @@ Rounds down a date with time to the start of the minute.
 
 Rounds down a date with time to the start of the hour.
 
+## toStartOfFifteenMinutes
+
+Rounds down the date with time to the start of the fifteen-minute interval.
+
 Note: If you need to round a date with time to any other number of seconds, minutes, or hours, you can convert it into a number by using the toUInt32 function, then round the number using intDiv and multiplication, and convert it back using the toDateTime function.
 
 ## toStartOfHour
 
 Rounds down a date with time to the start of the hour.
+
+## toStartOfDay
+
+Rounds down a date with time to the start of the day.
 
 ## toTime
 
@@ -135,7 +143,7 @@ The same as 'today() - 1'.
 ## timeSlot
 
 Rounds the time to the half hour.
-This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a counter shows a single user's consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the counter number, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
+This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a tracking tag shows a single user's consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the tag ID, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
 
 ## timeSlots(StartTime, Duration)
 

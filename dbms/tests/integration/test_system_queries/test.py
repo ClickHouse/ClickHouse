@@ -58,6 +58,7 @@ def test_DROP_DNS_CACHE(started_cluster):
     instance = cluster.instances['ch1']
 
     instance.exec_in_container(['bash', '-c', 'echo 127.255.255.255 lost_host > /etc/hosts'], privileged=True, user='root')
+    instance.query("SYSTEM DROP DNS CACHE")
 
     with pytest.raises(QueryRuntimeException):
         instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
@@ -71,8 +72,19 @@ def test_DROP_DNS_CACHE(started_cluster):
 
     instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")
     instance.query("SELECT * FROM distributed_lost_host")
-    assert TSV(instance.query("SELECT DISTINCT host_name, host_address FROM system.clusters")) == TSV("lost_host\t127.0.0.1\n")
+    assert TSV(instance.query("SELECT DISTINCT host_name, host_address FROM system.clusters WHERE cluster='lost_host_cluster'")) == TSV("lost_host\t127.0.0.1\n")
 
+
+def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
+
+    macros = "<yandex><macros><mac>ro</mac></macros></yandex>"
+    create_macros = 'echo "{}" > /etc/clickhouse-server/config.d/macros.xml'.format(macros)
+
+    instance = cluster.instances['ch1']
+
+    instance.exec_in_container(['bash', '-c', create_macros], privileged=True, user='root')
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert TSV(instance.query("select * from system.macros")) == TSV("mac\tro\n")
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

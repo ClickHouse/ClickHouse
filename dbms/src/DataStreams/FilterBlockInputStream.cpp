@@ -17,12 +17,6 @@ namespace ErrorCodes
 }
 
 
-FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, ssize_t filter_column_)
-    : expression(expression_), filter_column(filter_column_)
-{
-    children.push_back(input);
-}
-
 FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name)
     : expression(expression_)
 {
@@ -33,19 +27,18 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     expression->execute(header);
 
     filter_column = header.getPositionByName(filter_column_name);
+    auto & column_elem = header.safeGetByPosition(filter_column);
 
     /// Isn't the filter already constant?
-    ColumnPtr column = header.safeGetByPosition(filter_column).column;
-
-    if (column)
-        constant_filter_description = ConstantFilterDescription(*column);
+    if (column_elem.column)
+        constant_filter_description = ConstantFilterDescription(*column_elem.column);
 
     if (!constant_filter_description.always_false
         && !constant_filter_description.always_true)
     {
         /// Replace the filter column to a constant with value 1.
-        auto & header_filter_elem = header.getByPosition(filter_column);
-        header_filter_elem.column = header_filter_elem.type->createColumnConst(header.rows(), UInt64(1));
+        FilterDescription filter_description_check(*column_elem.column);
+        column_elem.column = column_elem.type->createColumnConst(header.rows(), UInt64(1));
     }
 }
 
@@ -53,7 +46,7 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
 String FilterBlockInputStream::getName() const { return "Filter"; }
 
 
-const Block & FilterBlockInputStream::getTotals()
+Block FilterBlockInputStream::getTotals()
 {
     if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
     {

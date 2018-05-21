@@ -26,7 +26,8 @@ inc="-I. \
 -I./contrib/poco/Net/include \
 -I./contrib/poco/Util/include \
 -I./contrib/poco/Foundation/include \
--I./contrib/libboost/boost_1_62_0 \
+-I./contrib/boost/libs/*/include \
+-I./contrib/boost \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./libs/libmysqlxx/include \
@@ -35,6 +36,7 @@ inc="-I. \
 -I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
+-I./libs/libconsistent-hashing \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
 

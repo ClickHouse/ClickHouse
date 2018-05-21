@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -94,7 +95,7 @@ private:
     class PartitionCommands : public std::vector<PartitionCommand>
     {
     public:
-        void validate(const IStorage * table);
+        void validate(const IStorage & table);
     };
 
     ASTPtr query_ptr;
@@ -102,7 +103,9 @@ private:
     const Context & context;
 
     static void parseAlter(const ASTAlterQuery::ParameterContainer & params,
-        AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands);
+        AlterCommands & out_alter_commands,
+        PartitionCommands & out_partition_commands,
+        MutationCommands & out_mutation_commands);
 };
 
 }

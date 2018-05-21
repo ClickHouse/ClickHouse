@@ -97,8 +97,11 @@ void RemoteBlockInputStream::readPrefix()
         sendQuery();
 }
 
-void RemoteBlockInputStream::cancel()
+void RemoteBlockInputStream::cancel(bool kill)
 {
+    if (kill)
+        is_killed = true;
+
     bool old_val = false;
     if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
         return;
@@ -110,7 +113,7 @@ void RemoteBlockInputStream::cancel()
         for (auto & vec : external_tables_data)
             for (auto & elem : vec)
                 if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(elem.first.get()))
-                    stream->cancel();
+                    stream->cancel(kill);
     }
 
     if (!isQueryPending() || hasThrownException())
@@ -135,7 +138,7 @@ void RemoteBlockInputStream::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-                BlockInputStreams input = cur->read(cur->getColumnNamesList(), {}, context,
+                BlockInputStreams input = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
                     stage, DEFAULT_BLOCK_SIZE, 1);
                 if (input.size() == 0)
                     res.push_back(std::make_pair(std::make_shared<OneBlockInputStream>(cur->getSampleBlock()), table.first));
@@ -180,7 +183,7 @@ Block RemoteBlockInputStream::readImpl()
 
     while (true)
     {
-        if (isCancelled())
+        if (isCancelledOrThrowIfKilled())
             return Block();
 
         Connection::Packet packet = multiplexed_connections->receivePacket();

@@ -1,5 +1,5 @@
 if (APPLE)
-    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
+    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.0.0")
         set (APPLE_SIERRA_OR_NEWER 1)
     else ()
         set (APPLE_SIERRA_OR_NEWER 0)
@@ -26,7 +26,7 @@ add_library (common ${SPLIT_SHARED}
     src/JSON.cpp
     src/getMemoryAmount.cpp
     src/ThreadPool.cpp
-    src/iostream_debug_helpers.cpp
+    src/demangle.cpp
 
     include/common/Types.h
     include/common/DateLUT.h
@@ -45,7 +45,7 @@ add_library (common ${SPLIT_SHARED}
     include/common/JSON.h
     include/common/getMemoryAmount.h
     include/common/ThreadPool.h
-    include/common/iostream_debug_helpers.h
+    include/common/demangle.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -111,9 +111,12 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARY}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
+
+if (RT_LIBRARY)
+    target_link_libraries (common ${RT_LIBRARY})
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

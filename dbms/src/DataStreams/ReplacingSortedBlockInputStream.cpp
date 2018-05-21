@@ -35,26 +35,14 @@ Block ReplacingSortedBlockInputStream::readImpl()
     if (finished)
         return Block();
 
-    if (children.size() == 1)
-        return children[0]->read();
-
-    Block header;
     MutableColumns merged_columns;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
 
     if (merged_columns.empty())
         return Block();
-
-    /// Additional initialization.
-    if (selected_row.empty())
-    {
-        if (!version_column.empty())
-            version_column_number = header.getPositionByName(version_column);
-    }
 
     merge(merged_columns, queue);
     return header.cloneWithColumns(std::move(merged_columns));
@@ -73,10 +61,6 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
         if (current_key.empty())
             setPrimaryKeyRef(current_key, current);
 
-        UInt64 version = version_column_number != -1
-            ? current->all_columns[version_column_number]->get64(current->pos)
-            : 0;
-
         setPrimaryKeyRef(next_key, current);
 
         bool key_differs = next_key != current_key;
@@ -89,9 +73,9 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
 
         if (key_differs)
         {
-            max_version = 0;
             /// Write the data for the previous primary key.
             insertRow(merged_columns, merged_rows);
+            selected_row.reset();
             current_key.swap(next_key);
         }
 
@@ -101,9 +85,13 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
             current_row_sources.emplace_back(current.impl->order, true);
 
         /// A non-strict comparison, since we select the last row for the same version values.
-        if (version >= max_version)
+        if (version_column_number == -1
+            || selected_row.empty()
+            || current->all_columns[version_column_number]->compareAt(
+                current->pos, selected_row.row_num,
+                *(*selected_row.columns)[version_column_number],
+                /* nan_direction_hint = */ 1) >= 0)
         {
-            max_version = version;
             max_pos = current_pos;
             setRowRef(selected_row, current);
         }

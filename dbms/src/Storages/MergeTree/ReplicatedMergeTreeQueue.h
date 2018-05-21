@@ -1,10 +1,13 @@
 #pragma once
 
+#include <optional>
+
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -50,10 +53,6 @@ private:
       */
     Queue queue;
 
-    /// If true, the queue in RAM is possibly out of sync with ZK and we need to reload it.
-    /// Protected by pull_logs_to_queue_mutex.
-    bool is_dirty = false;
-
     InsertsByTime inserts_by_time;
     time_t min_unprocessed_insert_time = 0;
     time_t max_processed_insert_time = 0;
@@ -87,27 +86,35 @@ private:
     /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
-    void insertUnlocked(LogEntryPtr & entry);
+    void insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &);
 
     void remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
     /** Can I now try this action. If not, you need to leave it in the queue and try another one.
       * Called under queue_mutex.
       */
-    bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data);
+    bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason, MergeTreeDataMerger & merger, MergeTreeData & data,
+        std::lock_guard<std::mutex> &) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under queue's mutex.
       */
-    bool isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason);
+    bool isNotCoveredByFuturePartsImpl(const String & new_part_name, String & out_reason, std::lock_guard<std::mutex> &) const;
 
     /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
-    void updateTimesOnRemoval(const LogEntryPtr & entry, bool & min_unprocessed_insert_time_changed, bool & max_processed_insert_time_changed);
+    void updateTimesOnRemoval(const LogEntryPtr & entry,
+        std::optional<time_t> & min_unprocessed_insert_time_changed,
+        std::optional<time_t> & max_processed_insert_time_changed,
+        std::unique_lock<std::mutex> &);
 
     /// Update the insertion times in ZooKeeper.
-    void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper, bool min_unprocessed_insert_time_changed, bool max_processed_insert_time_changed);
+    void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
+        std::optional<time_t> min_unprocessed_insert_time_changed,
+        std::optional<time_t> max_processed_insert_time_changed) const;
 
+    /// Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
+    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> &) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -150,10 +157,10 @@ public:
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
-      * If next_update_event != nullptr, will call this event when new entries appear in the log.
+      * If next_update_task_handle != nullptr, will schedule this task when new entries appear in the log.
       * Returns true if new entries have been.
       */
-    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_task_handle);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
@@ -164,12 +171,6 @@ public:
      *  If there are currently executing merges or fetches then throws exception.
      */
     void disableMergesAndFetchesInRange(const LogEntry & entry);
-
-    /** Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
-     * Call it under mutex
-     */
-    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description);
-
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -203,7 +204,7 @@ public:
     bool addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason);
 
     /// Count the number of merges in the queue.
-    size_t countMerges();
+    size_t countMerges() const;
 
     struct Status
     {
@@ -220,11 +221,11 @@ public:
     };
 
     /// Get information about the queue.
-    Status getStatus();
+    Status getStatus() const;
 
     /// Get the data of the queue elements.
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
-    void getEntries(LogEntriesData & res);
+    void getEntries(LogEntriesData & res) const;
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;

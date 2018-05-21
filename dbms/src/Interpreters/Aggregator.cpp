@@ -22,7 +22,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 #include <Interpreters/config_compile.h>
 
 
@@ -44,7 +44,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_CODE;
-    extern const int TOO_MUCH_ROWS;
+    extern const int TOO_MANY_ROWS;
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
 }
@@ -112,7 +112,7 @@ Block Aggregator::getHeader(bool final) const
             else
                 type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 
-            res.insert({ type->createColumn(), type, params.aggregates[i].column_name });
+            res.insert({ type, params.aggregates[i].column_name });
         }
     }
     else if (params.intermediate_header)
@@ -837,6 +837,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     Stopwatch watch;
     size_t rows = data_variants.size();
 
+    Poco::File(params.tmp_path).createDirectories();
     auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
@@ -973,7 +974,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::THROW:
                 throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
                     + " rows, maximum: " + toString(params.max_rows_to_group_by),
-                    ErrorCodes::TOO_MUCH_ROWS);
+                    ErrorCodes::TOO_MANY_ROWS);
 
             case OverflowMode::BREAK:
                 return false;
@@ -2135,6 +2136,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
       * Better hash function is needed because during external aggregation,
       *  we may merge partitions of data with total number of keys far greater than 4 billion.
       */
+    auto merge_method = method;
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
         M(key64)            \
@@ -2146,8 +2148,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         M(serialized)       \
 
 #define M(NAME) \
-    if (method == AggregatedDataVariants::Type::NAME) \
-        method = AggregatedDataVariants::Type::NAME ## _hash64; \
+    if (merge_method == AggregatedDataVariants::Type::NAME) \
+        merge_method = AggregatedDataVariants::Type::NAME ## _hash64; \
 
     APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
 #undef M
@@ -2160,7 +2162,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     /// result will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
-    result.init(method);
+    result.init(merge_method);
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 

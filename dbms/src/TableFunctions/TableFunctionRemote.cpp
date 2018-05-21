@@ -1,4 +1,4 @@
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -181,7 +181,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
 }
 
 
-StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
@@ -296,7 +296,7 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
         if (names.empty())
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, context.getTCPPort());
+        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, context.getTCPPort(), false);
     }
 
     auto res = StorageDistributed::createWithOwnCluster(

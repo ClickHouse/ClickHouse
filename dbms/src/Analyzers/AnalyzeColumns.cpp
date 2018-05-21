@@ -135,7 +135,7 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
 {
     ASTPtr database_name_identifier_node;
     if (!table.database_name.empty())
-        database_name_identifier_node =  std::make_shared<ASTIdentifier>(StringRange(), table.database_name, ASTIdentifier::Column);
+        database_name_identifier_node =  std::make_shared<ASTIdentifier>(table.database_name, ASTIdentifier::Column);
 
     ASTPtr table_name_identifier_node;
     String table_name_or_alias;
@@ -146,9 +146,9 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
         table_name_or_alias = table.alias;
 
     if (!table_name_or_alias.empty())
-        table_name_identifier_node = std::make_shared<ASTIdentifier>(StringRange(), table_name_or_alias, ASTIdentifier::Column);
+        table_name_identifier_node = std::make_shared<ASTIdentifier>(table_name_or_alias, ASTIdentifier::Column);
 
-    ASTPtr column_identifier_node = std::make_shared<ASTIdentifier>(StringRange(), column, ASTIdentifier::Column);
+    ASTPtr column_identifier_node = std::make_shared<ASTIdentifier>(column, ASTIdentifier::Column);
 
     String compound_name;
     if (database_name_identifier_node)
@@ -157,8 +157,7 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
         compound_name += table_name_or_alias + ".";
     compound_name += column;
 
-    auto elem = std::make_shared<ASTIdentifier>(
-        StringRange(), compound_name, ASTIdentifier::Column);
+    auto elem = std::make_shared<ASTIdentifier>(compound_name, ASTIdentifier::Column);
 
     if (database_name_identifier_node)
         elem->children.emplace_back(std::move(database_name_identifier_node));
@@ -174,7 +173,7 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
 void createASTsForAllColumnsInTable(const CollectTables::TableInfo & table, ASTs & res)
 {
     if (table.storage)
-        for (const auto & name : table.storage->getColumnNamesList())
+        for (const auto & name : table.storage->getColumns().getNamesOfPhysical())
             res.emplace_back(createASTIdentifierForColumnInTable(name, table));
     else
         for (size_t i = 0, size = table.structure_of_subquery.columns(); i < size; ++i)
@@ -316,7 +315,7 @@ void processIdentifier(
     }
     else if (table->storage)
     {
-        info.data_type = table->storage->getDataTypeByName(column_name);
+        info.data_type = table->storage->getColumn(column_name).type;
     }
     else
         throw Exception("Logical error: no storage and no structure of subquery is specified for table", ErrorCodes::LOGICAL_ERROR);
@@ -385,7 +384,7 @@ void AnalyzeColumns::process(ASTPtr & ast, const CollectAliases & aliases, const
 
     for (auto & child : ast->children)
     {
-        if (select && (child.get() == select->format.get() || child.get() == select->settings.get()))
+        if (select && child.get() == select->settings.get())
             continue;
 
         processImpl(child, columns, aliases, tables);

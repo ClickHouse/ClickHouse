@@ -97,7 +97,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
 }
 
 
-MutableColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (offsets.size() == 0)
         return ColumnString::create();
@@ -112,7 +112,7 @@ MutableColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_h
 }
 
 
-MutableColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = offsets.size();
 
@@ -208,7 +208,7 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_directio
 }
 
 
-MutableColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
+ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())

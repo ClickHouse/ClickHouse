@@ -59,7 +59,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         : "")
         << " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 
-    setTotalRowsApprox(total_rows);
+    addTotalRowsApprox(total_rows);
 
     header = storage.getSampleBlockForColumns(ordered_names);
 
@@ -141,8 +141,9 @@ try
         if (!column_names.empty())
             storage.check(data_part->columns, column_names);
 
-        pre_columns = storage.getColumnsList().addTypes(pre_column_names);
-        columns = storage.getColumnsList().addTypes(column_names);
+        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
+        pre_columns = physical_columns.addTypes(pre_column_names);
+        columns = physical_columns.addTypes(column_names);
     }
     else
     {

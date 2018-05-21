@@ -13,20 +13,20 @@ In contrast to query complexity restrictions, quotas:
 Let's look at the section of the 'users.xml' file that defines quotas.
 
 ```xml
-<!-- Quotas -->
+<!-- Quotas. -->
 <quotas>
-    <!-- Quota name. -->    
+    <!-- Quota name. -->
     <default>
-        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->        
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
         <interval>
-            <!-- Length of the interval. -->            
-            <duration>3600</duration>            
-            
-            <!-- Unlimited. Just collect data for the specified time interval. -->            
-            <queries>0</queries>            
-            <errors>0</errors>            
-            <result_rows>0</result_rows>            
-            <read_rows>0</read_rows>            
+            <!-- Length of the interval. -->
+            <duration>3600</duration>
+
+            <!-- Unlimited. Just collect data for the specified time interval. -->
+            <queries>0</queries>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
             <execution_time>0</execution_time>
         </interval>
     </default>
@@ -37,8 +37,8 @@ The resource consumption calculated for each interval is output to the server lo
 
 ```xml
 <statbox>
-    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->    
-    <interval>        
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+    <interval>
         <!-- Length of the interval. -->
         <duration>3600</duration>
 
@@ -84,12 +84,15 @@ Quotas can use the "quota key" feature in order to report on resources for multi
 ```xml
 <!-- For the global reports designer. -->
 <web_global>
-    <!-- keyed – The quota_key "key" is passed in the query parameter, and the quota is tracked separately for each key value.
-        For example, you can pass a Yandex.Metrica username as the key, so the quota will be counted separately for each username.
+    <!-- keyed - The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a Yandex.Metrica username as the key,
+            so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
-        You can also write <keyed_by_ip /> so the IP address is used as the quota key.(But keep in mind that users can change the IPv6 address fairly easily.)
-         --> 
+        You can also write <keyed_by_ip /> so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+    -->
     <keyed />
 ```
 

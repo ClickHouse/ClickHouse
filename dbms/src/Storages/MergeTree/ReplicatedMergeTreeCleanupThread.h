@@ -2,9 +2,13 @@
 
 #include <Core/Types.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <thread>
 #include <map>
+
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -22,10 +26,13 @@ public:
 
     ~ReplicatedMergeTreeCleanupThread();
 
+    void schedule() { task_handle->schedule(); }
+
 private:
     StorageReplicatedMergeTree & storage;
     Logger * log;
-    std::thread thread;
+    BackgroundSchedulePool::TaskHandle task_handle;
+    pcg64 rng;
 
     void run();
     void iterate();

@@ -9,6 +9,7 @@
     M(ReplicatedSend) \
     M(ReplicatedChecks) \
     M(BackgroundPoolTask) \
+    M(BackgroundSchedulePoolTask) \
     M(DiskSpaceReservedForMerge) \
     M(DistributedSend) \
     M(QueryPreempted) \
@@ -25,10 +26,13 @@
     M(LeaderReplica) \
     M(MemoryTracking) \
     M(MemoryTrackingInBackgroundProcessingPool) \
+    M(MemoryTrackingInBackgroundSchedulePool) \
     M(MemoryTrackingForMerges) \
     M(LeaderElection) \
     M(EphemeralNode) \
+    M(ZooKeeperSession) \
     M(ZooKeeperWatch) \
+    M(ZooKeeperRequest) \
     M(DelayedInserts) \
     M(ContextLockWait) \
     M(StorageBufferRows) \
