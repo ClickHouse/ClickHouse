@@ -135,7 +135,8 @@ public:
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
 
-    virtual String getDatabaseName() const { return {}; }
+    /// Get name of database.
+    virtual String getDatabaseName() const = 0;
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
@@ -146,18 +147,22 @@ public:
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
-    /// Delete metadata, the deletion of which differs from the recursive deletion of the directory, if any.
+    /// Delete database metadata, if exists.
     virtual void drop(Context & context)
     {
         String database_name = getDatabaseName();
-        String database_name_escaped = escapeForFileName(database_name);
 
-        Poco::File(context.getPath() + "metadata/" + database_name_escaped + "/").remove(false);
+        if (!database_name.empty())
+        {
+            String database_name_escaped = escapeForFileName(database_name);
 
-        /// Old ClickHouse versions did not store database.sql files
-        Poco::File database_metadata_file(context.getPath() + "metadata/" + database_name_escaped + ".sql");
-        if (database_metadata_file.exists())
-            database_metadata_file.remove(false);
+            Poco::File(context.getPath() + "metadata/" + database_name_escaped + "/").remove(false);
+
+            /// Old ClickHouse versions did not store database.sql files
+            Poco::File database_metadata_file(context.getPath() + "metadata/" + database_name_escaped + ".sql");
+            if (database_metadata_file.exists())
+                database_metadata_file.remove(false);
+        }
     };
 
     virtual ~IDatabase() {}
