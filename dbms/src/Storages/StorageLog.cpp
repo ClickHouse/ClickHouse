@@ -243,7 +243,8 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
         return &it->second.compressed;
     };
 
-    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, 0, true, {}); /// TODO Use avg_value_size_hint.
+    auto state = type.createDeserializeBinaryBulkState();
+    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, 0, true, {}, state); /// TODO Use avg_value_size_hint.
 }
 
 

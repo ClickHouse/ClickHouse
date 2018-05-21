@@ -22,8 +22,8 @@ struct StringRefWrapper
     StringRefWrapper(const ColumnType * column, size_t row) : column(column), row(row) {}
     StringRefWrapper(StringRef ref) : ref(ref) {}
     StringRefWrapper(const StringRefWrapper & other) = default;
-    StringRefWrapper & operator =(int) { column = nullptr; return *this; }
-    bool operator ==(int) const { return nullptr == column; }
+    StringRefWrapper & operator =(int) { column = nullptr; ref.data = nullptr; return *this; }
+    bool operator ==(int) const { return nullptr == column && nullptr == ref.data; }
     StringRefWrapper() {}
 
     operator StringRef() const { return column ? column->getDataAt(row) : ref; }
@@ -246,7 +246,7 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueInsert(const Field & x)
     if (pos != prev_size)
         column->popBack(1);
 
-    return static_cast<size_t>(pos);
+    return pos;
 }
 
 template <typename ColumnType, typename IndexType>
@@ -262,20 +262,24 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueInsertFrom(const IColumn & src
 template <typename ColumnType, typename IndexType>
 size_t ColumnUnique<ColumnType, IndexType>::uniqueInsertData(const char * pos, size_t length)
 {
+    if (!index)
+        buildIndex();
+
     auto column = getRawColumnPtr();
 
     if (column->getDataAt(getDefaultValueIndex()) == StringRef(pos, length))
         return getDefaultValueIndex();
 
     auto size = static_cast<IndexType>(column->size());
+    auto iter = index->find(StringRefWrapper<ColumnType>(StringRef(pos, length)));
 
-    if (!index->has(StringRefWrapper<ColumnType>(StringRef(pos, length))))
+    if (iter == index->end())
     {
         column->insertData(pos, length);
-        return static_cast<size_t>(insertIntoMap(StringRefWrapper<ColumnType>(StringRef(pos, length)), size));
+        return insertIntoMap(StringRefWrapper<ColumnType>(column, size), size);
     }
 
-    return size;
+    return iter->second;
 }
 
 template <typename ColumnType, typename IndexType>

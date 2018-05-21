@@ -120,6 +120,14 @@ public:
             serializeBinaryBulk(column, *stream, offset, limit);
     }
 
+    struct DeserializeBinaryBulkState
+    {
+        virtual ~DeserializeBinaryBulkState() = default;
+    };
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
+    virtual DeserializeBinaryBulkStatePtr createDeserializeBinaryBulkState() const { return nullptr; }
+
     /** Read no more than limit values and append them into column.
       * avg_value_size_hint - if not zero, may be used to avoid reallocations while reading column of String type.
       */
@@ -129,7 +137,8 @@ public:
         size_t limit,
         double avg_value_size_hint,
         bool /*position_independent_encoding*/,
-        SubstreamPath path) const
+        SubstreamPath path,
+        const DeserializeBinaryBulkStatePtr & /*state*/) const
     {
         if (ReadBuffer * stream = getter(path))
             deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);

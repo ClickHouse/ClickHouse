@@ -382,18 +382,16 @@ void MergeTreeReader::readData(
         return stream.data_buffer;
     };
 
+    if (!continue_reading)
+        deserialize_binary_bulk_state_map[name] = type.createDeserializeBinaryBulkState();
+
+    if (deserialize_binary_bulk_state_map.count(name) == 0)
+        throw Exception("DeserializeBinaryBulkState wasn't created for column " + name, ErrorCodes::LOGICAL_ERROR);
+
     double & avg_value_size_hint = avg_value_size_hints[name];
-    if (column.withDictionary())
-    {
-        for (size_t read_rows = 0; read_rows < max_rows_to_read; read_rows += index_granularity)
-        {
-            size_t rows_to_read = std::min(index_granularity, max_rows_to_read - read_rows);
-            type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, rows_to_read, avg_value_size_hint, true, {});
-            continue_reading = true;
-        }
-    }
-    else
-        type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, avg_value_size_hint, true, {});
+    auto & deserialize_state = deserialize_binary_bulk_state_map[name];
+    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read,
+                                                  avg_value_size_hint, true, {}, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 

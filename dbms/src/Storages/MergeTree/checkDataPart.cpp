@@ -278,6 +278,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             /// NOTE Shared array sizes of Nested columns are read more than once. That's Ok.
 
             MutableColumnPtr tmp_column = name_type.type->createColumn();
+            auto state = name_type.type->createDeserializeBinaryBulkState();
             name_type.type->deserializeBinaryBulkWithMultipleStreams(
                 *tmp_column,
                 [&](const IDataType::SubstreamPath & substream_path)
@@ -289,7 +290,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                     return &stream_it->second.uncompressed_hashing_buf;
                 },
                 index_granularity,
-                0, true, {});
+                0, true, {}, state);
 
             size_t read_size = tmp_column->size();
             column_size += read_size;

@@ -63,13 +63,30 @@ public:
         bool position_independent_encoding,
         SubstreamPath path) const override;
 
+    struct DeserializeBinaryBulkStateTuple : public IDataType::DeserializeBinaryBulkState
+    {
+        std::vector<DeserializeBinaryBulkStatePtr> states;
+        DeserializeBinaryBulkStateTuple(const DataTypes & types)
+        {
+            states.reserve(types.size());
+            for (auto & type : types)
+                states.emplace_back(type->createDeserializeBinaryBulkState());
+        }
+    };
+
+    DeserializeBinaryBulkStatePtr createDeserializeBinaryBulkState() const override
+    {
+        return std::make_shared<DeserializeBinaryBulkStateTuple>(elems);
+    }
+
     void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
         InputStreamGetter getter,
         size_t limit,
         double avg_value_size_hint,
         bool position_independent_encoding,
-        SubstreamPath path) const override;
+        SubstreamPath path,
+        const DeserializeBinaryBulkStatePtr & state) const override;
 
     MutableColumnPtr createColumn() const override;
 

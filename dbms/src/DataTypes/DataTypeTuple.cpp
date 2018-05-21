@@ -315,14 +315,18 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     size_t limit,
     double avg_value_size_hint,
     bool position_independent_encoding,
-    SubstreamPath path) const
+    SubstreamPath path,
+    const DeserializeBinaryBulkStatePtr & state) const
 {
+    auto * tuple_state = typeid_cast<DeserializeBinaryBulkStateTuple *>(state.get());
+
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         path.back().tuple_element_name = names[i];
         elems[i]->deserializeBinaryBulkWithMultipleStreams(
-            extractElementColumn(column, i), getter, limit, avg_value_size_hint, position_independent_encoding, path);
+                extractElementColumn(column, i), getter, limit, avg_value_size_hint,
+                position_independent_encoding, path, tuple_state->states[i]);
     }
 }
 

@@ -81,6 +81,7 @@ public:
     {
         if (!typeid_cast<const ColumnWithDictionary *>(&src))
             throw Exception("Expected ColumnWithDictionary, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+
         auto & src_with_dict = static_cast<const ColumnWithDictionary &>(src);
         size_t idx = src_with_dict.getIndexes()->getUInt(n);
         insertFromFullColumn(*src_with_dict.getUnique()->getNestedColumn(), idx);
