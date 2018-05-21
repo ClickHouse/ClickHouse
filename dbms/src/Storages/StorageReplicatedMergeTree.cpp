@@ -1750,7 +1750,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
         if (part_desc->src_table_part)
         {
             /// It is clonable part
-            adding_parts_active_set.addImpl(part_desc->new_part_name);
+            adding_parts_active_set.addUnlocked(part_desc->new_part_name);
             part_name_to_desc.emplace(part_desc->new_part_name, part_desc);
             continue;
         }
@@ -1783,14 +1783,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
         part_desc->found_new_part_info = MergeTreePartInfo::fromPartName(found_part_name, data.format_version);
         part_desc->replica = replica;
 
-        adding_parts_active_set.addImpl(part_desc->found_new_part_name);
+        adding_parts_active_set.addUnlocked(part_desc->found_new_part_name);
         part_name_to_desc.emplace(part_desc->found_new_part_name, part_desc);
     }
 
     /// Check that we could cover whole range
     for (PartDescriptionPtr & part_desc : parts_to_add)
     {
-        if (adding_parts_active_set.getContainingPartImpl(part_desc->new_part_info).empty())
+        if (adding_parts_active_set.getContainingPartUnlocked(part_desc->new_part_info).empty())
         {
             throw Exception("Not found part " + part_desc->new_part_name +
                             " (or part covering it) neither source table neither remote replicas" , ErrorCodes::NO_REPLICA_HAS_PART);
@@ -1800,7 +1800,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
     /// Filter covered parts
     PartDescriptions final_parts;
     {
-        Strings final_part_names = adding_parts_active_set.getPartsImpl();
+        Strings final_part_names = adding_parts_active_set.getPartsUnlocked();
 
         for (const String & final_part_name : final_part_names)
         {
@@ -3310,11 +3310,11 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
             if (part_info.partition_id != partition_id)
                 continue;
             LOG_DEBUG(log, "Found part " << name);
-            active_parts.addImpl(name);
+            active_parts.addUnlocked(name);
             part_names.insert(name);
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getPartsImpl();
+        parts = active_parts.getPartsUnlocked();
 
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
         for (const auto & name : part_names)

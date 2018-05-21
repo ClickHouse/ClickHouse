@@ -31,9 +31,9 @@ public:
     size_t size() const;
 
     /// Do not block mutex.
-    void addImpl(const String & name);
-    String getContainingPartImpl(const MergeTreePartInfo & part_info) const;
-    Strings getPartsImpl() const;
+    void addUnlocked(const String & name);
+    String getContainingPartUnlocked(const MergeTreePartInfo & part_info) const;
+    Strings getPartsUnlocked() const;
 
 private:
     MergeTreeDataFormatVersion format_version;
