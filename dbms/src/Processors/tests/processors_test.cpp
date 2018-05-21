@@ -17,16 +17,20 @@ class NumbersSource : public ISource
 public:
     String getName() const override { return "Numbers"; }
 
-    NumbersSource()
-        : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))
+    NumbersSource(UInt64 start_number, unsigned sleep_useconds)
+        : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
+        current_number(start_number), sleep_useconds(sleep_useconds)
     {
     }
 
 private:
     UInt64 current_number = 0;
+    unsigned sleep_useconds;
 
     Block generate() override
     {
+        usleep(sleep_useconds);
+
         MutableColumns columns;
         columns.emplace_back(ColumnUInt64::create(1, current_number));
         ++current_number;
@@ -135,7 +139,7 @@ private:
 int main(int, char **)
 try
 {
-    auto source0 = std::make_shared<NumbersSource>();
+    auto source0 = std::make_shared<NumbersSource>(0, 300000);
     auto header = source0->getPort().getHeader();
     auto limit0 = std::make_shared<LimitTransform>(Block(header), 10, 0);
 
@@ -155,6 +159,7 @@ try
 
     ThreadPool pool(4, 10);
     ParallelPipelineExecutor executor({sink}, pool);
+    //SequentialPipelineExecutor executor({sink});
 
     EventCounter watch;
     while (true)
