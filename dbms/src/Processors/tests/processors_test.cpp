@@ -153,7 +153,8 @@ try
     connect(resize->getOutputs()[0], limit->getInputPort());
     connect(limit->getOutputPort(), sink->getPort());
 
-    SequentialPipelineExecutor executor({sink});
+    ThreadPool pool(4, 10);
+    ParallelPipelineExecutor executor({sink}, pool);
 
     EventCounter watch;
     while (true)
