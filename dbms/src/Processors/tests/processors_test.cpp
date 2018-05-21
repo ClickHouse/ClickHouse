@@ -62,12 +62,8 @@ public:
         if (output.hasData())
             return Status::PortFull;
 
-        return Status::Ready;
-    }
-
-    void work() override
-    {
         output.push(std::move(current_block));
+        return Status::Again;
     }
 
     void schedule(EventCounter & watch) override
@@ -115,7 +111,7 @@ public:
 private:
     WriteBufferFromFileDescriptor out{STDOUT_FILENO};
 
-    void consume(Block && block) override
+    void consume(Block block) override
     {
         size_t rows = block.rows();
         size_t columns = block.columns();
@@ -139,21 +135,25 @@ private:
 int main(int, char **)
 try
 {
-    auto source1 = std::make_shared<SleepyNumbersSource>(0, 100000);
+    auto source0 = std::make_shared<NumbersSource>();
+    auto header = source0->getPort().getHeader();
+    auto limit0 = std::make_shared<LimitTransform>(Block(header), 10, 0);
+
+    auto source1 = std::make_shared<SleepyNumbersSource>(100, 100000);
     auto source2 = std::make_shared<SleepyNumbersSource>(1000, 200000);
 
-    auto header = source1->getPort().getHeader();
-
-    auto resize = std::make_shared<ResizeProcessor>(InputPorts{Block(header), Block(header)}, OutputPorts{Block(header)});
+    auto resize = std::make_shared<ResizeProcessor>(InputPorts{Block(header), Block(header), Block(header)}, OutputPorts{Block(header)});
     auto limit = std::make_shared<LimitTransform>(Block(header), 100, 0);
     auto sink = std::make_shared<PrintSink>();
 
-    connect(source1->getPort(), resize->getInputs()[0]);
-    connect(source2->getPort(), resize->getInputs()[1]);
+    connect(source0->getPort(), limit0->getInputPort());
+    connect(limit0->getOutputPort(), resize->getInputs()[0]);
+    connect(source1->getPort(), resize->getInputs()[1]);
+    connect(source2->getPort(), resize->getInputs()[2]);
     connect(resize->getOutputs()[0], limit->getInputPort());
     connect(limit->getOutputPort(), sink->getPort());
 
-    SequentialPipelineExecutor executor({source1, source2, resize, limit, sink});
+    SequentialPipelineExecutor executor({sink});
 
     EventCounter watch;
     while (true)
