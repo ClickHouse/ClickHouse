@@ -28,6 +28,7 @@ private:
         {
             DROP_PARTITION,
             ATTACH_PARTITION,
+            REPLACE_PARTITION,
             FETCH_PARTITION,
             FREEZE_PARTITION,
             CLEAR_COLUMN,
@@ -37,11 +38,20 @@ private:
 
         ASTPtr partition;
         Field column_name;
-        bool detach = false; /// true for DETACH PARTITION.
 
+        /// true for DETACH PARTITION.
+        bool detach = false;
+
+        /// true for ATTACH PART (and false for PARTITION)
         bool part = false;
 
-        String from; /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
+        /// For ATTACH PARTITION partition FROM db.table
+        String from_database;
+        String from_table;
+        bool replace = true;
+
+        /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
+        String from_zookeeper_path;
 
         /// For FREEZE PARTITION
         String with_name;
@@ -73,12 +83,23 @@ private:
             return res;
         }
 
+        static PartitionCommand replacePartition(const ASTPtr & partition, bool replace, const String & from_database, const String & from_table)
+        {
+            PartitionCommand res;
+            res.type = REPLACE_PARTITION;
+            res.partition = partition;
+            res.replace = replace;
+            res.from_database = from_database;
+            res.from_table = from_table;
+            return res;
+        }
+
         static PartitionCommand fetchPartition(const ASTPtr & partition, const String & from)
         {
             PartitionCommand res;
             res.type = FETCH_PARTITION;
             res.partition = partition;
-            res.from = from;
+            res.from_zookeeper_path = from;
             return res;
         }
 

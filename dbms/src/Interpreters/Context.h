@@ -70,6 +70,8 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 struct SystemLogs;
 using SystemLogsPtr = std::shared_ptr<SystemLogs>;
+class ActionLocksManager;
+using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 
 
 /// (database name, table name)
@@ -371,6 +373,8 @@ public:
     void reloadConfig() const;
 
     void shutdown();
+
+    ActionLocksManagerPtr getActionLocksManager();
 
     enum class ApplicationType
     {

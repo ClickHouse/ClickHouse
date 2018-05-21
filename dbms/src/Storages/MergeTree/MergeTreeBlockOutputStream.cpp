@@ -24,7 +24,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
         storage.data.renameTempPartAndAdd(part, &storage.increment);
 
-        PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed());
+        PartLog::addNewPart(storage.context, part, watch.elapsed());
 
         /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
         storage.merge_task_handle->wake();

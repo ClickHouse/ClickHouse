@@ -461,8 +461,9 @@ private:
             query_id = config().getString("query_id", "");
             nonInteractive();
 
+            /// If exception code isn't zero, we should return non-zero return code anyway.
             if (last_exception)
-                return last_exception->code();
+                return last_exception->code() != 0 ? last_exception->code() : -1;
 
             return 0;
         }
